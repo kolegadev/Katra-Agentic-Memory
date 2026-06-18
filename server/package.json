@@ -1,0 +1,36 @@
+{
+  "name": "katra-server",
+  "version": "1.0.0",
+  "description": "Katra — Cognitive Memory as a Service for AI Agents",
+  "type": "module",
+  "main": "build/index.js",
+  "scripts": {
+    "build": "node esbuild.config.mjs",
+    "start": "node --import dotenv/config build/index.js",
+    "dev": "node --import dotenv/config build/index.js",
+    "mcp:stdio": "node build/mcp-server.js --stdio",
+    "format": "prettier --write 'src/**/*.{ts,tsx}'"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.705.0",
+    "@aws-sdk/s3-request-presigner": "^3.705.0",
+    "@hono/node-server": "^1.13.8",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@xenova/transformers": "^2.17.2",
+    "dotenv": "^16.4.7",
+    "hono": "^4.6.14",
+    "mongodb": "^6.12.0",
+    "openai": "^5.11.0",
+    "redis": "^4.7.0",
+    "uuid": "^11.1.0",
+    "zod": "^3.25.76",
+    "zod-to-json-schema": "^3.25.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "esbuild": "^0.28.1",
+    "prettier": "^3.4.2",
+    "typescript": "~5.8.3"
+  },
+  "license": "MIT"
+}

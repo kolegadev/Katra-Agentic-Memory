@@ -1,0 +1,70 @@
+services:
+  mongo:
+    image: mongo:7.0
+    container_name: katra-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: katra-local-dev
+    command: ["--bind_ip_all", "--auth"]
+    networks:
+      - katra-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: katra-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - katra-net
+
+  minio:
+    image: minio/minio:latest
+    container_name: katra-minio
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: katra-local-dev
+    command: server /data --console-address ":9001"
+    networks:
+      - katra-net
+
+  katra:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: katra-server
+    restart: unless-stopped
+    ports:
+      - "9002:9002"
+      - "3100:3100"
+    env_file:
+      - .env
+    depends_on:
+      - mongo
+      - redis
+      - minio
+    networks:
+      - katra-net
+
+volumes:
+  mongo-data:
+  redis-data:
+  minio-data:
+
+networks:
+  katra-net:
+    driver: bridge
