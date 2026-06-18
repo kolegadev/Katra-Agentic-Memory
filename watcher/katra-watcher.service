@@ -1,0 +1,16 @@
+[Unit]
+Description=Katra Multi-Platform Memory Watcher
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 %h/.katra/katra_watcher.py --config %h/.katra/watcher-config.json
+Restart=always
+RestartSec=30
+Environment=PYTHONUNBUFFERED=1
+Environment=KATRA_MCP_URL=http://localhost:3100/mcp
+Environment=KATRA_API_KEY=changeme
+
+[Install]
+WantedBy=default.target

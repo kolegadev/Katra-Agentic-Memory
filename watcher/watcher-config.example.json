@@ -1,0 +1,50 @@
+{
+  "mcp_url": "http://localhost:3100/mcp",
+  "api_key": "your-katra-api-key",
+  "default_user_id": "default",
+  "state_file": "~/.katra/watcher-state.json",
+  "platforms": [
+    {
+      "name": "openclaw",
+      "session_dir": "~/.openclaw/agents",
+      "glob": "**/sessions/*.jsonl",
+      "exclude": ["trajectory"]
+    },
+    {
+      "name": "claude",
+      "session_dir": "~/.claude/projects",
+      "glob": "**/*.jsonl",
+      "exclude": ["history"]
+    },
+    {
+      "name": "opencode",
+      "session_dir": "~/.opencode/sessions",
+      "glob": "*.jsonl",
+      "exclude": []
+    },
+    {
+      "name": "codex",
+      "session_dir": "~/.codex/sessions",
+      "glob": "*.jsonl",
+      "exclude": []
+    },
+    {
+      "name": "kiloclaw",
+      "session_dir": "~/.kiloclaw/agents",
+      "glob": "**/sessions/*.jsonl",
+      "exclude": ["trajectory"]
+    },
+    {
+      "name": "kimiclaw",
+      "session_dir": "~/.kimiclaw/agents",
+      "glob": "**/sessions/*.jsonl",
+      "exclude": ["trajectory"]
+    },
+    {
+      "name": "hermes",
+      "session_dir": "~/.hermes/sessions",
+      "glob": "*.jsonl",
+      "exclude": []
+    }
+  ]
+}

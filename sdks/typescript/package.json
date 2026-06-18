@@ -1,0 +1,50 @@
+{
+  "name": "@katra/sdk",
+  "version": "1.0.0",
+  "description": "TypeScript SDK for Katra — Cognitive Memory as a Service",
+  "type": "module",
+  "license": "MIT",
+  "author": "Katra Contributors",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/katra-ai/katra",
+    "directory": "sdks/typescript"
+  },
+  "keywords": [
+    "katra",
+    "cognitive-memory",
+    "mcp",
+    "model-context-protocol",
+    "ai-memory",
+    "llm-memory",
+    "agent-memory",
+    "semantic-search"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run clean && npm run build",
+    "lint": "tsc --noEmit",
+    "watch": "tsc -p tsconfig.json --watch"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

@@ -1,0 +1,1234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Katra — Cognitive Memory Dashboard</title>
+<style>
+  :root {
+    --bg: #0a0a0b;
+    --bg-card: #111113;
+    --bg-card-hover: #17171a;
+    --bg-input: #1a1a1e;
+    --border: #252529;
+    --border-light: #2e2e34;
+    --text: #e4e4e7;
+    --text-muted: #8b8b90;
+    --text-dim: #5c5c63;
+    --accent: #6366f1;
+    --accent-glow: rgba(99,102,241,0.3);
+    --green: #22c55e;
+    --green-glow: rgba(34,197,94,0.25);
+    --red: #ef4444;
+    --red-glow: rgba(239,68,68,0.25);
+    --amber: #f59e0b;
+    --amber-glow: rgba(245,158,11,0.25);
+    --radius: 10px;
+    --radius-sm: 6px;
+    --transition: 150ms ease;
+    --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+    --font-mono: 'SF Mono', 'Fira Code', 'Fira Mono', 'Roboto Mono', monospace;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { font-size: 15px; }
+  body {
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* ── Layout ── */
+  .app { display: flex; min-height: 100vh; }
+  .sidebar {
+    width: 240px; flex-shrink: 0;
+    background: var(--bg-card);
+    border-right: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    padding: 24px 0;
+  }
+  .sidebar-brand {
+    padding: 0 20px 20px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 8px;
+  }
+  .sidebar-brand h1 { font-size: 1.25rem; font-weight: 700; letter-spacing: -0.02em; }
+  .sidebar-brand span { font-size: 0.75rem; color: var(--text-muted); display: block; margin-top: 2px; }
+  .sidebar-nav { flex: 1; padding: 8px; }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px; border-radius: var(--radius-sm);
+    color: var(--text-muted); cursor: pointer; border: none; background: none;
+    width: 100%; text-align: left; font-size: 0.875rem;
+    transition: all var(--transition);
+  }
+  .nav-item:hover { color: var(--text); background: var(--bg-card-hover); }
+  .nav-item.active { color: var(--accent); background: rgba(99,102,241,0.1); font-weight: 600; }
+  .nav-icon { width: 18px; height: 18px; flex-shrink: 0; opacity: 0.6; }
+  .nav-item.active .nav-icon { opacity: 1; }
+  .sidebar-footer {
+    padding: 16px 20px 0;
+    border-top: 1px solid var(--border);
+    font-size: 0.7rem; color: var(--text-dim);
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .sidebar-footer .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 4px; }
+  .dot.green { background: var(--green); }
+  .dot.red { background: var(--red); }
+  .dot.amber { background: var(--amber); }
+
+  .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .main-header {
+    padding: 20px 32px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+    background: var(--bg-card);
+  }
+  .main-header h2 { font-size: 1.1rem; font-weight: 600; letter-spacing: -0.01em; }
+  .header-actions { display: flex; gap: 8px; align-items: center; }
+  .content { flex: 1; padding: 28px 32px; overflow-y: auto; }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  /* ── Cards ── */
+  .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; margin-bottom: 24px; }
+  .card-grid.cols-2 { grid-template-columns: repeat(2, 1fr); }
+  .card-grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    transition: border-color var(--transition);
+  }
+  .card:hover { border-color: var(--border-light); }
+  .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .card-title { font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }
+  .card-value { font-size: 1.75rem; font-weight: 700; letter-spacing: -0.02em; }
+  .card-sub { font-size: 0.8rem; color: var(--text-muted); margin-top: 4px; }
+  .status-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border-radius: 20px; font-size: 0.75rem; font-weight: 600;
+  }
+  .status-badge.healthy { background: rgba(34,197,94,0.1); color: var(--green); }
+  .status-badge.degraded { background: rgba(245,158,11,0.1); color: var(--amber); }
+  .status-badge.error { background: rgba(239,68,68,0.1); color: var(--red); }
+  .status-badge.unknown { background: rgba(139,139,144,0.1); color: var(--text-muted); }
+  .status-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+  .status-dot.green { background: var(--green); box-shadow: 0 0 6px var(--green-glow); }
+  .status-dot.amber { background: var(--amber); box-shadow: 0 0 6px var(--amber-glow); }
+  .status-dot.red { background: var(--red); box-shadow: 0 0 6px var(--red-glow); }
+  .status-dot.gray { background: var(--text-dim); }
+
+  /* ── Buttons ── */
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 14px; border-radius: var(--radius-sm);
+    font-size: 0.8rem; font-weight: 600; cursor: pointer;
+    border: 1px solid transparent; transition: all var(--transition);
+    font-family: var(--font);
+  }
+  .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .btn-primary:hover { background: #5b5ee5; box-shadow: 0 0 12px var(--accent-glow); }
+  .btn-secondary { background: var(--bg-input); color: var(--text); border-color: var(--border); }
+  .btn-secondary:hover { border-color: var(--text-dim); }
+  .btn-danger { background: transparent; color: var(--red); border-color: var(--red); }
+  .btn-danger:hover { background: rgba(239,68,68,0.1); }
+  .btn-sm { padding: 5px 10px; font-size: 0.7rem; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn:disabled:hover { box-shadow: none; }
+
+  /* ── Inputs ── */
+  .input {
+    padding: 9px 12px; border-radius: var(--radius-sm);
+    background: var(--bg-input); color: var(--text);
+    border: 1px solid var(--border); font-size: 0.85rem;
+    font-family: var(--font); width: 100%;
+    transition: border-color var(--transition);
+  }
+  .input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+  .input::placeholder { color: var(--text-dim); }
+  .input-row { display: flex; gap: 8px; align-items: center; }
+  .input-row .input { flex: 1; }
+
+  /* ── Labels ── */
+  .label { font-size: 0.75rem; font-weight: 600; color: var(--text-muted); margin-bottom: 6px; display: block; }
+
+  /* ── Tables ── */
+  .table-wrap { overflow-x: auto; border-radius: var(--radius); border: 1px solid var(--border); }
+  table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+  th { text-align: left; padding: 10px 14px; font-weight: 600; color: var(--text-muted); border-bottom: 1px solid var(--border); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  td { padding: 10px 14px; border-bottom: 1px solid var(--border); color: var(--text); }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: var(--bg-card-hover); }
+  .mono { font-family: var(--font-mono); font-size: 0.75rem; }
+  .text-muted { color: var(--text-muted); }
+  .text-dim { color: var(--text-dim); }
+  .truncate { max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* ── Expandable rows ── */
+  .expanded-row td { background: var(--bg-card-hover); padding: 16px 20px; }
+  .expanded-content { font-family: var(--font-mono); font-size: 0.75rem; white-space: pre-wrap; word-break: break-word; max-height: 260px; overflow-y: auto; color: var(--text); line-height: 1.6; background: var(--bg-input); padding: 12px; border-radius: var(--radius-sm); }
+  .clickable { cursor: pointer; }
+  .clickable:hover { color: var(--accent); }
+
+  /* ── Spinner ── */
+  .spinner { width: 18px; height: 18px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.6s linear infinite; display: inline-block; }
+  .spinner-lg { width: 32px; height: 32px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-center { display: flex; align-items: center; justify-content: center; padding: 40px; gap: 10px; color: var(--text-muted); font-size: 0.85rem; }
+
+  /* ── Error / Empty ── */
+  .state-msg {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 48px 24px; color: var(--text-muted); text-align: center; gap: 8px;
+  }
+  .state-msg svg { width: 40px; height: 40px; opacity: 0.4; margin-bottom: 4px; }
+  .state-msg p { font-size: 0.85rem; }
+
+  /* ── JSON viewer ── */
+  .json-viewer { background: var(--bg-input); border-radius: var(--radius-sm); padding: 14px; overflow-x: auto; font-family: var(--font-mono); font-size: 0.72rem; white-space: pre-wrap; word-break: break-word; max-height: 400px; overflow-y: auto; color: #a9b7c6; }
+
+  /* ── Knowledge Graph ── */
+  .graph-container {
+    position: relative; background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: var(--radius); height: 520px; overflow: hidden;
+  }
+  .graph-container svg { width: 100%; height: 100%; }
+  .graph-controls { position: absolute; top: 12px; right: 12px; display: flex; gap: 6px; z-index: 2; }
+  .node-details {
+    position: absolute; bottom: 16px; left: 16px; right: 16px;
+    background: var(--bg-input); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 14px; font-size: 0.78rem;
+    max-height: 160px; overflow-y: auto; display: none; z-index: 2;
+  }
+  .node-details.visible { display: block; }
+  .node-details h4 { font-size: 0.85rem; margin-bottom: 4px; }
+  .node-details .close-btn { position: absolute; top: 8px; right: 10px; cursor: pointer; color: var(--text-muted); background: none; border: none; font-size: 1rem; }
+
+  /* ── Tabs as pills ── */
+  .tab-pills { display: flex; gap: 4px; margin-bottom: 20px; }
+  .tab-pill {
+    padding: 6px 14px; border-radius: 20px; font-size: 0.78rem; cursor: pointer;
+    border: 1px solid var(--border); background: transparent; color: var(--text-muted);
+    transition: all var(--transition); font-family: var(--font);
+  }
+  .tab-pill:hover { border-color: var(--text-dim); color: var(--text); }
+  .tab-pill.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+  /* ── Toast ── */
+  .toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 100; display: flex; flex-direction: column; gap: 8px; }
+  .toast {
+    padding: 12px 18px; border-radius: var(--radius-sm); font-size: 0.8rem; font-weight: 500;
+    animation: slideIn 0.2s ease; box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    max-width: 380px;
+  }
+  .toast.success { background: #166534; color: #bbf7d0; border: 1px solid #22c55e; }
+  .toast.error { background: #7f1d1d; color: #fecaca; border: 1px solid #ef4444; }
+  @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: none; opacity: 1; } }
+
+  /* ── Responsive ── */
+  @media (max-width: 768px) {
+    .sidebar { display: none; }
+    .main-header { padding: 16px; }
+    .content { padding: 16px; }
+    .card-grid { grid-template-columns: 1fr; }
+    .card-grid.cols-2, .card-grid.cols-3 { grid-template-columns: 1fr; }
+  }
+
+  /* Timestamp relative display */
+  .relative-time { font-variant-numeric: tabular-nums; }
+
+  /* Skeleton loading */
+  .skeleton { background: linear-gradient(90deg, var(--bg-card) 25%, var(--bg-card-hover) 50%, var(--bg-card) 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; border-radius: var(--radius-sm); }
+  @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+  /* Services list */
+  .services-list { display: flex; flex-wrap: wrap; gap: 6px; }
+  .service-tag {
+    padding: 3px 8px; border-radius: 12px; font-size: 0.68rem; font-weight: 600;
+    background: rgba(99,102,241,0.12); color: var(--accent);
+  }
+  .service-tag.inactive { background: rgba(139,139,144,0.1); color: var(--text-muted); }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- ── Sidebar ── -->
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <h1>⚡ Katra</h1>
+      <span>Cognitive Memory Dashboard</span>
+    </div>
+    <nav class="sidebar-nav" id="nav">
+      <button class="nav-item active" data-tab="overview">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        Overview
+      </button>
+      <button class="nav-item" data-tab="memories">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+        Memories
+      </button>
+      <button class="nav-item" data-tab="ingestion">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+        Ingestion
+      </button>
+      <button class="nav-item" data-tab="graph">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="19" r="2"/><line x1="12" y1="7" x2="5" y2="17"/><line x1="12" y1="7" x2="19" y2="17"/></svg>
+        Knowledge Graph
+      </button>
+      <button class="nav-item" data-tab="settings">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+        Settings
+      </button>
+    </nav>
+    <div class="sidebar-footer">
+      <div><span class="dot" id="sidebar-dot"></span><span id="sidebar-status">Checking…</span></div>
+      <div>v1.0.0 · Katra</div>
+    </div>
+  </aside>
+
+  <!-- ── Main ── -->
+  <main class="main">
+    <header class="main-header">
+      <h2 id="page-title">Overview</h2>
+      <div class="header-actions">
+        <span id="refresh-indicator" style="font-size:0.7rem;color:var(--text-dim);display:none;">Auto-refresh 30s</span>
+        <button class="btn btn-secondary btn-sm" onclick="refreshCurrentTab()" id="refresh-btn">↻ Refresh</button>
+      </div>
+    </header>
+    <div class="content">
+
+      <!-- ═══ OVERVIEW TAB ═══ -->
+      <section class="tab-content active" id="tab-overview">
+        <div class="card-grid cols-3" id="overview-cards">
+          <div class="card"><div class="loading-center"><span class="spinner"></span>Loading…</div></div>
+        </div>
+        <div class="card" style="margin-top:16px" id="services-card">
+          <div class="card-header"><h3 class="card-title">Services</h3></div>
+          <div class="loading-center"><span class="spinner"></span>Loading…</div>
+        </div>
+      </section>
+
+      <!-- ═══ MEMORIES TAB ═══ -->
+      <section class="tab-content" id="tab-memories">
+        <div class="card" style="margin-bottom:20px">
+          <div class="card-header"><h3 class="card-title">Search Memories</h3></div>
+          <div class="input-row">
+            <input class="input" id="mem-search-query" placeholder="Search episodic events…" onkeydown="if(event.key==='Enter')searchMemories()">
+            <input class="input" id="mem-search-user" placeholder="user_id" value="demo-user" style="max-width:180px">
+            <input class="input" id="mem-search-limit" placeholder="limit" value="20" style="max-width:70px" type="number" min="1" max="100">
+            <button class="btn btn-primary" onclick="searchMemories()" id="mem-search-btn">Search</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <h3 class="card-title">Events</h3>
+            <div class="input-row" style="width:auto">
+              <input class="input" id="mem-filter-user" placeholder="user_id" value="demo-user" style="width:160px">
+              <input class="input" id="mem-filter-limit" placeholder="limit" value="20" style="width:70px" type="number" min="1" max="200">
+              <button class="btn btn-secondary btn-sm" onclick="loadRecentEvents()">Recent</button>
+            </div>
+          </div>
+          <div id="memories-table"><div class="loading-center"><span class="spinner"></span>Loading…</div></div>
+        </div>
+      </section>
+
+      <!-- ═══ INGESTION TAB ═══ -->
+      <section class="tab-content" id="tab-ingestion">
+        <div class="card" style="margin-bottom:20px">
+          <div class="card-header">
+            <h3 class="card-title">Session Ingestion</h3>
+            <button class="btn btn-primary" onclick="triggerIngestion()" id="ingest-btn">▶ Trigger Ingestion</button>
+          </div>
+          <div id="ingestion-result" style="margin-top:12px"></div>
+        </div>
+        <div class="card-grid cols-2" id="ingestion-stats-cards">
+          <div class="card"><div class="loading-center"><span class="spinner"></span>Loading…</div></div>
+        </div>
+        <div class="card" style="margin-top:16px">
+          <div class="card-header"><h3 class="card-title">Pipeline Stats</h3></div>
+          <div id="ingestion-pipeline"><div class="loading-center"><span class="spinner"></span>Loading…</div></div>
+        </div>
+      </section>
+
+      <!-- ═══ KNOWLEDGE GRAPH TAB ═══ -->
+      <section class="tab-content" id="tab-graph">
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-header">
+            <h3 class="card-title">Graph Explorer</h3>
+          </div>
+          <div class="input-row">
+            <input class="input" id="graph-query" placeholder="Search graph nodes (e.g. 'machine learning')…" onkeydown="if(event.key==='Enter')loadGraph()">
+            <button class="btn btn-primary" onclick="loadGraph()">Explore</button>
+            <button class="btn btn-secondary" onclick="loadGraphStats()">Stats</button>
+          </div>
+        </div>
+        <div class="graph-container" id="graph-container">
+          <svg id="graph-svg"></svg>
+          <div class="graph-controls">
+            <button class="btn btn-secondary btn-sm" onclick="zoomGraph(0.2)" title="Zoom In">+</button>
+            <button class="btn btn-secondary btn-sm" onclick="zoomGraph(-0.2)" title="Zoom Out">−</button>
+            <button class="btn btn-secondary btn-sm" onclick="resetGraphView()" title="Reset">⟲</button>
+          </div>
+          <div class="node-details" id="node-details">
+            <button class="close-btn" onclick="closeNodeDetails()">✕</button>
+            <div id="node-details-content"></div>
+          </div>
+        </div>
+        <div id="graph-footer" style="margin-top:12px;font-size:0.78rem;color:var(--text-muted)"></div>
+      </section>
+
+      <!-- ═══ SETTINGS TAB ═══ -->
+      <section class="tab-content" id="tab-settings">
+        <div class="card" style="max-width:560px">
+          <div class="card-header"><h3 class="card-title">Connection Settings</h3></div>
+          <div style="display:flex;flex-direction:column;gap:14px">
+            <div>
+              <label class="label" for="settings-url">Base URL</label>
+              <input class="input mono" id="settings-url" placeholder="http://localhost:9002" value="http://localhost:9002">
+              <span style="font-size:0.7rem;color:var(--text-dim)">The Katra server address</span>
+            </div>
+            <div>
+              <label class="label" for="settings-key">API Key</label>
+              <input class="input mono" id="settings-key" type="password" placeholder="sk-…">
+              <span style="font-size:0.7rem;color:var(--text-dim)">Bearer token for Authorization header (leave blank if not required)</span>
+            </div>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-primary" onclick="testConnection()" id="test-conn-btn">Test Connection</button>
+              <button class="btn btn-secondary" onclick="saveSettings()">Save</button>
+            </div>
+            <div id="settings-result"></div>
+          </div>
+        </div>
+        <div class="card" style="max-width:560px;margin-top:16px">
+          <div class="card-header"><h3 class="card-title">Server Config</h3></div>
+          <div id="settings-config"><div class="loading-center"><span class="spinner"></span>Loading…</div></div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+</div>
+
+<!-- Toast container -->
+<div class="toast-container" id="toasts"></div>
+
+<script>
+/* ══════════════════════════════════════════════
+   ║  Katra Dashboard — Vanilla JS Core
+   ══════════════════════════════════════════════ */
+
+// ── State ──
+const state = {
+  baseUrl: localStorage.getItem('katra_baseUrl') || 'http://localhost:9002',
+  apiKey: localStorage.getItem('katra_apiKey') || '',
+  healthInterval: null,
+  currentTab: 'overview',
+  graphNodes: [],
+  graphEdges: [],
+  graphTransform: { x: 0, y: 0, scale: 1 },
+  expandedRows: new Set(),
+};
+
+// ── API Helpers ──
+function apiUrl(path) {
+  return `${state.baseUrl}${path}`;
+}
+
+function authHeaders() {
+  const headers = { 'Content-Type': 'application/json' };
+  if (state.apiKey) headers['Authorization'] = `Bearer ${state.apiKey}`;
+  return headers;
+}
+
+async function apiFetch(path, opts = {}) {
+  const url = apiUrl(path);
+  const method = (opts.method || 'GET').toUpperCase();
+  const fetchOpts = {
+    method,
+    headers: authHeaders(),
+  };
+  if (opts.body && method !== 'GET') {
+    fetchOpts.body = JSON.stringify(opts.body);
+  }
+  // Force GET requests to not have body
+  if (method === 'GET' && fetchOpts.body) {
+    delete fetchOpts.body;
+  }
+  const res = await fetch(url, fetchOpts);
+  const data = await res.json().catch(() => null);
+  return { status: res.status, ok: res.ok, data };
+}
+
+// ── Toast ──
+function toast(msg, type = 'success') {
+  const container = document.getElementById('toasts');
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.textContent = msg;
+  container.appendChild(el);
+  setTimeout(() => { el.remove(); }, 4000);
+}
+
+// ── Spinner helpers ──
+function spinner() { return '<div class="loading-center"><span class="spinner"></span>Loading…</div>'; }
+function errorMsg(msg, retryFn) {
+  return `<div class="state-msg">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+    <p>${escapeHtml(msg)}</p>
+    ${retryFn ? '<button class="btn btn-secondary btn-sm" onclick="(' + retryFn.toString() + ')()">Retry</button>' : ''}
+  </div>`;
+}
+function emptyMsg(msg) {
+  return `<div class="state-msg"><p>${escapeHtml(msg)}</p></div>`;
+}
+
+function escapeHtml(str) {
+  const d = document.createElement('div');
+  d.textContent = str;
+  return d.innerHTML;
+}
+
+// ── Formatting ──
+function fmtDate(ts) {
+  if (!ts) return '—';
+  const d = new Date(ts);
+  const now = new Date();
+  const diff = now - d;
+  const mins = Math.floor(diff / 60000);
+  const hrs = Math.floor(diff / 3600000);
+  const days = Math.floor(diff / 86400000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  if (hrs < 24) return `${hrs}h ago`;
+  if (days < 7) return `${days}d ago`;
+  return d.toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' }) +
+    ' ' + d.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' });
+}
+
+function fmtDateFull(ts) {
+  if (!ts) return '—';
+  return new Date(ts).toLocaleString('en-GB');
+}
+
+function fmtNum(n) {
+  if (n == null) return '—';
+  if (typeof n === 'number') return n.toLocaleString();
+  return n;
+}
+
+function truncate(str, len = 120) {
+  if (!str) return '—';
+  const s = typeof str === 'string' ? str : JSON.stringify(str);
+  if (s.length <= len) return s;
+  return s.substring(0, len) + '…';
+}
+
+function eventTypeBadge(type) {
+  const map = {
+    user_message: '#3b82f6', assistant_message: '#22c55e',
+    system_event: '#f59e0b', interaction: '#ec4899',
+    prompt: '#8b5cf6', response: '#06b6d4',
+    default: '#6366f1'
+  };
+  const color = map[type] || map.default;
+  return `<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:0.7rem;font-weight:600;background:${color}22;color:${color}">${escapeHtml(type)}</span>`;
+}
+
+// ── Tab Navigation ──
+document.getElementById('nav').addEventListener('click', (e) => {
+  const btn = e.target.closest('.nav-item');
+  if (!btn) return;
+  const tab = btn.dataset.tab;
+  switchTab(tab);
+});
+
+function switchTab(tab) {
+  state.currentTab = tab;
+  document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.querySelectorAll('.tab-content').forEach(s => s.classList.toggle('active', s.id === `tab-${tab}`));
+  document.getElementById('page-title').textContent = tab.charAt(0).toUpperCase() + tab.slice(1);
+
+  if (tab === 'overview') { startHealthPolling(); loadOverview(); }
+  else { stopHealthPolling(); }
+
+  if (tab === 'memories') loadRecentEvents();
+  if (tab === 'ingestion') loadIngestion();
+  if (tab === 'settings') loadSettingsConfig();
+  if (tab === 'graph') { /* defer to user action */ }
+}
+
+function refreshCurrentTab() {
+  const btn = document.getElementById('refresh-btn');
+  btn.disabled = true;
+  const t = state.currentTab;
+  const loaders = {
+    overview: loadOverview,
+    memories: loadRecentEvents,
+    ingestion: loadIngestion,
+    settings: loadSettingsConfig,
+    graph: loadGraphStats,
+  };
+  const fn = loaders[t];
+  if (fn) fn().finally(() => { btn.disabled = false; });
+  else btn.disabled = false;
+}
+
+/* ══════════════════════════════════════════════
+   ║  OVERVIEW TAB
+   ══════════════════════════════════════════════ */
+
+async function loadOverview() {
+  const cards = document.getElementById('overview-cards');
+  const servicesCard = document.getElementById('services-card').querySelector('.card-header + div, .loading-center');
+  if (!cards) return;
+  cards.innerHTML = '<div class="card"><div class="loading-center"><span class="spinner"></span>Loading…</div></div>'.repeat(3);
+
+  // Parallel fetches
+  const [infoRes, healthRes, dbRes, bgRes] = await Promise.allSettled([
+    apiFetch('/'),
+    apiFetch('/api/v1/memory/health'),
+    apiFetch('/api/v1/memory/stats/database'),
+    apiFetch('/api/v1/admin/background/status'),
+  ]);
+
+  const info = infoRes.value?.ok ? infoRes.value.data : null;
+  const health = healthRes.value?.ok ? healthRes.value.data : null;
+  const dbStats = dbRes.value?.ok ? dbRes.value.data : null;
+  const bgStats = bgRes.value?.ok ? bgRes.value.data : null;
+
+  // Determine overall status
+  let statusClass = 'unknown', statusText = 'Unknown';
+  if (health?.data?.memory_manager_status === 'healthy') { statusClass = 'healthy'; statusText = 'Healthy'; }
+  else if (health) { statusClass = 'degraded'; statusText = 'Degraded'; }
+
+  // Sidebar dot
+  const dot = document.getElementById('sidebar-dot');
+  dot.className = `dot ${statusClass === 'healthy' ? 'green' : statusClass === 'degraded' ? 'amber' : 'red'}`;
+  document.getElementById('sidebar-status').textContent = statusText;
+
+  cards.innerHTML = `
+    <div class="card">
+      <div class="card-header"><h3 class="card-title">Server Status</h3>
+        <span class="status-badge ${statusClass}"><span class="status-dot ${statusClass === 'healthy' ? 'green' : statusClass === 'degraded' ? 'amber' : 'red'}"></span>${statusText}</span>
+      </div>
+      <div class="card-value">${info?.name || 'Katra'}</div>
+      <div class="card-sub">v${info?.version || '—'} · ${info?.description || 'Cognitive Memory Service'}</div>
+      <div class="card-sub" style="margin-top:8px;font-size:0.75rem;">
+        MongoDB: ${health?.data?.mongodb_connected ? '✅ Connected' : '❌ Disconnected'}<br>
+        Redis: <span id="redis-status">Checking…</span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h3 class="card-title">Memory Stores</h3></div>
+      <div class="card-value">${fmtNum(dbStats?.database_stats?.total_documents || '—')}</div>
+      <div class="card-sub">Total documents across collections</div>
+      <div class="card-sub" style="margin-top:8px;font-size:0.75rem;">
+        ${dbStats?.database_stats?.collections ? Object.entries(dbStats.database_stats.collections).slice(0,5).map(([k,v]) => `${escapeHtml(k)}: ${fmtNum(v)}`).join('<br>') : '—'}
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h3 class="card-title">Background Processor</h3>
+        <span class="status-badge ${bgStats?.stats?.running ? 'healthy' : 'unknown'}">
+          <span class="status-dot ${bgStats?.stats?.running ? 'green' : 'gray'}"></span>${bgStats?.stats?.running ? 'Running' : 'Stopped'}
+        </span>
+      </div>
+      <div class="card-value">${fmtNum(bgStats?.stats?.processed_events || '—')}</div>
+      <div class="card-sub">Events processed</div>
+      <div class="card-sub" style="margin-top:8px;font-size:0.75rem;">
+        Failed: ${fmtNum(bgStats?.stats?.failed_events || '0')} ·
+        Interval: ${bgStats?.stats?.interval_ms ? (bgStats.stats.interval_ms / 1000) + 's' : '—'}
+      </div>
+    </div>
+  `;
+
+  // Build services card
+  const services = health?.data?.services || {};
+  const llmHealth = health?.data?.health?.llm_service;
+  const serviceTags = [
+    ...Object.entries(services).map(([k,v]) => `<span class="service-tag ${v==='active'?'':'inactive'}">${escapeHtml(k.replace(/_/g,' '))}</span>`),
+    `<span class="service-tag ${llmHealth?.available?'':'inactive'}">LLM: ${llmHealth?.provider || 'none'} / ${llmHealth?.model || 'none'}</span>`,
+  ];
+
+  const svcDiv = document.getElementById('services-card');
+  svcDiv.innerHTML = `
+    <div class="card-header"><h3 class="card-title">Services</h3></div>
+    <div class="services-list">${serviceTags.join('')}</div>
+    ${health?.data?.collections_ready === false ? '<div class="card-sub" style="margin-top:8px;color:var(--amber)">⚠ Collections not fully initialized</div>' : ''}
+  `;
+
+  document.getElementById('refresh-indicator').style.display = 'inline';
+}
+
+function startHealthPolling() {
+  if (state.healthInterval) return;
+  state.healthInterval = setInterval(loadOverview, 30000);
+  document.getElementById('refresh-indicator').style.display = 'inline';
+}
+function stopHealthPolling() {
+  if (state.healthInterval) { clearInterval(state.healthInterval); state.healthInterval = null; }
+  document.getElementById('refresh-indicator').style.display = 'none';
+}
+
+/* ══════════════════════════════════════════════
+   ║  MEMORIES TAB
+   ══════════════════════════════════════════════ */
+
+async function loadRecentEvents() {
+  const container = document.getElementById('memories-table');
+  container.innerHTML = spinner();
+
+  const userId = document.getElementById('mem-filter-user').value || 'demo-user';
+  const limit = document.getElementById('mem-filter-limit').value || '20';
+
+  const { ok, data } = await apiFetch(`/api/v1/memory/episodic/events?user_id=${encodeURIComponent(userId)}&limit=${encodeURIComponent(limit)}`);
+
+  if (!ok) {
+    container.innerHTML = errorMsg(data?.error || 'Failed to load events', loadRecentEvents);
+    return;
+  }
+
+  const events = data.results || [];
+  if (events.length === 0) {
+    container.innerHTML = emptyMsg('No events found. Try a different user_id or ingest some data.');
+    return;
+  }
+
+  buildEventsTable(events, container);
+}
+
+async function searchMemories() {
+  const container = document.getElementById('memories-table');
+  const btn = document.getElementById('mem-search-btn');
+  container.innerHTML = spinner();
+  btn.disabled = true;
+
+  const query = document.getElementById('mem-search-query').value.trim();
+  const userId = document.getElementById('mem-search-user').value || 'demo-user';
+  const limit = parseInt(document.getElementById('mem-search-limit').value) || 20;
+
+  if (!query) {
+    container.innerHTML = errorMsg('Enter a search query');
+    btn.disabled = false;
+    return;
+  }
+
+  const { ok, data } = await apiFetch('/api/v1/memory/episodic/search', {
+    method: 'POST',
+    body: { query, user_id: userId, limit },
+  });
+
+  btn.disabled = false;
+  if (!ok) {
+    container.innerHTML = errorMsg(data?.error || 'Search failed', searchMemories);
+    return;
+  }
+
+  const events = data.results || [];
+  if (events.length === 0) {
+    container.innerHTML = emptyMsg(`No results for "${query}".`);
+    return;
+  }
+  buildEventsTable(events, container);
+}
+
+function buildEventsTable(events, container) {
+  let html = `<div class="table-wrap"><table><thead><tr>
+    <th style="width:120px">Timestamp</th>
+    <th style="width:140px">Event Type</th>
+    <th>Content</th>
+    <th style="width:160px">Session</th>
+  </tr></thead><tbody>`;
+
+  events.forEach((ev, i) => {
+    const ts = ev.timestamp;
+    const sessionId = ev.session_id || '—';
+    const snippet = truncate(typeof ev.content === 'string' ? ev.content : (ev.content?.message || JSON.stringify(ev.content)), 100);
+    const fullContent = JSON.stringify(ev.content, null, 2);
+    html += `
+      <tr class="clickable" onclick="toggleEventRow(this, 'ev-${i}')">
+        <td><span class="relative-time" title="${fmtDateFull(ts)}">${fmtDate(ts)}</span></td>
+        <td>${eventTypeBadge(ev.event_type)}</td>
+        <td class="truncate">${escapeHtml(snippet)}</td>
+        <td class="mono text-dim truncate" title="${escapeHtml(sessionId)}">${escapeHtml(truncate(sessionId, 20))}</td>
+      </tr>
+      <tr id="ev-${i}" style="display:none" class="expanded-row">
+        <td colspan="4">
+          <div class="expanded-content">${escapeHtml(fullContent)}</div>
+          ${ev.relevance_score != null ? `<div style="margin-top:8px;font-size:0.7rem;color:var(--text-muted)">Relevance: ${ev.relevance_score.toFixed(2)}</div>` : ''}
+        </td>
+      </tr>`;
+  });
+
+  html += '</tbody></table></div>';
+  container.innerHTML = html;
+}
+
+function toggleEventRow(row, targetId) {
+  const target = document.getElementById(targetId);
+  if (!target) return;
+  target.style.display = target.style.display === 'none' ? '' : 'none';
+}
+
+/* ══════════════════════════════════════════════
+   ║  INGESTION TAB
+   ══════════════════════════════════════════════ */
+
+async function loadIngestion() {
+  const statsCards = document.getElementById('ingestion-stats-cards');
+  const pipeline = document.getElementById('ingestion-pipeline');
+  statsCards.innerHTML = spinner();
+  pipeline.innerHTML = spinner();
+
+  const [statusRes, statsRes] = await Promise.allSettled([
+    apiFetch('/api/v1/ingestion/sessions/status'),
+    apiFetch('/api/v1/ingestion/stats'),
+  ]);
+
+  const status = statusRes.value?.ok ? statusRes.value.data : null;
+  const stats = statsRes.value?.ok ? statsRes.value.data : null;
+
+  // Build status cards
+  const st = status?.status || {};
+  statsCards.innerHTML = `
+    <div class="card">
+      <div class="card-header"><h3 class="card-title">Last Ingestion</h3></div>
+      <div class="card-value">${fmtDate(st.last_ingestion_at) === '—' ? 'Never' : fmtDate(st.last_ingestion_at)}</div>
+      <div class="card-sub">Sessions ingested: ${fmtNum(st.total_sessions_ingested || 0)}</div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h3 class="card-title">Events</h3></div>
+      <div class="card-value">${fmtNum(st.total_events_stored || 0)}</div>
+      <div class="card-sub">Errors: ${fmtNum(st.errors || 0)} · Duration: ${st.last_duration_ms ? (st.last_duration_ms / 1000).toFixed(1) + 's' : '—'}</div>
+    </div>
+  `;
+
+  // Build pipeline stats
+  const pst = stats?.statistics || {};
+  pipeline.innerHTML = statsRes.value?.ok
+    ? `<div class="json-viewer">${escapeHtml(JSON.stringify(stats, null, 2))}</div>`
+    : errorMsg(statsRes.value?.data?.error || 'Failed to load pipeline stats', loadIngestion);
+}
+
+async function triggerIngestion() {
+  const btn = document.getElementById('ingest-btn');
+  const resultDiv = document.getElementById('ingestion-result');
+  btn.disabled = true;
+  resultDiv.innerHTML = '<div class="loading-center"><span class="spinner"></span>Processing ingestion…</div>';
+
+  const { ok, data, status } = await apiFetch('/api/v1/ingestion/sessions/ingest', { method: 'POST' });
+  btn.disabled = false;
+
+  if (!ok) {
+    resultDiv.innerHTML = `<div style="padding:12px;background:rgba(239,68,68,0.1);border-radius:var(--radius-sm);color:var(--red);font-size:0.8rem;">
+      ${escapeHtml(data?.error || `HTTP ${status}: Ingestion failed`)}</div>`;
+    toast('Ingestion failed', 'error');
+    return;
+  }
+
+  resultDiv.innerHTML = `<div style="padding:12px;background:rgba(34,197,94,0.08);border-radius:var(--radius-sm);font-size:0.8rem;">
+    ✅ <strong>Ingestion complete</strong> — ${fmtNum(data?.result?.events_processed || 0)} events processed, ${fmtNum(data?.result?.events_stored || 0)} stored
+  </div>`;
+  toast('Ingestion completed successfully');
+
+  // Refresh the stats
+  setTimeout(loadIngestion, 1000);
+}
+
+/* ══════════════════════════════════════════════
+   ║  KNOWLEDGE GRAPH TAB
+   ══════════════════════════════════════════════ */
+
+async function loadGraphStats() {
+  const footer = document.getElementById('graph-footer');
+  footer.textContent = 'Loading stats…';
+  const { ok, data } = await apiFetch('/api/v1/memory/enhance/stats');
+  if (ok && data?.data) {
+    footer.textContent = `${data.data.node_count} nodes · ${data.data.edge_count} edges · Queue: ${data.data.queue_depth}`;
+  } else {
+    footer.textContent = 'Could not load graph stats';
+  }
+}
+
+async function loadGraph() {
+  const query = document.getElementById('graph-query').value.trim();
+  const footer = document.getElementById('graph-footer');
+
+  if (!query) {
+    await loadGraphStats();
+    // Try to load a default graph view
+    renderGraph([], []);
+    return;
+  }
+
+  footer.textContent = 'Exploring graph…';
+
+  // Try multiple endpoints for graph data
+  const [exploreRes, statsRes] = await Promise.allSettled([
+    apiFetch('/api/v1/memory/enhance/explore', { method: 'POST', body: { query, depth: 2 } }),
+    apiFetch('/api/v1/memory/enhance/stats'),
+  ]);
+
+  let nodes = [], edges = [];
+
+  // Extract from explore response
+  if (exploreRes.value?.ok && exploreRes.value.data?.data) {
+    const d = exploreRes.value.data.data;
+    // If the explore result contains a context string with relationships
+    if (d.total_nodes > 0) {
+      footer.textContent = `${d.total_nodes} nodes · ${d.total_edges} edges · Depth: ${d.depth}`;
+    }
+  }
+
+  // Build mock visualization from stats
+  if (statsRes.value?.ok && statsRes.value.data?.data) {
+    const s = statsRes.value.data.data;
+    if (s.recent_nodes && s.recent_nodes.length > 0) {
+      nodes = s.recent_nodes.map(n => ({
+        id: n.id || n._id,
+        label: n.properties?.name || n.type || 'node',
+        type: n.type || 'concept',
+        ...n,
+      }));
+      if (s.top_edges && s.top_edges.length > 0) {
+        edges = s.top_edges.map(e => ({
+          source: e.from_id || e.source,
+          target: e.to_id || e.target,
+          label: e.relationship_type || e.type || '',
+        }));
+      }
+      footer.textContent = `${s.node_count} total nodes · ${s.edge_count} total edges · Queue: ${s.queue_depth}`;
+    }
+  }
+
+  if (nodes.length === 0) {
+    footer.textContent = 'No graph data available. Try ingesting some sessions first.';
+    renderGraph([], []);
+    return;
+  }
+
+  renderGraph(nodes, edges);
+}
+
+function renderGraph(nodes, edges) {
+  const container = document.getElementById('graph-container');
+  const svg = document.getElementById('graph-svg');
+  const W = container.clientWidth;
+  const H = container.clientHeight;
+
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.innerHTML = '';
+
+  if (nodes.length === 0) {
+    svg.innerHTML = `<text x="${W/2}" y="${H/2}" text-anchor="middle" fill="#5c5c63" font-size="14">No graph data to display</text>`;
+    return;
+  }
+
+  // Simple force layout
+  const simNodes = nodes.map((n, i) => ({
+    ...n,
+    x: W / 2 + (Math.random() - 0.5) * W * 0.6,
+    y: H / 2 + (Math.random() - 0.5) * H * 0.6,
+    vx: 0, vy: 0,
+    index: i,
+  }));
+
+  const simEdges = edges.map(e => {
+    const srcIdx = simNodes.findIndex(n => n.id === e.source);
+    const tgtIdx = simNodes.findIndex(n => n.id === e.target);
+    return {
+      ...e,
+      source: srcIdx >= 0 ? srcIdx : simNodes.findIndex(n => n.id === e.source || n.label === e.source),
+      target: tgtIdx >= 0 ? tgtIdx : simNodes.findIndex(n => n.id === e.target || n.label === e.target),
+    };
+  }).filter(e => e.source >= 0 && e.target >= 0);
+
+  // Adaptive force parameters
+  const nodeCount = simNodes.length;
+  const repelStrength = Math.max(200, 1200 / Math.max(1, Math.sqrt(nodeCount)));
+  const maxIterations = Math.min(300, 100 + nodeCount * 3);
+
+  // Run simulation
+  for (let iter = 0; iter < maxIterations; iter++) {
+    const alpha = 0.5 * (1 - iter / maxIterations);
+
+    // Repulsion between all nodes
+    for (let i = 0; i < simNodes.length; i++) {
+      for (let j = i + 1; j < simNodes.length; j++) {
+        const dx = simNodes[i].x - simNodes[j].x;
+        const dy = simNodes[i].y - simNodes[j].y;
+        const dist = Math.max(1, Math.sqrt(dx * dx + dy * dy));
+        const force = repelStrength / (dist * dist);
+        const fx = (dx / dist) * force * alpha;
+        const fy = (dy / dist) * force * alpha;
+        simNodes[i].vx += fx;
+        simNodes[i].vy += fy;
+        simNodes[j].vx -= fx;
+        simNodes[j].vy -= fy;
+      }
+    }
+
+    // Attraction along edges
+    for (const e of simEdges) {
+      if (e.source < 0 || e.target < 0 || e.source >= simNodes.length || e.target >= simNodes.length) continue;
+      const dx = simNodes[e.source].x - simNodes[e.target].x;
+      const dy = simNodes[e.source].y - simNodes[e.target].y;
+      const dist = Math.max(1, Math.sqrt(dx * dx + dy * dy));
+      const force = dist * 0.001;
+      const fx = (dx / dist) * force * alpha;
+      const fy = (dy / dist) * force * alpha;
+      simNodes[e.source].vx -= fx;
+      simNodes[e.source].vy -= fy;
+      simNodes[e.target].vx += fx;
+      simNodes[e.target].vy += fy;
+    }
+
+    // Centering force
+    for (const n of simNodes) {
+      n.vx += (W / 2 - n.x) * 0.001 * alpha;
+      n.vy += (H / 2 - n.y) * 0.001 * alpha;
+    }
+
+    // Apply velocities
+    for (const n of simNodes) {
+      n.x += n.vx;
+      n.y += n.vy;
+      n.vx *= 0.65;
+      n.vy *= 0.65;
+      // Keep in bounds
+      n.x = Math.max(40, Math.min(W - 40, n.x));
+      n.y = Math.max(40, Math.min(H - 40, n.y));
+    }
+  }
+
+  // Store for zoom/pan
+  state.graphNodes = simNodes;
+  state.graphEdges = simEdges;
+
+  // Build SVG
+  const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  g.setAttribute('id', 'graph-g');
+  g.setAttribute('transform', `translate(${state.graphTransform.x},${state.graphTransform.y}) scale(${state.graphTransform.scale})`);
+
+  // Draw edges
+  for (const e of simEdges) {
+    if (e.source >= simNodes.length || e.target >= simNodes.length) continue;
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', simNodes[e.source].x);
+    line.setAttribute('y1', simNodes[e.source].y);
+    line.setAttribute('x2', simNodes[e.target].x);
+    line.setAttribute('y2', simNodes[e.target].y);
+    line.setAttribute('stroke', '#2e2e34');
+    line.setAttribute('stroke-width', '1.5');
+    line.setAttribute('opacity', '0.6');
+    if (e.label) {
+      line.innerHTML = `<title>${escapeHtml(e.label)}</title>`;
+    }
+    g.appendChild(line);
+  }
+
+  // Draw nodes
+  for (const n of simNodes) {
+    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    const r = Math.min(24, 6 + (n.type === 'concept' ? 6 : 4));
+    circle.setAttribute('cx', n.x);
+    circle.setAttribute('cy', n.y);
+    circle.setAttribute('r', r);
+    circle.setAttribute('fill', getNodeColor(n.type));
+    circle.setAttribute('stroke', 'var(--border)');
+    circle.setAttribute('stroke-width', '1.5');
+    circle.setAttribute('cursor', 'pointer');
+    circle.setAttribute('data-node-id', n.id);
+
+    const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    label.setAttribute('x', n.x);
+    label.setAttribute('y', n.y + r + 14);
+    label.setAttribute('text-anchor', 'middle');
+    label.setAttribute('fill', '#e4e4e7');
+    label.setAttribute('font-size', '10');
+    label.setAttribute('font-family', 'var(--font)');
+    label.setAttribute('pointer-events', 'none');
+    label.textContent = truncate(n.label || n.id, 18);
+
+    const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    group.setAttribute('cursor', 'pointer');
+    group.addEventListener('click', () => showNodeDetails(n));
+    group.appendChild(circle);
+    group.appendChild(label);
+    g.appendChild(group);
+  }
+
+  svg.appendChild(g);
+}
+
+function getNodeColor(type) {
+  const colors = {
+    concept: '#6366f1', algorithm: '#ec4899', entity: '#22c55e',
+    person: '#f59e0b', event: '#3b82f6', place: '#06b6d4',
+    default: '#6366f1',
+  };
+  return colors[type] || colors.default;
+}
+
+function showNodeDetails(node) {
+  const details = document.getElementById('node-details');
+  const content = document.getElementById('node-details-content');
+  details.classList.add('visible');
+  content.innerHTML = `
+    <h4>${escapeHtml(node.label || node.id)}</h4>
+    <div style="color:var(--text-muted);font-size:0.72rem;margin-bottom:8px;">${escapeHtml(node.type || 'node')} · ${escapeHtml(node.id)}</div>
+    <div class="json-viewer" style="max-height:100px;font-size:0.7rem;">${escapeHtml(JSON.stringify(node.properties || node, null, 2))}</div>
+    ${state.graphEdges.filter(e => e.source === node.id || e.target === node.id).length > 0
+      ? `<div style="margin-top:8px;font-size:0.72rem;color:var(--text-muted)">Edges: ${state.graphEdges.filter(e => e.source === node.id || e.target === node.id).length}</div>`
+      : ''}
+  `;
+}
+
+function closeNodeDetails() {
+  document.getElementById('node-details').classList.remove('visible');
+}
+
+function zoomGraph(delta) {
+  state.graphTransform.scale = Math.max(0.3, Math.min(3, state.graphTransform.scale + delta));
+  applyGraphTransform();
+}
+
+function resetGraphView() {
+  state.graphTransform = { x: 0, y: 0, scale: 1 };
+  applyGraphTransform();
+}
+
+function applyGraphTransform() {
+  const g = document.getElementById('graph-g');
+  if (g) g.setAttribute('transform', `translate(${state.graphTransform.x},${state.graphTransform.y}) scale(${state.graphTransform.scale})`);
+}
+
+// Pan the graph
+document.addEventListener('DOMContentLoaded', () => {
+  const container = document.getElementById('graph-container');
+  let isPanning = false, startX, startY;
+  container.addEventListener('mousedown', (e) => {
+    if (e.target.closest('circle') || e.target.closest('.node-details')) return;
+    isPanning = true;
+    startX = e.clientX - state.graphTransform.x;
+    startY = e.clientY - state.graphTransform.y;
+    container.style.cursor = 'grabbing';
+  });
+  document.addEventListener('mousemove', (e) => {
+    if (!isPanning) return;
+    state.graphTransform.x = e.clientX - startX;
+    state.graphTransform.y = e.clientY - startY;
+    applyGraphTransform();
+  });
+  document.addEventListener('mouseup', () => {
+    isPanning = false;
+    container.style.cursor = '';
+  });
+  container.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    zoomGraph(e.deltaY > 0 ? -0.1 : 0.1);
+  });
+});
+
+/* ══════════════════════════════════════════════
+   ║  SETTINGS TAB
+   ══════════════════════════════════════════════ */
+
+function saveSettings() {
+  state.baseUrl = document.getElementById('settings-url').value.trim();
+  state.apiKey = document.getElementById('settings-key').value.trim();
+  localStorage.setItem('katra_baseUrl', state.baseUrl);
+  localStorage.setItem('katra_apiKey', state.apiKey);
+  toast('Settings saved');
+}
+
+async function testConnection() {
+  const btn = document.getElementById('test-conn-btn');
+  const resultDiv = document.getElementById('settings-result');
+  btn.disabled = true;
+  resultDiv.innerHTML = '<div class="loading-center"><span class="spinner"></span>Testing…</div>';
+
+  // Save first
+  saveSettings();
+
+  const start = performance.now();
+  const { ok, data } = await apiFetch('/');
+  const latency = Math.round(performance.now() - start);
+
+  btn.disabled = false;
+  if (ok) {
+    resultDiv.innerHTML = `<div style="padding:12px;background:rgba(34,197,94,0.08);border-radius:var(--radius-sm);font-size:0.8rem;">
+      ✅ <strong>Connected</strong> — ${data?.name || 'Katra'} v${data?.version || '—'} · ${latency}ms latency
+    </div>`;
+    toast('Connection successful');
+    switchTab('overview');
+  } else {
+    const msg = data?.error || `HTTP ${data ? 'error' : 'connection failed'}`;
+    resultDiv.innerHTML = `<div style="padding:12px;background:rgba(239,68,68,0.1);border-radius:var(--radius-sm);color:var(--red);font-size:0.8rem;">
+      ❌ <strong>Connection failed</strong> — ${escapeHtml(msg)}</div>`;
+    toast('Connection failed', 'error');
+  }
+}
+
+async function loadSettingsConfig() {
+  const container = document.getElementById('settings-config');
+  container.innerHTML = spinner();
+
+  // Load saved values
+  document.getElementById('settings-url').value = state.baseUrl;
+  document.getElementById('settings-key').value = state.apiKey;
+
+  const { ok, data } = await apiFetch('/');
+  if (ok) {
+    const safe = {
+      name: data.name,
+      version: data.version,
+      description: data.description,
+      docs: data.docs,
+      mcp: data.mcp,
+      timestamp: new Date().toISOString(),
+    };
+    container.innerHTML = `<div class="json-viewer">${escapeHtml(JSON.stringify(safe, null, 2))}</div>`;
+  } else {
+    container.innerHTML = errorMsg('Could not reach server. Check your Base URL and API Key.', loadSettingsConfig);
+  }
+}
+
+/* ══════════════════════════════════════════════
+   ║  GRAPH TAB — handle window resize for SVG
+   ══════════════════════════════════════════════ */
+
+let graphResizeObserver = null;
+document.addEventListener('DOMContentLoaded', () => {
+  const graphContainer = document.getElementById('graph-container');
+  if (graphContainer && window.ResizeObserver) {
+    graphResizeObserver = new ResizeObserver(() => {
+      if (state.currentTab === 'graph' && state.graphNodes.length > 0) {
+        renderGraph(state.graphNodes, state.graphEdges);
+      }
+    });
+    graphResizeObserver.observe(graphContainer);
+  }
+});
+
+/* ══════════════════════════════════════════════
+   ║  INIT
+   ══════════════════════════════════════════════ */
+
+// Load settings from localStorage on start
+document.getElementById('settings-url').value = state.baseUrl;
+document.getElementById('settings-key').value = state.apiKey;
+
+// Start on overview tab
+loadOverview();
+startHealthPolling();
+</script>
+
+</body>
+</html>
