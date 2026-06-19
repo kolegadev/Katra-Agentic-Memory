@@ -95,9 +95,24 @@ export class MCPClient {
     this.#initialized = true;
 
     // Send the required `initialized` notification (no id)
-    await this.#send(
-      { jsonrpc: '2.0', method: 'notifications/initialized' } as MCPRequest & { id?: number },
-    );
+    // Note: notifications don't have an id and don't expect a response.
+    // We send the notification but don't await a response — just fire and forget.
+    try {
+      const notifHeaders: Record<string, string> = {
+        'Content-Type': 'application/json',
+        Accept: 'application/json, text/event-stream',
+      };
+      if (sessionId) notifHeaders['mcp-session-id'] = sessionId;
+      if (this.#apiKey) notifHeaders.Authorization = `Bearer ${this.#apiKey}`;
+      await this.#fetch(this.#url, {
+        method: 'POST',
+        headers: notifHeaders,
+        body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }),
+        signal: AbortSignal.timeout(this.#timeoutMs),
+      });
+    } catch {
+      // Best-effort — notification doesn't require a response
+    }
 
     return response.result as MCPInitializeResult;
   }
@@ -197,8 +212,9 @@ export class MCPClient {
       headers.Authorization = `Bearer ${this.#apiKey}`;
     }
 
-    // Don't send a body for notifications
-    const body = request.id != null ? JSON.stringify(request) : undefined;
+    // Don't send a body for notifications (no id) — but we always need a body for JSON-RPC
+    // Notifications are JSON-RPC requests without an id field
+    const body = JSON.stringify(request);
 
     let res: Response;
     try {

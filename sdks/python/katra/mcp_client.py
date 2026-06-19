@@ -24,7 +24,7 @@ Events) responses.  The flow is:
 Example
 -------
 >>> from katra import KatraMCPClient
->>> mcp = KatraMCPClient("http://localhost:3100", api_key="secret")
+>>> mcp = KatraMCPClient("http://localhost:3112", api_key="secret")
 >>> caps = mcp.initialize()
 >>> tools = mcp.list_tools()
 >>> result = mcp.call_tool("search_memories", {"query": "AI", "limit": 5})

@@ -16,7 +16,7 @@ Each method maps 1:1 to an MCP tool and handles:
 Basic Usage
 -----------
 >>> from katra import KatraClient
->>> client = KatraClient("http://localhost:3100", api_key="my-key")
+>>> client = KatraClient("http://localhost:3112", api_key="my-key")
 >>>
 >>> # Core memory
 >>> client.store_memory("User loves Python", category="preference")
@@ -143,6 +143,7 @@ class KatraClient:
         self,
         content: str,
         user_id: str | None = None,
+        shared_id: str | None = None,
         category: str = "general",
         confidence: float = 0.8,
     ) -> Dict[str, Any]:
@@ -154,6 +155,9 @@ class KatraClient:
             The memory content to store.
         user_id : str | None
             Optional user identifier (defaults to server-side ``mcp-user``).
+        shared_id : str | None
+            Optional shared ID for communal memory (used in shared/hybrid mode).
+            The server ignores this if scope is ``personal``.
         category : str
             One of ``fact``, ``preference``, ``insight``, ``event``, ``general``.
         confidence : float
@@ -176,6 +180,8 @@ class KatraClient:
         }
         if user_id:
             args["user_id"] = user_id
+        if shared_id:
+            args["shared_id"] = shared_id
         result = self._mcp.call_tool("store_memory", args)
         return _normalize_tool_result(result)
 
@@ -544,6 +550,7 @@ class KatraClient:
         entry: str,
         source: str = "manual",
         tags: List[str] | None = None,
+        shared_id: str | None = None,
     ) -> Dict[str, Any]:
         """Write a journal entry to the user's memory.
 
@@ -557,6 +564,8 @@ class KatraClient:
             ``manual`` (default) or ``system``.
         tags : list[str] | None
             Optional tags for categorisation.
+        shared_id : str | None
+            Optional shared ID for communal memory (used in shared/hybrid mode).
 
         Returns
         -------
@@ -576,6 +585,8 @@ class KatraClient:
         }
         if tags:
             args["tags"] = tags
+        if shared_id:
+            args["shared_id"] = shared_id
         return _normalize_tool_result(self._mcp.call_tool("store_journal", args))
 
     def get_auto_journal(
@@ -816,6 +827,52 @@ class KatraClient:
         if query:
             args["query"] = query
         return _normalize_tool_result(self._mcp.call_tool("explore_graph", args))
+
+    # ── Memory Scope ────────────────────────────────────────────
+
+    def get_memory_scope(self) -> Dict[str, Any]:
+        """Get the current memory scope configuration.
+
+        Returns the mode (personal/shared/hybrid), shared_id, and visible
+        user IDs for hybrid mode.
+
+        Returns
+        -------
+        dict
+            Parsed result with scope settings.
+        """
+        self._ensure_init()
+        return _normalize_tool_result(self._mcp.call_tool("get_memory_scope", {}))
+
+    def set_memory_scope(
+        self,
+        mode: str,
+        shared_id: str | None = None,
+        hybrid_visible_user_ids: List[str] | None = None,
+    ) -> Dict[str, Any]:
+        """Set the memory scope mode.
+
+        Parameters
+        ----------
+        mode : str
+            ``personal``, ``shared``, or ``hybrid``.
+        shared_id : str | None
+            Shared ID (required for shared/hybrid modes).
+        hybrid_visible_user_ids : list[str] | None
+            User IDs visible in hybrid mode (in addition to caller).
+
+        Returns
+        -------
+        dict
+            Parsed result confirming the new scope.
+        """
+        self._ensure_init()
+        args: Dict[str, Any] = {"mode": mode}
+        if shared_id:
+            args["shared_id"] = shared_id
+        if hybrid_visible_user_ids:
+            args["hybrid_visible_user_ids"] = hybrid_visible_user_ids
+        return _normalize_tool_result(self._mcp.call_tool("set_memory_scope", args))
 
     # ── Diagnostics & Health ────────────────────────────────────
 
