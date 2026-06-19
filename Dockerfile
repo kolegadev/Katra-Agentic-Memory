@@ -1,11 +1,18 @@
 # ── Katra Server Dockerfile ────────────────────────────────────────
 # Multi-stage build: compile TypeScript, then copy to slim runtime image.
 # The result is a self-contained image — no bind mounts needed.
+#
+# Uses node:20-slim (Debian-based) instead of Alpine because the ONNX
+# runtime (used by @xenova/transformers for local embeddings) requires
+# glibc. On Alpine/musl the embedding model silently fails to load,
+# disabling vector/semantic search.
 
 # ── Stage 1: Build ─────────────────────────────────────────────────
-FROM node:20-alpine AS builder
+FROM node:20-slim AS builder
 
-RUN apk add --no-cache python3 make g++
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 make g++ \
+  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -18,9 +25,11 @@ COPY server/ ./
 RUN node esbuild.config.mjs
 
 # ── Stage 2: Runtime ───────────────────────────────────────────────
-FROM node:20-alpine
+FROM node:20-slim
 
-RUN apk add --no-cache curl
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 

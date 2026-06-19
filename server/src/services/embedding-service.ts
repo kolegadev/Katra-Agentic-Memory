@@ -51,6 +51,26 @@ export class EmbeddingService {
     return EmbeddingService.instance;
   }
 
+  /** True if the embedding model is loaded and ready for inference. */
+  get isReady(): boolean {
+    return this.modelLoaded && !!this.model;
+  }
+
+  /** The model name used for embeddings. */
+  get modelName(): string {
+    return MODEL_NAME;
+  }
+
+  /** The embedding dimension (vector length). */
+  get embeddingDimension(): number {
+    return EMBEDDING_DIMENSION;
+  }
+
+  /** The embedding version number. */
+  get version(): number {
+    return EMBEDDING_VERSION;
+  }
+
   /**
    * Lazy-load the embedding model on first use.
    * Downloads ~80MB on first call, then caches.
@@ -310,18 +330,6 @@ export class EmbeddingService {
       console.warn('⚠️ Vector search failed:', error.message);
       return [];
     }
-  }
-
-  get modelName(): string {
-    return MODEL_NAME;
-  }
-
-  get embeddingDimension(): number {
-    return EMBEDDING_DIMENSION;
-  }
-
-  get version(): number {
-    return EMBEDDING_VERSION;
   }
 }
 
