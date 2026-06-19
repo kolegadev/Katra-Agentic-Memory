@@ -1,11 +1,11 @@
 # ── Katra Server Dockerfile ────────────────────────────────────────
-# Multi-stage build: compile TypeScript, then copy to slim runtime image.
+# Multi-stage build: compile TypeScript, then copy to runtime image.
 # The result is a self-contained image — no bind mounts needed.
 #
-# Uses node:20-slim (Debian-based) instead of Alpine because the ONNX
-# runtime (used by @xenova/transformers for local embeddings) requires
-# glibc. On Alpine/musl the embedding model silently fails to load,
-# disabling vector/semantic search.
+# Uses node:20-slim (Debian-based) because the ONNX runtime (used by
+# @xenova/transformers for local embeddings) requires glibc.
+# Alpine/musl does NOT work — the ONNX .node binary needs glibc.
+# node:20-slim includes glibc on both arm64 and x64 architectures.
 
 # ── Stage 1: Build ─────────────────────────────────────────────────
 FROM node:20-slim AS builder

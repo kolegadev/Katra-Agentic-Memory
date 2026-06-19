@@ -89,14 +89,23 @@ export class EmbeddingService {
     }
 
     // Pre-flight: detect musl/Alpine environments where ONNX runtime will fatal-error.
-    // The .node binary needs glibc (ld-linux-aarch64.so.1) which doesn't exist on Alpine.
+    // The .node binary needs glibc which doesn't exist on Alpine/musl.
     // Attempting to load it causes an uncatchable ERR_DLOPEN_FAILED that crashes the process.
     try {
       const fs = await import('fs');
-      const onnxPath = '/app/node_modules/onnxruntime-node/bin/napi-v3/linux/arm64/onnxruntime_binding.node';
-      const ldLinuxPath = '/lib/ld-linux-aarch64.so.1';
-      if (fs.existsSync(onnxPath) && !fs.existsSync(ldLinuxPath)) {
-        this.initError = new Error('ONNX runtime requires glibc; Alpine/musl detected. Install gcompat or use a Debian-based image.');
+      const arch = process.arch;
+      // glibc loader paths differ by architecture
+      const glibcPaths: Record<string, string> = {
+        arm64: '/lib/ld-linux-aarch64.so.1',
+        x64: '/lib64/ld-linux-x86-64.so.2',
+        // Fallback checks
+        x64_alt: '/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2',
+      };
+      const primaryPath = glibcPaths[arch] || glibcPaths.arm64;
+      const altPath = arch === 'x64' ? glibcPaths.x64_alt : null;
+      const hasGlibc = fs.existsSync(primaryPath) || (altPath && fs.existsSync(altPath));
+      if (!hasGlibc) {
+        this.initError = new Error('ONNX runtime requires glibc; Alpine/musl detected. Use a Debian-based image (node:20-slim or node:20).');
         console.warn('⚠️ Embedding disabled: ONNX runtime incompatible with musl libc (Alpine). Vector search unavailable.');
         return false;
       }
