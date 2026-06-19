@@ -116,6 +116,7 @@ class RedisLockManager {
 
 export interface EpisodicEventData {
   user_id: string;
+  shared_id?: string;
   session_id: string;
   event_type: string;
   content: {
@@ -259,6 +260,7 @@ export class EpisodicEventManager {
     const newEvent: StoredEpisodicEvent = {
       id: `event_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       user_id: eventData.user_id,
+      shared_id: eventData.shared_id,
       session_id: eventData.session_id,
       event_type: eventData.event_type,
       content: eventData.content,

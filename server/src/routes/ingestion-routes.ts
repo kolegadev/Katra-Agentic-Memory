@@ -60,13 +60,14 @@ export const create_ingestion_routes = (): Hono => {
       const extraction_context: ExtractionContext = {
         session_id: body.session_id,
         user_id: body.user_id,
+        shared_id: body.shared_id,
         timestamp: new Date(),
         conversation_history: body.conversation_history || [],
         current_entities: body.current_entities || [],
         extraction_focus: body.extraction_focus
       };
 
-      console.log(`🔄 Starting ingestion (${Date.now() - startTime}ms): session ${body.session_id}, user ${body.user_id}`);
+      console.log(`🔄 Starting ingestion (${Date.now() - startTime}ms): session ${body.session_id}, user ${body.user_id}${body.shared_id ? ', shared ' + body.shared_id : ''}`);
       console.log(`📄 Input text length: ${body.input_text.length} characters`);
 
       // Phase 1: Extract structured data from input with timeout protection
@@ -252,6 +253,7 @@ export const create_ingestion_routes = (): Hono => {
           const extraction_context: ExtractionContext = {
             session_id: input.session_id,
             user_id: input.user_id,
+            shared_id: input.shared_id,
             timestamp: new Date(),
             conversation_history: input.conversation_history || [],
             current_entities: input.current_entities || [],

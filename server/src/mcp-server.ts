@@ -209,6 +209,7 @@ const GetJournalInput = z.object({
 
 const StoreJournalInput = z.object({
   user_id: z.string().describe('User ID'),
+  shared_id: z.string().optional().describe('Optional shared ID for communal memory (used in shared/hybrid mode)'),
   entry: z.string().min(1).describe('Journal entry text'),
   source: z.enum(['manual', 'system']).optional().default('manual'),
   tags: z.array(z.string()).optional().describe('Optional tags'),
@@ -226,6 +227,7 @@ const GetMissionInput = z.object({
 
 const CreateMissionInput = z.object({
   user_id: z.string().describe('User ID'),
+  shared_id: z.string().optional().describe('Optional shared ID for communal memory (used in shared/hybrid mode)'),
   goal: z.string().min(1).describe('Mission goal'),
   title: z.string().optional(),
   tasks: z.array(z.string()).optional(),
@@ -678,7 +680,7 @@ async function handleVectorSearch(args: unknown): Promise<TextContent[]> {
   }
 
   const db = get_database();
-  const userId = input.user_id || 'mcp-user';
+  const scopeFilter = await buildScopeFilter(input.user_id);
   let results: any[] = [];
   let usedVector = false;
 
@@ -686,7 +688,7 @@ async function handleVectorSearch(args: unknown): Promise<TextContent[]> {
     const queryVec = await embeddingService.encode(input.query);
     if (queryVec) {
       const facts = await db.collection('semantic_facts')
-        .find({ user_id: userId, embedding: { $exists: true } })
+        .find({ ...scopeFilter, embedding: { $exists: true } })
         .limit(50)
         .toArray();
       if (facts.length > 0) {
@@ -709,13 +711,13 @@ async function handleVectorSearch(args: unknown): Promise<TextContent[]> {
   if (results.length === 0) {
     try {
       results = await db.collection('semantic_facts')
-        .find({ user_id: userId, $text: { $search: input.query } })
+        .find({ ...scopeFilter, $text: { $search: input.query } })
         .limit(input.limit)
         .toArray();
     } catch {
       const regex = new RegExp(input.query.split(/\s+/).join('|'), 'i');
       results = await db.collection('semantic_facts')
-        .find({ user_id: userId, content: { $regex: regex } })
+        .find({ ...scopeFilter, content: { $regex: regex } })
         .limit(input.limit)
         .toArray();
     }
@@ -771,7 +773,8 @@ async function handleTemporalRecall(args: unknown): Promise<TextContent[]> {
   const from = input.from ? new Date(input.from) : new Date(Date.now() - 24 * 60 * 60 * 1000);
   const to = input.to ? new Date(input.to) : new Date();
 
-  const match: any = { user_id: input.user_id, timestamp: { $gte: from, $lte: to } };
+  const scopeFilter = await buildScopeFilter(input.user_id);
+  const match: any = { ...scopeFilter, timestamp: { $gte: from, $lte: to } };
   if (input.event_type) match.event_type = input.event_type;
   if (input.role) match['content.role'] = input.role;
 
@@ -791,11 +794,12 @@ async function handleTemporalSearch(args: unknown): Promise<TextContent[]> {
   if (!is_database_connected()) return [{ type: 'text', text: '⚠️ MongoDB disconnected.' }];
 
   const db = get_database();
+  const scopeFilter = await buildScopeFilter(input.user_id);
   let results: unknown[] = [];
 
   try {
     results = await db.collection('episodic_events')
-      .find({ user_id: input.user_id, $text: { $search: input.query } })
+      .find({ ...scopeFilter, $text: { $search: input.query } })
       .sort({ score: { $meta: 'textScore' } })
       .limit(input.limit)
       .toArray();
@@ -806,7 +810,7 @@ async function handleTemporalSearch(args: unknown): Promise<TextContent[]> {
   if (results.length === 0) {
     const regex = new RegExp(input.query.split(/\s+/).join('|'), 'i');
     results = await db.collection('episodic_events')
-      .find({ user_id: input.user_id, $or: [{ 'content.message': regex }, { event_type: regex }] })
+      .find({ ...scopeFilter, $or: [{ 'content.message': regex }, { event_type: regex }] })
       .sort({ timestamp: -1 })
       .limit(input.limit)
       .toArray();
@@ -918,8 +922,9 @@ async function handleTemporalContext(args: unknown): Promise<TextContent[]> {
   if (!is_database_connected()) return [{ type: 'text', text: '⚠️ MongoDB disconnected.' }];
 
   const db = get_database();
+  const scopeFilter = await buildScopeFilter(input.user_id);
   const recent = await db.collection('episodic_events')
-    .find({ user_id: input.user_id, session_id: input.session_id })
+    .find({ ...scopeFilter, session_id: input.session_id })
     .sort({ timestamp: -1 }).limit(10).toArray();
 
   let wmItems: unknown[] = [];
@@ -928,7 +933,7 @@ async function handleTemporalContext(args: unknown): Promise<TextContent[]> {
   let semantic: unknown[] = [];
   try {
     semantic = await db.collection('semantic_facts')
-      .find({ user_id: input.user_id }).sort({ last_accessed: -1 }).limit(5).toArray();
+      .find(scopeFilter).sort({ last_accessed: -1 }).limit(5).toArray();
   } catch { /* ignore */ }
 
   const lines = [
@@ -953,11 +958,12 @@ async function handleGetJournal(args: unknown): Promise<TextContent[]> {
   if (!is_database_connected()) return [{ type: 'text', text: '⚠️ MongoDB disconnected.' }];
 
   const db = get_database();
+  const scopeFilter = await buildScopeFilter(input.user_id);
   const lines: string[] = [`## Journal — ${input.user_id}`, `*source: ${input.source} | limit: ${input.limit}*\n`];
 
   if (input.source === 'all' || input.source === 'manual') {
     const manual = await db.collection('agent_journal_manual')
-      .find({ user_id: input.user_id }).sort({ timestamp: -1 }).limit(input.limit).toArray();
+      .find(scopeFilter).sort({ timestamp: -1 }).limit(input.limit).toArray();
     if (manual.length > 0) {
       lines.push(`### 📝 Manual (${manual.length})`);
       manual.forEach((e: any) => lines.push(`- [${e.timestamp ? new Date(e.timestamp).toISOString() : '?'}] ${e.text || e.entry || '(empty)'}`));
@@ -967,7 +973,7 @@ async function handleGetJournal(args: unknown): Promise<TextContent[]> {
 
   if (input.source === 'all' || input.source === 'auto') {
     const auto = await db.collection('agent_journal_auto')
-      .find({ user_id: input.user_id }).sort({ timestamp: -1 }).limit(input.limit).toArray();
+      .find(scopeFilter).sort({ timestamp: -1 }).limit(input.limit).toArray();
     if (auto.length > 0) {
       lines.push(`### 🤖 Auto (${auto.length})`);
       auto.forEach((e: any) => lines.push(`- [${e.timestamp ? new Date(e.timestamp).toISOString() : '?'}] ${e.entry || '(empty)'}`));
@@ -986,14 +992,25 @@ async function handleStoreJournal(args: unknown): Promise<TextContent[]> {
   const db = get_database();
   const collection = input.source === 'manual' ? 'agent_journal_manual' : 'agent_journal_auto';
 
-  const result = await db.collection(collection).insertOne({
+  // Resolve shared_id based on current memory scope mode
+  const sharedId = await resolveSharedId(input.shared_id);
+
+  const doc: Record<string, unknown> = {
     user_id: input.user_id,
     text: input.entry,
     entry: input.entry,
     source: input.source,
     tags: input.tags || [],
     timestamp: new Date(),
-  });
+  };
+
+  if (sharedId) {
+    doc.shared_id = sharedId;
+  }
+
+  const result = await db.collection(collection).insertOne(doc);
+
+  const scopeInfo = sharedId ? `\n**Shared ID:** \`${sharedId}\`` : '';
 
   return [{
     type: 'text',
@@ -1008,7 +1025,14 @@ async function handleListMissions(args: unknown): Promise<TextContent[]> {
   if (!is_database_connected()) return [{ type: 'text', text: '⚠️ MongoDB disconnected.' }];
 
   const pms = getProspectiveMemoryService();
-  const missions = await pms.listMissions(input.user_id, input.limit);
+  const scopeFilter = await buildScopeFilter(input.user_id);
+  // pms.listMissions uses user_id internally; for scope we need to query directly
+  const db = get_database();
+  const missions = await db.collection('memory_missions')
+    .find(scopeFilter)
+    .sort({ created_at: -1 })
+    .limit(input.limit)
+    .toArray();
 
   const lines = [`## Missions — ${input.user_id}`, `*${missions.length} missions*\n`];
   if (missions.length === 0) lines.push('*No missions.*');
@@ -1026,35 +1050,38 @@ async function handleGetMission(args: unknown): Promise<TextContent[]> {
   const input = GetMissionInput.parse(args);
   if (!is_database_connected()) return [{ type: 'text', text: '⚠️ MongoDB disconnected.' }];
 
-  const pms = getProspectiveMemoryService();
-  const missions = await pms.listMissions(input.user_id, 50);
-  const mission = missions.find((m: any) => m.id === input.mission_id);
+  const scopeFilter = await buildScopeFilter(input.user_id);
+  const db = get_database();
+  const mission = await db.collection('memory_missions')
+    .findOne({ ...scopeFilter, id: input.mission_id });
 
   if (!mission) return [{ type: 'text', text: `❌ Mission not found: \`${input.mission_id}\`` }];
 
-  const done = mission.tasks?.filter((t: any) => t.status === 'completed').length || 0;
-  const total = mission.tasks?.length || 0;
+  const m: any = mission;
+
+  const done = m.tasks?.filter((t: any) => t.status === 'completed').length || 0;
+  const total = m.tasks?.length || 0;
 
   const lines = [
-    `## Mission: ${mission.title || mission.goal}`,
-    `| ID | \`${mission.id}\` |`,
-    `| Status | ${mission.status} |`,
+    `## Mission: ${m.title || m.goal}`,
+    `| ID | \`${m.id}\` |`,
+    `| Status | ${m.status} |`,
     `| Progress | ${done}/${total} tasks |`,
     '',
   ];
 
-  if (mission.tasks?.length) {
+  if (m.tasks?.length) {
     lines.push('### Tasks');
-    mission.tasks.forEach((t: any) => {
+    m.tasks.forEach((t: any) => {
       const emoji = t.status === 'completed' ? '✅' : t.status === 'in_progress' ? '🔄' : '⬜';
       lines.push(`- ${emoji} ${t.title || t.id} (${t.status})`);
     });
     lines.push('');
   }
 
-  if (mission.self_journal?.length) {
+  if (m.self_journal?.length) {
     lines.push('### Self-Journal');
-    mission.self_journal.slice(-10).forEach((e: any) => {
+    m.self_journal.slice(-10).forEach((e: any) => {
       lines.push(`- [${e.timestamp ? new Date(e.timestamp).toISOString() : '?'}] ${e.text || e}`);
     });
   }
@@ -1071,6 +1098,16 @@ async function handleCreateMission(args: unknown): Promise<TextContent[]> {
     goal: input.goal,
     title: input.title || input.goal,
   });
+
+  // Apply shared_id if in shared/hybrid mode
+  const sharedId = await resolveSharedId(input.shared_id);
+  if (sharedId && mission.id) {
+    const db = get_database();
+    await db.collection('memory_missions').updateOne(
+      { id: mission.id },
+      { $set: { shared_id: sharedId } }
+    );
+  }
 
   if (input.tasks?.length && mission.tasks) {
     for (const title of input.tasks) {
@@ -1094,23 +1131,28 @@ async function handleUpdateMissionTask(args: unknown): Promise<TextContent[]> {
   const input = UpdateMissionTaskInput.parse(args);
   if (!is_database_connected()) return [{ type: 'text', text: '⚠️ MongoDB disconnected.' }];
 
-  const pms = getProspectiveMemoryService();
-  const missions = await pms.listMissions(input.user_id, 50);
-  const mission = missions.find((m: any) => m.id === input.mission_id);
+  const scopeFilter = await buildScopeFilter(input.user_id);
+  const db = get_database();
+  const mission = await db.collection('memory_missions')
+    .findOne({ ...scopeFilter, id: input.mission_id });
 
   if (!mission) return [{ type: 'text', text: `❌ Mission not found.` }];
-  if (!mission.tasks) return [{ type: 'text', text: `❌ No tasks.` }];
+  const m: any = mission;
+  if (!m.tasks) return [{ type: 'text', text: `❌ No tasks.` }];
 
-  const task = mission.tasks.find((t: any) => t.id === input.task_id);
+  const task = m.tasks.find((t: any) => t.id === input.task_id);
   if (!task) return [{ type: 'text', text: `❌ Task not found.` }];
 
   task.status = input.status;
   task.updated_at = new Date();
-  await pms.updateMission(input.user_id, mission.id, { tasks: mission.tasks });
+  await db.collection('memory_missions').updateOne(
+    { id: m.id },
+    { $set: { tasks: m.tasks } }
+  );
 
   return [{
     type: 'text',
-    text: `✅ Task updated.\n\n**Mission:** ${mission.title || mission.goal}\n**Task:** ${task.title || input.task_id}\n**Status:** ${input.status}`,
+    text: `✅ Task updated.\n\n**Mission:** ${m.title || m.goal}\n**Task:** ${task.title || input.task_id}\n**Status:** ${input.status}`,
   }];
 }
 
@@ -1122,19 +1164,24 @@ async function handleGetMemoryDiagnostics(args: unknown): Promise<TextContent[]>
 
   const db = get_database();
   const userId = input.user_id;
+  const scopeFilter = userId ? await buildScopeFilter(userId) : {};
 
   const counts: Record<string, number> = {};
   for (const coll of ['episodic_events', 'semantic_facts', 'agent_journal_auto', 'agent_journal_manual', 'memory_missions', 'agent_state']) {
     try {
       counts[coll] = userId
-        ? await db.collection(coll).countDocuments({ user_id: userId })
+        ? await db.collection(coll).countDocuments(scopeFilter)
         : await db.collection(coll).estimatedDocumentCount();
     } catch { counts[coll] = 0; }
   }
 
-  const withEmbeddings = await db.collection('semantic_facts').countDocuments({ embedding: { $exists: true } });
+  const withEmbeddings = userId
+    ? await db.collection('semantic_facts').countDocuments({ ...scopeFilter, embedding: { $exists: true } })
+    : await db.collection('semantic_facts').countDocuments({ embedding: { $exists: true } });
   const totalFacts = counts['semantic_facts'] || 1;
-  const unprocessed = await db.collection('episodic_events').countDocuments({ 'metadata.processed': { $ne: true } });
+  const unprocessed = userId
+    ? await db.collection('episodic_events').countDocuments({ ...scopeFilter, 'metadata.processed': { $ne: true } })
+    : await db.collection('episodic_events').countDocuments({ 'metadata.processed': { $ne: true } });
   const llmStatus = llmService.getServiceStatus();
 
   const lines = [
@@ -1218,7 +1265,8 @@ async function handleExploreGraph(args: unknown): Promise<TextContent[]> {
   if (!is_database_connected()) return [{ type: 'text', text: '⚠️ MongoDB disconnected.' }];
   const db = get_database();
 
-  const nodeFilter: Record<string, unknown> = {};
+  const scopeFilter = await buildScopeFilter();
+  const nodeFilter: Record<string, unknown> = { ...scopeFilter };
   if (input.query) {
     try {
       nodeFilter.$text = { $search: input.query };
@@ -1296,7 +1344,8 @@ async function handleGetAutoJournal(args: unknown): Promise<TextContent[]> {
   if (!is_database_connected()) return [{ type: 'text', text: '⚠️ MongoDB disconnected.' }];
   const db = get_database();
 
-  const filter: Record<string, unknown> = { user_id: input.user_id, source: 'auto' };
+  const scopeFilter = await buildScopeFilter(input.user_id);
+  const filter: Record<string, unknown> = { ...scopeFilter, source: 'auto' };
   if (input.since) filter.created_at = { $gte: new Date(input.since) };
 
   const entries = await db.collection('agent_journal_auto')
@@ -1321,8 +1370,9 @@ async function handleGetTransactionLog(args: unknown): Promise<TextContent[]> {
   if (!is_database_connected()) return [{ type: 'text', text: '⚠️ MongoDB disconnected.' }];
   const db = get_database();
 
-  const filter: Record<string, unknown> = {};
-  if (input.user_id) filter.user_id = input.user_id;
+  // Use scope filter when user_id is provided, otherwise query all
+  const scopeFilter = input.user_id ? await buildScopeFilter(input.user_id) : {};
+  const filter: Record<string, unknown> = { ...scopeFilter };
   if (input.action) filter.action = input.action;
   if (input.since) filter.timestamp = { $gte: new Date(input.since) };
 
@@ -1573,22 +1623,23 @@ function registerHandlers(server: Server) {
     const match = uri.match(/^memory:\/\/([^/]+)\/(.+)$/);
     const type = match ? match[1] : '';
     const userId = match ? decodeURIComponent(match[2]) : 'mcp-user';
+    const scopeFilter = await buildScopeFilter(userId);
 
     switch (type) {
       case 'episodic': {
-        const events = await db.collection('episodic_events').find({ user_id: userId }).sort({ timestamp: -1 }).limit(20).toArray();
+        const events = await db.collection('episodic_events').find(scopeFilter).sort({ timestamp: -1 }).limit(20).toArray();
         const text = [`## Episodic — ${userId}`, `*${events.length} events*\n`,
           ...events.map((e: any) => `[${e.timestamp ? new Date(e.timestamp).toISOString() : '?'}] ${e.content?.message || JSON.stringify(e.content)}`)];
         return { contents: [{ uri, mimeType: 'text/plain', text: text.join('\n') }] };
       }
       case 'semantic': {
-        const facts = await db.collection('semantic_facts').find({ user_id: userId }).sort({ confidence: -1 }).limit(15).toArray();
+        const facts = await db.collection('semantic_facts').find(scopeFilter).sort({ confidence: -1 }).limit(15).toArray();
         const text = [`## Semantic — ${userId}`, `*${facts.length} facts*\n`,
           ...facts.map((f: any) => `[conf:${(f.confidence * 100).toFixed(0)}%] ${f.content}`)];
         return { contents: [{ uri, mimeType: 'text/plain', text: text.join('\n') }] };
       }
       case 'temporal': {
-        const recent = await db.collection('episodic_events').find({ user_id: userId }).sort({ timestamp: -1 }).limit(10).toArray();
+        const recent = await db.collection('episodic_events').find(scopeFilter).sort({ timestamp: -1 }).limit(10).toArray();
         let wm: unknown[] = [];
         try { wm = await working-memory-service.get_session_memory('auto', 5); } catch { /* ignore */ }
         const text = [`## Temporal Context — ${userId}`, `### Recent (${recent.length})`,
@@ -1597,8 +1648,7 @@ function registerHandlers(server: Server) {
         return { contents: [{ uri, mimeType: 'text/plain', text: text.join('\n') }] };
       }
       case 'missions': {
-        const pms = getProspectiveMemoryService();
-        const missions = await pms.listMissions(userId, 10);
+        const missions = await db.collection('memory_missions').find(scopeFilter).sort({ created_at: -1 }).limit(10).toArray();
         const text = [`## Missions — ${userId}`, `*${missions.length} missions*\n`,
           ...missions.map((m: any) => `- [${m.status}] ${m.title || m.goal} (${m.tasks?.filter((t: any) => t.status === 'completed').length || 0}/${m.tasks?.length || 0})`)];
         return { contents: [{ uri, mimeType: 'text/plain', text: text.join('\n') }] };

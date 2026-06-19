@@ -68,6 +68,7 @@ export interface ExtractionResult {
 export interface ExtractionContext {
   session_id: string;
   user_id: string;
+  shared_id?: string;
   timestamp: Date;
   conversation_history?: string[];
   current_entities?: string[];

@@ -166,6 +166,7 @@ class DispatchService {
             event_type: event.event_type,
             session_id: context.session_id,
             user_id: context.user_id,
+            shared_id: (context as any).shared_id,
             timestamp: event.timestamp,
             content: {
               description: event.description,
@@ -200,6 +201,7 @@ class DispatchService {
         try {
           const fact_data = {
             user_id: context.user_id,
+            shared_id: (context as any).shared_id,
             content: `${fact.fact_key}: ${fact.fact_value}`,
             source: 'extraction',
             confidence: fact.confidence,
