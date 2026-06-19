@@ -392,7 +392,7 @@
           <div style="display:flex;flex-direction:column;gap:14px">
             <div>
               <label class="label" for="settings-url">Base URL</label>
-              <input class="input mono" id="settings-url" placeholder="http://100.102.217.111:9012" value="http://localhost:9012">
+              <input class="input mono" id="settings-url" placeholder="http://localhost:9012" value="http://localhost:9012">
               <span style="font-size:0.7rem;color:var(--text-dim)">The Katra server address</span>
             </div>
             <div>
@@ -445,8 +445,8 @@
 
 // ── State ──
 const state = {
-  baseUrl: localStorage.getItem('katra_baseUrl') || 'http://100.102.217.111:9012',
-  apiKey: localStorage.getItem('katra_apiKey') || 'katra-key-2025',
+  baseUrl: localStorage.getItem('katra_baseUrl') || 'http://localhost:9012',
+  apiKey: localStorage.getItem('katra_apiKey') || 'katra-admin-key-2026',
   healthInterval: null,
   currentTab: 'overview',
   graphNodes: [],
@@ -624,10 +624,13 @@ async function loadOverview() {
   const bgStats = bgRes.value?.ok ? bgRes.value.data : null;
   const scopeData = scopeRes.value?.ok ? scopeRes.value.data : null;
 
-  // Determine overall status
-  let statusClass = 'unknown', statusText = 'Unknown';
-  if (health?.data?.memory_manager_status === 'healthy') { statusClass = 'healthy'; statusText = 'Healthy'; }
-  else if (health) { statusClass = 'degraded'; statusText = 'Degraded'; }
+  // Check real health API for accurate status
+  const hcRes = await apiFetch('/api/v1/health');
+  const hc = hcRes.ok ? hcRes.data : null;
+  const svc = hc?.services || {};
+  const allOk = svc.mongodb === 'connected' && svc.redis === 'connected';
+  let statusClass = allOk ? 'healthy' : 'degraded';
+  let statusText = allOk ? 'Healthy' : 'Degraded';
 
   // Sidebar dot
   const dot = document.getElementById('sidebar-dot');
@@ -653,8 +656,10 @@ async function loadOverview() {
       <div class="card-value">${info?.name || 'Katra'}</div>
       <div class="card-sub">v${info?.version || '—'} · ${info?.description || 'Cognitive Memory Service'}</div>
       <div class="card-sub" style="margin-top:8px;font-size:0.75rem;">
-        MongoDB: ${health?.data?.mongodb_connected ? '✅ Connected' : '❌ Disconnected'}<br>
-        Redis: <span id="redis-status">Checking…</span>
+        MongoDB: ${svc.mongodb === 'connected' ? '✅ Connected' : '❌ ' + (svc.mongodb || 'Unknown')}<br>
+        Redis: ${svc.redis === 'connected' ? '✅ Connected' : '❌ ' + (svc.redis || 'Unknown')}<br>
+        LLM: ${svc.llm || 'none'}<br>
+        Embeddings: ${svc.embeddings || 'lazy-loading'}
       </div>
     </div>
     <div class="card">
@@ -692,7 +697,6 @@ async function loadOverview() {
   svcDiv.innerHTML = `
     <div class="card-header"><h3 class="card-title">Services</h3></div>
     <div class="services-list">${serviceTags.join('')}</div>
-    ${health?.data?.collections_ready === false ? '<div class="card-sub" style="margin-top:8px;color:var(--amber)">⚠ Collections not fully initialized</div>' : ''}
   `;
 
   document.getElementById('refresh-indicator').style.display = 'inline';
@@ -742,7 +746,7 @@ async function searchMemories() {
   btn.disabled = true;
 
   const query = document.getElementById('mem-search-query').value.trim();
-  const userId = document.getElementById('mem-search-user').value || 'demo-user';
+  const userId = document.getElementById('mem-search-user').value || 'kolega-agent';
   const limit = parseInt(document.getElementById('mem-search-limit').value) || 20;
 
   if (!query) {
@@ -751,23 +755,45 @@ async function searchMemories() {
     return;
   }
 
-  const { ok, data } = await apiFetch('/api/v1/memory/episodic/search', {
-    method: 'POST',
-    body: { query, user_id: userId, limit },
-  });
+  try {
+    const mcpUrl = state.baseUrl.replace(':9012', ':3112') + '/mcp';
+    const hdrs = { 'Content-Type':'application/json', 'Accept':'application/json, text/event-stream' };
+    if (state.apiKey) hdrs['Authorization'] = 'Bearer ' + state.apiKey;
 
-  btn.disabled = false;
-  if (!ok) {
-    container.innerHTML = errorMsg(data?.error || 'Search failed', searchMemories);
-    return;
-  }
+    const initRes = await fetch(mcpUrl, { method:'POST', headers: hdrs, body: JSON.stringify({jsonrpc:'2.0',id:1,method:'initialize',params:{protocolVersion:'2024-11-05',capabilities:{},clientInfo:{name:'dashboard',version:'1'}}})});
+    const sid = initRes.headers.get('mcp-session-id') || '';
+    hdrs['mcp-session-id'] = sid;
 
-  const events = data.results || [];
-  if (events.length === 0) {
-    container.innerHTML = emptyMsg(`No results for "${query}".`);
-    return;
+    const searchRes = await fetch(mcpUrl, { method:'POST', headers: hdrs, body: JSON.stringify({jsonrpc:'2.0',id:2,method:'tools/call',params:{name:'search_memories',arguments:{query,user_id:userId,limit}}})});
+    const text = await searchRes.text();
+    const events = [];
+    for (const line of text.split('\\n')) {
+      if (line.startsWith('data:')) {
+        const d = JSON.parse(line.slice(6));
+        if (d.result && d.result.content) {
+          for (const c of d.result.content) {
+            if (c.type === 'text') {
+              const lines = c.text.split('\\n');
+              for (const l of lines) {
+                const m = l.match(/^- \\[([^\\]]+)\\] (.+)/);
+                if (m) events.push({ timestamp: m[1], content: m[2], event_type: 'memory', session_id: 'katra' });
+              }
+            }
+          }
+        }
+      }
+    }
+
+    btn.disabled = false;
+    if (events.length === 0) {
+      container.innerHTML = emptyMsg('No results for \"' + query + '\". Try a different search term.');
+      return;
+    }
+    buildEventsTable(events, container);
+  } catch(e) {
+    btn.disabled = false;
+    container.innerHTML = errorMsg('Search failed: ' + (e.message || 'connection error'), searchMemories);
   }
-  buildEventsTable(events, container);
 }
 
 function buildEventsTable(events, container) {
