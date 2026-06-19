@@ -56,15 +56,85 @@ turning stateless agents into agents with memory.
 ```bash
 git clone https://github.com/kolegadev/katra.git
 cd katra
-cp .env.example .env  # Edit with your API keys
+cp .env.example .env  # Edit to set your API keys
 docker-compose up -d --build
 ```
+
+**What happens during first startup:**
+- MongoDB, Redis, MinIO, and Katra server containers start
+- The Docker image uses `node:20-slim` (Debian-based) — required for the
+  ONNX runtime that powers local embeddings. Alpine/musl does NOT work.
+- The embedding model (`Xenova/all-MiniLM-L6-v2`, ~80MB) downloads
+  automatically on first memory storage and caches in the container.
+- No external embedding API key needed — embeddings are 100% local.
 
 Verify: `curl http://localhost:3112/health`
 
 Dashboard: `http://localhost:9012/dashboard/`
 
-### 2. Deploy the Solomem Watcher
+### 2. Configure the LLM Provider
+
+The LLM powers semantic extraction, auto-journaling, entity extraction, and summaries.
+**Katra needs an LLM provider to enable its intelligence features.**
+
+Choose ONE of these methods:
+
+**Method A — Agent self-configures via MCP (recommended for coding agents):**
+
+An OpenClaw agent, Claude Code, or any MCP client can call the `configure_llm` tool:
+
+```bash
+curl -X POST http://localhost:3112/mcp \
+  -H "Authorization: Bearer YOUR_MCP_API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{
+    "jsonrpc": "2.0", "id": 1, "method": "initialize",
+    "params": {"protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {"name": "setup", "version": "1.0"}}
+  }'
+# Grab mcp-session-id from response headers, then:
+
+curl -X POST http://localhost:3112/mcp \
+  -H "Authorization: Bearer YOUR_MCP_API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -H "mcp-session-id: SESSION_ID" \
+  -d '{
+    "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+    "params": {"name": "configure_llm", "arguments": {
+      "provider": "deepseek",
+      "api_key": "sk-your-key-here",
+      "base_url": "https://api.deepseek.com/v1",
+      "model": "deepseek-v4-flash"
+    }}
+  }'
+```
+
+Or from within an agent that has MCP tools: call `configure_llm` directly.
+
+**Method B — Dashboard UI:**
+
+Open `http://localhost:9012/dashboard/` → Settings → LLM Configuration.
+Select provider, enter API key, click Save & Apply.
+
+**Method C — Environment variables in `.env`:**
+
+```bash
+# Uncomment and fill in your provider:
+DEEPSEEK_API_KEY=sk-your-key-here
+# OPENAI_API_KEY=sk-your-key-here
+# MOONSHOT_API_KEY=sk-your-key-here
+```
+
+Then restart: `docker-compose restart server`
+
+**Supported providers:** DeepSeek, OpenAI, Moonshot, Ollama (local), Custom (any OpenAI-compatible API).
+
+> **Note:** Configuring via MCP tool or dashboard (methods A/B) stores the config
+> in MongoDB and applies live — no restart needed. Env vars are only read on startup
+> as a fallback. DB config overrides env vars.
+
+### 3. Deploy the Solomem Watcher
 
 ```bash
 mkdir -p ~/.solomem
@@ -101,7 +171,7 @@ Create `~/.solomem/watcher-config.json`:
 }
 ```
 
-### 3. Install Systemd Service
+### 4. Install Systemd Service
 
 ```bash
 cp /tmp/solomem/memory-watcher.service ~/.config/systemd/user/
@@ -110,11 +180,26 @@ systemctl --user enable memory-watcher
 systemctl --user start memory-watcher
 ```
 
-### 4. Backfill Existing History
+### 5. Backfill Existing History
 
 ```bash
 python3 ~/.solomem/memory_watcher.py --once --config ~/.solomem/watcher-config.json
 ```
+
+---
+
+## How Embeddings Work
+
+Katra uses **local embeddings** — no API key, no external service, no cost.
+
+- **Model:** `Xenova/all-MiniLM-L6-v2` (22M params, 384 dimensions, ~80MB)
+- **Runtime:** Transformers.js (ONNX via WASM) — runs on CPU, including Raspberry Pi
+- **Lazy load:** Downloads on first `store_memory` call, then caches in container memory
+- **Docker requirement:** `node:20-slim` (Debian/glibc). Alpine/musl does NOT work
+  because the ONNX runtime binary requires glibc.
+
+Vector/semantic search works out of the box. Keyword search (`$text` + regex) works
+even if embeddings fail to load (graceful degradation).
 
 ---
 
@@ -325,10 +410,14 @@ vector_search, working_memory, get_auto_journal, detect_patterns
 
 The Katra server's background processor automatically:
 - Deduplicates events via content hashing
-- Extracts semantic facts and entities
-- Builds a knowledge graph from conversations
-- Generates time-block summaries
-- Detects temporal patterns
+- Extracts semantic facts and entities (requires LLM)
+- Builds a knowledge graph from conversations (requires LLM)
+- Generates time-block summaries (requires LLM)
+- Detects temporal patterns (requires LLM)
+
+> Without an LLM configured, storage and search still work. The intelligence
+> features (extraction, journaling, summaries) are disabled until you configure
+> a provider.
 
 ---
 
@@ -343,6 +432,10 @@ The Katra server's background processor automatically:
 | `store_memory` returns 0 | MCP auth failed | Verify MCP_API_KEY is set correctly |
 | OpenCode extractor fails | DB path wrong | Check `--db` flag or default path |
 | shared_id not stored | Server in personal mode | Switch to shared/hybrid mode first |
+| Embeddings 🔴 in health | Model not loaded yet | Call `store_memory` once to trigger download |
+| Embeddings 🔴 after rebuild | Container recreated, cache lost | Call `store_memory` once to re-download |
+| LLM 🔴 in health | No LLM configured | Call `configure_llm` MCP tool or use dashboard |
+| LLM 🔴 but key is set | Validation failed (bad key?) | Call `get_llm_config` MCP tool to check status |
 
 ---
 

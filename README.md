@@ -55,8 +55,9 @@ Add Katra to your agent's MCP config:
 }
 ```
 
-Your agent now has **27 MCP tools** — store memories, search by keyword or semantic
-similarity, recall by time range, explore a knowledge graph, detect patterns, and more.
+Your agent now has **29 MCP tools** — store memories, search by keyword or semantic
+similarity, recall by time range, explore a knowledge graph, detect patterns, configure
+LLM provider, and more.
 
 ### Platform-Specific Guides
 
@@ -73,6 +74,27 @@ similarity, recall by time range, explore a knowledge graph, detect patterns, an
 > ```bash
 > docker inspect katra-server --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'
 > ```
+
+## LLM Configuration
+
+Katra needs an LLM provider for semantic extraction, auto-journaling, entity
+extraction, and summaries. **Three ways to configure — no `.env` editing required:**
+
+1. **MCP tool** (agents self-configure): Call `configure_llm` with provider,
+   API key, base URL, and model. Stored in MongoDB, applied live.
+2. **Dashboard UI**: Settings → LLM Configuration → select provider, enter key.
+3. **Environment variables**: Set in `.env` (fallback, read on startup only).
+
+Supported providers: DeepSeek, OpenAI, Moonshot, Ollama, Custom (any OpenAI-compatible).
+
+## Embeddings
+
+Embeddings are **always local** — no API key, no external service, no cost.
+
+- **Model:** `Xenova/all-MiniLM-L6-v2` (22M params, 384 dimensions, ~80MB)
+- **Runtime:** Transformers.js (ONNX via WASM) — runs on CPU, including Raspberry Pi
+- **Lazy load:** Downloads on first `store_memory` call, then caches in container
+- **Docker:** Uses `node:20-slim` (Debian/glibc) — Alpine/musl does NOT work
 
 ## Identity Modes
 
@@ -156,7 +178,7 @@ Each platform can have its own `user_id` for identity mode isolation.
 - **Vector Search** — Semantic similarity search (local embeddings, no API key needed)
 - **11-Collection Search** — Comprehensive search across all memory stores, not just 1-2
 - **Background Processing** — Auto-extracts facts, builds graph, generates summaries
-- **27 MCP Tools** — Store, search, recall, explore — all via standardized protocol
+- **29 MCP Tools** — Store, search, recall, explore, configure LLM — all via standardized protocol
 - **Identity Modes** — Personal, shared, or hybrid memory across multiple agents
 - **Dashboard** — Web UI for stats, memory scope, and system health
 - **Portable Data** — Single `DATA_DIR` env var controls where all data lives
@@ -223,7 +245,7 @@ katra/
 └── docs/                    Full documentation
 ```
 
-## MCP Tools (27)
+## MCP Tools (29)
 
 ### Storage
 | Tool | Description |
@@ -262,6 +284,12 @@ katra/
 | `get_memory_scope` | Get current mode (personal/shared/hybrid) |
 | `set_memory_scope` | Set mode, shared_id, visible users |
 
+### LLM Configuration
+| Tool | Description |
+|------|-------------|
+| `get_llm_config` | Get current LLM provider config (key masked) |
+| `configure_llm` | Set LLM provider, API key, base URL, model — applies live |
+
 ### System
 | Tool | Description |
 |------|-------------|
@@ -283,8 +311,8 @@ All configuration is via `.env` (see `.env.example` for full docs):
 | `HOST_API_PORT` | `9012` | Host port for admin API + dashboard |
 | `MCP_API_KEY` | *(set in .env)* | Key your agent sends for MCP auth |
 | `KATRA_API_KEY` | *(set in .env)* | Key for admin REST API |
-| `LLM_PROVIDER` | `local` | `local`, `openai`, `anthropic`, or `ollama` |
-| `EMBEDDING_PROVIDER` | `local` | `local` or `openai` |
+| `LLM_PROVIDER` | *(via MCP/dashboard)* | Provider for semantic extraction (DeepSeek, OpenAI, Moonshot, Ollama) — configure via `configure_llm` MCP tool or dashboard |
+| `EMBEDDING_PROVIDER` | `local` (always) | Local only — Xenova/all-MiniLM-L6-v2 via ONNX. No config needed. |
 | `MULTI_TENANT` | `false` | Enable SaaS multi-tenant mode |
 
 ## Deployment

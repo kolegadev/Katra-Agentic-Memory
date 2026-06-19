@@ -130,7 +130,32 @@ Add Katra to your agent's MCP config:
 }
 ```
 
-Restart your agent. It now has 27 memory tools available.
+Restart your agent. It now has 29 memory tools available.
+
+## 6. Configure the LLM Provider
+
+Katra needs an LLM provider for semantic extraction, auto-journaling, and summaries.
+Configure it via MCP tool, dashboard, or env vars.
+
+**Via MCP tool (from your agent):**
+
+Call the `configure_llm` MCP tool:
+```
+configure_llm(
+  provider: "deepseek",
+  api_key: "sk-your-key-here",
+  base_url: "https://api.deepseek.com/v1",
+  model: "deepseek-v4-flash"
+)
+```
+
+**Via dashboard:** Open `http://localhost:9012/dashboard/` → Settings → LLM Configuration
+
+**Via .env:** Uncomment and fill in your provider's API key (e.g. `DEEPSEEK_API_KEY`),
+then `docker-compose restart server`
+
+> Configuring via MCP tool or dashboard stores the config in MongoDB and applies
+> live — no restart needed. Env vars are a fallback, read on startup only.
 
 ## 7. Configure Identity Mode (Optional)
 
@@ -188,7 +213,7 @@ systemctl --user enable --now memory-watcher
 
 ## Next Steps
 
-- [MCP Tools Reference](MCP-TOOLS.md) — All 27 tools with examples
+- [MCP Tools Reference](MCP-TOOLS.md) — All 29 tools with examples
 - [REST API Reference](API-REFERENCE.md) — HTTP endpoints
 - [Configuration Guide](CONFIGURATION.md) — All environment variables
 - [Deployment Guide](DEPLOYMENT.md) — Cloud, K8s, USB storage
