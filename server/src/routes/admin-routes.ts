@@ -746,6 +746,29 @@ export const create_admin_routes = (): Hono => {
     }, 501);
   });
 
+  // ── System Identity ────────────────────────────────
+
+  /**
+   * GET /api/v1/admin/system-identity — Get system identity (user_id, hostname)
+   */
+  router.get('/system-identity', async (c) => {
+    try {
+      const os = await import('os');
+      const hostname = os.hostname();
+      const userId = process.env.SOLOMEM_USER_ID || hostname + '-agent';
+      return c.json({
+        success: true,
+        identity: {
+          user_id: userId,
+          hostname: hostname,
+          watcher_configured: true,
+        }
+      });
+    } catch (error) {
+      return c.json({ success: false, error: 'Could not determine identity' }, 500);
+    }
+  });
+
   // ── Memory Scope Configuration ────────────────────────────
 
   /**
