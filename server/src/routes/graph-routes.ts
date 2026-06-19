@@ -7,6 +7,7 @@
 
 import { Hono } from 'hono';
 import { getCompactionQueueService, getSemanticMemoryService, getMemorySynthesisService } from '../services/knowledge-graph-factory.js';
+import { get_database } from '../database/connection.js';
 
 export function create_knowledge_graph_routes(): Hono {
   const router = new Hono();
@@ -126,6 +127,65 @@ export function create_knowledge_graph_routes(): Hono {
       return c.json({
         success: false,
         error: error instanceof Error ? error.message : 'Failed to explore graph'
+      }, 500);
+    }
+  });
+
+  /**
+   * POST /build-from-facts — Backfill graph nodes/edges from existing semantic facts.
+   * Extracts entities and relationships via LLM triplet extraction.
+   */
+  router.post('/build-from-facts', async (c) => {
+    try {
+      const db = get_database();
+      const sms = getSemanticMemoryService();
+
+      // Read all semantic facts
+      const facts = await db.collection('semantic_facts')
+        .find({})
+        .sort({ created_at: -1, timestamp: -1 })
+        .limit(100)
+        .toArray();
+
+      if (facts.length === 0) {
+        return c.json({ success: false, error: 'No semantic facts found to process' });
+      }
+
+      const results = { processed: 0, skipped: 0, errors: 0, triplets_extracted: 0 };
+
+      for (const fact of facts) {
+        const content = fact.content || fact.description || fact.fact || '';
+        if (!content || content.length < 20) {
+          results.skipped++;
+          continue;
+        }
+
+        try {
+          const beforeNodes = await db.collection('memory_nodes').countDocuments();
+          await sms.compactEpisodicToGraph(fact._id?.toString() || fact.id || 'backfill', content);
+          const afterNodes = await db.collection('memory_nodes').countDocuments();
+          results.triplets_extracted += Math.max(0, afterNodes - beforeNodes);
+          results.processed++;
+        } catch (err) {
+          console.warn(`Graph extraction failed for fact ${fact._id}:`, err instanceof Error ? err.message : err);
+          results.errors++;
+        }
+      }
+
+      const nodes = await sms.getAllNodes();
+      const edges = await sms.getTopEdges(100);
+
+      return c.json({
+        success: true,
+        message: `Processed ${results.processed} facts, extracted ${results.triplets_extracted} new nodes`,
+        results,
+        graph: { node_count: nodes.length, edge_count: edges.length }
+      });
+    } catch (error) {
+      console.error('❌ Graph backfill failed:', error);
+      return c.json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
       }, 500);
     }
   });

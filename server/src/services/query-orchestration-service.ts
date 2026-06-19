@@ -596,6 +596,19 @@ class QueryOrchestrationService {
         case 'asset':
           aggregated.assets.push(...result.data);
           break;
+        case 'semantic_enhanced':
+          // data is [semanticResults] where each has a .matches array
+          result.data.forEach(sr => {
+            if (sr?.matches) aggregated.semantic.push(...sr.matches);
+          });
+          break;
+        case 'cross_session':
+          // data is [crossSessionResults] with episodic/semantic arrays
+          result.data.forEach(csr => {
+            if (csr?.episodic) aggregated.episodic.push(...csr.episodic);
+            if (csr?.semantic) aggregated.semantic.push(...csr.semantic);
+          });
+          break;
       }
     });
 

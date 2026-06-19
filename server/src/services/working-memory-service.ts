@@ -517,18 +517,30 @@ export class WorkingMemoryService {
      * Private helper methods
      */
     private async add_memory_to_session(session_id: string, memory_id: string): Promise<void> {
-        const session_context = await this.get_session_context(session_id);
-        if (session_context) {
-            session_context.memory_keys.push(memory_id);
-            session_context.last_activity = new Date();
-            
-            // Keep only last 100 memory keys to manage size
-            if (session_context.memory_keys.length > 100) {
-                session_context.memory_keys = session_context.memory_keys.slice(-100);
-            }
-            
-            await this.update_session_context(session_id, session_context);
+        let session_context = await this.get_session_context(session_id);
+        if (!session_context) {
+            // Auto-create session context so stored items are retrievable via get_session_memory.
+            // Without this, the memory item is stored but orphaned — its key never lands in any
+            // session's memory_keys list, so get_session_memory always returns [].
+            session_context = {
+                session_id,
+                created_at: new Date(),
+                last_activity: new Date(),
+                variables: {},
+                conversation_history: [],
+                memory_keys: [],
+                topic_tags: [],
+            };
         }
+        session_context.memory_keys.push(memory_id);
+        session_context.last_activity = new Date();
+        
+        // Keep only last 100 memory keys to manage size
+        if (session_context.memory_keys.length > 100) {
+            session_context.memory_keys = session_context.memory_keys.slice(-100);
+        }
+        
+        await this.update_session_context(session_id, session_context);
     }
     
     private async update_session_context(session_id: string, context: SessionContext): Promise<boolean> {

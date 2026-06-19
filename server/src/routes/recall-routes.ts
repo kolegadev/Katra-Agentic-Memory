@@ -35,7 +35,9 @@ const SearchRecallSchema = z.object({
   query: z.string().min(1, 'Search query is required'),
   searchTypes: z.array(z.enum(['episodic', 'semantic', 'knowledge_graph', 'asset'])).optional(),
   limit: z.number().positive().max(100).optional(),
-  template: z.string().optional()
+  template: z.string().optional(),
+  userId: z.string().optional(),
+  user_id: z.string().optional()
 });
 
 const TimelineRecallSchema = z.object({
@@ -376,13 +378,14 @@ export const create_recall_routes = (): Hono => {
         }, 400);
       }
 
-      const { query, searchTypes = ['episodic', 'semantic', 'knowledge_graph', 'asset'], limit = 50, template = 'default' } = validation.data;
+      const { query, searchTypes = ['episodic', 'semantic', 'knowledge_graph', 'asset'], limit = 50, template = 'default', userId, user_id } = validation.data;
 
-      // Build search-focused context
+      // Build search-focused context (userId enables user-scoped semantic search)
       const context = {
         searchTypes,
         limit,
-        searchMode: 'semantic'
+        searchMode: 'semantic',
+        userId: userId || user_id
       };
 
       const informationNeed = `Search for: ${query}`;

@@ -322,7 +322,7 @@
           <div class="card-header"><h3 class="card-title">Search Memories</h3></div>
           <div class="input-row">
             <input class="input" id="mem-search-query" placeholder="Search episodic events…" onkeydown="if(event.key==='Enter')searchMemories()">
-            <input class="input" id="mem-search-user" placeholder="user_id" value="demo-user" style="max-width:180px">
+            <input class="input" id="mem-search-user" placeholder="user_id" value="kolega-agent" style="max-width:180px">
             <input class="input" id="mem-search-limit" placeholder="limit" value="20" style="max-width:70px" type="number" min="1" max="100">
             <button class="btn btn-primary" onclick="searchMemories()" id="mem-search-btn">Search</button>
           </div>
@@ -331,7 +331,7 @@
           <div class="card-header">
             <h3 class="card-title">Events</h3>
             <div class="input-row" style="width:auto">
-              <input class="input" id="mem-filter-user" placeholder="user_id" value="demo-user" style="width:160px">
+              <input class="input" id="mem-filter-user" placeholder="user_id" value="kolega-agent" style="width:160px">
               <input class="input" id="mem-filter-limit" placeholder="limit" value="20" style="width:70px" type="number" min="1" max="200">
               <button class="btn btn-secondary btn-sm" onclick="loadRecentEvents()">Recent</button>
             </div>
@@ -368,6 +368,7 @@
             <input class="input" id="graph-query" placeholder="Search graph nodes (e.g. 'machine learning')…" onkeydown="if(event.key==='Enter')loadGraph()">
             <button class="btn btn-primary" onclick="loadGraph()">Explore</button>
             <button class="btn btn-secondary" onclick="loadGraphStats()">Stats</button>
+            <button class="btn btn-secondary" onclick="buildGraph()" id="build-graph-btn">Build Graph</button>
           </div>
         </div>
         <div class="graph-container" id="graph-container">
@@ -397,7 +398,7 @@
             </div>
             <div>
               <label class="label" for="settings-key">API Key</label>
-              <input class="input mono" id="settings-key" type="password" placeholder="sk-…" value="katra-test-key">
+              <input class="input mono" id="settings-key" type="password" placeholder="sk-…" value="katra-admin-key-2026">
               <span style="font-size:0.7rem;color:var(--text-dim)">Bearer token for Authorization header (leave blank if not required)</span>
             </div>
             <div style="display:flex;gap:8px">
@@ -466,7 +467,9 @@ function authHeaders() {
   return headers;
 }
 
-async function apiFetch(path, opts = {}) {
+const DEFAULT_API_KEY = 'katra-admin-key-2026';
+
+async function apiFetch(path, opts = {}, _retry = false) {
   const url = apiUrl(path);
   const method = (opts.method || 'GET').toUpperCase();
   const fetchOpts = {
@@ -480,9 +483,25 @@ async function apiFetch(path, opts = {}) {
   if (method === 'GET' && fetchOpts.body) {
     delete fetchOpts.body;
   }
-  const res = await fetch(url, fetchOpts);
-  const data = await res.json().catch(() => null);
-  return { status: res.status, ok: res.ok, data };
+  try {
+    const res = await fetch(url, fetchOpts);
+    const data = await res.json().catch(() => null);
+
+    // Auto-recovery: if the saved API key is rejected, reset to default and retry once
+    if (res.status === 401 && !_retry && state.apiKey !== DEFAULT_API_KEY) {
+      console.warn('Katra: API key rejected (401), resetting to default key');
+      state.apiKey = DEFAULT_API_KEY;
+      localStorage.setItem('katra_apiKey', DEFAULT_API_KEY);
+      const keyInput = document.getElementById('settings-key');
+      if (keyInput) keyInput.value = DEFAULT_API_KEY;
+      return apiFetch(path, opts, true);
+    }
+
+    return { status: res.status, ok: res.ok, data };
+  } catch (err) {
+    console.error('Katra: network error for', path, err);
+    return { status: 0, ok: false, data: null };
+  }
 }
 
 // ── Toast ──
@@ -580,7 +599,7 @@ function switchTab(tab) {
   if (tab === 'memories') loadRecentEvents();
   if (tab === 'ingestion') loadIngestion();
   if (tab === 'settings') loadSettingsConfig();
-  if (tab === 'graph') { /* defer to user action */ }
+  if (tab === 'graph') { loadGraph(); }
 }
 
 function refreshCurrentTab() {
@@ -624,13 +643,14 @@ async function loadOverview() {
   const bgStats = bgRes.value?.ok ? bgRes.value.data : null;
   const scopeData = scopeRes.value?.ok ? scopeRes.value.data : null;
 
-  // Check real health API for accurate status
+  // Determine overall status
+  let statusClass = 'unknown', statusText = 'Unknown';
   const hcRes = await apiFetch('/api/v1/health');
   const hc = hcRes.ok ? hcRes.data : null;
   const svc = hc?.services || {};
   const allOk = svc.mongodb === 'connected' && svc.redis === 'connected';
-  let statusClass = allOk ? 'healthy' : 'degraded';
-  let statusText = allOk ? 'Healthy' : 'Degraded';
+  statusClass = allOk ? 'healthy' : 'degraded';
+  statusText = allOk ? 'Healthy' : 'Degraded';
 
   // Sidebar dot
   const dot = document.getElementById('sidebar-dot');
@@ -697,6 +717,7 @@ async function loadOverview() {
   svcDiv.innerHTML = `
     <div class="card-header"><h3 class="card-title">Services</h3></div>
     <div class="services-list">${serviceTags.join('')}</div>
+    ${health?.data?.collections_ready === false ? '<div class="card-sub" style="margin-top:8px;color:var(--amber)">⚠ Collections not fully initialized</div>' : ''}
   `;
 
   document.getElementById('refresh-indicator').style.display = 'inline';
@@ -720,23 +741,26 @@ async function loadRecentEvents() {
   const container = document.getElementById('memories-table');
   container.innerHTML = spinner();
 
-  const userId = document.getElementById('mem-filter-user').value || 'demo-user';
+  const userId = document.getElementById('mem-filter-user').value || 'kolega-agent';
   const limit = document.getElementById('mem-filter-limit').value || '20';
 
+  // Try episodic events first
   const { ok, data } = await apiFetch(`/api/v1/memory/episodic/events?user_id=${encodeURIComponent(userId)}&limit=${encodeURIComponent(limit)}`);
 
-  if (!ok) {
-    container.innerHTML = errorMsg(data?.error || 'Failed to load events', loadRecentEvents);
+  if (ok && (data.results || []).length > 0) {
+    buildEventsTable(data.results, container);
     return;
   }
 
-  const events = data.results || [];
-  if (events.length === 0) {
-    container.innerHTML = emptyMsg('No events found. Try a different user_id or ingest some data.');
+  // Fall back to semantic facts (distilled knowledge)
+  const { ok: sfOk, data: sfData } = await apiFetch(`/api/v1/memory/semantic/facts?user_id=${encodeURIComponent(userId)}&limit=${encodeURIComponent(limit)}`);
+  if (sfOk && (sfData.results || []).length > 0) {
+    container.innerHTML = `<div style="padding:8px 12px;font-size:0.75rem;color:var(--text-muted);margin-bottom:8px;">No episodic events — showing ${sfData.count} semantic facts for <code>${escapeHtml(userId)}</code></div>`;
+    buildEventsTable(sfData.results, container, true);
     return;
   }
 
-  buildEventsTable(events, container);
+  container.innerHTML = emptyMsg(`No memories found for user "${userId}". Try a different user_id or ingest some data.`);
 }
 
 async function searchMemories() {
@@ -755,71 +779,78 @@ async function searchMemories() {
     return;
   }
 
-  try {
-    const mcpUrl = state.baseUrl.replace(':9012', ':3112') + '/mcp';
-    const hdrs = { 'Content-Type':'application/json', 'Accept':'application/json, text/event-stream' };
-    if (state.apiKey) hdrs['Authorization'] = 'Bearer ' + state.apiKey;
+  // Use comprehensive recall search (searches episodic + semantic + knowledge_graph + assets)
+  const { ok, data } = await apiFetch('/api/v1/memory/recall/search', {
+    method: 'POST',
+    body: { query, userId, limit },
+  });
 
-    const initRes = await fetch(mcpUrl, { method:'POST', headers: hdrs, body: JSON.stringify({jsonrpc:'2.0',id:1,method:'initialize',params:{protocolVersion:'2024-11-05',capabilities:{},clientInfo:{name:'dashboard',version:'1'}}})});
-    const sid = initRes.headers.get('mcp-session-id') || '';
-    hdrs['mcp-session-id'] = sid;
-
-    const searchRes = await fetch(mcpUrl, { method:'POST', headers: hdrs, body: JSON.stringify({jsonrpc:'2.0',id:2,method:'tools/call',params:{name:'search_memories',arguments:{query,user_id:userId,limit}}})});
-    const text = await searchRes.text();
-    const events = [];
-    for (const line of text.split('\\n')) {
-      if (line.startsWith('data:')) {
-        const d = JSON.parse(line.slice(6));
-        if (d.result && d.result.content) {
-          for (const c of d.result.content) {
-            if (c.type === 'text') {
-              const lines = c.text.split('\\n');
-              for (const l of lines) {
-                const m = l.match(/^- \\[([^\\]]+)\\] (.+)/);
-                if (m) events.push({ timestamp: m[1], content: m[2], event_type: 'memory', session_id: 'katra' });
-              }
-            }
-          }
-        }
-      }
-    }
-
-    btn.disabled = false;
-    if (events.length === 0) {
-      container.innerHTML = emptyMsg('No results for \"' + query + '\". Try a different search term.');
-      return;
-    }
-    buildEventsTable(events, container);
-  } catch(e) {
-    btn.disabled = false;
-    container.innerHTML = errorMsg('Search failed: ' + (e.message || 'connection error'), searchMemories);
+  btn.disabled = false;
+  if (!ok) {
+    container.innerHTML = errorMsg(data?.error || 'Search failed', searchMemories);
+    return;
   }
+
+  // Combine all result types from rawResults into a flat normalized list
+  const raw = data?.rawResults || data?.data?.rawResults || {};
+  const all = [
+    ...(raw.episodic || []).map(e => ({ ...e, _type: 'episodic' })),
+    ...(raw.semantic || []).map(e => ({ ...e, _type: 'semantic' })),
+    ...(raw.knowledge_graph || []).map(e => ({ ...e, _type: 'graph' })),
+    ...(raw.assets || []).map(e => ({ ...e, _type: 'asset' })),
+  ];
+
+  if (all.length === 0) {
+    container.innerHTML = emptyMsg(`No results for "${query}".`);
+    return;
+  }
+  buildEventsTable(all, container, true);
 }
 
-function buildEventsTable(events, container) {
+function buildEventsTable(events, container, mixed) {
   let html = `<div class="table-wrap"><table><thead><tr>
     <th style="width:120px">Timestamp</th>
-    <th style="width:140px">Event Type</th>
+    <th style="width:140px">Type</th>
     <th>Content</th>
     <th style="width:160px">Session</th>
   </tr></thead><tbody>`;
 
   events.forEach((ev, i) => {
     const ts = ev.timestamp;
-    const sessionId = ev.session_id || '—';
-    const snippet = truncate(typeof ev.content === 'string' ? ev.content : (ev.content?.message || JSON.stringify(ev.content)), 100);
-    const fullContent = JSON.stringify(ev.content, null, 2);
+    const sessionId = ev.session_id || ev._id || '—';
+    // Normalize content from various memory shapes
+    let snippet;
+    if (typeof ev.content === 'string') {
+      snippet = ev.content;
+    } else if (ev.content?.message) {
+      snippet = ev.content.message;
+    } else if (ev.content?.text) {
+      snippet = ev.content.text;
+    } else if (ev.description) {
+      snippet = ev.description;
+    } else if (ev.fact) {
+      snippet = ev.fact;
+    } else {
+      snippet = JSON.stringify(ev.content || ev);
+    }
+    snippet = truncate(snippet, 100);
+    const fullContent = JSON.stringify(ev, null, 2);
+    const typeLabel = mixed ? (ev._type || ev.event_type || 'event') : ev.event_type;
+    // Safe relevance score formatting
+    const relScore = ev.relevance_score != null && typeof ev.relevance_score === 'number'
+      ? ev.relevance_score.toFixed(2)
+      : (ev.confidence != null && typeof ev.confidence === 'number' ? ev.confidence.toFixed(2) : null);
     html += `
       <tr class="clickable" onclick="toggleEventRow(this, 'ev-${i}')">
         <td><span class="relative-time" title="${fmtDateFull(ts)}">${fmtDate(ts)}</span></td>
-        <td>${eventTypeBadge(ev.event_type)}</td>
+        <td>${eventTypeBadge(typeLabel)}</td>
         <td class="truncate">${escapeHtml(snippet)}</td>
-        <td class="mono text-dim truncate" title="${escapeHtml(sessionId)}">${escapeHtml(truncate(sessionId, 20))}</td>
+        <td class="mono text-dim truncate" title="${escapeHtml(sessionId)}">${escapeHtml(truncate(String(sessionId), 20))}</td>
       </tr>
       <tr id="ev-${i}" style="display:none" class="expanded-row">
         <td colspan="4">
           <div class="expanded-content">${escapeHtml(fullContent)}</div>
-          ${ev.relevance_score != null ? `<div style="margin-top:8px;font-size:0.7rem;color:var(--text-muted)">Relevance: ${ev.relevance_score.toFixed(2)}</div>` : ''}
+          ${relScore ? `<div style="margin-top:8px;font-size:0.7rem;color:var(--text-muted)">${ev.confidence != null ? 'Confidence' : 'Relevance'}: ${relScore}</div>` : ''}
         </td>
       </tr>`;
   });
@@ -914,59 +945,71 @@ async function loadGraphStats() {
   }
 }
 
+async function buildGraph() {
+  const btn = document.getElementById('build-graph-btn');
+  const footer = document.getElementById('graph-footer');
+  btn.disabled = true;
+  btn.textContent = 'Building…';
+  footer.textContent = 'Extracting entities from semantic memories via LLM…';
+
+  const { ok, data } = await apiFetch('/api/v1/memory/enhance/build-from-facts', { method: 'POST' });
+
+  btn.disabled = false;
+  btn.textContent = 'Build Graph';
+
+  if (ok && data?.success) {
+    footer.textContent = data.message || 'Graph built successfully';
+    toast(`✅ ${data.graph?.node_count || 0} nodes, ${data.graph?.edge_count || 0} edges`);
+    loadGraph();
+  } else {
+    footer.textContent = data?.error || 'Failed to build graph';
+    toast(data?.error || 'Failed to build graph', 'error');
+  }
+}
+
 async function loadGraph() {
   const query = document.getElementById('graph-query').value.trim();
   const footer = document.getElementById('graph-footer');
-
-  if (!query) {
-    await loadGraphStats();
-    // Try to load a default graph view
-    renderGraph([], []);
-    return;
-  }
-
-  footer.textContent = 'Exploring graph…';
-
-  // Try multiple endpoints for graph data
-  const [exploreRes, statsRes] = await Promise.allSettled([
-    apiFetch('/api/v1/memory/enhance/explore', { method: 'POST', body: { query, depth: 2 } }),
-    apiFetch('/api/v1/memory/enhance/stats'),
-  ]);
+  const svg = document.getElementById('graph-svg');
+  svg.innerHTML = '';
+  footer.textContent = 'Loading graph…';
 
   let nodes = [], edges = [];
 
-  // Extract from explore response
-  if (exploreRes.value?.ok && exploreRes.value.data?.data) {
-    const d = exploreRes.value.data.data;
-    // If the explore result contains a context string with relationships
-    if (d.total_nodes > 0) {
-      footer.textContent = `${d.total_nodes} nodes · ${d.total_edges} edges · Depth: ${d.depth}`;
-    }
-  }
+  if (query) {
+    // Query-specific exploration
+    footer.textContent = 'Exploring graph…';
+    const [exploreRes, statsRes] = await Promise.allSettled([
+      apiFetch('/api/v1/memory/enhance/explore', { method: 'POST', body: { query, depth: 2 } }),
+      apiFetch('/api/v1/memory/enhance/stats'),
+    ]);
 
-  // Build mock visualization from stats
-  if (statsRes.value?.ok && statsRes.value.data?.data) {
-    const s = statsRes.value.data.data;
-    if (s.recent_nodes && s.recent_nodes.length > 0) {
-      nodes = s.recent_nodes.map(n => ({
-        id: n.id || n._id,
-        label: n.properties?.name || n.type || 'node',
-        type: n.type || 'concept',
-        ...n,
-      }));
-      if (s.top_edges && s.top_edges.length > 0) {
-        edges = s.top_edges.map(e => ({
-          source: e.from_id || e.source,
-          target: e.to_id || e.target,
-          label: e.relationship_type || e.type || '',
-        }));
+    if (exploreRes.value?.ok && exploreRes.value.data?.data) {
+      const d = exploreRes.value.data.data;
+      if (d.total_nodes > 0) {
+        footer.textContent = `${d.total_nodes} nodes · ${d.total_edges} edges · Depth: ${d.depth}`;
       }
-      footer.textContent = `${s.node_count} total nodes · ${s.edge_count} total edges · Queue: ${s.queue_depth}`;
+    }
+
+    if (statsRes.value?.ok && statsRes.value.data?.data) {
+      const s = statsRes.value.data.data;
+      nodes = (s.recent_nodes || []).map(n => ({ id: n.id || n._id, label: n.properties?.name || n.label || n.type || 'node', type: n.type || 'concept', ...n }));
+      edges = (s.top_edges || []).map(e => ({ source: e.from_id || e.source, target: e.to_id || e.target, label: e.relationship_type || e.relationship || e.type || '' }));
+      footer.textContent = `${s.node_count} nodes · ${s.edge_count} edges · Queue: ${s.queue_depth}`;
+    }
+  } else {
+    // No query — load all available graph data
+    const { ok, data } = await apiFetch('/api/v1/memory/enhance/stats');
+    if (ok && data?.data) {
+      const s = data.data;
+      nodes = (s.recent_nodes || []).map(n => ({ id: n.id || n._id, label: n.properties?.name || n.label || n.type || 'node', type: n.type || 'concept', ...n }));
+      edges = (s.top_edges || []).map(e => ({ source: e.from_id || e.source, target: e.to_id || e.target, label: e.relationship_type || e.relationship || e.type || '' }));
+      footer.textContent = `${s.node_count} nodes · ${s.edge_count} edges · Queue: ${s.queue_depth}`;
     }
   }
 
   if (nodes.length === 0) {
-    footer.textContent = 'No graph data available. Try ingesting some sessions first.';
+    footer.innerHTML = 'No graph data yet. Click <strong>Build Graph</strong> to extract entities from your semantic memories.';
     renderGraph([], []);
     return;
   }
@@ -1271,7 +1314,7 @@ async function loadMemoryScope() {
   if (!container) return;
 
   const { ok, data } = await apiFetch('/api/v1/admin/memory-scope');
-  if (!ok) {
+  if (!ok || !data?.scope) {
     container.innerHTML = errorMsg('Could not load memory scope.', loadMemoryScope);
     return;
   }
@@ -1440,13 +1483,13 @@ async function loadLLMConfig() {
   if (!container) return;
 
   const { ok, data } = await apiFetch('/api/v1/admin/llm-config');
-  if (!ok) {
+  if (!ok || !data?.config) {
     container.innerHTML = errorMsg('Could not load LLM config.', loadLLMConfig);
     return;
   }
 
   const cfg = data.config;
-  const status = data.status;
+  const status = data.status || {};
   const providers = [
     { name: 'deepseek', label: 'DeepSeek', default_model: 'deepseek-v4-flash', default_url: 'https://api.deepseek.com/v1' },
     { name: 'openai', label: 'OpenAI', default_model: 'gpt-4o', default_url: 'https://api.openai.com/v1' },

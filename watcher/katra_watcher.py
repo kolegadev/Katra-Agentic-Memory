@@ -122,6 +122,7 @@ def store_session_to_memory(session_id: str, turns: list[str], provider: str, mo
         log.error("No API key configured. Set KATRA_API_KEY or api_key in config.")
         return 0
 
+    session = requests.Session()
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
@@ -130,7 +131,7 @@ def store_session_to_memory(session_id: str, turns: list[str], provider: str, mo
 
     try:
         # Initialize MCP session
-        r = requests.post(
+        r = session.post(
             mcp_url,
             headers=headers,
             json={
@@ -148,6 +149,16 @@ def store_session_to_memory(session_id: str, turns: list[str], provider: str, mo
             log.error("No session ID from MCP server")
             return 0
 
+        # Send initialized notification (required before tool calls)
+        init_headers = dict(headers)
+        init_headers["mcp-session-id"] = mcp_sid
+        session.post(
+            mcp_url,
+            headers=init_headers,
+            json={"jsonrpc": "2.0", "method": "notifications/initialized"},
+            timeout=10,
+        )
+
         # Build batched content
         content = f"Session: {session_id} | Provider: {provider}/{model}\n"
         content += "=" * 60 + "\n"
@@ -158,10 +169,9 @@ def store_session_to_memory(session_id: str, turns: list[str], provider: str, mo
             summary += f" (+{len(turns)-1} more turns)"
 
         # Store memory
-        headers["mcp-session-id"] = mcp_sid
-        r2 = requests.post(
+        r2 = session.post(
             mcp_url,
-            headers=headers,
+            headers=init_headers,
             json={
                 "jsonrpc": "2.0", "id": 2, "method": "tools/call",
                 "params": {
@@ -177,13 +187,19 @@ def store_session_to_memory(session_id: str, turns: list[str], provider: str, mo
             timeout=30,
         )
 
-        data_line = [l for l in r2.text.split("\n") if l.startswith("data:")]
-        if data_line:
-            resp = json.loads(data_line[0][6:])
-            if resp.get("result"):
-                return len(turns)
-            else:
-                log.warning(f"store_memory error: {resp.get('error', 'unknown')}")
+        # Decode raw bytes as UTF-8 and concatenate all SSE data lines
+        raw_text = r2.content.decode('utf-8', errors='replace')
+        data_lines = [l[5:].lstrip() for l in raw_text.splitlines() if l.startswith("data:")]
+        if data_lines:
+            payload = "\n".join(data_lines)
+            try:
+                resp = json.loads(payload)
+                if resp.get("result"):
+                    return len(turns)
+                else:
+                    log.warning(f"store_memory error: {resp.get('error', 'unknown')}")
+            except json.JSONDecodeError as e:
+                log.error(f"Failed to parse SSE payload: {e}. payload={payload[:300]!r}")
         else:
             log.warning("No SSE response from store_memory")
 

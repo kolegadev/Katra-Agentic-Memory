@@ -106,7 +106,7 @@ export const create_memory_routes = (): Hono => {
 
             const ttl_seconds = priority === 'high' ? 7200 : priority === 'medium' ? 3600 : 1800;
 
-            const item_id = await working-memory-service.store(
+            const item_id = await working_memory_service.store(
                 session_id,
                 { content, content_type },
                 { ttl_seconds }
@@ -137,7 +137,7 @@ export const create_memory_routes = (): Hono => {
             const session_id = c.req.param('session_id');
             const limit = parseInt(c.req.query('limit') || '20');
 
-            const items = await working-memory-service.get_session_memory(session_id, limit);
+            const items = await working_memory_service.get_session_memory(session_id, limit);
 
             return c.json({
                 success: true,
@@ -162,10 +162,10 @@ export const create_memory_routes = (): Hono => {
         try {
             const session_id = c.req.param('session_id');
 
-            const session_items = await working-memory-service.get_session_memory(session_id, 1000);
+            const session_items = await working_memory_service.get_session_memory(session_id, 1000);
             let cleared_count = 0;
             for (const item of session_items) {
-                const deleted = await working-memory-service.delete(item.id);
+                const deleted = await working_memory_service.delete(item.id);
                 if (deleted) cleared_count++;
             }
 
@@ -425,6 +425,7 @@ export const create_memory_routes = (): Hono => {
                     .find({
                         user_id,
                         $or: [
+                            { content: query_regex },
                             { 'content.message': query_regex },
                             { event_type: query_regex }
                         ]
@@ -569,7 +570,7 @@ export const create_memory_routes = (): Hono => {
                 .toArray();
 
             // Get working memory
-            const working_memory = await working-memory-service.get_session_memory(session_id, 5);
+            const working_memory = await working_memory_service.get_session_memory(session_id, 5);
 
             const enhanced_context = {
                 original_query: query,
@@ -821,7 +822,7 @@ export const create_memory_routes = (): Hono => {
             });
 
             // Step 2: Add to working memory
-            const working_memory_id = await working-memory-service.store(
+            const working_memory_id = await working_memory_service.store(
                 session_id,
                 { user_message: message, context: 'demo_interaction' },
                 { ttl_seconds: 3600 }
@@ -1253,7 +1254,7 @@ export const create_memory_routes = (): Hono => {
             };
 
             // Get working memory stats
-            const working_memory_stats = await working-memory-service.get_statistics();
+            const working_memory_stats = await working_memory_service.get_statistics();
 
             // Get database optimization stats
             const db_stats = await database_optimization_service.get_performance_statistics();
@@ -1985,6 +1986,55 @@ export const create_memory_routes = (): Hono => {
             
         } catch (error) {
             console.error('❌ Failed to create test session data:', error);
+            return c.json({
+                success: false,
+                error: error instanceof Error ? error.message : 'Unknown error'
+            }, 500);
+        }
+    });
+
+    /**
+     * GET /api/memory/semantic/facts?user_id=...&limit=50
+     * List semantic facts (distilled knowledge) for a user
+     */
+    router.get('/semantic/facts', async (c) => {
+        try {
+            const user_id = c.req.query('user_id');
+            const limit = parseInt(c.req.query('limit') || '50');
+
+            if (!user_id) {
+                return c.json({
+                    success: false,
+                    error: 'Missing required query parameter: user_id'
+                }, 400);
+            }
+
+            const db = get_database();
+            const results = await db.collection('semantic_facts')
+                .find({ user_id })
+                .sort({ created_at: -1, timestamp: -1, confidence: -1 })
+                .limit(limit)
+                .toArray();
+
+            return c.json({
+                success: true,
+                results: results.map(r => ({
+                    id: r._id || r.id,
+                    event_type: 'semantic_fact',
+                    content: r.content || r.description || r.fact || JSON.stringify(r),
+                    timestamp: r.created_at || r.timestamp || new Date(),
+                    session_id: r.session_id || '—',
+                    user_id: r.user_id,
+                    confidence: r.confidence,
+                    domain: r.domain,
+                    properties: r.properties
+                })),
+                count: results.length,
+                query: { user_id, limit }
+            });
+
+        } catch (error) {
+            console.error('Failed to list semantic facts:', error);
             return c.json({
                 success: false,
                 error: error instanceof Error ? error.message : 'Unknown error'
