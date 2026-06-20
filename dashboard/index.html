@@ -398,7 +398,7 @@
             </div>
             <div>
               <label class="label" for="settings-key">API Key</label>
-              <input class="input mono" id="settings-key" type="password" placeholder="sk-…" value="katra-admin-key-2026">
+              <input class="input mono" id="settings-key" type="password" placeholder="sk-…" value="">
               <span style="font-size:0.7rem;color:var(--text-dim)">Bearer token for Authorization header (leave blank if not required)</span>
             </div>
             <div style="display:flex;gap:8px">
@@ -447,7 +447,7 @@
 // ── State ──
 const state = {
   baseUrl: localStorage.getItem('katra_baseUrl') || 'http://localhost:9012',
-  apiKey: localStorage.getItem('katra_apiKey') || 'katra-admin-key-2026',
+  apiKey: localStorage.getItem('katra_apiKey') || '',
   healthInterval: null,
   currentTab: 'overview',
   graphNodes: [],
@@ -467,9 +467,7 @@ function authHeaders() {
   return headers;
 }
 
-const DEFAULT_API_KEY = 'katra-admin-key-2026';
-
-async function apiFetch(path, opts = {}, _retry = false) {
+async function apiFetch(path, opts = {}) {
   const url = apiUrl(path);
   const method = (opts.method || 'GET').toUpperCase();
   const fetchOpts = {
@@ -479,24 +477,12 @@ async function apiFetch(path, opts = {}, _retry = false) {
   if (opts.body && method !== 'GET') {
     fetchOpts.body = JSON.stringify(opts.body);
   }
-  // Force GET requests to not have body
   if (method === 'GET' && fetchOpts.body) {
     delete fetchOpts.body;
   }
   try {
     const res = await fetch(url, fetchOpts);
     const data = await res.json().catch(() => null);
-
-    // Auto-recovery: if the saved API key is rejected, reset to default and retry once
-    if (res.status === 401 && !_retry && state.apiKey !== DEFAULT_API_KEY) {
-      console.warn('Katra: API key rejected (401), resetting to default key');
-      state.apiKey = DEFAULT_API_KEY;
-      localStorage.setItem('katra_apiKey', DEFAULT_API_KEY);
-      const keyInput = document.getElementById('settings-key');
-      if (keyInput) keyInput.value = DEFAULT_API_KEY;
-      return apiFetch(path, opts, true);
-    }
-
     return { status: res.status, ok: res.ok, data };
   } catch (err) {
     console.error('Katra: network error for', path, err);
