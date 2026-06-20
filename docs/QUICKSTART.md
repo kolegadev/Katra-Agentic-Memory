@@ -15,9 +15,12 @@ cd katra
 cp .env.example .env
 ```
 
-Edit `.env` — set at minimum:
+Edit `.env` — set custom keys, or leave them blank to let Katra generate
+secure keys on first boot. Generated keys are persisted in MongoDB and printed
+in the server logs (`docker logs katra-server`).
 
 ```bash
+# Optional: set your own keys
 MCP_API_KEY=your-mcp-secret-key       # Your agent sends this
 KATRA_API_KEY=your-admin-secret-key   # For REST API + dashboard
 ```

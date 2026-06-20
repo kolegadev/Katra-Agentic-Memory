@@ -33,6 +33,7 @@ import { create_tenant_routes } from './routes/tenant-routes.js';
 import { startMcpServer } from './mcp-server.js';
 import { isMultiTenant, runWithTenant } from './database/tenant-context.js';
 import { resolveTenant, initTenantSystem } from './services/tenant-service.js';
+import { ensureApiKeys, logGeneratedKeys } from './utils/api-key-manager.js';
 
 dotenv.config();
 
@@ -48,6 +49,14 @@ async function main() {
   // Connect to MongoDB
   await connect_to_mongodb();
   console.log(`  MongoDB: ${is_database_connected() ? '✅ connected' : '⚠️ offline mode'}`);
+
+  // Ensure API keys are available (generate + persist if missing)
+  const { mcpApiKey, katraApiKey, generated: keysGenerated } = await ensureApiKeys();
+  process.env.MCP_API_KEY = mcpApiKey;
+  process.env.KATRA_API_KEY = katraApiKey;
+  if (keysGenerated) {
+    logGeneratedKeys(mcpApiKey, katraApiKey);
+  }
 
   // Initialize Redis (non-blocking — services degrade gracefully)
   console.log(`  Redis: connecting...`);

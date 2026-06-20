@@ -62,7 +62,7 @@ turning stateless agents into agents with memory.
 ```bash
 git clone https://github.com/kolegadev/katra.git
 cd katra
-cp .env.example .env  # Edit to set your API keys
+cp .env.example .env  # Optional: set custom API keys; leave blank for auto-generation
 docker-compose up -d --build
 ```
 
@@ -70,11 +70,15 @@ docker-compose up -d --build
 - MongoDB, Redis, MinIO, and Katra server containers start
 - The Docker image uses `node:20-slim` (Debian-based) — required for the
   ONNX runtime that powers local embeddings. Alpine/musl does NOT work.
+- If `MCP_API_KEY` / `KATRA_API_KEY` are not set in `.env`, Katra generates
+  secure random keys, persists them in MongoDB, and prints them in the logs.
 - The embedding model (`Xenova/all-MiniLM-L6-v2`, ~80MB) downloads
   automatically on first memory storage and caches in the container.
 - No external embedding API key needed — embeddings are 100% local.
 
 Verify: `curl http://localhost:3112/health`
+
+Find your generated keys: `docker logs katra-server | grep -A2 "Auto-generated API keys"`
 
 Dashboard: `http://localhost:9012/dashboard/`
 

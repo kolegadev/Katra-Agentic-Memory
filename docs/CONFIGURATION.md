@@ -8,8 +8,8 @@ All configuration is via environment variables (or `.env` file). See `.env.examp
 
 | Variable | Default | Description |
 |---|---|---|
-| `KATRA_API_KEY` | (required) | API key for REST API authentication |
-| `MCP_API_KEY` | (falls back to `KATRA_API_KEY`) | Dedicated MCP auth key (your agent sends this) |
+| `KATRA_API_KEY` | (auto-generated) | API key for REST API authentication |
+| `MCP_API_KEY` | (auto-generated) | Dedicated MCP auth key (your agent sends this) |
 | `HOST_MCP_PORT` | `3112` | **Host port** mapped to the MCP server (point your agent here) |
 | `HOST_API_PORT` | `9012` | **Host port** mapped to the REST API + dashboard |
 | `PORT` | `9002` | REST API port **inside the container** |
@@ -19,6 +19,12 @@ All configuration is via environment variables (or `.env` file). See `.env.examp
 **Port mapping:** `docker-compose.yml` maps `HOST_MCP_PORT:3112 → container:3100` and
 `HOST_API_PORT:9012 → container:9002`. Configure your agent with the **host ports**
 (`3112`/`9012`), not the internal container ports.
+
+**API key auto-generation:** If `MCP_API_KEY` and `KATRA_API_KEY` are not set in `.env`,
+Katra generates cryptographically random keys on first startup, persists them in the
+`system_settings` collection in MongoDB, and prints them to the server logs. Generated
+keys are reused on subsequent restarts. Set explicit values in `.env` to disable
+auto-generation (recommended for production).
 
 ### MongoDB
 

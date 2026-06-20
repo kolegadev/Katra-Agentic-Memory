@@ -15,7 +15,8 @@ anything that speaks the Model Context Protocol.
 git clone https://github.com/kolegadev/katra.git
 cd katra
 cp .env.example .env
-# Edit .env — set your API keys
+# Optional: edit .env to set custom API keys.
+# If left blank, Katra generates secure keys on first boot and prints them.
 docker-compose up -d --build
 ```
 
@@ -35,6 +36,12 @@ curl http://localhost:3112/health
 ```
 
 ## Connect Your Agent
+
+Get your MCP API key:
+
+- If you set `MCP_API_KEY` in `.env`, use that value.
+- If you left it blank, Katra generated one on first boot. Run
+  `docker logs katra-server` and look for the **Auto-generated API keys** block.
 
 Add Katra to your agent's MCP config:
 
