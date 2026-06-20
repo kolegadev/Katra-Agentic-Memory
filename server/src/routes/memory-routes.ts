@@ -418,7 +418,8 @@ export const create_memory_routes = (): Hono => {
 
             // Fallback to regex if text search returns nothing or is unavailable
             if (results.length === 0) {
-                const escapedTerms = query.split(/\s+/).map(escape_regex);
+                const safeQuery = query.slice(0, 200);
+                const escapedTerms = safeQuery.split(/\s+/).slice(0, 10).map(escape_regex);
                 const query_regex = new RegExp(escapedTerms.join('|'), 'i');
 
                 results = await db.collection('episodic_events')
