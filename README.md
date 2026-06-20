@@ -72,7 +72,7 @@ LLM provider, and more.
 |----------|-------------|-------|
 | **OpenClaw** | `~/.openclaw/openclaw.json` | Native MCP support |
 | **Claude Code** | `~/.claude/mcp.json` | Use `"type": "http"` |
-| **Kolega Code** | `~/.claude/mcp.json` or env vars | Claude-Code-based; sessions at `~/Library/Application Support/kolega-code/sessions` |
+| **Kolega Code** | `~/.claude/mcp.json` + lifecycle hooks | Dynamic memory injection on every prompt (see below) |
 | **OpenCode** | OpenCode config | Use `"type": "remote"` |
 | **Codex CLI** | `~/.codex/config.yaml` | Via webhook hooks |
 | **Any MCP client** | — | Standard MCP over SSE |
@@ -82,6 +82,66 @@ LLM provider, and more.
 > ```bash
 > docker inspect katra-server --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'
 > ```
+
+### Kolega Code: Dynamic Memory Retrieval
+
+Kolega Code can fetch relevant Katra memories **automatically on every user prompt**
+using its lifecycle-hook system. This is more powerful than passive session-log
+extraction because memories are injected into the live conversation context.
+
+What you need:
+
+1. Katra registered as an MCP server (so the bridge can call it).
+2. The `kolega-katra-bridge` Python package installed into Kolega Code's environment.
+3. A global `hooks.json` entry that fires the bridge on `UserPromptSubmit`.
+
+Install the bridge:
+
+```bash
+cd integrations/kolega-code
+uv pip install --python ~/.local/share/uv/tools/kolega-code/bin/python -e .
+```
+
+Configure the bridge (`~/Library/Application Support/kolega-code/katra-hook.json` on macOS):
+
+```json
+{
+  "mcp_url": "http://localhost:3112/mcp",
+  "api_key": "YOUR_MCP_API_KEY",
+  "user_id": "kolega-agent",
+  "sources": ["working_memory", "temporal_context", "vector_search", "temporal_recall"],
+  "max_context_tokens": 2500,
+  "timeout_seconds": 8
+}
+```
+
+Enable the hook (`~/Library/Application Support/kolega-code/hooks.json`):
+
+```json
+{
+  "schema_version": 1,
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "python",
+            "callable": "kolega_katra_bridge.hook:on_user_prompt",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+On each prompt, Kolega Code now queries Katra's `working_memory`,
+`get_temporal_context`, `vector_search`, and `temporal_recall` tools, then injects
+the most relevant results as additional context for the model.
+
+See `integrations/kolega-code/README.md` for full configuration options.
 
 ## LLM Configuration
 
@@ -259,6 +319,8 @@ katra/
 ├── Dockerfile               Multi-stage (builds TS inside image)
 ├── .env.example             All config options documented
 ├── watcher/                 Passive session-log extractors (Solomem)
+├── integrations/            Agent-specific dynamic-retrieval integrations
+│   └── kolega-code/         Kolega Code lifecycle-hook bridge
 ├── SKILL.md                 Multi-platform deployment guide
 └── docs/                    Full documentation
 ```
