@@ -1,12 +1,12 @@
 # MCP Tools Reference
 
-Katra exposes 25 tools via the Model Context Protocol (MCP). All tools are accessible through the MCP endpoint at `http://localhost:3100/mcp`.
+Katra exposes **29 tools** via the Model Context Protocol (MCP). All tools are accessible through the MCP endpoint at `http://localhost:3112/mcp` (the host-mapped port; inside the container this is `3100`).
 
 ## Authentication
 
 All MCP requests require:
 ```
-Authorization: Bearer <your-katra-api-key>
+Authorization: Bearer <your-mcp-api-key>
 Accept: application/json, text/event-stream
 ```
 
@@ -14,20 +14,19 @@ Accept: application/json, text/event-stream
 
 ```bash
 # 1. Initialize
-curl -X POST http://localhost:3100/mcp \
+SESSION_ID=$(curl -s -X POST http://localhost:3112/mcp \
   -H "Authorization: Bearer YOUR_KEY" \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}'
-
-# Response header contains: mcp-session-id: <session-id>
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}' \
+  -D - | grep -i "mcp-session-id" | awk '{print $2}' | tr -d '\r')
 
 # 2. Call a tool (include session ID header)
-curl -X POST http://localhost:3100/mcp \
+curl -X POST http://localhost:3112/mcp \
   -H "Authorization: Bearer YOUR_KEY" \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
-  -H "mcp-session-id: SESSION_ID" \
+  -H "mcp-session-id: $SESSION_ID" \
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"store_memory","arguments":{"content":"Hello Katra","user_id":"my-agent"}}}'
 ```
 
@@ -43,6 +42,7 @@ Store a memory (fact, preference, insight, event, or general).
 |---|---|---|---|
 | content | string | Yes | — |
 | user_id | string | No | — |
+| shared_id | string | No | — |
 | category | enum: `fact`, `preference`, `insight`, `event`, `general` | No | `general` |
 | confidence | number (0–1) | No | 0.8 |
 
@@ -59,6 +59,7 @@ Save a journal entry (reflection, milestone, observation).
 |---|---|---|---|
 | user_id | string | Yes | — |
 | entry | string | Yes | — |
+| shared_id | string | No | — |
 | source | enum: `manual`, `system` | No | `manual` |
 | tags | string[] | No | `[]` |
 
@@ -73,13 +74,36 @@ Read, store, or delete short-term session memory (Redis-backed, <5ms access).
 | content | string | No (required for `store`) |
 | limit | number | No (default 10, for `get`) |
 
+### create_mission
+
+Create a goal with optional task breakdown.
+
+| Parameter | Type | Required |
+|---|---|---|
+| user_id | string | Yes |
+| goal | string | Yes |
+| shared_id | string | No | — |
+| title | string | No | — |
+| tasks | string[] | No | — |
+
+### update_mission_task
+
+Update the status of a task within a mission.
+
+| Parameter | Type | Required |
+|---|---|---|
+| user_id | string | Yes |
+| mission_id | string | Yes |
+| task_id | string | Yes |
+| status | enum: `pending`, `in_progress`, `completed`, `blocked` | Yes |
+
 ---
 
 ## Recall
 
 ### search_memories
 
-Full-text search across all stored memories.
+Full-text + vector search across **11 memory collections**.
 
 | Parameter | Type | Required | Default |
 |---|---|---|---|
@@ -138,6 +162,44 @@ Get the current temporal context for a session (recent events + working memory s
 | user_id | string | Yes |
 | session_id | string | Yes |
 
+### get_journal
+
+Read journal entries (manual and/or auto-generated).
+
+| Parameter | Type | Required | Default |
+|---|---|---|---|
+| user_id | string | Yes | — |
+| source | enum: `auto`, `manual`, `all` | No | `all` |
+| limit | number | No | 20 |
+
+### get_auto_journal
+
+Query AI-distilled journal entries generated from conversations.
+
+| Parameter | Type | Required | Default |
+|---|---|---|---|
+| user_id | string | Yes | — |
+| since | ISO 8601 date | No | — |
+| limit | number | No | 20 |
+
+### list_missions
+
+List all missions for a user.
+
+| Parameter | Type | Required | Default |
+|---|---|---|---|
+| user_id | string | Yes | — |
+| limit | number | No | 10 |
+
+### get_mission
+
+Get full mission details including task tree and progress.
+
+| Parameter | Type | Required |
+|---|---|---|
+| user_id | string | Yes |
+| mission_id | string | Yes |
+
 ---
 
 ## Analysis
@@ -177,30 +239,6 @@ Trigger LLM summarization of conversation activity across time blocks.
 | max_blocks | number (1–52) | No | 20 |
 | dry_run | boolean | No | false |
 
-### get_auto_journal
-
-Query AI-distilled journal entries (auto-generated from conversations).
-
-| Parameter | Type | Required | Default |
-|---|---|---|---|
-| user_id | string | Yes | — |
-| since | ISO 8601 date | No | — |
-| limit | number | No | 20 |
-
-### get_journal
-
-Read journal entries (manual and/or auto-generated).
-
-| Parameter | Type | Required | Default |
-|---|---|---|---|
-| user_id | string | Yes | — |
-| source | enum: `auto`, `manual`, `all` | No | `all` |
-| limit | number | No | 20 |
-
----
-
-## Knowledge Graph
-
 ### explore_graph
 
 Explore the knowledge graph — entities and relationships extracted from conversations.
@@ -213,47 +251,54 @@ Explore the knowledge graph — entities and relationships extracted from conver
 
 ---
 
-## Missions
+## Memory Scope
 
-### create_mission
+### get_memory_scope
 
-Create a goal with optional task breakdown.
+Get the current memory scope settings: mode, shared_id, and visible user IDs.
 
-| Parameter | Type | Required |
-|---|---|---|
-| user_id | string | Yes |
-| goal | string | Yes |
-| title | string | No |
-| tasks | string[] | No |
+Takes no arguments.
 
-### list_missions
+### set_memory_scope
 
-List all missions for a user.
+Set memory scope mode and configuration.
 
 | Parameter | Type | Required | Default |
 |---|---|---|---|
-| user_id | string | Yes | — |
-| limit | number | No | 10 |
+| mode | enum: `personal`, `shared`, `hybrid` | Yes | — |
+| shared_id | string | No | — |
+| hybrid_visible_user_ids | string[] | No | — |
 
-### get_mission
+**Example:**
+```json
+{"name":"set_memory_scope","arguments":{"mode":"shared","shared_id":"my-team"}}
+```
 
-Get full mission details including task tree and progress.
+---
 
-| Parameter | Type | Required |
-|---|---|---|
-| user_id | string | Yes |
-| mission_id | string | Yes |
+## LLM Configuration
 
-### update_mission_task
+### get_llm_config
 
-Update a task's status within a mission.
+Get the current LLM provider configuration. API key is masked.
 
-| Parameter | Type | Required |
-|---|---|---|
-| user_id | string | Yes |
-| mission_id | string | Yes |
-| task_id | string | Yes |
-| status | enum: `pending`, `in_progress`, `completed`, `blocked` | Yes |
+Takes no arguments.
+
+### configure_llm
+
+Configure the LLM provider for semantic extraction, auto-journaling, and summaries. Applies live without restart.
+
+| Parameter | Type | Required | Default |
+|---|---|---|---|
+| provider | enum: `deepseek`, `openai`, `moonshot`, `ollama`, `custom` | Yes | — |
+| api_key | string | Yes | — |
+| base_url | string | No | per-provider default |
+| model | string | No | per-provider default |
+
+**Example:**
+```json
+{"name":"configure_llm","arguments":{"provider":"deepseek","api_key":"sk-...","base_url":"https://api.deepseek.com/v1","model":"deepseek-v4-flash"}}
+```
 
 ---
 
@@ -271,23 +316,19 @@ Get storage stats, index health, embedding coverage, and overall health.
 
 Check background processor queue depth, last run time, and errors.
 
+Takes no arguments.
+
 ### get_health
 
-Check all backend services: MongoDB, Redis, LLM, embedding model.
+Check all backend services: MongoDB, Redis, LLM, and embedding model status.
+
+Takes no arguments.
 
 ### get_heartbeat_status
 
-Check heartbeat scheduler: running state, last run, next scheduled, interval, history.
+Check heartbeat scheduler state.
 
-### list_assets
-
-List uploaded assets stored in MinIO/S3.
-
-| Parameter | Type | Required | Default |
-|---|---|---|---|
-| user_id | string | No | — |
-| content_type | string | No | — |
-| limit | number | No | 20 |
+Takes no arguments.
 
 ### get_transaction_log
 
@@ -299,3 +340,13 @@ Query the audit trail of agent actions.
 | action | string | No | — |
 | since | ISO 8601 date | No | — |
 | limit | number | No | 50 |
+
+### list_assets
+
+List uploaded assets stored in MinIO/S3.
+
+| Parameter | Type | Required | Default |
+|---|---|---|---|
+| user_id | string | No | — |
+| content_type | string | No | — |
+| limit | number | No | 20 |

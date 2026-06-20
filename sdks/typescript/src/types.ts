@@ -1,7 +1,7 @@
 /**
  * Katra SDK — TypeScript Type Definitions
  *
- * Covers all request parameters and response shapes for the 25 MCP tools
+ * Covers all request parameters and response shapes for the 29 MCP tools
  * exposed by the Katra cognitive memory server, plus MCP protocol types.
  *
  * @module types
@@ -46,7 +46,7 @@ export interface MCPInitializeResult {
 
 /** Constructor options for `KatraClient`. */
 export interface KatraClientOptions {
-  /** Base URL of the Katra MCP server (e.g. `http://localhost:3100`). */
+  /** Base URL of the Katra MCP server (e.g. `http://localhost:3112`). */
   url: string;
   /** API key for authentication. */
   apiKey?: string;

@@ -2,7 +2,7 @@
 
 TypeScript SDK for [Katra](https://github.com/katra-ai/katra) — Cognitive Memory as a Service.
 
-Access all 25 Katra memory tools with a fully-typed async API. Built on the
+Access all 29 Katra memory tools with a fully-typed async API. Built on the
 MCP (Model Context Protocol) Streamable HTTP transport with automatic session
 handling.
 
@@ -16,7 +16,7 @@ npm install @katra/sdk
 import { KatraClient } from '@katra/sdk';
 
 const katra = new KatraClient({
-  url: 'http://localhost:3100',
+  url: 'http://localhost:3112',
   apiKey: process.env.KATRA_API_KEY, // optional if server allows unauthenticated
 });
 
@@ -109,7 +109,7 @@ await katra.close();
 ```ts
 import { KatraClient, KatraAuthError, KatraConnectionError } from '@katra/sdk';
 
-const katra = new KatraClient({ url: 'http://localhost:3100', apiKey: 'sk-...' });
+const katra = new KatraClient({ url: 'http://localhost:3112', apiKey: 'sk-...' });
 
 try {
   await katra.storeMemory({ content: 'Hello' });
@@ -131,7 +131,7 @@ For advanced scenarios, use `MCPClient` directly:
 ```ts
 import { MCPClient } from '@katra/sdk';
 
-const mcp = new MCPClient({ url: 'http://localhost:3100', apiKey: 'sk-...' });
+const mcp = new MCPClient({ url: 'http://localhost:3112', apiKey: 'sk-...' });
 await mcp.initialize();
 
 const result = await mcp.callTool('search_memories', { query: 'React' });

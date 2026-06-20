@@ -71,7 +71,7 @@ class KatraMCPClient:
     Parameters
     ----------
     url : str
-        Base URL of the Katra server (e.g. ``http://localhost:3100``).
+        Base URL of the Katra server (e.g. ``http://localhost:3112``).
         The MCP endpoint is ``{url}/mcp``.
 
     api_key : str | None

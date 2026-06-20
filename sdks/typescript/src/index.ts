@@ -2,13 +2,13 @@
  * Katra SDK for TypeScript
  *
  * Typed client for the Katra Cognitive Memory server.
- * Provides access to all 25 MCP tools via a clean async API.
+ * Provides access to all 29 MCP tools via a clean async API.
  *
  * @example
  * ```ts
  * import { KatraClient } from '@katra/sdk';
  *
- * const katra = new KatraClient({ url: 'http://localhost:3100' });
+ * const katra = new KatraClient({ url: 'http://localhost:3112' });
  *
  * // Store a memory
  * await katra.storeMemory({ content: 'User likes dark mode', category: 'preference' });

@@ -8,11 +8,17 @@ All configuration is via environment variables (or `.env` file). See `.env.examp
 
 | Variable | Default | Description |
 |---|---|---|
-| `KATRA_API_KEY` | (required) | API key for REST API and MCP authentication |
-| `MCP_API_KEY` | (falls back to `KATRA_API_KEY`) | Dedicated MCP auth key (if different) |
-| `PORT` | `9002` | REST API port |
-| `MCP_PORT` | `3100` | MCP server port |
+| `KATRA_API_KEY` | (required) | API key for REST API authentication |
+| `MCP_API_KEY` | (falls back to `KATRA_API_KEY`) | Dedicated MCP auth key (your agent sends this) |
+| `HOST_MCP_PORT` | `3112` | **Host port** mapped to the MCP server (point your agent here) |
+| `HOST_API_PORT` | `9012` | **Host port** mapped to the REST API + dashboard |
+| `PORT` | `9002` | REST API port **inside the container** |
+| `MCP_PORT` / `MCP_PORT_INTERNAL` | `3100` | MCP server port **inside the container** |
 | `HOST` | `0.0.0.0` | Bind address |
+
+**Port mapping:** `docker-compose.yml` maps `HOST_MCP_PORT:3112 → container:3100` and
+`HOST_API_PORT:9012 → container:9002`. Configure your agent with the **host ports**
+(`3112`/`9012`), not the internal container ports.
 
 ### MongoDB
 
@@ -86,10 +92,10 @@ If no LLM keys are configured, Katra runs in **local-only mode** (no AI summariz
 ## Docker Compose
 
 The included `docker-compose.yml` starts:
-- **mongo** — MongoDB 7.0 (port 27017)
-- **redis** — Redis 7 Alpine (port 6379)
-- **minio** — MinIO (ports 9000 API, 9001 console)
-- **katra** — Katra server (ports 9002 API, 3100 MCP)
+- **mongo** — MongoDB 7.0 (internal port 27017, not exposed to host)
+- **redis** — Redis 7 Alpine (internal port 6379, not exposed to host)
+- **minio** — MinIO (internal port 9000 API / 9001 console, not exposed to host)
+- **katra** — Katra server (external `HOST_API_PORT:9012` → internal `9002`; external `HOST_MCP_PORT:3112` → internal `3100`)
 
 Customize by editing `docker-compose.yml` or overriding env vars in `.env`.
 

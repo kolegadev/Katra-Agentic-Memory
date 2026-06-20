@@ -1,7 +1,7 @@
 /**
  * Katra SDK — High-Level Client
  *
- * The `KatraClient` class provides typed, ergonomic access to all 25 MCP
+ * The `KatraClient` class provides typed, ergonomic access to all 29 MCP
  * tools exposed by the Katra cognitive memory server. It manages the MCP
  * session handshake automatically — just construct, call a method, and go.
  *
@@ -9,7 +9,7 @@
  * ```ts
  * import { KatraClient } from '@katra/sdk';
  *
- * const katra = new KatraClient({ url: 'http://localhost:3100', apiKey: 'sk-...' });
+ * const katra = new KatraClient({ url: 'http://localhost:3112', apiKey: 'sk-...' });
  *
  * const mem = await katra.storeMemory({
  *   content: 'The user prefers dark mode for all applications',
@@ -76,7 +76,7 @@ import type {
  * High-level client for the Katra Cognitive Memory MCP server.
  *
  * Wraps the low-level MCP protocol details (JSON-RPC, SSE, sessions) behind
- * typed, async methods matching each of the 25 Katra tools.
+ * typed, async methods matching each of the 29 Katra tools.
  */
 export class KatraClient {
   readonly #mcp: MCPClient;
@@ -90,7 +90,7 @@ export class KatraClient {
    * @example
    * ```ts
    * const katra = new KatraClient({
-   *   url: 'http://localhost:3100',
+   *   url: 'http://localhost:3112',
    *   apiKey: 'sk-my-secret',
    * });
    * ```

@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 **Katra** is a standalone cognitive memory server for agentic LLMs.  This
-SDK provides a clean, type-annotated Python interface to all 25+ MCP memory
+SDK provides a clean, type-annotated Python interface to all 29 MCP memory
 tools plus REST API fallback endpoints.
 
 ## Installation
@@ -24,8 +24,8 @@ pip install -e ".[dev]"
 ```python
 from katra import KatraClient
 
-# Connect to your Katra server
-client = KatraClient("http://localhost:3100", api_key="your-api-key")
+# Connect to your Katra server (host-mapped MCP port)
+client = KatraClient("http://localhost:3112", api_key="your-api-key")
 
 # ── Store & recall ─────────────────────────────────
 client.store_memory("User is a Python developer", category="fact")
@@ -144,7 +144,7 @@ For direct JSON-RPC control:
 ```python
 from katra import KatraMCPClient
 
-mcp = KatraMCPClient("http://localhost:3100", api_key="key")
+mcp = KatraMCPClient("http://localhost:3112", api_key="key")
 mcp.initialize()                         # handshake → session ID
 tools = mcp.list_tools()                 # discover available tools
 result = mcp.call_tool("search_memories", {"query": "AI"})

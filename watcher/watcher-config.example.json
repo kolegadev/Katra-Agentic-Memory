@@ -1,5 +1,5 @@
 {
-  "mcp_url": "http://localhost:3100/mcp",
+  "mcp_url": "http://localhost:3112/mcp",
   "api_key": "your-katra-api-key",
   "default_user_id": "default",
   "state_file": "~/.katra/watcher-state.json",

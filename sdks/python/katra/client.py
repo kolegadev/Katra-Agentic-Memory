@@ -71,7 +71,7 @@ class KatraClient:
     Parameters
     ----------
     url : str
-        Base URL of the Katra server (e.g. ``http://localhost:3100``).
+        Base URL of the Katra server (e.g. ``http://localhost:3112``).
 
     api_key : str | None
         API key matching ``MCP_API_KEY`` / ``ADMIN_API_KEY`` on the server.

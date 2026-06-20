@@ -36,7 +36,7 @@ These services form the irreducible memory system:
 
 #### MCP Server (EXTRACT)
 
-`mcp-server.ts` — the 25-tool MCP server. This is the primary client interface.
+`mcp-server.ts` — the 29-tool MCP server. This is the primary client interface.
 
 #### Database Layer (EXTRACT)
 
@@ -118,7 +118,7 @@ The current frontend is a full chat interface. Katra needs only a lightweight ad
 └──────────────┬──────────────────────┬────────────────────┘
                │                      │
         MCP Protocol            REST API
-        (25+ tools)            (/api/v1/*)
+        (29+ tools)            (/api/v1/*)
                │                      │
 ┌──────────────┴──────────────────────┴────────────────────┐
 │                    Katra Server                            │
@@ -162,7 +162,7 @@ The core data model is unchanged from the proven cognitive-memory-chat implement
 - `working_memory` (Redis) — Ephemeral session-scoped key-value state
 - `assets` (S3) — Uploaded files with metadata in MongoDB
 
-### MCP Tools (25, expandable)
+### MCP Tools (29, expandable)
 
 **Memory Storage:**
 - `store_memory` — Store a fact, preference, insight, or event
@@ -237,11 +237,11 @@ Three modes, auto-detected from config:
 **Infrastructure:**
 ```
 docker-compose.yml:
-  - katra-server (API + MCP, ports 9002 + 3100)
+  - katra-server (API + MCP, external ports 9012 + 3112, internal ports 9002 + 3100)
   - mongodb (local, persistent volume)
   - redis (local, persistent volume)
   - minio (local S3, persistent volume)
-  - katra-dashboard (lightweight web UI, port 9003)
+  - katra-dashboard (lightweight web UI, served at `/dashboard` on port 9012)
 ```
 
 **Config:** `.env` file with API keys, DB credentials, LLM provider
@@ -386,64 +386,35 @@ katra/
 │   ├── Dockerfile
 │   └── esbuild.config.mjs    # Use esbuild (Pi-compatible)
 │
-├── dashboard/                # Lightweight web UI
-│   ├── src/
-│   │   ├── App.tsx
-│   │   ├── pages/
-│   │   │   ├── Stats.tsx     # Memory stats dashboard
-│   │   │   ├── Ingestion.tsx # Ingestion status
-│   │   │   ├── ApiKeys.tsx   # API key management (SaaS)
-│   │   │   └── Health.tsx    # Service health
-│   ├── package.json
-│   └── Dockerfile
+├── dashboard/                # Lightweight web UI (single-page HTML served at /dashboard)
+│   └── index.html
 │
-├── deploy/                   # Deployment configs for all tiers
-│   ├── local/                # Tier 1
-│   │   └── docker-compose.yml
-│   ├── aws/                  # Tier 2 — AWS
-│   │   ├── terraform/
-│   │   └── README.md
-│   ├── azure/                # Tier 2 — Azure
-│   │   ├── terraform/
-│   │   └── README.md
-│   ├── gcp/                  # Tier 2 — GCP
-│   │   ├── terraform/
-│   │   └── README.md
-│   ├── k8s/                  # Tier 2 — Kubernetes
-│   │   ├── helm/
-│   │   └── manifests/
-│   └── saas/                 # Tier 3 — SaaS infrastructure
-│       ├── docker-compose.yml
-│       └── README.md
+├── helm/                     # Kubernetes Helm chart
+│   └── katra/
 │
-├── sdk/                      # Client SDKs
+├── terraform/                # Cloud deployment templates
+│   └── aws/
+│
+├── sdks/                     # Client SDKs
 │   ├── python/
-│   │   ├── katra/
-│   │   │   ├── __init__.py
-│   │   │   ├── client.py     # REST API client
-│   │   │   └── mcp.py        # MCP client wrapper
-│   │   └── setup.py
-│   ├── typescript/
-│   │   ├── src/
-│   │   │   ├── index.ts
-│   │   │   └── client.ts
-│   │   └── package.json
-│   └── README.md
+│   └── typescript/
+│
+├── watcher/                  # Passive session-log extractors (Solomem)
+│   ├── katra_watcher.py
+│   ├── katra_opencode_extractor.py
+│   ├── claude_history_extractor.py
+│   ├── kolega_code_extractor.py
+│   ├── watcher-config.example.json
+│   └── katra-watcher.service
 │
 ├── docs/
 │   ├── ARCHITECTURE.md       # This file
-│   ├── MCP_TOOLS.md          # Full tool reference
+│   ├── MCP-TOOLS.md          # Full tool reference
 │   ├── DEPLOYMENT.md         # Deployment guide
-│   ├── API_REFERENCE.md      # REST API docs
+│   ├── API-REFERENCE.md      # REST API docs
 │   ├── QUICKSTART.md         # 5-minute setup
-│   └── MULTI_TENANCY.md      # SaaS architecture
-│
-├── examples/                 # Integration examples
-│   ├── openclaw/             # OpenClaw MCP config
-│   ├── langchain/            # LangChain memory adapter
-│   ├── crewai/               # CrewAI integration
-│   ├── autogen/              # AutoGen integration
-│   └── raw-curl/             # Direct API usage
+│   ├── CONFIGURATION.md      # Environment variables
+│   └── MIGRATION.md          # Migration from cognitive-memory-chat
 │
 └── scripts/
     ├── migrate-from-solomon.sh  # Migration from cognitive-memory-chat
@@ -466,7 +437,7 @@ katra/
 2. **Extract MCP server**
    - Copy `mcp-server.ts`
    - Remove Solomon-specific tools (missions, heartbeat if needed)
-   - Keep all 25 tools (they're all generic memory operations)
+   - Keep all 29 tools (they're all generic memory operations)
 
 3. **Extract REST API routes**
    - Copy: core-memory-routes, recall-routes, knowledge-graph-routes, ingestion-routes, assets-routes, diagnostic-routes, admin-routes
@@ -515,7 +486,7 @@ katra/
 
 6. **Documentation**
    - QUICKSTART.md (5-minute local setup)
-   - MCP_TOOLS.md (full tool reference)
+   - MCP-TOOLS.md (full tool reference)
    - API_REFERENCE.md (REST endpoints)
    - DEPLOYMENT.md (all three tiers)
 
@@ -573,7 +544,7 @@ katra/
   "mcp": {
     "servers": {
       "katra": {
-        "url": "http://localhost:3100/mcp",
+        "url": "http://localhost:3112/mcp",
         "transport": "streamable-http",
         "headers": {
           "Authorization": "Bearer katra_live_xxx"
@@ -588,7 +559,7 @@ katra/
 ```python
 from katra import KatraClient
 
-katra = KatraClient(api_key="katra_live_xxx", base_url="http://localhost:9002")
+katra = KatraClient(api_key="katra_live_xxx", base_url="http://localhost:9012")
 
 # Store a memory
 katra.store(content="User prefers dark mode", type="preference")
@@ -642,7 +613,7 @@ For the existing Pi5 deployment:
 2. `cd katra && docker compose up -d`
 3. Point MongoDB at the same `cognitive-memory` database (or run `migrate-from-solomon.sh`)
 4. Update OpenClaw MCP config from `cognitive-memory` server to `katra` server
-5. Verify all 25 tools work
+5. Verify all 29 tools work
 6. Decommission the Solomon-specific routes/services in cognitive-memory-chat
 
 The cognitive-memory-chat project continues to be the home for Solomon's agent-specific code (heartbeat, autonomous execution, missions, chat interface). Katra is the memory engine that Solomon (and any other agent) connects to.
@@ -672,7 +643,7 @@ The cognitive-memory-chat project continues to be the home for Solomon's agent-s
 
 | Week | Deliverable |
 |---|---|
-| 1 | Phase 1: Core extraction, working local Docker, all 25 MCP tools |
+| 1 | Phase 1: Core extraction, working local Docker, all 29 MCP tools |
 | 2 | Phase 2: LLM abstraction, SDKs, dashboard, documentation |
 | 3 | Phase 3: Terraform modules (AWS/Azure/GCP), Helm chart, migration script |
 | 4 | Phase 4: SaaS multi-tenancy, auth, billing, onboarding |

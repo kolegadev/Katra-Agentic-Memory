@@ -5,7 +5,7 @@ This guide covers migrating from [cognitive-memory-chat](https://github.com/kole
 ## What's the Same
 
 - **Core engine** — Same 14 memory services (episodic, semantic, knowledge graph, working memory, embeddings, background processor, etc.)
-- **MCP tools** — All 25 MCP tools work identically
+- **MCP tools** — All 29 MCP tools work identically
 - **REST API** — Same route structure under `/api/v1/`
 - **Database** — Same MongoDB collections and index structure
 - **Redis** — Same working memory and caching patterns
@@ -75,7 +75,7 @@ python3 katra/scripts/migrate_from_cognitive_memory.py \
 
 You can run both systems simultaneously:
 
-1. **Different ports**: cognitive-memory-chat on 9002/3100, Katra on 9012/3112
+1. **Different ports**: cognitive-memory-chat on host 9002/3100, Katra on host 9012/3112
 2. **Different databases**: `cognitive-memory` and `katra` in the same MongoDB
 3. **Different Docker Compose files**: each with its own network
 
@@ -95,10 +95,10 @@ docker compose up -d
 1. [ ] Clone Katra: `git clone https://github.com/kolegadev/katra`
 2. [ ] Copy `.env.example` to `.env`, configure API key and LLM
 3. [ ] Start Katra: `docker compose up -d`
-4. [ ] Verify health: `curl http://localhost:3100/health`
+4. [ ] Verify health: `curl http://localhost:3112/health`
 5. [ ] Run migration script (dry run first): `python3 scripts/migrate_from_cognitive_memory.py --source ... --target ... --dry-run`
 6. [ ] Run actual migration: `python3 scripts/migrate_from_cognitive_memory.py --source ... --target ...`
-7. [ ] Verify migrated data: `curl -X POST http://localhost:9002/api/v1/memory/episodic/search -H "Authorization: Bearer KEY" -H "Content-Type: application/json" -d '{"query":"test","user_id":"openclaw-main"}'`
+7. [ ] Verify migrated data: `curl -X POST http://localhost:9012/api/v1/memory/episodic/search -H "Authorization: Bearer KEY" -H "Content-Type: application/json" -d '{"query":"test","user_id":"openclaw-main"}'`
 8. [ ] Update agent MCP config to point at Katra
 9. [ ] Deploy Katra watcher (if using auto-collection)
 10. [ ] Verify agent can search memories through Katra

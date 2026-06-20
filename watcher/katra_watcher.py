@@ -18,7 +18,7 @@ Config file supports multi-platform session directories.
 Without --config, defaults to OpenClaw only (~/.openclaw/agents).
 
 Environment:
-    KATRA_MCP_URL=http://localhost:3100/mcp
+    KATRA_MCP_URL=http://localhost:3112/mcp
     KATRA_API_KEY=your-api-key
 """
 
@@ -35,7 +35,7 @@ from typing import Optional
 
 # ── Config ──────────────────────────────────────────────────────────────────
 DEFAULT_SESSIONS_DIR = os.path.expanduser("~/.openclaw/agents")
-DEFAULT_MCP_URL = os.environ.get("KATRA_MCP_URL", "http://localhost:3100/mcp")
+DEFAULT_MCP_URL = os.environ.get("KATRA_MCP_URL", "http://localhost:3112/mcp")
 DEFAULT_API_KEY = os.environ.get("KATRA_API_KEY", "")
 DEFAULT_STATE_FILE = os.path.expanduser("~/.katra/watcher-state.json")
 

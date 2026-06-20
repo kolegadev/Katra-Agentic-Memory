@@ -22,7 +22,7 @@ import requests
 
 # ── Config ──────────────────────────────────────────────────────────────────
 OPENCODE_DB = os.path.expanduser("~/.local/share/opencode/opencode.db")
-DEFAULT_MCP_URL = os.environ.get("KATRA_MCP_URL", "http://localhost:3100/mcp")
+DEFAULT_MCP_URL = os.environ.get("KATRA_MCP_URL", "http://localhost:3112/mcp")
 DEFAULT_API_KEY = os.environ.get("KATRA_API_KEY", "")
 DEFAULT_STATE_FILE = os.path.expanduser("~/.katra/opencode-extractor-state.json")
 DEFAULT_USER_ID = os.environ.get("KATRA_USER_ID", "opencode")

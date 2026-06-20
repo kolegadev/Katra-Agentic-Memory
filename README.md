@@ -65,6 +65,7 @@ LLM provider, and more.
 |----------|-------------|-------|
 | **OpenClaw** | `~/.openclaw/openclaw.json` | Native MCP support |
 | **Claude Code** | `~/.claude/mcp.json` | Use `"type": "http"` |
+| **Kolega Code** | `~/.claude/mcp.json` or env vars | Claude-Code-based; sessions at `~/Library/Application Support/kolega-code/sessions` |
 | **OpenCode** | OpenCode config | Use `"type": "remote"` |
 | **Codex CLI** | `~/.codex/config.yaml` | Via webhook hooks |
 | **Any MCP client** | — | Standard MCP over SSE |
@@ -126,46 +127,55 @@ curl -X PUT http://localhost:9012/api/v1/admin/memory-scope \
   -d '{"mode":"hybrid","shared_id":"my-team","hybrid_visible_user_ids":["agent-a","agent-b"]}'
 ```
 
-## Auto-Collection (Solomem)
+## Auto-Collection (Solomem Watchers)
 
 Katra captures memories in real-time when your agent calls `store_memory` via MCP.
-For **passive background collection** from conversation logs, deploy the
-[Solomem](https://github.com/kolegadev/solomem) watcher:
+For **passive background collection** from conversation logs, use the watchers
+included in this repo under `watcher/`:
 
 ```bash
-# Install the watcher
-mkdir -p ~/.solomem
-git clone https://github.com/kolegadev/solomem.git /tmp/solomem
-cp /tmp/solomem/memory_watcher.py ~/.solomem/
-cp /tmp/solomem/opencode_extractor.py ~/.solomem/
+# The watchers live in the Katra repo
+mkdir -p ~/.solomem ~/.katra
+cp watcher/katra_watcher.py ~/.solomem/memory_watcher.py
+cp watcher/katra_opencode_extractor.py ~/.solomem/opencode_extractor.py
+cp watcher/claude_history_extractor.py ~/.solomem/claude_history_extractor.py
+cp watcher/kolega_code_extractor.py ~/.solomem/kolega_code_extractor.py
+cp watcher/watcher-config.example.json ~/.solomem/watcher-config.json
 
-# Create config
-cat > ~/.solomem/watcher-config.json << 'EOF'
-{
-  "mcp_url": "http://localhost:3112/mcp",
-  "api_key": "YOUR_MCP_API_KEY",
-  "user_id": "my-agent",
-  "platforms": [
-    {
-      "name": "openclaw",
-      "session_dir": "~/.openclaw/agents",
-      "glob": "**/sessions/*.jsonl",
-      "exclude": ["trajectory"]
-    }
-  ]
-}
-EOF
+# Edit ~/.solomem/watcher-config.json with your MCP_API_KEY and platforms
 
 # Backfill existing history
 python3 ~/.solomem/memory_watcher.py --once --config ~/.solomem/watcher-config.json
 
-# Install as systemd service for continuous collection
-cp /tmp/solomem/memory-watcher.service ~/.config/systemd/user/
+# Install as a systemd service for continuous collection
+cp watcher/katra-watcher.service ~/.config/systemd/user/memory-watcher.service
 systemctl --user daemon-reload
 systemctl --user enable --now memory-watcher
 ```
 
-Supports OpenClaw, Claude Code, OpenCode, Codex CLI, Hermes, KiloClaw, KimiClaw.
+### Dedicated extractors
+
+Some platforms need a dedicated extractor because their session format is not plain JSONL:
+
+| Platform | Extractor | Session source | What it captures |
+|----------|-----------|----------------|------------------|
+| **OpenCode** | `watcher/katra_opencode_extractor.py` | `~/.local/share/opencode/opencode.db` | User + assistant text turns |
+| **Claude Code** | `watcher/claude_history_extractor.py` | `~/.claude/history.jsonl` | User prompts only (lightweight) |
+| **Kolega Code** | `watcher/kolega_code_extractor.py` | `~/Library/Application Support/kolega-code/sessions/*.json` | Full turn-by-turn transcript (text, thinking, tool calls, tool results) |
+
+Run a dedicated extractor once or continuously:
+
+```bash
+# Kolega Code example
+python3 watcher/kolega_code_extractor.py --once \
+  --api-key YOUR_MCP_API_KEY \
+  --user-id kolega-agent
+```
+
+On macOS, use `launchctl` to keep extractors running (see `watcher/katra-watcher.service`
+for a systemd template; adapt to a `~/Library/LaunchAgents/com.katra...plist`).
+
+Supported platforms: OpenClaw, Claude Code, Kolega Code, OpenCode, Codex CLI, Hermes, KiloClaw, KimiClaw.
 Each platform can have its own `user_id` for identity mode isolation.
 
 ## Features
@@ -232,7 +242,7 @@ To move Katra to a new machine: copy the `DATA_DIR` directory, copy `.env`, run 
 katra/
 ├── server/                  TypeScript server (esbuild, Docker)
 │   ├── src/
-│   │   ├── mcp-server.ts    27 MCP tools (store, search, recall, graph, scope)
+│   │   ├── mcp-server.ts    29 MCP tools (store, search, recall, graph, scope)
 │   │   ├── services/        26 core memory services
 │   │   ├── routes/          REST API + admin + ingestion + health
 │   │   └── database/        MongoDB, Redis, indexes, migrations
@@ -241,6 +251,7 @@ katra/
 ├── docker-compose.yml       MongoDB + Redis + MinIO + Katra
 ├── Dockerfile               Multi-stage (builds TS inside image)
 ├── .env.example             All config options documented
+├── watcher/                 Passive session-log extractors (Solomem)
 ├── SKILL.md                 Multi-platform deployment guide
 └── docs/                    Full documentation
 ```
@@ -350,7 +361,7 @@ ingress with path routing, HPA, and PDB. See [Deployment Guide](docs/DEPLOYMENT.
 | Multi-layered memory | ✅ 5 layers | ❌ flat | Partial | ❌ vector only |
 | Local-first (zero cost) | ✅ Pi-compatible | ❌ | ❌ | ❌ |
 | Background processing | ✅ auto-extract | ❌ | Partial | ❌ |
-| Multi-platform watcher | ✅ 7+ platforms | ❌ | ❌ | ❌ |
+| Multi-platform watcher | ✅ 7+ platforms (in-repo) | ❌ | ❌ | ❌ |
 | Identity modes | ✅ personal/shared/hybrid | ❌ | ❌ | ❌ |
 | Dashboard | ✅ built-in | ❌ | ❌ | ❌ |
 | License | MIT | Apache 2.0 | MIT | Proprietary |
@@ -359,7 +370,7 @@ ingress with path routing, HPA, and PDB. See [Deployment Guide](docs/DEPLOYMENT.
 
 - [Quick Start Guide](docs/QUICKSTART.md) — 5-minute setup
 - [Architecture](docs/ARCHITECTURE.md) — How it works under the hood
-- [MCP Tools Reference](docs/MCP-TOOLS.md) — All 27 tools with examples
+- [MCP Tools Reference](docs/MCP-TOOLS.md) — All 29 tools with examples
 - [REST API Reference](docs/API-REFERENCE.md) — HTTP endpoints
 - [Configuration Guide](docs/CONFIGURATION.md) — All environment variables
 - [Deployment Guide](docs/DEPLOYMENT.md) — Docker, cloud, K8s

@@ -18,18 +18,23 @@ turning stateless agents into agents with memory.
 └──────────────────────────────┬─────────────────────────────────────┘
                                │ MCP :3112
                                │ Admin API :9012
-        ┌──────────┬───────────┼───────────┬──────────┐
-        │          │           │           │          │
-   ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐
-   │OpenClaw│ │ Claude │ │OpenCode│ │ Codex  │ │ Hermes │
-   │JSONL   │ │  Code  │ │SQLite  │ │  CLI   │ │ Kilo/  │
-   │files   │ │  JSONL │ │+JSONL  │ │ Files  │ │ Kimi   │
-   └────────┘ └────────┘ └────────┘ └────────┘ └────────┘
-        │           │           │           │           │
-        └───────────┴───────────┴─────┬─────┴───────────┘
+        ┌──────────┬───────────┼───────────┬──────────┬───────────┐
+        │          │           │           │          │           │
+   ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐
+   │OpenClaw│ │ Claude │ │ Kolega │ │OpenCode│ │ Codex  │ │ Hermes │
+   │JSONL   │ │  Code  │ │ Code  │ │SQLite  │ │  CLI   │ │ Kilo/  │
+   │files   │ │  JSONL │ │ JSON  │ │+JSONL  │ │ Files  │ │ Kimi   │
+   └────────┘ └────────┘ └────────┘ └────────┘ └────────┘ └────────┘
+        │           │           │           │           │          │
+        └───────────┴───────────┴─────┬─────┴───────────┴──────────┘
                                       │
                            solomem watcher daemon
                            (multi-platform ingestion)
+                                      │
+        ┌─────────────────────────────┼─────────────────────────────┐
+        │                             │                             │
+   katra_watcher.py            dedicated extractors          launchd/systemd
+   (JSONL platforms)     (OpenCode, Kolega Code, Claude history)
 ```
 
 ---
@@ -40,7 +45,8 @@ turning stateless agents into agents with memory.
 |----------|-------------------|--------|-----------------|------------|
 | **OpenClaw** | `~/.openclaw/agents/*/sessions/` | `.jsonl` | File watcher | Yes |
 | **Claude Code** | `~/.claude/projects/*/` | `.jsonl` | File watcher | Yes |
-| **OpenCode** | `~/.local/share/opencode/` | SQLite + `.jsonl` | Extractor | Via config |
+| **Kolega Code** | `~/Library/Application Support/kolega-code/sessions/` | `.json` | Dedicated extractor | Via config |
+| **OpenCode** | `~/.local/share/opencode/` | SQLite + `.jsonl` | Dedicated extractor | Via config |
 | **Codex CLI** | `~/.codex/sessions/` | `.jsonl` | File watcher | Via config |
 | **KiloClaw** | `~/.kiloclaw/agents/*/sessions/` | `.jsonl` | File watcher | Yes |
 | **KimiClaw** | `~/.kimiclaw/agents/*/sessions/` | `.jsonl` | File watcher | Yes |
@@ -134,17 +140,22 @@ Then restart: `docker-compose restart server`
 > in MongoDB and applies live — no restart needed. Env vars are only read on startup
 > as a fallback. DB config overrides env vars.
 
-### 3. Deploy the Solomem Watcher
+### 3. Deploy the Solomem Watchers
+
+The watchers live in the Katra repo under `watcher/`. Copy them to `~/.solomem`
+(or any directory you prefer):
 
 ```bash
-mkdir -p ~/.solomem
-git clone https://github.com/kolegadev/solomem.git /tmp/solomem
-cp /tmp/solomem/memory_watcher.py ~/.solomem/
-cp /tmp/solomem/opencode_extractor.py ~/.solomem/
-chmod +x ~/.solomem/memory_watcher.py ~/.solomem/opencode_extractor.py
+mkdir -p ~/.solomem ~/.katra
+cp watcher/katra_watcher.py ~/.solomem/memory_watcher.py
+cp watcher/katra_opencode_extractor.py ~/.solomem/opencode_extractor.py
+cp watcher/claude_history_extractor.py ~/.solomem/claude_history_extractor.py
+cp watcher/kolega_code_extractor.py ~/.solomem/kolega_code_extractor.py
+cp watcher/watcher-config.example.json ~/.solomem/watcher-config.json
+chmod +x ~/.solomem/*.py
 ```
 
-Create `~/.solomem/watcher-config.json`:
+Edit `~/.solomem/watcher-config.json` with your `api_key` and platforms:
 
 ```json
 {
@@ -171,13 +182,54 @@ Create `~/.solomem/watcher-config.json`:
 }
 ```
 
-### 4. Install Systemd Service
+### 4. Install Background Service
+
+**Linux (systemd):**
 
 ```bash
-cp /tmp/solomem/memory-watcher.service ~/.config/systemd/user/
+cp watcher/katra-watcher.service ~/.config/systemd/user/memory-watcher.service
 systemctl --user daemon-reload
 systemctl --user enable memory-watcher
 systemctl --user start memory-watcher
+```
+
+**macOS (launchd):**
+
+Create `~/Library/LaunchAgents/com.katra.memory-watcher.plist`:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.katra.memory-watcher</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/env</string>
+        <string>python3</string>
+        <string>/Users/YOUR_USERNAME/.solomem/memory_watcher.py</string>
+        <string>--config</string>
+        <string>/Users/YOUR_USERNAME/.solomem/watcher-config.json</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+    <key>StandardOutPath</key>
+    <string>/Users/YOUR_USERNAME/.katra/memory-watcher.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/YOUR_USERNAME/.katra/memory-watcher.log</string>
+</dict>
+</plist>
+```
+
+Then load it:
+
+```bash
+launchctl load -w ~/Library/LaunchAgents/com.katra.memory-watcher.plist
 ```
 
 ### 5. Backfill Existing History
@@ -185,6 +237,18 @@ systemctl --user start memory-watcher
 ```bash
 python3 ~/.solomem/memory_watcher.py --once --config ~/.solomem/watcher-config.json
 ```
+
+### 6. Run Dedicated Extractors (if needed)
+
+Some platforms need a dedicated extractor because their session format is not plain JSONL:
+
+| Platform | Command |
+|----------|---------|
+| **OpenCode** | `python3 ~/.solomem/opencode_extractor.py --once --api-key YOUR_MCP_API_KEY --user-id opencode-agent` |
+| **Claude Code** | `python3 ~/.solomem/claude_history_extractor.py --once --api-key YOUR_MCP_API_KEY --user-id claude-agent` |
+| **Kolega Code** | `python3 ~/.solomem/kolega_code_extractor.py --once --api-key YOUR_MCP_API_KEY --user-id kolega-agent` |
+
+For continuous collection, wrap the dedicated extractor in its own launchd/systemd service.
 
 ---
 
