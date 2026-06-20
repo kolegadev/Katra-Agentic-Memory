@@ -32,5 +32,8 @@
     "prettier": "^3.4.2",
     "typescript": "~5.8.3"
   },
+  "overrides": {
+    "protobufjs": "^7.5.5"
+  },
   "license": "MIT"
 }
