@@ -735,6 +735,25 @@ resource "aws_lb_listener" "http" {
   protocol          = "HTTP"
 
   default_action {
+    type = "redirect"
+    redirect {
+      port        = "443"
+      protocol    = "HTTPS"
+      status_code = "HTTP_301"
+    }
+  }
+}
+
+# ── HTTPS Listener (port 443) ────────────────────────────────
+
+resource "aws_lb_listener" "https" {
+  load_balancer_arn = aws_lb.katra.arn
+  port              = 443
+  protocol          = "HTTPS"
+  ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-Res-2021-06"
+  certificate_arn   = var.acm_certificate_arn
+
+  default_action {
     type = "fixed-response"
     fixed_response {
       content_type = "text/plain"
@@ -747,7 +766,7 @@ resource "aws_lb_listener" "http" {
 # ── Listener Rules (path-based routing) ──────────────────────
 
 resource "aws_lb_listener_rule" "api" {
-  listener_arn = aws_lb_listener.http.arn
+  listener_arn = aws_lb_listener.https.arn
   priority     = 10
 
   condition {
@@ -763,7 +782,7 @@ resource "aws_lb_listener_rule" "api" {
 }
 
 resource "aws_lb_listener_rule" "mcp" {
-  listener_arn = aws_lb_listener.http.arn
+  listener_arn = aws_lb_listener.https.arn
   priority     = 20
 
   condition {

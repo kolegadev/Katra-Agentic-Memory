@@ -182,6 +182,13 @@ variable "tenant_isolation" {
   default     = "database"
 }
 
+# ── TLS / ACM ────────────────────────────────────────────────
+
+variable "acm_certificate_arn" {
+  description = "ARN of the ACM certificate for the ALB HTTPS listener"
+  type        = string
+}
+
 # ── Tags ─────────────────────────────────────────────────────
 
 variable "tags" {
