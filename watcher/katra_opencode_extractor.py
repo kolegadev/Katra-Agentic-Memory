@@ -211,14 +211,14 @@ def main():
 
     state = load_state(DEFAULT_STATE_FILE)
     client = McpClient(args.mcp_url, args.api_key)
-    turn_idx_counter = {}  # per-session turn index for ordering
 
     while True:
         all_turns = extract_turns(args.db)
         stored_count = 0
         skipped_count = 0
 
-        # Assign per-session indices for consistent ordering
+        # Assign per-session indices for consistent ordering (reset each cycle)
+        turn_idx_counter = {}
         for t in all_turns:
             sid = t["session_id"]
             if sid not in turn_idx_counter:
