@@ -50,6 +50,15 @@ import { ensureApiKeys, logGeneratedKeys, validateMcpKey, isMcpAuthConfigured } 
 
 dotenv.config();
 
+// ── Tenant identity ────────────────────────────────────────────────
+// The MCP server uses a single shared API key — there is no per-user
+// authentication. The caller-supplied user_id must never be used as an
+// authorization boundary (IDOR). All requests are bound to the
+// server-configured identity (DEFAULT_USER_ID / SOLOMEM_USER_ID).
+function resolveUserId(_requested?: unknown): string {
+  return DEFAULT_USER_ID;
+}
+
 // ── Authentication ─────────────────────────────────────────────────
 
 function validateAuth(req: IncomingMessage): boolean {
@@ -1707,7 +1716,12 @@ function registerHandlers(server: Server) {
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    const { name, arguments: args } = request.params;
+    const { name, arguments: rawArgs } = request.params;
+    // SECURITY: pin user_id to the server-configured identity for all tools.
+    // The single shared MCP_API_KEY does not identify individual users, so
+    // a caller-supplied user_id would be an unvalidated authorization claim
+    // enabling cross-user data access (IDOR).
+    const args = rawArgs ? { ...rawArgs, user_id: resolveUserId((rawArgs as any).user_id) } : rawArgs;
     try {
       let result: TextContent[];
       switch (name) {
@@ -1795,7 +1809,7 @@ function registerHandlers(server: Server) {
     const db = get_database();
     const match = uri.match(/^memory:\/\/([^/]+)\/(.+)$/);
     const type = match ? match[1] : '';
-    const userId = match ? decodeURIComponent(match[2]) : 'mcp-user';
+    const userId = resolveUserId(match ? decodeURIComponent(match[2]) : undefined);
     const scopeFilter = await buildScopeFilter(userId);
 
     switch (type) {
@@ -1892,7 +1906,7 @@ function registerHandlers(server: Server) {
 
   server.setRequestHandler(GetPromptRequestSchema, async (request) => {
     const { name, arguments: promptArgs } = request.params;
-    const uid = (promptArgs as any)?.user_id || 'mcp-user';
+    const uid = resolveUserId((promptArgs as any)?.user_id);
 
     switch (name) {
       case 'memory-recall': {
