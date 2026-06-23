@@ -10,6 +10,7 @@ import { get_error_message, get_error_stack } from '../utils/error-utils.js';
 import { getMemoryScope, invalidateScopeCache } from '../services/memory-scope-service.js';
 import { get_llm_config_from_db, save_llm_config_to_db, type LLMConfig } from '../services/llm-service.js';
 import { entityResolver } from '../services/entity-resolver.js';
+import { create_rate_limiter } from '../middleware/rate-limit.js';
 
 function safeEqual(a: string, b: string): boolean {
   const ab = Buffer.from(a);
@@ -36,11 +37,26 @@ export const create_admin_routes = (): Hono => {
     return next();
   });
 
+  // General admin rate limit (30/min per API key). Keyed on the Authorization
+  // header hash so a leaked key used from multiple IPs is still throttled.
+  router.use('*', create_rate_limiter({
+    keyPrefix: 'admin_general',
+    max: 30,
+    windowMs: 60_000,
+    identifyBy: 'apiKey',
+  }));
+
   /**
    * Clear all data from MongoDB and Redis
    * WARNING: This will permanently delete ALL data
    */
-  router.post('/clear-all', async (c) => {
+  router.post('/clear-all', create_rate_limiter({
+    keyPrefix: 'admin_destructive',
+    max: 5,
+    windowMs: 60_000,
+    identifyBy: 'apiKey',
+    failOpen: false,
+  }), async (c) => {
     try {
       console.log('🗑️ Starting database clear operation...');
       

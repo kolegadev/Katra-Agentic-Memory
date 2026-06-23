@@ -3,9 +3,14 @@ import { v4 as uuidv4 } from 'uuid';
 import { extraction_service, ExtractionContext, ExtractionResult } from '../services/extraction-service.js';
 import { dispatch_service, DispatchContext } from '../services/dispatch-service.js';
 import { getSessionIngestionService } from '../services/session-ingestion-service.js';
+import { create_rate_limiter } from '../middleware/rate-limit.js';
 
 export const create_ingestion_routes = (): Hono => {
   const router = new Hono();
+
+  // Broad DoS backstop for all ingestion endpoints (120/min per IP).
+  // Per-endpoint limits below are the binding constraints for expensive ops.
+  router.use('*', create_rate_limiter({ keyPrefix: 'ingest_general', max: 120, windowMs: 60_000 }));
 
   // Add timeout middleware specifically for ingestion routes
   router.use('*', async (c, next) => {
@@ -29,7 +34,7 @@ export const create_ingestion_routes = (): Hono => {
   });
 
   // Main ingestion endpoint - the core of Phase 3
-  router.post('/ingest', async (c) => {
+  router.post('/ingest', create_rate_limiter({ keyPrefix: 'ingest', max: 10, windowMs: 60_000 }), async (c) => {
     const startTime = Date.now();
     try {
       const body = await c.req.json();
@@ -218,7 +223,7 @@ export const create_ingestion_routes = (): Hono => {
   });
 
   // Batch ingestion endpoint
-  router.post('/ingest/batch', async (c) => {
+  router.post('/ingest/batch', create_rate_limiter({ keyPrefix: 'ingest_batch', max: 5, windowMs: 60_000 }), async (c) => {
     try {
       const body = await c.req.json();
       
@@ -327,7 +332,7 @@ export const create_ingestion_routes = (): Hono => {
   });
 
   // Ingestion validation endpoint
-  router.post('/validate', async (c) => {
+  router.post('/validate', create_rate_limiter({ keyPrefix: 'ingest_validate', max: 20, windowMs: 60_000 }), async (c) => {
     try {
       const body = await c.req.json();
       
@@ -459,7 +464,7 @@ export const create_ingestion_routes = (): Hono => {
   // ── Session Session Ingestion ────────────────────────────────
 
   // Trigger Session session log ingestion
-  router.post('/sessions/ingest', async (c) => {
+  router.post('/sessions/ingest', create_rate_limiter({ keyPrefix: 'ingest_sessions', max: 20, windowMs: 60_000 }), async (c) => {
     try {
       const service = getSessionIngestionService();
       const result = await service.ingestNewSessions();
@@ -492,7 +497,7 @@ export const create_ingestion_routes = (): Hono => {
   });
 
   // Reset ingestion state (for re-ingestion)
-  router.post('/sessions/reset', async (c) => {
+  router.post('/sessions/reset', create_rate_limiter({ keyPrefix: 'ingest_sessions_reset', max: 20, windowMs: 60_000 }), async (c) => {
     try {
       const service = getSessionIngestionService();
       service.resetState();
