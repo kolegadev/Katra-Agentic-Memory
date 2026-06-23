@@ -248,7 +248,6 @@ export class BackgroundProcessor {
     } catch (extractionError: any) {
       console.error(`❌ Extraction failed for event ${eventId}:`, {
         error: extractionError.message,
-        content: content.substring(0, 200),
         stack: extractionError.stack?.split('\n').slice(0, 5)
       });
       throw extractionError;
