@@ -6,7 +6,7 @@
  * to prevent duplicate storage and temporal reference loops.
  */
 
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { get_database } from '../database/connection.js';
 import { get_redis_client } from '../database/redis-connection.js';
 import { llmService } from './llm-service.js';
@@ -258,7 +258,7 @@ export class EpisodicEventManager {
 
     // Create new event with enhanced metadata
     const newEvent: StoredEpisodicEvent = {
-      id: `event_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      id: `event_${randomUUID()}`,
       user_id: eventData.user_id,
       shared_id: eventData.shared_id,
       session_id: eventData.session_id,
@@ -383,7 +383,7 @@ export class EpisodicEventManager {
             
             // If no existing event found and we have attempts left, generate new ID
             if (attempt < maxAttempts) {
-              event.id = `event_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+              event.id = `event_${randomUUID()}`;
               console.log(`🔄 Retrying with new ID: ${event.id} (attempt ${attempt})`);
             } else {
               throw new Error(`Duplicate key error persists after ${maxAttempts} attempts`);
