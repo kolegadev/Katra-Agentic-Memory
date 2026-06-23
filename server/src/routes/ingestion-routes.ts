@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { extraction_service, ExtractionContext, ExtractionResult } from '../services/extraction-service.js';
 import { dispatch_service, DispatchContext } from '../services/dispatch-service.js';
 import { getSessionIngestionService } from '../services/session-ingestion-service.js';
+import { getTenantContext } from '../database/tenant-context.js';
 import { create_rate_limiter } from '../middleware/rate-limit.js';
 
 export const create_ingestion_routes = (): Hono => {
@@ -466,8 +467,19 @@ export const create_ingestion_routes = (): Hono => {
   // Trigger Session session log ingestion
   router.post('/sessions/ingest', create_rate_limiter({ keyPrefix: 'ingest_sessions', max: 20, windowMs: 60_000 }), async (c) => {
     try {
+      // Resolve user_id from tenant context (multi-tenant) or explicit request body field
+      const tenantCtx = getTenantContext();
+      const body = await c.req.json().catch(() => ({}));
+      const userId: string | undefined = body.user_id || tenantCtx?.tenant_id;
+      if (!userId) {
+        return c.json({
+          success: false,
+          error: 'user_id is required: provide it in the request body or authenticate with a tenant API key',
+        }, 400);
+      }
+
       const service = getSessionIngestionService();
-      const result = await service.ingestNewSessions();
+      const result = await service.ingestNewSessions(userId);
       return c.json({
         success: true,
         result,
