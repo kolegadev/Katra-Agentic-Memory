@@ -174,7 +174,7 @@ export class SessionIngestionService {
   /**
    * Ingest all new session messages since last run
    */
-  async ingestNewSessions(): Promise<IngestionResult> {
+  async ingestNewSessions(userId: string): Promise<IngestionResult> {
     if (this.processing) {
       return { sessionsProcessed: 0, messagesIngested: 0, skipped: 0, errors: 0, duration: 0 };
     }
@@ -206,7 +206,7 @@ export class SessionIngestionService {
         for (const msg of messages) {
           try {
             const eventData: EpisodicEventData = {
-              user_id: 'katra-default',
+              user_id: userId,
               session_id: `session:${msg.sessionId}`,
               event_type: 'conversation',
               content: {
