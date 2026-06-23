@@ -1,7 +1,7 @@
 #!/bin/bash
 # REST API recall across users
 API_URL="http://localhost:9012"
-API_KEY="katra-admin-key-2026"
+API_KEY="${API_KEY:?API_KEY environment variable is not set}"
 
 api_get() {
   curl -s -H "Authorization: Bearer $API_KEY" "$API_URL$1"
