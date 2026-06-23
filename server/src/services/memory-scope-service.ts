@@ -8,6 +8,7 @@
  */
 
 import { get_database } from '../database/connection.js';
+import { getTenantContext } from '../database/tenant-context.js';
 
 /**
  * System-wide default user id. Used as the fallback for both store and search
@@ -22,18 +23,28 @@ export interface MemoryScopeConfig {
   hybrid_visible_user_ids: string[];
 }
 
-/** Cache for memory scope config (short-lived to avoid hitting MongoDB on every search) */
-let scopeCache: { config: MemoryScopeConfig | null; expires: number } = { config: null, expires: 0 };
+/** Cache for memory scope config keyed by tenant_id (short-lived to avoid hitting MongoDB on every search) */
+const scopeCache = new Map<string, { config: MemoryScopeConfig; expires: number }>();
 const SCOPE_CACHE_TTL_MS = 5000; // 5 second in-memory cache
+
+/** Returns a stable cache key for the current execution context. */
+function getScopeCacheKey(): string {
+  return getTenantContext()?.tenant_id ?? '__default__';
+}
 
 /**
  * Get the current memory scope configuration from system_settings.
- * Uses a short-lived cache to avoid hitting MongoDB on every search.
+ * Uses a short-lived per-tenant cache to avoid hitting MongoDB on every search.
  */
 export async function getMemoryScope(): Promise<MemoryScopeConfig> {
-  // Check in-memory cache
-  if (scopeCache.config && Date.now() < scopeCache.expires) {
-    return scopeCache.config;
+  const cacheKey = getScopeCacheKey();
+  const cached = scopeCache.get(cacheKey);
+  if (cached) {
+    if (Date.now() < cached.expires) {
+      return cached.config;
+    }
+    // Expired — evict immediately to prevent unbounded map growth
+    scopeCache.delete(cacheKey);
   }
 
   try {
@@ -44,7 +55,7 @@ export async function getMemoryScope(): Promise<MemoryScopeConfig> {
       shared_id: doc?.shared_id || null,
       hybrid_visible_user_ids: doc?.hybrid_visible_user_ids || [],
     };
-    scopeCache = { config, expires: Date.now() + SCOPE_CACHE_TTL_MS };
+    scopeCache.set(cacheKey, { config, expires: Date.now() + SCOPE_CACHE_TTL_MS });
     return config;
   } catch {
     // Default to personal if DB unavailable
@@ -114,7 +125,13 @@ export async function resolveSharedId(provided_shared_id?: string): Promise<stri
 
 /**
  * Invalidate the scope cache (called after admin updates scope settings).
+ * Clears only the current tenant's entry, or the entire cache if no tenant context is active.
  */
 export function invalidateScopeCache(): void {
-  scopeCache = { config: null, expires: 0 };
+  const tenantId = getTenantContext()?.tenant_id;
+  if (tenantId) {
+    scopeCache.delete(tenantId);
+  } else {
+    scopeCache.clear();
+  }
 }
