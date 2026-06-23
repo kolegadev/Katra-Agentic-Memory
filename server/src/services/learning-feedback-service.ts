@@ -83,6 +83,13 @@ export interface ConsolidationResult {
     confidence_improvements: Record<string, number>;
 }
 
+export class AuthorizationError extends Error {
+    constructor(message = 'Not authorized to access the requested resource') {
+        super(message);
+        this.name = 'AuthorizationError';
+    }
+}
+
 /**
  * Learning Feedback System - Core Learning Engine
  */
@@ -321,9 +328,10 @@ export class LearningFeedbackService {
     /**
      * Get learning analytics for user insights
      * @param user_id User identifier
+     * @param requesting_user_id Authenticated principal — must match user_id
      * @returns Learning analytics data
      */
-    async get_learning_analytics(user_id: string): Promise<{
+    async get_learning_analytics(user_id: string, requesting_user_id: string): Promise<{
         interaction_summary: any;
         quality_trends: any;
         learning_patterns: LearningPattern[];
@@ -335,6 +343,10 @@ export class LearningFeedbackService {
             confidence: number;
         }>;
     }> {
+        if (requesting_user_id !== user_id) {
+            throw new AuthorizationError();
+        }
+
         console.log(`📈 Generating learning analytics for user: ${user_id}`);
 
         try {

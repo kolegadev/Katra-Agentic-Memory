@@ -8,7 +8,7 @@
 import { timingSafeEqual } from 'node:crypto';
 import { Hono } from 'hono';
 import { working_memory_service } from '../services/working-memory-service.js';
-import { learning_feedback_service } from '../services/learning-feedback-service.js';
+import { learning_feedback_service, AuthorizationError } from '../services/learning-feedback-service.js';
 import { database_optimization_service } from '../services/database-optimization-service.js';
 import { get_database } from '../database/connection.js';
 import { escape_regex } from '../utils/regex-escape.js';
@@ -292,7 +292,7 @@ export const create_memory_routes = (): Hono => {
             const user_id = c.req.param('user_id');
             const days = parseInt(c.req.query('days') || '30');
 
-            const analytics = await learning_feedback_service.get_learning_analytics(user_id);
+            const analytics = await learning_feedback_service.get_learning_analytics(user_id, DEFAULT_USER_ID);
 
             return c.json({
                 success: true,
@@ -300,6 +300,9 @@ export const create_memory_routes = (): Hono => {
             });
 
         } catch (error) {
+            if (error instanceof AuthorizationError) {
+                return c.json({ success: false, error: 'Forbidden' }, 403);
+            }
             console.error('❌ Learning analytics generation failed:', error);
             return c.json({
                 success: false,
@@ -910,7 +913,7 @@ export const create_memory_routes = (): Hono => {
                 { feedback_processed: false };
 
             // Step 6: Generate analytics
-            const analytics = await learning_feedback_service.get_learning_analytics(user_id);
+            const analytics = await learning_feedback_service.get_learning_analytics(user_id, DEFAULT_USER_ID);
 
             return c.json({
                 success: true,
