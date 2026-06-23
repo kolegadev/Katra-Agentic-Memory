@@ -323,6 +323,7 @@ class SemanticIndexer {
     const searchPattern = searchTerms.join('|');
     
     const query = {
+      user_id: context.userId,
       $or: [
         { 'properties.name': { $regex: searchPattern, $options: 'i' } },
         { 'properties.description': { $regex: searchPattern, $options: 'i' } },
