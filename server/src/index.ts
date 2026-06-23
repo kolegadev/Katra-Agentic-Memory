@@ -33,7 +33,7 @@ import { create_tenant_routes } from './routes/tenant-routes.js';
 import { startMcpServer } from './mcp-server.js';
 import { isMultiTenant, runWithTenant } from './database/tenant-context.js';
 import { resolveTenant, initTenantSystem } from './services/tenant-service.js';
-import { ensureApiKeys, logGeneratedKeys } from './utils/api-key-manager.js';
+import { ensureApiKeys, logGeneratedKeys, validateKatraKey, isKatraAuthConfigured } from './utils/api-key-manager.js';
 
 dotenv.config();
 
@@ -50,10 +50,12 @@ async function main() {
   await connect_to_mongodb();
   console.log(`  MongoDB: ${is_database_connected() ? '✅ connected' : '⚠️ offline mode'}`);
 
-  // Ensure API keys are available (generate + persist if missing)
+  // Ensure API keys are available (generate + persist if missing).
+  // validateKatraKey() / validateMcpKey() are now the authoritative validators;
+  // process.env is updated only when we have plaintext (env-var or fresh generation).
   const { mcpApiKey, katraApiKey, generated: keysGenerated } = await ensureApiKeys();
-  process.env.MCP_API_KEY = mcpApiKey;
-  process.env.KATRA_API_KEY = katraApiKey;
+  if (mcpApiKey) process.env.MCP_API_KEY = mcpApiKey;
+  if (katraApiKey) process.env.KATRA_API_KEY = katraApiKey;
   if (keysGenerated) {
     logGeneratedKeys(mcpApiKey, katraApiKey);
   }
@@ -101,8 +103,6 @@ async function main() {
       return next();
     }
 
-    const apiKey = process.env.KATRA_API_KEY;
-
     // Multi-tenant mode: resolve API key to tenant
     if (isMultiTenant()) {
       const auth = c.req.header('Authorization');
@@ -112,7 +112,7 @@ async function main() {
       }
 
       // Admin key gets full access (including tenant management)
-      if (apiKey && token === apiKey) {
+      if (validateKatraKey(token)) {
         return next();
       }
 
@@ -129,14 +129,14 @@ async function main() {
       );
     }
 
-    // Single-tenant mode (default)
-    if (!apiKey) {
-      // No API key configured — open access (local dev mode)
+    // Single-tenant mode (default): open access when no key is configured.
+    if (!isKatraAuthConfigured()) {
       return next();
     }
 
     const auth = c.req.header('Authorization');
-    if (auth === `Bearer ${apiKey}`) {
+    const token = auth?.startsWith('Bearer ') ? auth.slice(7) : '';
+    if (token && validateKatraKey(token)) {
       return next();
     }
 

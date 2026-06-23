@@ -46,34 +46,25 @@ import { getMemoryScope, buildScopeFilter, resolveSharedId, invalidateScopeCache
 import { llmService, get_llm_config_from_db, save_llm_config_to_db } from './services/llm-service.js';
 import { getEpisodicEventManager } from './services/episodic-event-manager.js';
 import { stableContentHash } from './services/content-hash-utils.js';
-import { ensureApiKeys, logGeneratedKeys } from './utils/api-key-manager.js';
+import { ensureApiKeys, logGeneratedKeys, validateMcpKey, isMcpAuthConfigured } from './utils/api-key-manager.js';
 
 dotenv.config();
 
 // ── Authentication ─────────────────────────────────────────────────
 
-function isAuthRequired(): boolean {
-  return !!(process.env.MCP_API_KEY || process.env.ADMIN_API_KEY);
-}
-
-function getApiKey(): string | null {
-  return process.env.MCP_API_KEY || process.env.ADMIN_API_KEY || null;
-}
-
 function validateAuth(req: IncomingMessage): boolean {
-  if (!isAuthRequired()) return true;
-  const apiKey = getApiKey();
-  if (!apiKey) return true;
+  if (!isMcpAuthConfigured()) return true;
   const mcpAuth = req.headers['x-mcp-auth'] as string | undefined;
-  if (mcpAuth === apiKey) return true;
+  if (mcpAuth && validateMcpKey(mcpAuth)) return true;
   const authHeader = req.headers['authorization'] as string | undefined;
   if (authHeader && authHeader.startsWith('Bearer ')) {
-    if (authHeader.slice(7) === apiKey) return true;
+    if (validateMcpKey(authHeader.slice(7))) return true;
   }
   if (req.url) {
     try {
       const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-      if (url.searchParams.get('token') === apiKey) return true;
+      const token = url.searchParams.get('token');
+      if (token && validateMcpKey(token)) return true;
     } catch { /* ignore */ }
   }
   return false;
@@ -106,14 +97,16 @@ async function initializeServices(): Promise<void> {
     await connect_to_mongodb();
     console.error('  ✅ MongoDB connected');
 
-    // Ensure API keys are available (generate + persist if missing)
+    // Ensure API keys are available (generate + persist if missing).
+    // validateMcpKey() is now the authoritative validator; process.env is updated
+    // only when plaintext is available (env-var source or fresh generation).
     const { mcpApiKey, katraApiKey, generated: keysGenerated } = await ensureApiKeys();
-    process.env.MCP_API_KEY = mcpApiKey;
-    process.env.ADMIN_API_KEY = katraApiKey;
+    if (mcpApiKey) process.env.MCP_API_KEY = mcpApiKey;
+    if (katraApiKey) process.env.ADMIN_API_KEY = katraApiKey;
     if (keysGenerated) {
       logGeneratedKeys(mcpApiKey, katraApiKey);
     } else {
-      console.error(`🔐 MCP authentication ENABLED (via ${process.env.MCP_API_KEY ? 'MCP_API_KEY' : 'ADMIN_API_KEY'})`);
+      console.error(`🔐 MCP authentication ENABLED (via stored key hash)`);
     }
   } catch (e) {
     console.error('  ⚠️ MongoDB connection failed — service limited');
