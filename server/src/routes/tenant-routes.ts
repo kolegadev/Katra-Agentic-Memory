@@ -5,7 +5,6 @@
  * In multi-tenant mode, these are under /api/v1/tenants.
  */
 
-import { timingSafeEqual } from 'node:crypto';
 import { Hono } from 'hono';
 import {
   createTenant,
@@ -15,13 +14,7 @@ import {
   regenerateApiKey,
   deleteTenant,
 } from '../services/tenant-service.js';
-
-function safeEqual(a: string, b: string): boolean {
-  const ab = Buffer.from(a);
-  const bb = Buffer.from(b);
-  if (ab.length !== bb.length) return false;
-  return timingSafeEqual(ab, bb);
-}
+import { validateKatraKey } from '../utils/api-key-manager.js';
 
 export function create_tenant_routes(): Hono {
   const app = new Hono();
@@ -29,11 +22,10 @@ export function create_tenant_routes(): Hono {
   // Defense-in-depth: always require KATRA_API_KEY regardless of parent
   // middleware state. Tenant management endpoints are admin-only.
   app.use('*', async (c, next) => {
-    const apiKey = process.env.KATRA_API_KEY;
     const header = c.req.header('Authorization') ?? '';
     const presented = /^Bearer\s+(.+)$/i.exec(header)?.[1];
 
-    if (!apiKey || !presented || !safeEqual(presented, apiKey)) {
+    if (!presented || !validateKatraKey(presented)) {
       console.warn(`Tenant admin auth rejected: ${c.req.method} ${c.req.path}`);
       return c.json({ error: 'Unauthorized', message: 'Admin API key required' }, 401);
     }

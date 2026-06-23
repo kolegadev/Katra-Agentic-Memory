@@ -1,4 +1,3 @@
-import { timingSafeEqual } from 'node:crypto';
 import { Hono } from 'hono';
 import { get_database } from '../database/connection.js';
 import { getEpisodicEventManager } from '../services/episodic-event-manager.js';
@@ -11,13 +10,7 @@ import { getMemoryScope, invalidateScopeCache } from '../services/memory-scope-s
 import { get_llm_config_from_db, save_llm_config_to_db, type LLMConfig } from '../services/llm-service.js';
 import { entityResolver } from '../services/entity-resolver.js';
 import { create_rate_limiter } from '../middleware/rate-limit.js';
-
-function safeEqual(a: string, b: string): boolean {
-  const ab = Buffer.from(a);
-  const bb = Buffer.from(b);
-  if (ab.length !== bb.length) return false;
-  return timingSafeEqual(ab, bb);
-}
+import { validateKatraKey } from '../utils/api-key-manager.js';
 
 export const create_admin_routes = (): Hono => {
   const router = new Hono();
@@ -26,11 +19,10 @@ export const create_admin_routes = (): Hono => {
   // middleware state (no open-access fallback even in dev mode). Rejects tenant
   // keys in multi-tenant deployments because only the master admin key matches.
   router.use('*', async (c, next) => {
-    const apiKey = process.env.KATRA_API_KEY;
     const header = c.req.header('Authorization') ?? '';
     const presented = /^Bearer\s+(.+)$/i.exec(header)?.[1];
 
-    if (!apiKey || !presented || !safeEqual(presented, apiKey)) {
+    if (!presented || !validateKatraKey(presented)) {
       console.warn(`Admin auth rejected: ${c.req.method} ${c.req.path}`);
       return c.json({ error: 'Unauthorized', message: 'Admin API key required' }, 401);
     }
