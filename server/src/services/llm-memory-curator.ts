@@ -281,7 +281,7 @@ Respond with a JSON array of memory type names, e.g., ["episodic", "semantic"]`;
         } catch {
           // Fallback: regex search on content.message
           const orConditions = keywords.map(k => ({
-            'content.message': { $regex: k, $options: 'i' }
+            'content.message': { $regex: k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' }
           }));
           crossSessionEvents = await db.collection('episodic_events')
             .find({ user_id: userId, $or: orConditions })
@@ -303,7 +303,7 @@ Respond with a JSON array of memory type names, e.g., ["episodic", "semantic"]`;
         // Fallback: simple find + optional keyword filter
         if (keywords.length > 0) {
           const orConditions = keywords.map(k => ({
-            content: { $regex: k, $options: 'i' }
+            content: { $regex: k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' }
           }));
           facts = await db.collection('semantic_facts')
             .find({ user_id: userId, $or: orConditions })

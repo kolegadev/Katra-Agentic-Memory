@@ -231,7 +231,7 @@ class SemanticIndexer {
 
     if (searchTerms.length === 0) return [];
 
-    const searchPattern = searchTerms.join('|');
+    const searchPattern = searchTerms.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
     
     const query = {
       user_id: context.userId,
@@ -279,7 +279,7 @@ class SemanticIndexer {
 
     if (searchTerms.length === 0) return [];
 
-    const searchPattern = searchTerms.join('|');
+    const searchPattern = searchTerms.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
     
     const query = {
       user_id: context.userId,
@@ -320,7 +320,7 @@ class SemanticIndexer {
 
     if (searchTerms.length === 0) return [];
 
-    const searchPattern = searchTerms.join('|');
+    const searchPattern = searchTerms.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
     
     const query = {
       user_id: context.userId,

@@ -78,7 +78,7 @@ export class TemporalResolver {
     let events: any[] = [];
     try {
       const orConditions = keywords.map(k => ({
-        'content.message': { $regex: k, $options: 'i' }
+        'content.message': { $regex: k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' }
       }));
 
       events = await this.episodicCollection
@@ -98,7 +98,7 @@ export class TemporalResolver {
     let facts: any[] = [];
     try {
       const factOrConditions = keywords.map(k => ({
-        content: { $regex: k, $options: 'i' }
+        content: { $regex: k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' }
       }));
 
       facts = await this.factsCollection

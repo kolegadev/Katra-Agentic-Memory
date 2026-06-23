@@ -512,16 +512,19 @@ class QueryOrchestrationService {
     }
 
     if (textTerms.length > 0) {
-      const regexConditions = textTerms.map((term) => ({
-        $or: [
-          { 'content.message': { $regex: term, $options: 'i' } },
-          { content: { $regex: term, $options: 'i' } },
-          { name: { $regex: term, $options: 'i' } },
-          { description: { $regex: term, $options: 'i' } },
-          { 'properties.name': { $regex: term, $options: 'i' } },
-          { 'properties.description': { $regex: term, $options: 'i' } }
-        ]
-      }));
+      const regexConditions = textTerms.map((term) => {
+        const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        return {
+          $or: [
+            { 'content.message': { $regex: escaped, $options: 'i' } },
+            { content: { $regex: escaped, $options: 'i' } },
+            { name: { $regex: escaped, $options: 'i' } },
+            { description: { $regex: escaped, $options: 'i' } },
+            { 'properties.name': { $regex: escaped, $options: 'i' } },
+            { 'properties.description': { $regex: escaped, $options: 'i' } }
+          ]
+        };
+      });
       fallbackQuery.$and = regexConditions;
     }
 
