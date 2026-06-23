@@ -15,6 +15,7 @@
 import { SemanticMemoryService } from './semantic-memory-service.js';
 
 interface CompactionTask {
+  userId: string;
   episodicId: string;
   text: string;
 }
@@ -34,9 +35,9 @@ export class CompactionQueueService {
    * Call this after the assistant response is generated. Seeds the queue
    * with the full conversation turn (user message + assistant response).
    */
-  public queueTurnDiff(episodicId: string, userText: string, agentText: string): void {
+  public queueTurnDiff(userId: string, episodicId: string, userText: string, agentText: string): void {
     const combinedDiff = `User: ${userText}\nAssistant: ${agentText}`;
-    this.queue.push({ episodicId, text: combinedDiff });
+    this.queue.push({ userId, episodicId, text: combinedDiff });
     console.log(`📨 Queued graph compaction for ${episodicId} (${this.queue.length} in queue)`);
     this.triggerIdleReset();
   }
@@ -91,7 +92,7 @@ export class CompactionQueueService {
     try {
       if (activeTask) {
         console.log(`📊 Processing graph compaction: ${activeTask.episodicId}`);
-        await this.semanticMemory.compactEpisodicToGraph(activeTask.episodicId, activeTask.text);
+        await this.semanticMemory.compactEpisodicToGraph(activeTask.userId, activeTask.episodicId, activeTask.text);
         console.log(`✅ Graph compaction complete: ${activeTask.episodicId}`);
       }
     } catch (error) {

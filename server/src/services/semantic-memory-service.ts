@@ -23,6 +23,7 @@ export interface Triplet {
 /** Node document stored in memory_nodes collection */
 export interface MemoryNode {
   _id: string;
+  user_id: string;
   label: string;
   type: string;
   attributes: Record<string, unknown>;
@@ -33,6 +34,7 @@ export interface MemoryNode {
 /** Edge document stored in memory_edges collection */
 export interface MemoryEdge {
   _id: string;
+  user_id: string;
   source: string;
   target: string;
   relationship: string;
@@ -52,7 +54,8 @@ export class SemanticMemoryService {
   /**
    * Orchestrates extraction and local DB upsert for a single episodic turn.
    */
-  public async compactEpisodicToGraph(episodicId: string, textContent: string): Promise<void> {
+  public async compactEpisodicToGraph(userId: string, episodicId: string, textContent: string): Promise<void> {
+    assertUserId(userId);
     const triplets = await this.extractTripletsViaLLM(textContent);
 
     if (triplets.length === 0) {
@@ -63,7 +66,7 @@ export class SemanticMemoryService {
     console.log(`📊 Extracted ${triplets.length} triplets, upserting to graph...`);
 
     for (const triplet of triplets) {
-      await this.upsertTriplet(episodicId, triplet);
+      await this.upsertTriplet(userId, episodicId, triplet);
     }
 
     console.log(`📊 Graph compaction complete for ${episodicId}: ${triplets.length} relationships stored`);
@@ -71,19 +74,20 @@ export class SemanticMemoryService {
 
   /**
    * Incremental upsert of a single triplet into MongoDB.
-   * Node IDs are normalized (lowercase, underscores) for deduplication.
+   * Node IDs incorporate user_id for tenant isolation.
    * Edge weights are incremented on repeated mentions.
    */
-  private async upsertTriplet(episodicId: string, triplet: Triplet): Promise<void> {
-    const sourceId = this.normalizeNodeId(triplet.source);
-    const targetId = this.normalizeNodeId(triplet.target);
+  private async upsertTriplet(userId: string, episodicId: string, triplet: Triplet): Promise<void> {
+    const sourceId = this.normalizeNodeId(userId, triplet.source);
+    const targetId = this.normalizeNodeId(userId, triplet.target);
+    const now = new Date();
 
     // 1. Upsert Source Node
     await this.db.collection('memory_nodes').updateOne(
       { _id: sourceId },
       {
-        $set: { label: triplet.source, type: triplet.sourceType, updated_at: new Date() },
-        $setOnInsert: { created_at: new Date(), attributes: {} },
+        $set: { label: triplet.source, type: triplet.sourceType, updated_at: now },
+        $setOnInsert: { user_id: userId, created_at: now, attributes: {} },
       },
       { upsert: true }
     );
@@ -92,8 +96,8 @@ export class SemanticMemoryService {
     await this.db.collection('memory_nodes').updateOne(
       { _id: targetId },
       {
-        $set: { label: triplet.target, type: triplet.targetType, updated_at: new Date() },
-        $setOnInsert: { created_at: new Date(), attributes: {} },
+        $set: { label: triplet.target, type: triplet.targetType, updated_at: now },
+        $setOnInsert: { user_id: userId, created_at: now, attributes: {} },
       },
       { upsert: true }
     );
@@ -107,11 +111,11 @@ export class SemanticMemoryService {
           source: sourceId,
           target: targetId,
           relationship: triplet.relationship.toUpperCase().replace(/\s+/g, '_'),
-          updated_at: new Date(),
+          updated_at: now,
         },
         $inc: { weight: 1 },
         $addToSet: { source_episodic_ids: episodicId },
-        $setOnInsert: { confidence: 1.0 },
+        $setOnInsert: { user_id: userId, confidence: 1.0 },
       },
       { upsert: true }
     );
@@ -169,9 +173,10 @@ Start with { and end with }. Nothing before or after.`;
     }
   }
 
-  /** Normalize a label into a deduplicated node ID */
-  private normalizeNodeId(label: string): string {
-    return `node_${label.toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')}`;
+  /** Normalize a label into a tenant-scoped deduplicated node ID */
+  private normalizeNodeId(userId: string, label: string): string {
+    const normalizedLabel = label.toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+    return `node_${userId}_${normalizedLabel}`;
   }
 
   /** Build a deterministic edge ID from source, relationship, and target */
@@ -183,17 +188,29 @@ Start with { and end with }. Nothing before or after.`;
   /**
    * Return all nodes for a user (for diagnostic / dashboard use).
    */
-  public async getAllNodes(): Promise<MemoryNode[]> {
-    return this.db.collection('memory_nodes').find({}).sort({ updated_at: -1 }).limit(100).toArray() as Promise<MemoryNode[]>;
+  public async getAllNodes(userId: string): Promise<MemoryNode[]> {
+    assertUserId(userId);
+    return this.db.collection('memory_nodes').find({ user_id: userId }).sort({ updated_at: -1 }).limit(100).toArray() as Promise<MemoryNode[]>;
   }
 
   /**
    * Return top edges by weight for a user.
    */
-  public async getTopEdges(limit: number = 50): Promise<MemoryEdge[]> {
-    return this.db.collection('memory_edges').find({})
+  public async getTopEdges(userId: string, limit: number = 50): Promise<MemoryEdge[]> {
+    assertUserId(userId);
+    return this.db.collection('memory_edges').find({ user_id: userId })
       .sort({ weight: -1 })
       .limit(limit)
       .toArray() as Promise<MemoryEdge[]>;
+  }
+}
+
+/**
+ * Guard against accidental cross-tenant queries: MongoDB's find({ user_id: undefined })
+ * matches documents where the field is absent, which would re-open the leak.
+ */
+function assertUserId(userId: string): void {
+  if (!userId || typeof userId !== 'string') {
+    throw new Error('user_id is required for tenant-scoped graph query');
   }
 }

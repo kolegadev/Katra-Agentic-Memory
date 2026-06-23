@@ -131,6 +131,10 @@ export const MEMORY_SYSTEM_INDEXES: CollectionIndexes = {
     {
       keys: { updated_at: -1 },
       options: { name: 'updated_desc', background: true }
+    },
+    {
+      keys: { user_id: 1, updated_at: -1 },
+      options: { name: 'user_updated_desc', background: true }
     }
   ],
 
@@ -165,6 +169,10 @@ export const MEMORY_SYSTEM_INDEXES: CollectionIndexes = {
     {
       keys: { confidence: 1 },
       options: { name: 'confidence_index', background: true }
+    },
+    {
+      keys: { user_id: 1, weight: -1 },
+      options: { name: 'user_weight_desc', background: true }
     }
   ],
 

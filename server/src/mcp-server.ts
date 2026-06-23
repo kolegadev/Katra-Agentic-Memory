@@ -1843,8 +1843,8 @@ function registerHandlers(server: Server) {
       case 'graph': {
         const sms = getSemanticMemoryService();
         const queue = getCompactionQueueService();
-        const nodes = await sms.getAllNodes();
-        const edges = await sms.getTopEdges(20);
+        const nodes = await sms.getAllNodes(userId);
+        const edges = await sms.getTopEdges(userId, 20);
         const text = ['## Graph Stats', `Nodes: ${nodes.length} | Edges: ${edges.length} | Queue: ${queue.getQueueDepth()}`,
           '\n### Recent Nodes', ...nodes.slice(0, 10).map((n: any) => `- ${n.name || n.id} (${n.node_type || '?'})`),
           '\n### Top Edges', ...edges.slice(0, 10).map((e: any) => `- ${e.source || e.from} → ${e.target || e.to}`)];

@@ -89,9 +89,14 @@ export function create_knowledge_graph_routes(): Hono {
    */
   router.get('/stats', async (c) => {
     try {
+      const rawUserId = c.req.query('user_id');
+      const userId = typeof rawUserId === 'string' && rawUserId.length > 0
+        ? rawUserId
+        : DEFAULT_USER_ID;
+
       const sms = getSemanticMemoryService();
-      const nodes = await sms.getAllNodes();
-      const edges = await sms.getTopEdges(50);
+      const nodes = await sms.getAllNodes(userId);
+      const edges = await sms.getTopEdges(userId, 50);
       const compactionQueue = getCompactionQueueService();
 
       return c.json({
@@ -236,7 +241,7 @@ export function create_knowledge_graph_routes(): Hono {
 
         try {
           const beforeNodes = await db.collection('memory_nodes').countDocuments();
-          await sms.compactEpisodicToGraph(fact._id?.toString() || fact.id || 'backfill', content);
+          await sms.compactEpisodicToGraph(userId, fact._id?.toString() || fact.id || 'backfill', content);
           const afterNodes = await db.collection('memory_nodes').countDocuments();
           results.triplets_extracted += Math.max(0, afterNodes - beforeNodes);
           results.processed++;
@@ -246,8 +251,8 @@ export function create_knowledge_graph_routes(): Hono {
         }
       }
 
-      const nodes = await sms.getAllNodes();
-      const edges = await sms.getTopEdges(100);
+      const nodes = await sms.getAllNodes(userId);
+      const edges = await sms.getTopEdges(userId, 100);
 
       return c.json({
         success: true,
