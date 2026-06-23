@@ -28,6 +28,8 @@ export interface SessionStats {
 // Knowledge Graph Types
 export interface KnowledgeNode {
   id: string;
+  user_id: string;
+  session_id?: string;
   type: string;
   properties: Record<string, any>;
   created_at: Date;

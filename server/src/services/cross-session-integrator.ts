@@ -185,11 +185,13 @@ class CrossSessionIntegrator {
   ): Promise<KnowledgeNode[]> {
     const db = get_database();
 
+    if (!context.userId) return [];
     if (searchTerms.length === 0) return [];
 
     const searchPattern = searchTerms.join('|');
 
     const query = {
+      user_id: context.userId,
       $or: [
         { 'properties.name': { $regex: searchPattern, $options: 'i' } },
         { 'properties.description': { $regex: searchPattern, $options: 'i' } },
