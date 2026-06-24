@@ -28,6 +28,7 @@ export interface WorkingMemoryItem {
 }
 
 export interface SessionContext {
+    tenant_id: string; // Required isolation boundary — must come from authenticated principal
     session_id: string;
     user_id?: string;
     created_at: Date;
@@ -78,14 +79,47 @@ export class WorkingMemoryService {
     private response_times: number[] = [];
 
     /**
+     * Validates that tenant_id is a non-empty string and does not contain the key
+     * delimiter ':'. tenant_id MUST originate from the authenticated principal
+     * (e.g. DEFAULT_USER_ID), never from request-body fields, which are
+     * attacker-controlled.
+     */
+    private assertTenant(tenant_id: string): void {
+        if (typeof tenant_id !== 'string' || tenant_id.trim().length === 0) {
+            throw new Error('tenant_id is required and must be a non-empty string');
+        }
+        if (tenant_id.includes(':')) {
+            throw new Error('tenant_id must not contain ":"');
+        }
+    }
+
+    /**
+     * Single source of truth for session storage keys. Centralising key
+     * construction guarantees no code path can build an unscoped key.
+     * Format: session:{tenant_id}:{session_id}
+     */
+    private sessionKey(tenant_id: string, session_id: string): string {
+        this.assertTenant(tenant_id);
+        if (typeof session_id !== 'string' || session_id.trim().length === 0) {
+            throw new Error('session_id is required and must be a non-empty string');
+        }
+        if (session_id.includes(':')) {
+            throw new Error('session_id must not contain ":"');
+        }
+        return `${this.SESSION_PREFIX}${tenant_id}:${session_id}`;
+    }
+
+    /**
      * Store item in working memory with intelligent routing
      */
     async store(
+        tenant_id: string,
         session_id: string,
         content: any,
         metadata: Partial<WorkingMemoryItem['metadata']> = {},
         tags?: string[]
     ): Promise<string> {
+        this.assertTenant(tenant_id);
         const start_time = performance.now();
         const item_id = uuidv4();
         const now = new Date();
@@ -124,7 +158,7 @@ export class WorkingMemoryService {
                 await redis.setEx(redis_key, ttl, JSON.stringify(memory_item));
                 
                 // Also update session memory keys
-                await this.add_memory_to_session(session_id, item_id);
+                await this.add_memory_to_session(tenant_id, session_id, item_id);
                 
                 this.redis_ops++;
                 this.track_response_time(start_time);
@@ -139,7 +173,7 @@ export class WorkingMemoryService {
         // Fallback to MongoDB for large items or Redis failure
         const db = get_database();
         await db.collection('working_memory').insertOne(memory_item);
-        await this.add_memory_to_session(session_id, item_id);
+        await this.add_memory_to_session(tenant_id, session_id, item_id);
         
         this.track_response_time(start_time);
         console.log(`✅ Stored working memory item ${item_id} in MongoDB (${size_bytes} bytes)`);
@@ -204,14 +238,17 @@ export class WorkingMemoryService {
      * Create or update session context with topic extraction
      */
     async store_session_context(
-        session_id: string, 
+        tenant_id: string,
+        session_id: string,
         user_id?: string,
         initial_context?: Partial<SessionContext>
     ): Promise<boolean> {
+        this.assertTenant(tenant_id);
         const start_time = performance.now();
         
         const session_context: SessionContext = {
             session_id,
+            tenant_id,
             user_id,
             created_at: new Date(),
             last_activity: new Date(),
@@ -219,13 +256,16 @@ export class WorkingMemoryService {
             conversation_history: [],
             memory_keys: [],
             topic_tags: [],
-            ...initial_context
+            ...initial_context,
+            // Always override with authoritative values after spread
+            tenant_id,
+            session_id,
         };
 
         try {
             const redis = await get_redis_client();
             if (redis) {
-                const session_key = `${this.SESSION_PREFIX}${session_id}`;
+                const session_key = this.sessionKey(tenant_id, session_id);
                 await redis.setEx(session_key, this.DEFAULT_TTL, JSON.stringify(session_context));
                 
                 this.redis_ops++;
@@ -242,7 +282,7 @@ export class WorkingMemoryService {
         const db = get_database();
         const result = await db.collection('working_memory_sessions')
             .replaceOne(
-                { session_id }, 
+                { session_id, tenant_id }, 
                 session_context, 
                 { upsert: true }
             );
@@ -252,22 +292,30 @@ export class WorkingMemoryService {
     }
 
     /**
-     * Get session context with full conversation history
+     * Get session context with full conversation history.
+     * Returns null if the session does not exist or belongs to a different tenant.
      */
-    async get_session_context(session_id: string): Promise<SessionContext | null> {
+    async get_session_context(tenant_id: string, session_id: string): Promise<SessionContext | null> {
+        this.assertTenant(tenant_id);
         const start_time = performance.now();
         
         try {
             const redis = await get_redis_client();
             if (redis) {
-                const session_key = `${this.SESSION_PREFIX}${session_id}`;
+                const session_key = this.sessionKey(tenant_id, session_id);
                 const result = await redis.get(session_key);
                 
                 if (result) {
+                    const ctx = JSON.parse(result) as SessionContext;
+                    // Defense-in-depth: verify stored tenant matches requested tenant
+                    if (ctx.tenant_id !== tenant_id) {
+                        console.error(`❌ Tenant mismatch on cached session ${session_id} — denying`);
+                        return null;
+                    }
                     this.cache_hits++;
                     this.redis_ops++;
                     this.track_response_time(start_time);
-                    return JSON.parse(result) as SessionContext;
+                    return ctx;
                 }
             }
         } catch (error) {
@@ -275,11 +323,17 @@ export class WorkingMemoryService {
             this.mongodb_fallbacks++;
         }
 
-        // Fallback to MongoDB
+        // Fallback to MongoDB — filter MUST include tenant_id
         this.cache_misses++;
         const db = get_database();
         const session_context = await db.collection('working_memory_sessions')
-            .findOne({ session_id });
+            .findOne({ session_id, tenant_id });
+        
+        if (session_context && session_context.tenant_id !== tenant_id) {
+            console.error(`❌ Tenant mismatch on stored session ${session_id} — denying`);
+            this.track_response_time(start_time);
+            return null;
+        }
         
         this.track_response_time(start_time);
         return session_context as unknown as SessionContext | null;
@@ -289,12 +343,13 @@ export class WorkingMemoryService {
      * Add conversation message to session context
      */
     async add_conversation_message(
+        tenant_id: string,
         session_id: string,
         role: 'user' | 'assistant',
         content: string,
         memory_refs?: string[]
     ): Promise<boolean> {
-        const session_context = await this.get_session_context(session_id);
+        const session_context = await this.get_session_context(tenant_id, session_id);
         if (!session_context) {
             console.error(`❌ Session context not found: ${session_id}`);
             return false;
@@ -315,18 +370,19 @@ export class WorkingMemoryService {
             session_context.conversation_history = session_context.conversation_history.slice(-50);
         }
 
-        return await this.update_session_context(session_id, session_context);
+        return await this.update_session_context(tenant_id, session_id, session_context);
     }
 
     /**
      * Get session memory items with filtering and sorting
      */
     async get_session_memory(
+        tenant_id: string,
         session_id: string, 
         limit: number = 50,
         priority_filter?: number
     ): Promise<WorkingMemoryItem[]> {
-        const session_context = await this.get_session_context(session_id);
+        const session_context = await this.get_session_context(tenant_id, session_id);
         if (!session_context?.memory_keys.length) {
             return [];
         }
@@ -367,16 +423,16 @@ export class WorkingMemoryService {
     /**
      * Warm cache by preloading session data
      */
-    async warm_cache(session_id: string, preload_memory: boolean = true): Promise<void> {
+    async warm_cache(tenant_id: string, session_id: string, preload_memory: boolean = true): Promise<void> {
         console.log(`🔥 Warming cache for session ${session_id}`);
         const start_time = performance.now();
         
         // Preload session context
-        await this.get_session_context(session_id);
+        await this.get_session_context(tenant_id, session_id);
         
         if (preload_memory) {
             // Preload recent memory items
-            const memory_items = await this.get_session_memory(session_id, 20, 6); // High priority items
+            const memory_items = await this.get_session_memory(tenant_id, session_id, 20, 6); // High priority items
             console.log(`🔥 Preloaded ${memory_items.length} memory items for session ${session_id}`);
         }
         
@@ -516,13 +572,14 @@ export class WorkingMemoryService {
     /**
      * Private helper methods
      */
-    private async add_memory_to_session(session_id: string, memory_id: string): Promise<void> {
-        let session_context = await this.get_session_context(session_id);
+    private async add_memory_to_session(tenant_id: string, session_id: string, memory_id: string): Promise<void> {
+        let session_context = await this.get_session_context(tenant_id, session_id);
         if (!session_context) {
             // Auto-create session context so stored items are retrievable via get_session_memory.
             // Without this, the memory item is stored but orphaned — its key never lands in any
             // session's memory_keys list, so get_session_memory always returns [].
             session_context = {
+                tenant_id,
                 session_id,
                 created_at: new Date(),
                 last_activity: new Date(),
@@ -540,25 +597,28 @@ export class WorkingMemoryService {
             session_context.memory_keys = session_context.memory_keys.slice(-100);
         }
         
-        await this.update_session_context(session_id, session_context);
+        await this.update_session_context(tenant_id, session_id, session_context);
     }
     
-    private async update_session_context(session_id: string, context: SessionContext): Promise<boolean> {
+    private async update_session_context(tenant_id: string, session_id: string, context: SessionContext): Promise<boolean> {
+        // Always stamp authoritative tenant_id and session_id onto the persisted document
+        const scoped_context: SessionContext = { ...context, tenant_id, session_id };
+
         try {
             const redis = await get_redis_client();
             if (redis) {
-                const session_key = `${this.SESSION_PREFIX}${session_id}`;
-                await redis.setEx(session_key, this.DEFAULT_TTL, JSON.stringify(context));
+                const session_key = this.sessionKey(tenant_id, session_id);
+                await redis.setEx(session_key, this.DEFAULT_TTL, JSON.stringify(scoped_context));
                 return true;
             }
         } catch (error) {
             console.error('❌ Redis session update failed:', error);
         }
         
-        // Fallback to MongoDB
+        // Fallback to MongoDB — filter and document both carry tenant_id
         const db = get_database();
         const result = await db.collection('working_memory_sessions')
-            .replaceOne({ session_id }, context, { upsert: true });
+            .replaceOne({ session_id, tenant_id }, scoped_context, { upsert: true });
         return result.upsertedCount > 0 || result.modifiedCount > 0;
     }
     

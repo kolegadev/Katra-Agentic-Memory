@@ -1044,7 +1044,7 @@ async function handleTemporalContext(args: unknown): Promise<TextContent[]> {
     .sort({ timestamp: -1 }).limit(10).toArray();
 
   let wmItems: unknown[] = [];
-  try { wmItems = await working_memory_service.get_session_memory(input.session_id, 5); } catch { /* ignore */ }
+  try { wmItems = await working_memory_service.get_session_memory(DEFAULT_USER_ID, input.session_id, 5); } catch { /* ignore */ }
 
   let semantic: unknown[] = [];
   try {
@@ -1430,7 +1430,7 @@ async function handleWorkingMemory(args: unknown): Promise<TextContent[]> {
   const input = WorkingMemoryInput.parse(args);
 
   if (input.action === 'get') {
-    const items = await working_memory_service.get_session_memory(input.session_id, input.limit);
+    const items = await working_memory_service.get_session_memory(DEFAULT_USER_ID, input.session_id, input.limit);
     const lines: string[] = [`## Working Memory: ${input.session_id}`, `**Items:** ${items.length}`, ''];
     items.forEach((item: any, i: number) => {
       lines.push(`${i + 1}. ${typeof item.content === 'string' ? item.content.slice(0, 200) : JSON.stringify(item.content).slice(0, 200)}`);
@@ -1440,7 +1440,7 @@ async function handleWorkingMemory(args: unknown): Promise<TextContent[]> {
 
   if (input.action === 'store') {
     if (!input.content) return [{ type: 'text', text: '⚠️ content is required for store action.' }];
-    const id = await working_memory_service.store(input.session_id, input.content);
+    const id = await working_memory_service.store(DEFAULT_USER_ID, input.session_id, input.content);
     return [{ type: 'text', text: `✅ Stored in working memory.\n**ID:** ${id}\n**Session:** ${input.session_id}` }];
   }
 
@@ -1828,7 +1828,7 @@ function registerHandlers(server: Server) {
       case 'temporal': {
         const recent = await db.collection('episodic_events').find(scopeFilter).sort({ timestamp: -1 }).limit(10).toArray();
         let wm: unknown[] = [];
-        try { wm = await working_memory_service.get_session_memory('auto', 5); } catch { /* ignore */ }
+        try { wm = await working_memory_service.get_session_memory(DEFAULT_USER_ID, 'auto', 5); } catch { /* ignore */ }
         const text = [`## Temporal Context — ${userId}`, `### Recent (${recent.length})`,
           ...recent.map((e: any) => `[${e.timestamp ? new Date(e.timestamp).toISOString() : '?'}] ${e.content?.message || JSON.stringify(e.content).substring(0, 200)}`),
           '', `### Working Memory (${wm.length})`, ...wm.map((i: any) => `- ${JSON.stringify(i).substring(0, 300)}`)];

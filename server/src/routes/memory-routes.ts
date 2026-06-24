@@ -138,6 +138,7 @@ export const create_memory_routes = (): Hono => {
             const ttl_seconds = priority === 'high' ? 7200 : priority === 'medium' ? 3600 : 1800;
 
             const item_id = await working_memory_service.store(
+                DEFAULT_USER_ID,
                 session_id,
                 { content, content_type },
                 { ttl_seconds }
@@ -168,7 +169,7 @@ export const create_memory_routes = (): Hono => {
             const session_id = c.req.param('session_id');
             const limit = parseInt(c.req.query('limit') || '20');
 
-            const items = await working_memory_service.get_session_memory(session_id, limit);
+            const items = await working_memory_service.get_session_memory(DEFAULT_USER_ID, session_id, limit);
 
             return c.json({
                 success: true,
@@ -193,7 +194,7 @@ export const create_memory_routes = (): Hono => {
         try {
             const session_id = c.req.param('session_id');
 
-            const session_items = await working_memory_service.get_session_memory(session_id, 1000);
+            const session_items = await working_memory_service.get_session_memory(DEFAULT_USER_ID, session_id, 1000);
             let cleared_count = 0;
             for (const item of session_items) {
                 const deleted = await working_memory_service.delete(item.id);
@@ -600,7 +601,7 @@ export const create_memory_routes = (): Hono => {
                 .toArray();
 
             // Get working memory
-            const working_memory = await working_memory_service.get_session_memory(session_id, 5);
+            const working_memory = await working_memory_service.get_session_memory(DEFAULT_USER_ID, session_id, 5);
 
             const enhanced_context = {
                 original_query: query,
@@ -857,6 +858,7 @@ export const create_memory_routes = (): Hono => {
 
             // Step 2: Add to working memory
             const working_memory_id = await working_memory_service.store(
+                DEFAULT_USER_ID,
                 session_id,
                 { user_message: message, context: 'demo_interaction' },
                 { ttl_seconds: 3600 }
