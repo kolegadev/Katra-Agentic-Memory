@@ -1,6 +1,6 @@
 # Katra — Cognitive Memory for AI Agents
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 Give your AI agent **persistent memory**. Katra is a self-contained memory appliance —
 drop it on any machine with Docker, point your agent at it via MCP, and get
@@ -455,7 +455,7 @@ ingress with path routing, HPA, and PDB. See [Deployment Guide](docs/DEPLOYMENT.
 | Multi-platform watcher | ✅ 7+ platforms (in-repo) | ❌ | ❌ | ❌ |
 | Identity modes | ✅ personal/shared/hybrid | ❌ | ❌ | ❌ |
 | Dashboard | ✅ built-in | ❌ | ❌ | ❌ |
-| License | MIT | Apache 2.0 | MIT | Proprietary |
+| License | MIT | Apache 2.0 | Apache 2.0 | Proprietary |
 
 ## Documentation
 
@@ -471,4 +471,4 @@ ingress with path routing, HPA, and PDB. See [Deployment Guide](docs/DEPLOYMENT.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+Apache 2.0 — see [LICENSE](LICENSE).
