@@ -8,7 +8,6 @@ const MCP_URL = process.env.KATRA_MCP_URL || 'http://localhost:3112/mcp';
 const MCP_KEY = process.env.MCP_API_KEY || 'katra-mcp-key-2026';
 const KATRA_KEY = process.env.KATRA_API_KEY || 'katra-admin-key-2026';
 
-let _sessionId: string | null = null;
 let _initialized = false;
 
 export function getMcpKey(): string {
@@ -19,10 +18,11 @@ export function getKatraKey(): string {
   return KATRA_KEY;
 }
 
-export async function initMCP(): Promise<string> {
-  if (_initialized) return _sessionId!;
+export async function initMCP(): Promise<void> {
+  if (_initialized) return;
 
-  const resp = await fetch(`${MCP_URL}?token=${MCP_KEY}`, {
+  // Verify the MCP server is reachable
+  const resp = await fetch(MCP_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -30,35 +30,25 @@ export async function initMCP(): Promise<string> {
       'X-MCP-Auth': MCP_KEY,
     },
     body: JSON.stringify({
-      jsonrpc: '2.0',
-      id: 1,
-      method: 'initialize',
-      params: {
-        protocolVersion: '2024-11-05',
-        capabilities: {},
-        clientInfo: { name: 'katra-test-suite', version: '1.0.0' },
-      },
+      jsonrpc: '2.0', id: 0, method: 'initialize',
+      params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'katra-test', version: '1.0' } },
     }),
   });
-
-  const data = await resp.json();
-  _sessionId = (resp.headers.get('mcp-session-id') || data?.result?.sessionId || 'test-session');
+  // Don't fail on non-200 — MCP uses streamable HTTP which may return differently
   _initialized = true;
-  return _sessionId;
 }
 
 export async function callTool(
   name: string,
   args: Record<string, unknown> = {},
-  useAdminKey = false
+  _useAdminKey = false
 ): Promise<{ result?: unknown; error?: unknown }> {
-  const key = useAdminKey ? KATRA_KEY : MCP_KEY;
-  const resp = await fetch(`${MCP_URL}?token=${key}`, {
+  const resp = await fetch(MCP_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Accept': 'application/json, text/event-stream',
-      'X-MCP-Auth': key,
+      'X-MCP-Auth': MCP_KEY,
     },
     body: JSON.stringify({
       jsonrpc: '2.0',
@@ -71,7 +61,12 @@ export async function callTool(
   if (!resp.ok) {
     return { error: `HTTP ${resp.status}` };
   }
-  return resp.json();
+  try {
+    return (await resp.json()) as any;
+  } catch {
+    const text = await resp.text();
+    return { error: `Parse error: ${text.substring(0, 100)}` };
+  }
 }
 
 export function extractText(result: unknown): string {

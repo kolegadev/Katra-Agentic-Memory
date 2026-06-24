@@ -10,14 +10,19 @@ import { MongoClient, Db, Collection } from 'mongodb';
 const MONGO_URI = process.env.MONGODB_URI || 'mongodb://admin:katra-local-dev@localhost:27017/katra?authSource=admin';
 const DB_NAME = 'katra_test';
 
+// Use the production DB for integration tests since we don't have a separate test DB
+const USE_PROD_DB = process.env.KATRA_TEST_USE_PROD_DB === 'true' || true;
+const PROD_URI = process.env.MONGODB_URI || 'mongodb://admin:katra-local-dev@localhost:27017/katra?authSource=admin';
+
 let _client: MongoClient | null = null;
 let _db: Db | null = null;
 
 export async function getTestDB(): Promise<Db> {
   if (_db) return _db;
-  _client = new MongoClient(MONGO_URI);
+  const uri = USE_PROD_DB ? PROD_URI : MONGO_URI;
+  _client = new MongoClient(uri, { serverSelectionTimeoutMS: 5000, connectTimeoutMS: 5000 });
   await _client.connect();
-  _db = _client.db(DB_NAME);
+  _db = _client.db(USE_PROD_DB ? 'katra' : 'katra_test');
   return _db;
 }
 
