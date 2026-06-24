@@ -131,7 +131,7 @@ export class WorkingMemoryService {
         if (typeof content === 'object' && !Array.isArray(content)) {
           const dangerousKeys = ['__proto__', 'constructor', 'prototype'];
           for (const key of dangerousKeys) {
-            if (key in content) {
+            if (Object.prototype.hasOwnProperty.call(content, key)) {
               throw new Error(`Rejected dangerous content key: ${key}`);
             }
           }

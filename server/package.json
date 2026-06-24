@@ -1,7 +1,7 @@
 {
   "name": "katra-server",
   "version": "1.0.0",
-  "description": "Katra — Cognitive Memory as a Service for AI Agents",
+  "description": "Katra \u2014 Cognitive Memory as a Service for AI Agents",
   "type": "module",
   "main": "build/index.js",
   "scripts": {
@@ -9,7 +9,13 @@
     "start": "node --import dotenv/config build/index.js",
     "dev": "node --import dotenv/config build/index.js",
     "mcp:stdio": "node build/mcp-server.js --stdio",
-    "format": "prettier --write 'src/**/*.{ts,tsx}'"
+    "format": "prettier --write 'src/**/*.{ts,tsx}'",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:unit": "vitest run tests/unit/",
+    "test:integration": "vitest run tests/integration/",
+    "test:security": "vitest run tests/security/",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.705.0",
@@ -28,9 +34,11 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
+    "@vitest/coverage-v8": "^4.1.9",
     "esbuild": "^0.28.1",
     "prettier": "^3.4.2",
-    "typescript": "~5.8.3"
+    "typescript": "~5.8.3",
+    "vitest": "^4.1.9"
   },
   "license": "MIT"
 }
