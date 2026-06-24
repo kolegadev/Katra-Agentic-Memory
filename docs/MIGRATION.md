@@ -4,8 +4,8 @@ This guide covers migrating from [cognitive-memory-chat](https://github.com/kole
 
 ## What's the Same
 
-- **Core engine** — Same 14 memory services (episodic, semantic, knowledge graph, working memory, embeddings, background processor, etc.)
-- **MCP tools** — All 29 MCP tools work identically
+- **Core engine** — Same 33 memory services (episodic, semantic, knowledge graph, working memory, embeddings, background processor, sleep consolidation, etc.)
+- **MCP tools** — All 35 MCP tools work identically
 - **REST API** — Same route structure under `/api/v1/`
 - **Database** — Same MongoDB collections and index structure
 - **Redis** — Same working memory and caching patterns
@@ -16,13 +16,14 @@ This guide covers migrating from [cognitive-memory-chat](https://github.com/kole
 | Aspect | cognitive-memory-chat | Katra |
 |---|---|---|
 | **Purpose** | Solomon agent + memory system | Memory system only |
-| **Services** | 45+ services (including agent, heartbeat, autonomous execution) | 26 core memory services |
+| **Services** | 45+ services (including agent, heartbeat, autonomous execution) | 33 core memory services |
 | **LLM** | Hardcoded DeepSeek/Moonshot | Pluggable (any OpenAI-compatible) |
 | **Identity** | Solomon-specific capability card | Generic Katra card |
 | **Ingestion** | OpenClaw-specific | Generic (any JSONL-producing platform) |
-| **API key env var** | `ADMIN_API_KEY` | `KATRA_API_KEY` (or `MCP_API_KEY`) |
+| **API key** | `ADMIN_API_KEY` (plaintext) | `KATRA_API_KEY` + `MCP_API_KEY` (SHA-256 hashed) |
 | **Database name** | `cognitive-memory` | `katra` |
 | **Build** | `tsc` (needs lots of RAM) | `esbuild` (Pi-compatible) |
+| **New in Katra** | — | Sleep consolidation, test suite (87 tests), security hardening |
 
 ## Environment Variable Changes
 

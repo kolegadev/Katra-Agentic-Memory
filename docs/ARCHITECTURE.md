@@ -162,7 +162,7 @@ The core data model is unchanged from the proven cognitive-memory-chat implement
 - `working_memory` (Redis) — Ephemeral session-scoped key-value state
 - `assets` (S3) — Uploaded files with metadata in MongoDB
 
-### MCP Tools (29, expandable)
+### MCP Tools (35, expandable)
 
 **Memory Storage:**
 - `store_memory` — Store a fact, preference, insight, or event
@@ -474,7 +474,7 @@ katra/
 2. **Extract MCP server**
    - Copy `mcp-server.ts`
    - Remove Solomon-specific tools (missions, heartbeat if needed)
-   - Keep all 29 tools (they're all generic memory operations)
+   - Keep all 35 tools (they're all generic memory operations)
 
 3. **Extract REST API routes**
    - Copy: core-memory-routes, recall-routes, knowledge-graph-routes, ingestion-routes, assets-routes, diagnostic-routes, admin-routes
@@ -650,7 +650,7 @@ For the existing Pi5 deployment:
 2. `cd katra && docker compose up -d`
 3. Point MongoDB at the same `cognitive-memory` database (or run `migrate-from-solomon.sh`)
 4. Update OpenClaw MCP config from `cognitive-memory` server to `katra` server
-5. Verify all 29 tools work
+5. Verify all 35 tools work
 6. Decommission the Solomon-specific routes/services in cognitive-memory-chat
 
 The cognitive-memory-chat project continues to be the home for Solomon's agent-specific code (heartbeat, autonomous execution, missions, chat interface). Katra is the memory engine that Solomon (and any other agent) connects to.
