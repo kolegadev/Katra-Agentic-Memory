@@ -25,7 +25,8 @@ Usage:
 
 import json
 import os
-import subprocess
+from urllib.request import urlopen, Request
+from urllib.error import URLError
 import sys
 import time
 import hashlib
@@ -173,13 +174,11 @@ def execute_action(action: dict, dry_run: bool = False) -> dict:
     # Each entity type has a corresponding bounded action
     
     if "gh-hygiene" in thread.lower() or "gh-hygiene" in entity.lower():
-        # Check gh-hygiene repo status
         try:
-            r = subprocess.run(
-                ["curl", "-s", "https://api.github.com/repos/kolegadev/gh-hygiene"],
-                capture_output=True, text=True, timeout=15
-            )
-            repo = json.loads(r.stdout)
+            req = Request("https://api.github.com/repos/kolegadev/gh-hygiene",
+                         headers={"User-Agent": "Katra-Salience-Agent/1.0"})
+            with urlopen(req, timeout=15) as resp:
+                repo = json.loads(resp.read().decode())
             result["output"] = f"gh-hygiene repo: {repo.get('description','?')} — updated {repo.get('updated_at','?')}"
             result["evidence"] = json.dumps({
                 "full_name": repo.get("full_name"),
@@ -206,13 +205,10 @@ def execute_action(action: dict, dry_run: bool = False) -> dict:
             result["status"] = "action_needed"
     
     elif "katra" in entity.lower() or "memory" in thread.lower():
-        # Check Katra system health
         try:
-            r = subprocess.run(
-                ["curl", "-s", "http://localhost:9012/api/v1/health"],
-                capture_output=True, text=True, timeout=10
-            )
-            health = json.loads(r.stdout)
+            req = Request("http://localhost:9012/api/v1/health")
+            with urlopen(req, timeout=10) as resp:
+                health = json.loads(resp.read().decode())
             svc = health.get("services", {})
             result["output"] = f"Katra health: MongoDB={svc.get('mongodb')}, Redis={svc.get('redis')}, LLM={svc.get('llm')}, Embeddings={svc.get('embeddings')}"
             result["evidence"] = json.dumps(svc)

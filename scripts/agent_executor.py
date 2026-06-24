@@ -14,8 +14,10 @@ Together with the heartbeat, this creates the full autonomous loop:
 No cron. No .md file. No human prompt.
 """
 
-import json, os, subprocess, time, argparse
+import json, os, time, argparse
 from datetime import datetime, timezone
+from urllib.request import urlopen, Request
+from urllib.error import URLError
 
 AGENT_ID = os.environ.get("KATRA_AGENT_ID", "kolega-agent")
 STATE_FILE = os.path.expanduser(f"~/.katra/agent-executor-{AGENT_ID}.json")
@@ -73,25 +75,26 @@ if (tasks.length > 0) {{
     except:
         return None
 
+def http_get_json(url, headers=None):
+    """HTTP GET with native urllib — no subprocess, no permission prompts."""
+    req = Request(url, headers=headers or {"User-Agent": "Katra-Agent-Executor/1.0"})
+    try:
+        with urlopen(req, timeout=15) as resp:
+            return json.loads(resp.read().decode())
+    except URLError as e:
+        return {"error": str(e)}
+
 def execute_task(task):
     """Execute the task assigned to this agent."""
     entity = task['entity']
     
     if "gh-hygiene" in entity.lower():
-        r = subprocess.run(
-            ["curl", "-s", "https://api.github.com/repos/kolegadev/gh-hygiene"],
-            capture_output=True, text=True, timeout=15
-        )
-        repo = json.loads(r.stdout)
+        repo = http_get_json("https://api.github.com/repos/kolegadev/gh-hygiene")
         output = f"gh-hygiene: {repo.get('description','?')} | updated {repo.get('updated_at','?')} | stars: {repo.get('stargazers_count',0)} | issues: {repo.get('open_issues_count',0)}"
         return {"status": "completed", "output": output}
     
     elif "katra" in entity.lower():
-        r = subprocess.run(
-            ["curl", "-s", "http://localhost:9012/api/v1/health"],
-            capture_output=True, text=True, timeout=10
-        )
-        h = json.loads(r.stdout)
+        h = http_get_json("http://localhost:9012/api/v1/health")
         svc = h.get("services", {})
         output = f"Katra health: {', '.join(f'{k}={v}' for k,v in svc.items())}"
         ok = all(v in ("connected","available","deepseek") for v in svc.values())

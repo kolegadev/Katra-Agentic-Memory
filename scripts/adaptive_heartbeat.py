@@ -16,9 +16,11 @@ Task Allocation (mirrors brain hemisphere specialization):
   3. EMOTIONAL INTENSITY: which agent feels strongest about it?
 """
 
-import json, os, subprocess, time, hashlib, argparse
+import json, os, time, hashlib, argparse
 from datetime import datetime, timezone
 from typing import Optional, Tuple
+from urllib.request import urlopen, Request
+from urllib.error import URLError
 
 # ── Config ──────────────────────────────────────────────────────────
 STATE_FILE = os.path.expanduser("~/.katra/adaptive-heartbeat-state.json")
@@ -176,15 +178,21 @@ print(JSON.stringify(counts));
     }
 
 # ── Action Executor ─────────────────────────────────────────────────
+def http_get_json(url, headers=None):
+    req = Request(url, headers=headers or {"User-Agent": "Katra-Adaptive-Heartbeat/1.0"})
+    try:
+        with urlopen(req, timeout=15) as resp:
+            return json.loads(resp.read().decode())
+    except URLError as e:
+        return {"error": str(e)}
+
 def execute(entity, dry_run=False):
     name = entity["entity"]
     if dry_run:
         return {"entity": name, "status": "completed", "output": f"DRY RUN: would investigate {name}"}
     
     if "gh-hygiene" in name.lower():
-        r = subprocess.run(["curl", "-s", "https://api.github.com/repos/kolegadev/gh-hygiene"],
-            capture_output=True, text=True, timeout=15)
-        repo = json.loads(r.stdout)
+        repo = http_get_json("https://api.github.com/repos/kolegadev/gh-hygiene")
         return {"entity": name, "status": "completed",
                 "output": f"gh-hygiene: {repo.get('description','?')} — updated {repo.get('updated_at','?')} | stars: {repo.get('stargazers_count',0)}"}
     elif "opencode_extractor" in name.lower() or "extractor" in name.lower():
@@ -193,9 +201,7 @@ def execute(entity, dry_run=False):
         return {"entity": name, "status": "action_needed" if not exists else "completed",
                 "output": f"opencode_extractor.py: {'EXISTS' if exists else 'MISSING'}"}
     elif "katra" in name.lower():
-        r = subprocess.run(["curl", "-s", "http://localhost:9012/api/v1/health"],
-            capture_output=True, text=True, timeout=10)
-        h = json.loads(r.stdout)
+        h = http_get_json("http://localhost:9012/api/v1/health")
         svc = h.get("services", {})
         ok = all(v in ("connected","available","deepseek") for v in svc.values())
         return {"entity": name, "status": "completed" if ok else "action_needed",
