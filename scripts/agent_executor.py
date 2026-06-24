@@ -184,12 +184,35 @@ var r = db.agent_journal_auto.insertOne({{
 print("Bulletin posted: " + r.insertedId);
 ''')
 
-def _trigger_kolegacode(task, result):
-    """Wake up KolegaCode by sending a prompt to its terminal.
+def _trigger_agent(task, result):
+    """Wake up the agent by invoking a configurable trigger command.
     
-    This is the OpenClaw-style heartbeat trigger — programmatic, not human.
-    Writes to KolegaCode's controlling TTY to submit a prompt, which fires
-    UserPromptSubmit → bridge injects Katra context → KolegaCode processes."""
+    Set TRIGGER_COMMAND env var to define how your agent is woken.
+    Examples:
+      TRIGGER_COMMAND="bash /path/to/trigger.sh"     # shell script
+      TRIGGER_COMMAND="openclaw gateway notify"       # OpenClaw gateway
+      TRIGGER_COMMAND=""                               # disable trigger
+    
+    The command receives AGENT_ID and the task summary as arguments.
+    If not configured, trigger is silently skipped."""
+    
+    import subprocess, shlex
+    
+    trigger_cmd = os.environ.get("TRIGGER_COMMAND", "")
+    if not trigger_cmd:
+        return  # No trigger configured — skip silently
+    
+    prompt = f"[Autonomous Heartbeat] {task['entity']}: {result['output'][:200]}. AGENT_ID={AGENT_ID}"
+    
+    try:
+        parts = shlex.split(trigger_cmd)
+        subprocess.run(parts + [AGENT_ID, prompt], timeout=10, capture_output=True)
+    except Exception:
+        pass  # Trigger is best-effort — never fail the executor for it
+
+def _trigger_kolegacode(task, result):
+    """Legacy trigger: writes to KolegaCode's controlling TTY.
+    Used as fallback when TRIGGER_COMMAND is not configured."""
     
     import subprocess
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -247,9 +270,14 @@ def main():
             _save_state(state)
             print(f"  📝 Result stored and bulletin posted to shared memory")
             
-            # Trigger KolegaCode if enabled — sends the task summary to its terminal
+            # Wake up the agent via universal trigger (configurable per agent)
             if args.trigger:
-                _trigger_kolegacode(task, result)
+                trigger_cmd = os.environ.get("TRIGGER_COMMAND", "")
+                if trigger_cmd:
+                    _trigger_agent(task, result)
+                else:
+                    # Fallback: legacy KolegaCode TTY trigger
+                    _trigger_kolegacode(task, result)
         else:
             if cycle % 10 == 0:
                 print(f"  ⏳ No tasks assigned. {state['tasks_completed']} completed so far. ({cycle} checks)")
