@@ -37,6 +37,11 @@ WORKDIR /app
 COPY server/package*.json ./
 RUN npm install --production && npm cache clean --force
 
+# Pre-download the embedding model (~80MB) so it's baked into the image.
+# Without this, the model downloads at first startup which can timeout or fail
+# on slow connections, leaving embeddings permanently disabled.
+RUN node -e "const{ pipeline }=require('@xenova/transformers');(async()=>{await pipeline('feature-extraction','Xenova/all-MiniLM-L6-v2');console.log('Model cached');})().catch(e=>{console.warn('Model pre-download failed (non-fatal):',e.message);process.exit(0);})"
+
 # Copy built artifacts from builder stage
 COPY --from=builder /app/build ./build
 

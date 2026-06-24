@@ -75,8 +75,18 @@ async function main() {
     llmService.apply_config(dbLLMConfig);
   }
 
-  // Initialize embedding service
-  console.log(`  Embeddings: ${embeddingService.modelLoaded ? '✅ available' : '⚠️ not configured'}`);
+  // Pre-warm embedding service (lazy load the ONNX model)
+  // Must happen before REST API starts so health check shows correct status
+  try {
+    const vec = await embeddingService.encode('warmup');
+    if (vec && embeddingService.isReady) {
+      console.log('  Embeddings: ✅ available');
+    } else {
+      console.log('  Embeddings: ⚠️ unavailable (model failed to load)');
+    }
+  } catch {
+    console.log('  Embeddings: ⚠️ unavailable (keyword search only)');
+  }
 
   // Start background processor
   const bgProcessor = BackgroundProcessor.get_instance();
