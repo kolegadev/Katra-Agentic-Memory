@@ -217,7 +217,7 @@ installation instructions.
 
 ## Running on Raspberry Pi
 
-Katra is designed to run on a Raspberry Pi 5 (8GB):
+Katra is designed to run on a Raspberry Pi 5 (16GB):
 
 1. Use Docker Compose (recommended)
 2. If building locally, use `node esbuild.config.mjs` (not `tsc`)
