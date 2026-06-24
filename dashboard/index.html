@@ -3,1747 +3,591 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Katra — Cognitive Memory Dashboard</title>
+<title>Katra — Agentic Memory Dashboard</title>
 <style>
-  :root {
-    --bg: #0a0a0b;
-    --bg-card: #111113;
-    --bg-card-hover: #17171a;
-    --bg-input: #1a1a1e;
-    --border: #252529;
-    --border-light: #2e2e34;
-    --text: #e4e4e7;
-    --text-muted: #8b8b90;
-    --text-dim: #5c5c63;
-    --accent: #6366f1;
-    --accent-glow: rgba(99,102,241,0.3);
-    --green: #22c55e;
-    --green-glow: rgba(34,197,94,0.25);
-    --red: #ef4444;
-    --red-glow: rgba(239,68,68,0.25);
-    --amber: #f59e0b;
-    --amber-glow: rgba(245,158,11,0.25);
-    --radius: 10px;
-    --radius-sm: 6px;
-    --transition: 150ms ease;
-    --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
-    --font-mono: 'SF Mono', 'Fira Code', 'Fira Mono', 'Roboto Mono', monospace;
-  }
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  html { font-size: 15px; }
-  body {
-    font-family: var(--font);
-    background: var(--bg);
-    color: var(--text);
-    min-height: 100vh;
-    line-height: 1.5;
-    -webkit-font-smoothing: antialiased;
-  }
-  a { color: var(--accent); text-decoration: none; }
-  a:hover { text-decoration: underline; }
+:root {
+  --bg: #09090b; --bg2: #121215; --bg3: #1a1a1f; --bg4: #222228;
+  --border: #2a2a32; --border2: #353540;
+  --text: #e4e4e7; --text2: #a1a1aa; --text3: #71717a;
+  --accent: #818cf8; --accent2: #6366f1; --green: #22c55e; --green2: #166534;
+  --red: #ef4444; --red2: #991b1b; --amber: #f59e0b; --amber2: #92400e;
+  --blue: #3b82f6; --purple: #a855f7; --radius: 8px; --radius-sm: 5px;
+  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --mono: 'SF Mono', 'Fira Code', monospace;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{font-size:14px}
+body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:100vh;line-height:1.5}
+a{color:var(--accent);text-decoration:none}
 
-  /* ── Layout ── */
-  .app { display: flex; min-height: 100vh; }
-  .sidebar {
-    width: 240px; flex-shrink: 0;
-    background: var(--bg-card);
-    border-right: 1px solid var(--border);
-    display: flex; flex-direction: column;
-    padding: 24px 0;
-  }
-  .sidebar-brand {
-    padding: 0 20px 20px;
-    border-bottom: 1px solid var(--border);
-    margin-bottom: 8px;
-  }
-  .sidebar-brand h1 { font-size: 1.25rem; font-weight: 700; letter-spacing: -0.02em; }
-  .sidebar-brand span { font-size: 0.75rem; color: var(--text-muted); display: block; margin-top: 2px; }
-  .sidebar-nav { flex: 1; padding: 8px; }
-  .nav-item {
-    display: flex; align-items: center; gap: 10px;
-    padding: 10px 12px; border-radius: var(--radius-sm);
-    color: var(--text-muted); cursor: pointer; border: none; background: none;
-    width: 100%; text-align: left; font-size: 0.875rem;
-    transition: all var(--transition);
-  }
-  .nav-item:hover { color: var(--text); background: var(--bg-card-hover); }
-  .nav-item.active { color: var(--accent); background: rgba(99,102,241,0.1); font-weight: 600; }
-  .nav-icon { width: 18px; height: 18px; flex-shrink: 0; opacity: 0.6; }
-  .nav-item.active .nav-icon { opacity: 1; }
-  .sidebar-footer {
-    padding: 16px 20px 0;
-    border-top: 1px solid var(--border);
-    font-size: 0.7rem; color: var(--text-dim);
-    display: flex; flex-direction: column; gap: 4px;
-  }
-  .sidebar-footer .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 4px; }
-  .dot.green { background: var(--green); }
-  .dot.red { background: var(--red); }
-  .dot.amber { background: var(--amber); }
+.app{display:flex;min-height:100vh}
+.sidebar{width:220px;flex-shrink:0;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:20px 0}
+.sidebar-brand{padding:0 16px 16px;border-bottom:1px solid var(--border);margin-bottom:8px}
+.sidebar-brand h1{font-size:1.15rem;font-weight:700;letter-spacing:-0.02em;color:var(--accent)}
+.sidebar-brand span{font-size:0.7rem;color:var(--text3);display:block;margin-top:2px}
+.sidebar-nav{flex:1;padding:8px}
+.nav-btn{display:flex;align-items:center;gap:8px;padding:9px 12px;border-radius:var(--radius-sm);color:var(--text2);cursor:pointer;border:none;background:none;width:100%;text-align:left;font-size:0.85rem;transition:all .15s;font-family:var(--font)}
+.nav-btn:hover{color:var(--text);background:var(--bg3)}
+.nav-btn.active{color:var(--accent);background:rgba(129,140,248,.1);font-weight:600}
+.nav-icon{font-size:1rem;width:20px;text-align:center}
+.sidebar-footer{padding:12px 16px 0;border-top:1px solid var(--border);font-size:0.7rem;color:var(--text3);display:flex;align-items:center;gap:6px}
+.sidebar-footer .dot{width:6px;height:6px;border-radius:50%;display:inline-block}
+.sidebar-footer .dot.on{background:var(--green)}
 
-  .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-  .main-header {
-    padding: 20px 32px;
-    border-bottom: 1px solid var(--border);
-    display: flex; align-items: center; justify-content: space-between;
-    background: var(--bg-card);
-  }
-  .main-header h2 { font-size: 1.1rem; font-weight: 600; letter-spacing: -0.01em; }
-  .header-actions { display: flex; gap: 8px; align-items: center; }
-  .content { flex: 1; padding: 28px 32px; overflow-y: auto; }
-  .tab-content { display: none; }
-  .tab-content.active { display: block; }
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.main-header{display:flex;align-items:center;padding:14px 24px;background:var(--bg2);border-bottom:1px solid var(--border);gap:12px}
+.main-header h2{font-size:1.05rem;font-weight:600}
+.main-header .badge{font-size:0.7rem;padding:2px 8px;border-radius:20px;background:var(--bg3);color:var(--text2)}
+.main-content{flex:1;overflow-y:auto;padding:20px 24px}
 
-  /* ── Cards ── */
-  .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; margin-bottom: 24px; }
-  .card-grid.cols-2 { grid-template-columns: repeat(2, 1fr); }
-  .card-grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
-  .card {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 20px;
-    transition: border-color var(--transition);
-  }
-  .card:hover { border-color: var(--border-light); }
-  .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-  .card-title { font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }
-  .card-value { font-size: 1.75rem; font-weight: 700; letter-spacing: -0.02em; }
-  .card-sub { font-size: 0.8rem; color: var(--text-muted); margin-top: 4px; }
-  .status-badge {
-    display: inline-flex; align-items: center; gap: 6px;
-    padding: 4px 10px; border-radius: 20px; font-size: 0.75rem; font-weight: 600;
-  }
-  .status-badge.healthy { background: rgba(34,197,94,0.1); color: var(--green); }
-  .status-badge.degraded { background: rgba(245,158,11,0.1); color: var(--amber); }
-  .status-badge.error { background: rgba(239,68,68,0.1); color: var(--red); }
-  .status-badge.unknown { background: rgba(139,139,144,0.1); color: var(--text-muted); }
-  .status-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
-  .status-dot.green { background: var(--green); box-shadow: 0 0 6px var(--green-glow); }
-  .status-dot.amber { background: var(--amber); box-shadow: 0 0 6px var(--amber-glow); }
-  .status-dot.red { background: var(--red); box-shadow: 0 0 6px var(--red-glow); }
-  .status-dot.gray { background: var(--text-dim); }
+.tab{display:none}.tab.active{display:block}
 
-  /* ── Buttons ── */
-  .btn {
-    display: inline-flex; align-items: center; gap: 6px;
-    padding: 8px 14px; border-radius: var(--radius-sm);
-    font-size: 0.8rem; font-weight: 600; cursor: pointer;
-    border: 1px solid transparent; transition: all var(--transition);
-    font-family: var(--font);
-  }
-  .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
-  .btn-primary:hover { background: #5b5ee5; box-shadow: 0 0 12px var(--accent-glow); }
-  .btn-secondary { background: var(--bg-input); color: var(--text); border-color: var(--border); }
-  .btn-secondary:hover { border-color: var(--text-dim); }
-  .btn-danger { background: transparent; color: var(--red); border-color: var(--red); }
-  .btn-danger:hover { background: rgba(239,68,68,0.1); }
-  .btn-sm { padding: 5px 10px; font-size: 0.7rem; }
-  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-  .btn:disabled:hover { box-shadow: none; }
+/* Cards */
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;margin-bottom:20px}
+.cards.cols-2{grid-template-columns:repeat(2,1fr)}
+.cards.cols-3{grid-template-columns:repeat(3,1fr)}
+.cards.cols-4{grid-template-columns:repeat(4,1fr)}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:16px;transition:border-color .15s}
+.card:hover{border-color:var(--border2)}
+.card-title{font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:6px}
+.card-value{font-size:1.6rem;font-weight:700;letter-spacing:-.02em}
+.card-sub{font-size:0.78rem;color:var(--text2);margin-top:4px}
+.status-dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:6px}
+.status-on{background:var(--green);box-shadow:0 0 8px rgba(34,197,94,.4)}
+.status-off{background:var(--red);box-shadow:0 0 8px rgba(239,68,68,.4)}
+.status-warn{background:var(--amber);box-shadow:0 0 8px rgba(245,158,11,.4)}
 
-  /* ── Inputs ── */
-  .input {
-    padding: 9px 12px; border-radius: var(--radius-sm);
-    background: var(--bg-input); color: var(--text);
-    border: 1px solid var(--border); font-size: 0.85rem;
-    font-family: var(--font); width: 100%;
-    transition: border-color var(--transition);
-  }
-  .input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
-  .input::placeholder { color: var(--text-dim); }
-  .input-row { display: flex; gap: 8px; align-items: center; }
-  .input-row .input { flex: 1; }
+/* Tables */
+.table-wrap{overflow-x:auto;border-radius:var(--radius);border:1px solid var(--border)}
+table{width:100%;border-collapse:collapse;font-size:0.8rem}
+th,td{padding:10px 14px;text-align:left;border-bottom:1px solid var(--border)}
+th{background:var(--bg3);color:var(--text2);font-weight:600;font-size:0.7rem;text-transform:uppercase;letter-spacing:.03em;position:sticky;top:0}
+td{color:var(--text)}tr:last-child td{border-bottom:none}tr:hover td{background:rgba(255,255,255,.02)}
+.mono{font-family:var(--mono);font-size:0.75rem}
 
-  /* ── Labels ── */
-  .label { font-size: 0.75rem; font-weight: 600; color: var(--text-muted); margin-bottom: 6px; display: block; }
+/* Forms */
+.form-group{margin-bottom:14px}
+.form-group label{display:block;font-size:0.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.03em;color:var(--text3);margin-bottom:4px}
+.form-group .hint{font-size:0.7rem;color:var(--text3);margin-top:3px}
+input,select,textarea{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:9px 12px;color:var(--text);font-size:0.85rem;font-family:var(--font);outline:none;transition:border-color .15s}
+input:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(129,140,248,.15)}
+input::placeholder,textarea::placeholder{color:var(--text3)}
+.input-row{display:flex;gap:8px}.input-row input{flex:1}
+select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2371717a' d='M6 8L1 3h10z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;padding-right:28px}
 
-  /* ── Tables ── */
-  .table-wrap { overflow-x: auto; border-radius: var(--radius); border: 1px solid var(--border); }
-  table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
-  th { text-align: left; padding: 10px 14px; font-weight: 600; color: var(--text-muted); border-bottom: 1px solid var(--border); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; }
-  td { padding: 10px 14px; border-bottom: 1px solid var(--border); color: var(--text); }
-  tr:last-child td { border-bottom: none; }
-  tr:hover td { background: var(--bg-card-hover); }
-  .mono { font-family: var(--font-mono); font-size: 0.75rem; }
-  .text-muted { color: var(--text-muted); }
-  .text-dim { color: var(--text-dim); }
-  .truncate { max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+button{padding:8px 16px;border-radius:var(--radius-sm);border:none;font-size:0.82rem;font-weight:600;cursor:pointer;font-family:var(--font);transition:all .15s;white-space:nowrap}
+.btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{background:var(--accent2)}
+.btn-secondary{background:var(--bg3);color:var(--text);border:1px solid var(--border)}.btn-secondary:hover{border-color:var(--border2)}
+.btn-danger{background:var(--red2);color:#fff}.btn-danger:hover{background:var(--red)}
+.btn-sm{padding:5px 12px;font-size:0.75rem}
+.btn-xs{padding:3px 8px;font-size:0.7rem;border-radius:4px}
 
-  /* ── Expandable rows ── */
-  .expanded-row td { background: var(--bg-card-hover); padding: 16px 20px; }
-  .expanded-content { font-family: var(--font-mono); font-size: 0.75rem; white-space: pre-wrap; word-break: break-word; max-height: 260px; overflow-y: auto; color: var(--text); line-height: 1.6; background: var(--bg-input); padding: 12px; border-radius: var(--radius-sm); }
-  .clickable { cursor: pointer; }
-  .clickable:hover { color: var(--accent); }
+.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.68rem;font-weight:600}
+.badge-green{background:var(--green2);color:var(--green)}
+.badge-red{background:var(--red2);color:var(--red)}
+.badge-amber{background:var(--amber2);color:var(--amber)}
+.badge-blue{background:rgba(59,130,246,.2);color:var(--blue)}
+.badge-purple{background:rgba(168,85,247,.2);color:var(--purple)}
 
-  /* ── Spinner ── */
-  .spinner { width: 18px; height: 18px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.6s linear infinite; display: inline-block; }
-  .spinner-lg { width: 32px; height: 32px; }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  .loading-center { display: flex; align-items: center; justify-content: center; padding: 40px; gap: 10px; color: var(--text-muted); font-size: 0.85rem; }
+.section-title{font-size:0.85rem;font-weight:600;color:var(--text);margin:20px 0 10px;display:flex;align-items:center;gap:8px}
+.section-title:first-child{margin-top:0}
 
-  /* ── Error / Empty ── */
-  .state-msg {
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    padding: 48px 24px; color: var(--text-muted); text-align: center; gap: 8px;
-  }
-  .state-msg svg { width: 40px; height: 40px; opacity: 0.4; margin-bottom: 4px; }
-  .state-msg p { font-size: 0.85rem; }
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:100;align-items:center;justify-content:center}
+.modal-overlay.open{display:flex}
+.modal{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:24px;width:90%;max-width:480px;max-height:90vh;overflow-y:auto}
+.modal h3{font-size:1rem;margin-bottom:16px;color:var(--accent)}
 
-  /* ── JSON viewer ── */
-  .json-viewer { background: var(--bg-input); border-radius: var(--radius-sm); padding: 14px; overflow-x: auto; font-family: var(--font-mono); font-size: 0.72rem; white-space: pre-wrap; word-break: break-word; max-height: 400px; overflow-y: auto; color: #a9b7c6; }
+.toast{position:fixed;top:16px;right:16px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:12px 20px;z-index:200;font-size:0.82rem;opacity:0;transition:opacity .3s;max-width:360px}
+.toast.show{opacity:1}.toast.success{border-color:var(--green)}.toast.error{border-color:var(--red)}
 
-  /* ── Knowledge Graph ── */
-  .graph-container {
-    position: relative; background: var(--bg-card); border: 1px solid var(--border);
-    border-radius: var(--radius); height: 520px; overflow: hidden;
-  }
-  .graph-container svg { width: 100%; height: 100%; }
-  .graph-controls { position: absolute; top: 12px; right: 12px; display: flex; gap: 6px; z-index: 2; }
-  .node-details {
-    position: absolute; bottom: 16px; left: 16px; right: 16px;
-    background: var(--bg-input); border: 1px solid var(--border);
-    border-radius: var(--radius-sm); padding: 14px; font-size: 0.78rem;
-    max-height: 160px; overflow-y: auto; display: none; z-index: 2;
-  }
-  .node-details.visible { display: block; }
-  .node-details h4 { font-size: 0.85rem; margin-bottom: 4px; }
-  .node-details .close-btn { position: absolute; top: 8px; right: 10px; cursor: pointer; color: var(--text-muted); background: none; border: none; font-size: 1rem; }
+.spinner{display:inline-block;width:14px;height:14px;border:2px solid var(--border2);border-top-color:var(--accent);border-radius:50%;animation:spin .6s linear infinite;vertical-align:middle;margin-right:6px}
+@keyframes spin{to{transform:rotate(360deg)}}
 
-  /* ── Tabs as pills ── */
-  .tab-pills { display: flex; gap: 4px; margin-bottom: 20px; }
-  .tab-pill {
-    padding: 6px 14px; border-radius: 20px; font-size: 0.78rem; cursor: pointer;
-    border: 1px solid var(--border); background: transparent; color: var(--text-muted);
-    transition: all var(--transition); font-family: var(--font);
-  }
-  .tab-pill:hover { border-color: var(--text-dim); color: var(--text); }
-  .tab-pill.active { background: var(--accent); color: #fff; border-color: var(--accent); }
-
-  /* ── Toast ── */
-  .toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 100; display: flex; flex-direction: column; gap: 8px; }
-  .toast {
-    padding: 12px 18px; border-radius: var(--radius-sm); font-size: 0.8rem; font-weight: 500;
-    animation: slideIn 0.2s ease; box-shadow: 0 4px 20px rgba(0,0,0,0.5);
-    max-width: 380px;
-  }
-  .toast.success { background: #166534; color: #bbf7d0; border: 1px solid #22c55e; }
-  .toast.error { background: #7f1d1d; color: #fecaca; border: 1px solid #ef4444; }
-  @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: none; opacity: 1; } }
-
-  /* ── Responsive ── */
-  @media (max-width: 768px) {
-    .sidebar { display: none; }
-    .main-header { padding: 16px; }
-    .content { padding: 16px; }
-    .card-grid { grid-template-columns: 1fr; }
-    .card-grid.cols-2, .card-grid.cols-3 { grid-template-columns: 1fr; }
-  }
-
-  /* Timestamp relative display */
-  .relative-time { font-variant-numeric: tabular-nums; }
-
-  /* Skeleton loading */
-  .skeleton { background: linear-gradient(90deg, var(--bg-card) 25%, var(--bg-card-hover) 50%, var(--bg-card) 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; border-radius: var(--radius-sm); }
-  @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
-
-  /* Services list */
-  .services-list { display: flex; flex-wrap: wrap; gap: 6px; }
-  .service-tag {
-    padding: 3px 8px; border-radius: 12px; font-size: 0.68rem; font-weight: 600;
-    background: rgba(99,102,241,0.12); color: var(--accent);
-  }
-  .service-tag.inactive { background: rgba(139,139,144,0.1); color: var(--text-muted); }
+/* Responsive */
+@media(max-width:768px){.app{flex-direction:column}.sidebar{width:100%;flex-direction:row;padding:8px;overflow-x:auto}.sidebar-nav{display:flex;gap:4px}.main-content{padding:12px}.cards{grid-template-columns:1fr}.cards.cols-2,.cards.cols-3,.cards.cols-4{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
-
 <div class="app">
-  <!-- ── Sidebar ── -->
   <aside class="sidebar">
     <div class="sidebar-brand">
-      <h1>⚡ Katra</h1>
-      <span>Cognitive Memory Dashboard</span>
+      <h1>Katra</h1>
+      <span>Agentic Memory Dashboard</span>
     </div>
     <nav class="sidebar-nav" id="nav">
-      <button class="nav-item active" data-tab="overview">
-        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-        Overview
-      </button>
-      <button class="nav-item" data-tab="memories">
-        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-        Memories
-      </button>
-      <button class="nav-item" data-tab="ingestion">
-        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
-        Ingestion
-      </button>
-      <button class="nav-item" data-tab="graph">
-        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="19" r="2"/><line x1="12" y1="7" x2="5" y2="17"/><line x1="12" y1="7" x2="19" y2="17"/></svg>
-        Knowledge Graph
-      </button>
-      <button class="nav-item" data-tab="settings">
-        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
-        Settings
-      </button>
+      <button class="nav-btn active" data-tab="overview"><span class="nav-icon">📊</span> Overview</button>
+      <button class="nav-btn" data-tab="keys"><span class="nav-icon">🔑</span> API Keys</button>
+      <button class="nav-btn" data-tab="agents"><span class="nav-icon">🤖</span> Agents</button>
+      <button class="nav-btn" data-tab="memory"><span class="nav-icon">🧠</span> Memory</button>
+      <button class="nav-btn" data-tab="settings"><span class="nav-icon">⚙️</span> Settings</button>
     </nav>
     <div class="sidebar-footer">
-      <div><span class="dot" id="sidebar-dot"></span><span id="sidebar-status">Checking…</span></div>
-      <div>v1.0.0 · Katra</div>
+      <span class="dot on" id="sidebar-dot"></span>
+      <span id="sidebar-status">Checking…</span>
     </div>
   </aside>
 
-  <!-- ── Main ── -->
   <main class="main">
-    <header class="main-header">
+    <div class="main-header">
       <h2 id="page-title">Overview</h2>
-      <div id="scope-badge" style="margin-left:auto"></div>
-      <div class="header-actions">
-        <span id="refresh-indicator" style="font-size:0.7rem;color:var(--text-dim);display:none;">Auto-refresh 30s</span>
-        <button class="btn btn-secondary btn-sm" onclick="refreshCurrentTab()" id="refresh-btn">↻ Refresh</button>
+      <span class="badge" id="scope-badge"></span>
+      <span class="badge" id="refresh-badge" style="margin-left:auto;display:none">Auto-refresh 30s</span>
+      <button class="btn btn-secondary btn-sm" onclick="refreshTab()">↻ Refresh</button>
+    </div>
+    <div class="main-content" id="content">
+
+<!-- ═══════════ OVERVIEW ═══════════ -->
+<section class="tab active" id="tab-overview">
+  <div class="cards cols-4" id="overview-cards"></div>
+  <div class="cards cols-2" id="service-cards"></div>
+  <div class="card" style="margin-top:14px">
+    <div class="card-title">Recent Autonomous Activity</div>
+    <div class="table-wrap"><table><thead><tr><th>Time</th><th>Type</th><th>Entity</th><th>Agent</th><th>Status</th></tr></thead><tbody id="recent-activity"></tbody></table></div>
+  </div>
+</section>
+
+<!-- ═══════════ API KEYS ═══════════ -->
+<section class="tab" id="tab-keys">
+  <div class="section-title">🔑 LLM Provider Keys</div>
+  <div class="cards cols-2">
+    <div class="card">
+      <div class="form-group"><label>Provider</label><select id="llm-provider" onchange="updateLLMDefaults()"><option value="deepseek">DeepSeek</option><option value="openai">OpenAI</option><option value="moonshot">Moonshot / Kimi</option><option value="ollama">Ollama (local)</option><option value="custom">Custom OpenAI-compatible</option></select></div>
+      <div class="form-group"><label>API Key</label><input type="password" id="llm-key" placeholder="sk-…"><div class="hint">Stored as SHA-256 hash in MongoDB</div></div>
+      <div class="form-group"><label>Base URL</label><input type="text" id="llm-base" placeholder="https://api.deepseek.com/v1"></div>
+      <div class="form-group"><label>Model</label><input type="text" id="llm-model" placeholder="deepseek-chat"></div>
+      <div class="input-row"><button class="btn btn-primary" onclick="saveLLMConfig()">Save LLM Config</button><button class="btn btn-secondary" onclick="testLLM()">Test Connection</button></div>
+      <div id="llm-status" style="margin-top:8px;font-size:0.78rem"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Current LLM Status</div>
+      <div id="llm-current" style="font-size:0.82rem;line-height:1.8"></div>
+    </div>
+  </div>
+
+  <div class="section-title">🔐 Internal API Keys</div>
+  <div class="cards cols-2">
+    <div class="card">
+      <div class="form-group"><label>MCP API Key (agent access)</label><input type="text" id="mcp-key" placeholder="Auto-generated on first boot"><div class="hint">Your agents use this key. Leave blank to keep current.</div></div>
+      <div class="form-group"><label>Admin API Key (full access)</label><input type="text" id="admin-key" placeholder="Auto-generated on first boot"><div class="hint">Admin dashboard, tenant management, LLM config.</div></div>
+      <button class="btn btn-primary" onclick="saveAPIKeys()">Save API Keys</button>
+      <button class="btn btn-secondary btn-sm" onclick="regenerateKeys()" style="margin-left:4px">Regenerate</button>
+      <div id="key-status" style="margin-top:8px;font-size:0.78rem"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Key Security</div>
+      <div style="font-size:0.8rem;line-height:1.7;color:var(--text2)">
+        <p>✅ SHA-256 hashed in MongoDB</p>
+        <p>✅ Timing-safe comparison</p>
+        <p>✅ Plaintext never stored at rest</p>
+        <p>✅ Auto-generated with 256-bit entropy</p>
+        <p>✅ Admin tools gated behind KATRA_API_KEY</p>
       </div>
-    </header>
-    <div class="content">
+    </div>
+  </div>
+</section>
 
-      <!-- ═══ OVERVIEW TAB ═══ -->
-      <section class="tab-content active" id="tab-overview">
-        <div class="card-grid cols-3" id="overview-cards">
-          <div class="card"><div class="loading-center"><span class="spinner"></span>Loading…</div></div>
-        </div>
-        <div class="card" style="margin-top:16px" id="services-card">
-          <div class="card-header"><h3 class="card-title">Services</h3></div>
-          <div class="loading-center"><span class="spinner"></span>Loading…</div>
-        </div>
-      </section>
+<!-- ═══════════ AGENTS ═══════════ -->
+<section class="tab" id="tab-agents">
+  <div class="section-title">🤖 Connected Agents</div>
+  <div class="card"><div class="table-wrap"><table><thead><tr><th>Agent / User ID</th><th>Events</th><th>Last Active</th><th>Emotional Footprint</th><th>Scope</th></tr></thead><tbody id="agents-table"></tbody></table></div></div>
 
-      <!-- ═══ MEMORIES TAB ═══ -->
-      <section class="tab-content" id="tab-memories">
-        <div class="card" style="margin-bottom:20px">
-          <div class="card-header"><h3 class="card-title">Search Memories</h3></div>
-          <div class="input-row" style="flex-wrap:wrap">
-            <input class="input" id="mem-search-query" placeholder="Search across memory collections…" onkeydown="if(event.key==='Enter')searchMemories()" style="min-width:220px">
-            <select class="input" id="mem-search-collection" style="max-width:160px">
-              <option value="all">All collections</option>
-              <option value="episodic">Episodic events</option>
-              <option value="semantic">Semantic facts</option>
-              <option value="knowledge_graph">Knowledge graph</option>
-              <option value="asset">Assets</option>
-            </select>
-            <input class="input" id="mem-search-from" type="datetime-local" title="From" style="max-width:180px">
-            <input class="input" id="mem-search-to" type="datetime-local" title="To" style="max-width:180px">
-            <input class="input" id="mem-search-user" placeholder="user_id" style="max-width:160px">
-            <input class="input" id="mem-search-limit" placeholder="limit" value="20" style="max-width:70px" type="number" min="1" max="100">
-            <button class="btn btn-primary" onclick="searchMemories()" id="mem-search-btn">Search</button>
-          </div>
-        </div>
-        <div class="card">
-          <div class="card-header">
-            <h3 class="card-title">Browse Collection</h3>
-            <div class="input-row" style="width:auto;flex-wrap:wrap">
-              <select class="input" id="mem-filter-collection" style="width:150px" onchange="loadRecentEvents()">
-                <option value="episodic_events">Episodic events</option>
-                <option value="semantic_facts">Semantic facts</option>
-                <option value="knowledge_nodes">Knowledge nodes</option>
-                <option value="knowledge_relationships">Relationships</option>
-              </select>
-              <input class="input" id="mem-filter-from" type="datetime-local" title="From" style="width:180px">
-              <input class="input" id="mem-filter-to" type="datetime-local" title="To" style="width:180px">
-              <input class="input" id="mem-filter-user" placeholder="user_id" style="width:150px">
-              <input class="input" id="mem-filter-limit" placeholder="limit" value="20" style="width:70px" type="number" min="1" max="200">
-              <button class="btn btn-secondary btn-sm" onclick="loadRecentEvents()">Load</button>
-            </div>
-          </div>
-          <div id="memories-table"><div class="loading-center"><span class="spinner"></span>Loading…</div></div>
-        </div>
-      </section>
+  <div class="section-title">🔗 Memory Scope Configuration</div>
+  <div class="cards cols-2">
+    <div class="card">
+      <div class="form-group"><label>Scope Mode</label><select id="scope-mode"><option value="personal">Personal (isolated)</option><option value="shared">Shared (communal)</option><option value="hybrid">Hybrid (personal + shared)</option></select></div>
+      <div class="form-group"><label>Shared ID</label><input type="text" id="scope-shared-id" placeholder="e.g. neural-link, my-team"><div class="hint">All agents with this ID share memories</div></div>
+      <div class="form-group"><label>Visible User IDs (hybrid mode)</label><input type="text" id="scope-visible-ids" placeholder="agent1, agent2, agent3"><div class="hint">Comma-separated list of user_ids visible in hybrid mode</div></div>
+      <div class="input-row"><button class="btn btn-primary" onclick="saveScope()">Save Memory Scope</button><button class="btn btn-secondary" onclick="loadScope()">Reload</button></div>
+      <div id="scope-status" style="margin-top:8px;font-size:0.78rem"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Current Scope</div>
+      <div id="scope-current" style="font-size:0.82rem;line-height:1.8"></div>
+    </div>
+  </div>
+</section>
 
-      <!-- ═══ INGESTION TAB ═══ -->
-      <section class="tab-content" id="tab-ingestion">
-        <div class="card" style="margin-bottom:20px">
-          <div class="card-header">
-            <h3 class="card-title">Session Ingestion</h3>
-            <button class="btn btn-primary" onclick="triggerIngestion()" id="ingest-btn">▶ Trigger Ingestion</button>
-          </div>
-          <div id="ingestion-result" style="margin-top:12px"></div>
-        </div>
-        <div class="card-grid cols-2" id="ingestion-stats-cards">
-          <div class="card"><div class="loading-center"><span class="spinner"></span>Loading…</div></div>
-        </div>
-        <div class="card" style="margin-top:16px">
-          <div class="card-header"><h3 class="card-title">Pipeline Stats</h3></div>
-          <div id="ingestion-pipeline"><div class="loading-center"><span class="spinner"></span>Loading…</div></div>
-        </div>
-      </section>
+<!-- ═══════════ MEMORY ═══════════ -->
+<section class="tab" id="tab-memory">
+  <div class="input-row" style="margin-bottom:14px">
+    <input type="text" id="mem-query" placeholder="Search across all memory collections…" onkeydown="if(event.key==='Enter')searchMemory()">
+    <select id="mem-collection" style="max-width:160px"><option value="all">All Collections</option><option value="episodic_events">Episodic</option><option value="semantic_facts">Semantic</option><option value="knowledge_nodes">Knowledge</option><option value="reflective_journals">Reflections</option></select>
+    <input type="text" id="mem-user" placeholder="user_id" style="max-width:140px">
+    <input type="number" id="mem-limit" value="20" min="1" max="100" style="max-width:70px">
+    <button class="btn btn-primary" onclick="searchMemory()">Search</button>
+  </div>
+  <div class="card"><div class="table-wrap"><table><thead><tr><th>Time</th><th>Collection</th><th>User</th><th>Content</th></tr></thead><tbody id="mem-results"></tbody></table></div></div>
+</section>
 
-      <!-- ═══ KNOWLEDGE GRAPH TAB ═══ -->
-      <section class="tab-content" id="tab-graph">
-        <div class="card" style="margin-bottom:16px">
-          <div class="card-header">
-            <h3 class="card-title">Graph Explorer</h3>
-          </div>
-          <div class="input-row" style="flex-wrap:wrap">
-            <input class="input" id="graph-query" placeholder="Search graph nodes (e.g. 'machine learning')…" onkeydown="if(event.key==='Enter')loadGraph()" style="min-width:220px">
-            <input class="input" id="graph-user" placeholder="user_id" style="width:150px">
-            <input class="input" id="graph-limit" placeholder="limit" value="100" style="width:80px" type="number" min="1" max="500">
-            <button class="btn btn-primary" onclick="loadGraph()">Explore</button>
-            <button class="btn btn-secondary" onclick="loadGraphStats()">Stats</button>
-            <button class="btn btn-secondary" onclick="buildGraph()" id="build-graph-btn">Build Graph</button>
-          </div>
-        </div>
-        <div class="graph-container" id="graph-container">
-          <svg id="graph-svg"></svg>
-          <div class="graph-controls">
-            <button class="btn btn-secondary btn-sm" onclick="zoomGraph(0.2)" title="Zoom In">+</button>
-            <button class="btn btn-secondary btn-sm" onclick="zoomGraph(-0.2)" title="Zoom Out">−</button>
-            <button class="btn btn-secondary btn-sm" onclick="resetGraphView()" title="Reset">⟲</button>
-          </div>
-          <div class="node-details" id="node-details">
-            <button class="close-btn" onclick="closeNodeDetails()">✕</button>
-            <div id="node-details-content"></div>
-          </div>
-        </div>
-        <div id="graph-footer" style="margin-top:12px;font-size:0.78rem;color:var(--text-muted)"></div>
-      </section>
+<!-- ═══════════ SETTINGS ═══════════ -->
+<section class="tab" id="tab-settings">
+  <div class="section-title">🧠 Embedding Configuration</div>
+  <div class="card">
+    <div class="form-group"><label>Embedding Provider</label><select id="embed-provider"><option value="local">Local (all-MiniLM-L6-v2)</option><option value="openai">OpenAI Embeddings</option></select></div>
+    <div id="embed-status" style="margin-top:8px;font-size:0.78rem"></div>
+  </div>
 
-      <!-- ═══ SETTINGS TAB ═══ -->
-      <section class="tab-content" id="tab-settings">
-        <div class="card" style="max-width:560px">
-          <div class="card-header"><h3 class="card-title">Connection Settings</h3></div>
-          <div style="display:flex;flex-direction:column;gap:14px">
-            <div>
-              <label class="label" for="settings-url">Base URL</label>
-              <input class="input mono" id="settings-url" placeholder="http://localhost:9012" value="http://localhost:9012">
-              <span style="font-size:0.7rem;color:var(--text-dim)">The Katra server address</span>
-            </div>
-            <div>
-              <label class="label" for="settings-key">API Key</label>
-              <input class="input mono" id="settings-key" type="password" placeholder="sk-…" value="">
-              <span style="font-size:0.7rem;color:var(--text-dim)">Bearer token for Authorization header (leave blank if not required)</span>
-            </div>
-            <div style="display:flex;gap:8px">
-              <button class="btn btn-primary" onclick="testConnection()" id="test-conn-btn">Test Connection</button>
-              <button class="btn btn-secondary" onclick="saveSettings()">Save</button>
-            </div>
-            <div id="settings-result"></div>
-          </div>
-        </div>
-        <div class="card" style="max-width:560px;margin-top:16px">
-          <div class="card-header"><h3 class="card-title">Server Config</h3></div>
-          <div id="settings-config"><div class="loading-center"><span class="spinner"></span>Loading…</div></div>
-        </div>
+  <div class="section-title">🔄 Background Processing</div>
+  <div class="card">
+    <div id="bg-status" style="font-size:0.82rem;line-height:1.8"></div>
+    <button class="btn btn-secondary btn-sm" onclick="loadBGStatus()">Refresh Status</button>
+  </div>
 
-        <!-- Memory Scope -->
-        <div class="card" style="max-width:560px;margin-top:16px">
-          <div class="card-header">
-            <h3 class="card-title">Memory Scope</h3>
-            <span style="font-size:0.75rem;color:var(--text-dim)">Identity mode for agent memories</span>
-          </div>
-          <div id="scope-content"><div class="loading-center"><span class="spinner"></span>Loading…</div></div>
-        </div>
-
-        <!-- LLM Configuration -->
-        <div class="card" style="max-width:560px;margin-top:16px">
-          <div class="card-header">
-            <h3 class="card-title">LLM Configuration</h3>
-            <span style="font-size:0.75rem;color:var(--text-dim)">Provider for semantic extraction, auto-journaling & summaries</span>
-          </div>
-          <div id="llm-config-content"><div class="loading-center"><span class="spinner"></span>Loading…</div></div>
-        </div>
-      </section>
+  <div class="section-title">🚀 System</div>
+  <div class="card">
+    <div class="input-row">
+      <button class="btn btn-primary" onclick="triggerReflection()">Trigger Sleep Consolidation</button>
+      <button class="btn btn-secondary" onclick="forceProcess()">Force Background Process</button>
+    </div>
+    <div id="sys-status" style="margin-top:8px;font-size:0.78rem"></div>
+  </div>
+</section>
 
     </div>
   </main>
 </div>
 
-<!-- Toast container -->
-<div class="toast-container" id="toasts"></div>
+<div id="toast" class="toast"></div>
 
 <script>
-/* ══════════════════════════════════════════════
-   ║  Katra Dashboard — Vanilla JS Core
-   ══════════════════════════════════════════════ */
-
 // ── State ──
-const state = {
-  baseUrl: localStorage.getItem('katra_baseUrl') || 'http://localhost:9012',
-  apiKey: localStorage.getItem('katra_apiKey') || '',
-  healthInterval: null,
-  currentTab: 'overview',
-  graphNodes: [],
-  graphEdges: [],
-  graphTransform: { x: 0, y: 0, scale: 1 },
-  expandedRows: new Set(),
-};
+const API = '/api/v1';
+let currentTab = 'overview';
+let refreshTimer = null;
+let adminKey = localStorage.getItem('katra_admin_key') || '';
 
-// ── API Helpers ──
-function apiUrl(path) {
-  return `${state.baseUrl}${path}`;
-}
-
+// ── Auth ──
 function authHeaders() {
-  const headers = { 'Content-Type': 'application/json' };
-  if (state.apiKey) headers['Authorization'] = `Bearer ${state.apiKey}`;
-  return headers;
+  const h = {'Content-Type': 'application/json'};
+  if (adminKey) h['Authorization'] = 'Bearer ' + adminKey;
+  return h;
 }
 
-async function apiFetch(path, opts = {}) {
-  const url = apiUrl(path);
-  const method = (opts.method || 'GET').toUpperCase();
-  const fetchOpts = {
-    method,
-    headers: authHeaders(),
-  };
-  if (opts.body && method !== 'GET') {
-    fetchOpts.body = JSON.stringify(opts.body);
+function requireAuth() {
+  if (!adminKey) {
+    const k = prompt('Enter KATRA_API_KEY (admin key):');
+    if (k) { adminKey = k; localStorage.setItem('katra_admin_key', k); }
+    else { toast('Admin key required for this operation', 'error'); return false; }
   }
-  if (method === 'GET' && fetchOpts.body) {
-    delete fetchOpts.body;
-  }
+  return true;
+}
+
+async function api(method, path, body) {
+  const opts = { method, headers: authHeaders() };
+  if (body) opts.body = JSON.stringify(body);
   try {
-    const res = await fetch(url, fetchOpts);
-    const data = await res.json().catch(() => null);
-    return { status: res.status, ok: res.ok, data };
-  } catch (err) {
-    console.error('Katra: network error for', path, err);
-    return { status: 0, ok: false, data: null };
-  }
+    const r = await fetch(`${API}${path}`, opts);
+    if (r.status === 401) { adminKey = ''; localStorage.removeItem('katra_admin_key'); throw new Error('Unauthorized — enter admin key'); }
+    return r.json();
+  } catch(e) { return { success: false, error: e.message }; }
 }
 
 // ── Toast ──
-function toast(msg, type = 'success') {
-  const container = document.getElementById('toasts');
-  const el = document.createElement('div');
-  el.className = `toast ${type}`;
-  el.textContent = msg;
-  container.appendChild(el);
-  setTimeout(() => { el.remove(); }, 4000);
+function toast(msg, type) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.className = `toast show ${type || ''}`;
+  setTimeout(() => t.classList.remove('show'), 3000);
 }
 
-// ── Spinner helpers ──
-function spinner() { return '<div class="loading-center"><span class="spinner"></span>Loading…</div>'; }
-function errorMsg(msg, retryFn) {
-  return `<div class="state-msg">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
-    <p>${escapeHtml(msg)}</p>
-    ${retryFn ? '<button class="btn btn-secondary btn-sm" onclick="(' + retryFn.toString() + ')()">Retry</button>' : ''}
-  </div>`;
-}
-function emptyMsg(msg) {
-  return `<div class="state-msg"><p>${escapeHtml(msg)}</p></div>`;
-}
-
-function escapeHtml(str) {
-  const d = document.createElement('div');
-  d.textContent = str;
-  return d.innerHTML;
-}
-
-// ── Formatting ──
-function fmtDate(ts) {
-  if (!ts) return '—';
-  const d = new Date(ts);
-  const now = new Date();
-  const diff = now - d;
-  const mins = Math.floor(diff / 60000);
-  const hrs = Math.floor(diff / 3600000);
-  const days = Math.floor(diff / 86400000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
-  if (hrs < 24) return `${hrs}h ago`;
-  if (days < 7) return `${days}d ago`;
-  return d.toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' }) +
-    ' ' + d.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' });
-}
-
-function fmtDateFull(ts) {
-  if (!ts) return '—';
-  return new Date(ts).toLocaleString('en-GB');
-}
-
-function fmtNum(n) {
-  if (n == null) return '—';
-  if (typeof n === 'number') return n.toLocaleString();
-  return n;
-}
-
-function truncate(str, len = 120) {
-  if (!str) return '—';
-  const s = typeof str === 'string' ? str : JSON.stringify(str);
-  if (s.length <= len) return s;
-  return s.substring(0, len) + '…';
-}
-
-function eventTypeBadge(type) {
-  const map = {
-    user_message: '#3b82f6', assistant_message: '#22c55e',
-    system_event: '#f59e0b', interaction: '#ec4899',
-    prompt: '#8b5cf6', response: '#06b6d4',
-    default: '#6366f1'
-  };
-  const color = map[type] || map.default;
-  return `<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:0.7rem;font-weight:600;background:${color}22;color:${color}">${escapeHtml(type)}</span>`;
-}
-
-// ── Tab Navigation ──
-document.getElementById('nav').addEventListener('click', (e) => {
-  const btn = e.target.closest('.nav-item');
-  if (!btn) return;
-  const tab = btn.dataset.tab;
-  switchTab(tab);
+// ── Navigation ──
+document.querySelectorAll('.nav-btn').forEach(b => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('.nav-btn').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    currentTab = b.dataset.tab;
+    document.getElementById('page-title').textContent = b.textContent.trim();
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.getElementById('tab-' + currentTab).classList.add('active');
+    loadTab(currentTab);
+  });
 });
 
-function switchTab(tab) {
-  state.currentTab = tab;
-  document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-  document.querySelectorAll('.tab-content').forEach(s => s.classList.toggle('active', s.id === `tab-${tab}`));
-  document.getElementById('page-title').textContent = tab.charAt(0).toUpperCase() + tab.slice(1);
+function refreshTab() { loadTab(currentTab); }
 
-  if (tab === 'overview') { startHealthPolling(); loadOverview(); }
-  else { stopHealthPolling(); }
-
-  if (tab === 'memories') loadRecentEvents();
-  if (tab === 'ingestion') loadIngestion();
-  if (tab === 'settings') loadSettingsConfig();
-  if (tab === 'graph') { loadGraph(); }
+// ── Health Check ──
+async function checkHealth() {
+  try {
+    const r = await fetch(`${API}/health`);
+    const d = await r.json();
+    if (d.status === 'ok') {
+      document.getElementById('sidebar-dot').className = 'dot on';
+      document.getElementById('sidebar-status').textContent = 'Connected';
+      return d.services;
+    }
+  } catch(e) {}
+  document.getElementById('sidebar-dot').className = 'dot';
+  document.getElementById('sidebar-status').textContent = 'Disconnected';
+  return null;
 }
 
-function refreshCurrentTab() {
-  const btn = document.getElementById('refresh-btn');
-  btn.disabled = true;
-  const t = state.currentTab;
-  const loaders = {
-    overview: loadOverview,
-    memories: loadRecentEvents,
-    ingestion: loadIngestion,
-    settings: loadSettingsConfig,
-    graph: loadGraphStats,
-  };
-  const fn = loaders[t];
-  if (fn) fn().finally(() => { btn.disabled = false; });
-  else btn.disabled = false;
+// ── Load Tabs ──
+async function loadTab(tab) {
+  switch(tab) {
+    case 'overview': await loadOverview(); break;
+    case 'keys': await loadKeys(); break;
+    case 'agents': await loadAgents(); break;
+    case 'memory': await searchMemory(); break;
+    case 'settings': await loadSettings(); break;
+  }
 }
 
-/* ══════════════════════════════════════════════
-   ║  OVERVIEW TAB
-   ══════════════════════════════════════════════ */
-
+// ═══════════ OVERVIEW ═══════════
 async function loadOverview() {
-  const cards = document.getElementById('overview-cards');
-  const servicesCard = document.getElementById('services-card').querySelector('.card-header + div, .loading-center');
-  if (!cards) return;
-  cards.innerHTML = '<div class="card"><div class="loading-center"><span class="spinner"></span>Loading…</div></div>'.repeat(3);
+  const svc = await checkHealth();
+  if (!svc) return;
 
-  // Parallel fetches
-  const userId = getCurrentUserId();
-  const statsQuery = userId ? `?user_id=${encodeURIComponent(userId)}` : '';
+  // Try to get stats from diagnostics
+  let stats = {};
+  try {
+    const r = await fetch(`${API}/memory/status`, {headers: authHeaders()});
+    if (r.ok) stats = await r.json();
+  } catch(e) {}
 
-  const [infoRes, healthRes, dbRes, bgRes, scopeRes] = await Promise.allSettled([
-    apiFetch('/'),
-    apiFetch('/api/v1/memory/health'),
-    apiFetch(`/api/v1/memory/stats${statsQuery}`),
-    apiFetch('/api/v1/admin/background/status'),
-    apiFetch('/api/v1/admin/memory-scope'),
-  ]);
-
-  const info = infoRes.value?.ok ? infoRes.value.data : null;
-  const health = healthRes.value?.ok ? healthRes.value.data : null;
-  const dbStats = dbRes.value?.ok ? dbRes.value.data : null;
-  const bgStats = bgRes.value?.ok ? bgRes.value.data : null;
-  const scopeData = scopeRes.value?.ok ? scopeRes.value.data : null;
-
-  // Determine overall status
-  let statusClass = 'unknown', statusText = 'Unknown';
-  const hcRes = await apiFetch('/api/v1/health');
-  const hc = hcRes.ok ? hcRes.data : null;
-  const svc = hc?.services || {};
-  const allOk = svc.mongodb === 'connected' && svc.redis === 'connected';
-  statusClass = allOk ? 'healthy' : 'degraded';
-  statusText = allOk ? 'Healthy' : 'Degraded';
-
-  // Sidebar dot
-  const dot = document.getElementById('sidebar-dot');
-  dot.className = `dot ${statusClass === 'healthy' ? 'green' : statusClass === 'degraded' ? 'amber' : 'red'}`;
-  document.getElementById('sidebar-status').textContent = statusText;
-
-  // Scope badge
-  if (scopeData?.scope) {
-    const s = scopeData.scope;
-    const badges = { personal: '\u{1F512} Personal', shared: '\u{1F310} Shared', hybrid: '\u{1F517} Hybrid' };
-    const colors = { personal: 'var(--accent)', shared: 'var(--green)', hybrid: 'var(--amber)' };
-    const scopeEl = document.getElementById('scope-badge');
-    if (scopeEl) {
-      scopeEl.innerHTML = `<span style="display:inline-flex;align-items:center;gap:6px;padding:4px 12px;background:${colors[s.mode]}22;border:1px solid ${colors[s.mode]}44;border-radius:20px;font-size:0.8rem;font-weight:600;color:${colors[s.mode]}">${badges[s.mode] || s.mode}</span>`;
-    }
-  }
-
-  cards.innerHTML = `
-    <div class="card">
-      <div class="card-header"><h3 class="card-title">Server Status</h3>
-        <span class="status-badge ${statusClass}"><span class="status-dot ${statusClass === 'healthy' ? 'green' : statusClass === 'degraded' ? 'amber' : 'red'}"></span>${statusText}</span>
-      </div>
-      <div class="card-value">${info?.name || 'Katra'}</div>
-      <div class="card-sub">v${info?.version || '—'} · ${info?.description || 'Cognitive Memory Service'}</div>
-      <div class="card-sub" style="margin-top:8px;font-size:0.75rem;">
-        MongoDB: ${svc.mongodb === 'connected' ? '✅ Connected' : '❌ ' + (svc.mongodb || 'Unknown')}<br>
-        Redis: ${svc.redis === 'connected' ? '✅ Connected' : '❌ ' + (svc.redis || 'Unknown')}<br>
-        LLM: ${svc.llm || 'none'}<br>
-        Embeddings: ${svc.embeddings || 'lazy-loading'}
-      </div>
-    </div>
-    <div class="card">
-      <div class="card-header"><h3 class="card-title">Memory Stores</h3></div>
-      <div class="card-value">${fmtNum(dbStats?.database_stats?.total_documents || '—')}</div>
-      <div class="card-sub">Total documents across collections</div>
-      <div class="card-sub" style="margin-top:8px;font-size:0.75rem;">
-        ${dbStats?.database_stats?.collections ? Object.entries(dbStats.database_stats.collections).slice(0,5).map(([k,v]) => `${escapeHtml(k)}: ${fmtNum(v)}`).join('<br>') : '—'}
-      </div>
-    </div>
-    <div class="card">
-      <div class="card-header"><h3 class="card-title">Background Processor</h3>
-        <span class="status-badge ${bgStats?.stats?.is_running ? 'healthy' : 'unknown'}">
-          <span class="status-dot ${bgStats?.stats?.is_running ? 'green' : 'gray'}"></span>${bgStats?.stats?.is_running ? 'Running' : 'Stopped'}
-        </span>
-      </div>
-      <div class="card-value">${fmtNum(bgStats?.stats?.processed_events || '—')}</div>
-      <div class="card-sub">Events processed</div>
-      <div class="card-sub" style="margin-top:8px;font-size:0.75rem;">
-        Failed: ${fmtNum(bgStats?.stats?.failed_events || '0')} ·
-        Interval: ${bgStats?.stats?.interval_ms ? (bgStats.stats.interval_ms / 1000) + 's' : '—'}
-      </div>
-    </div>
-  `;
-
-  // Build services card
-  const services = health?.data?.services || {};
-  const llmHealth = health?.data?.health?.llm_service;
-  const serviceTags = [
-    ...Object.entries(services).map(([k,v]) => `<span class="service-tag ${v==='active'?'':'inactive'}">${escapeHtml(k.replace(/_/g,' '))}</span>`),
-    `<span class="service-tag ${llmHealth?.available?'':'inactive'}">LLM: ${llmHealth?.provider || 'none'} / ${llmHealth?.model || 'none'}</span>`,
+  // Overview cards
+  const cards = [
+    {title:'MongoDB', value:svc.mongodb, sub:'Primary Database', color:svc.mongodb==='connected'?'green':'red'},
+    {title:'Redis', value:svc.redis, sub:'Cache + Locks', color:svc.redis==='connected'?'green':'red'},
+    {title:'LLM Provider', value:svc.llm, sub:'Semantic Extraction', color:svc.llm==='deepseek'||svc.llm==='available'?'green':svc.llm==='unavailable'?'amber':'green'},
+    {title:'Embeddings', value:svc.embeddings, sub:'Vector Search', color:svc.embeddings==='available'?'green':'amber'},
   ];
-
-  const svcDiv = document.getElementById('services-card');
-  svcDiv.innerHTML = `
-    <div class="card-header"><h3 class="card-title">Services</h3></div>
-    <div class="services-list">${serviceTags.join('')}</div>
-    ${health?.data?.collections_ready === false ? '<div class="card-sub" style="margin-top:8px;color:var(--amber)">⚠ Collections not fully initialized</div>' : ''}
-  `;
-
-  document.getElementById('refresh-indicator').style.display = 'inline';
-}
-
-function startHealthPolling() {
-  if (state.healthInterval) return;
-  state.healthInterval = setInterval(loadOverview, 30000);
-  document.getElementById('refresh-indicator').style.display = 'inline';
-}
-function stopHealthPolling() {
-  if (state.healthInterval) { clearInterval(state.healthInterval); state.healthInterval = null; }
-  document.getElementById('refresh-indicator').style.display = 'none';
-}
-
-/* ══════════════════════════════════════════════
-   ║  MEMORIES TAB
-   ══════════════════════════════════════════════ */
-
-async function loadRecentEvents() {
-  const container = document.getElementById('memories-table');
-  container.innerHTML = spinner();
-
-  const userId = document.getElementById('mem-filter-user').value.trim();
-  const limit = document.getElementById('mem-filter-limit').value || '50';
-  const collection = document.getElementById('mem-filter-collection').value;
-
-  const fromInput = document.getElementById('mem-filter-from').value;
-  const toInput = document.getElementById('mem-filter-to').value;
-
-  // Default to the last 30 days when no explicit range is set
-  const to = toInput ? new Date(toInput).toISOString() : new Date().toISOString();
-  const from = fromInput ? new Date(fromInput).toISOString() : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-
-  const params = new URLSearchParams();
-  if (userId) params.set('user_id', userId);
-  params.set('from', from);
-  params.set('to', to);
-  params.set('limit', limit);
-
-  if (collection === 'episodic_events') {
-    const { ok, data } = await apiFetch(`/api/v1/memory/episodic/events?${params.toString()}`);
-    if (ok && (data.results || []).length > 0) {
-      buildEventsTable(data.results, container);
-      return;
-    }
-  } else if (collection === 'semantic_facts') {
-    const { ok, data } = await apiFetch(`/api/v1/memory/semantic/facts?${params.toString()}`);
-    if (ok && (data.results || []).length > 0) {
-      buildEventsTable(data.results, container, true);
-      return;
-    }
-  } else if (collection === 'knowledge_nodes') {
-    const { ok, data } = await apiFetch(`/api/v1/memory/knowledge-graph?${params.toString()}`);
-    const nodes = data?.graph_data?.nodes || data?.nodes || [];
-    if (ok && nodes.length > 0) {
-      buildEventsTable(nodes.map(n => ({
-        event_type: n.type || 'node',
-        content: n.properties,
-        timestamp: n.created_at,
-        session_id: n.session_id,
-        user_id: n.user_id,
-        _type: 'node'
-      })), container, true);
-      return;
-    }
-  } else if (collection === 'knowledge_relationships') {
-    const { ok, data } = await apiFetch(`/api/v1/memory/knowledge-graph?${params.toString()}`);
-    const rels = data?.graph_data?.links || data?.relationships || [];
-    if (ok && rels.length > 0) {
-      buildEventsTable(rels.map(r => ({
-        event_type: r.relationship_type || 'relationship',
-        content: { source: r.source || r.from_id, target: r.target || r.to_id, properties: r.properties },
-        timestamp: r.created_at,
-        session_id: r.session_id,
-        user_id: r.user_id,
-        _type: 'relationship'
-      })), container, true);
-      return;
-    }
-  }
-
-  container.innerHTML = emptyMsg(`No ${collection.replace(/_/g, ' ')} found${userId ? ` for user "${userId}"` : ''}. Try a different collection, time range, or ingest some data.`);
-}
-
-async function searchMemories() {
-  const container = document.getElementById('memories-table');
-  const btn = document.getElementById('mem-search-btn');
-  container.innerHTML = spinner();
-  btn.disabled = true;
-
-  const query = document.getElementById('mem-search-query').value.trim();
-  const userId = document.getElementById('mem-search-user').value.trim();
-  const limit = parseInt(document.getElementById('mem-search-limit').value) || 20;
-  const collection = document.getElementById('mem-search-collection').value;
-
-  const fromInput = document.getElementById('mem-search-from').value;
-  const toInput = document.getElementById('mem-search-to').value;
-
-  if (!query) {
-    container.innerHTML = errorMsg('Enter a search query');
-    btn.disabled = false;
-    return;
-  }
-
-  // Map UI collection value to recall search type
-  const searchTypes = collection === 'all'
-    ? ['episodic', 'semantic', 'knowledge_graph', 'asset']
-    : collection === 'knowledge_graph'
-      ? ['knowledge_graph']
-      : [collection];
-
-  const body = { query, userId, limit, searchTypes };
-  if (fromInput) body.startDate = new Date(fromInput).toISOString();
-  if (toInput) body.endDate = new Date(toInput).toISOString();
-
-  // Use comprehensive recall search (searches episodic + semantic + knowledge_graph + assets)
-  const { ok, data } = await apiFetch('/api/v1/memory/recall/search', {
-    method: 'POST',
-    body,
-  });
-
-  btn.disabled = false;
-  if (!ok) {
-    container.innerHTML = errorMsg(data?.error || 'Search failed', searchMemories);
-    return;
-  }
-
-  // Combine all result types from rawResults into a flat normalized list
-  const raw = data?.rawResults || data?.data?.rawResults || {};
-  const all = [
-    ...(raw.episodic || []).map(e => ({ ...e, _type: 'episodic' })),
-    ...(raw.semantic || []).map(e => ({ ...e, _type: 'semantic' })),
-    ...(raw.knowledge_graph || []).map(e => ({ ...e, _type: 'graph' })),
-    ...(raw.assets || []).map(e => ({ ...e, _type: 'asset' })),
-  ];
-
-  if (all.length === 0) {
-    container.innerHTML = emptyMsg(`No results for "${query}".`);
-    return;
-  }
-  buildEventsTable(all, container, true);
-}
-
-function buildEventsTable(events, container, mixed) {
-  let html = `<div class="table-wrap"><table><thead><tr>
-    <th style="width:120px">Timestamp</th>
-    <th style="width:140px">Type</th>
-    <th>Content</th>
-    <th style="width:160px">Session</th>
-  </tr></thead><tbody>`;
-
-  events.forEach((ev, i) => {
-    const ts = ev.timestamp;
-    const sessionId = ev.session_id || ev._id || '—';
-    // Normalize content from various memory shapes
-    let snippet;
-    if (typeof ev.content === 'string') {
-      snippet = ev.content;
-    } else if (ev.content?.message) {
-      snippet = ev.content.message;
-    } else if (ev.content?.text) {
-      snippet = ev.content.text;
-    } else if (ev.description) {
-      snippet = ev.description;
-    } else if (ev.fact) {
-      snippet = ev.fact;
-    } else {
-      snippet = JSON.stringify(ev.content || ev);
-    }
-    snippet = truncate(snippet, 100);
-    const fullContent = JSON.stringify(ev, null, 2);
-    const typeLabel = mixed ? (ev._type || ev.event_type || 'event') : ev.event_type;
-    // Safe relevance score formatting
-    const relScore = ev.relevance_score != null && typeof ev.relevance_score === 'number'
-      ? ev.relevance_score.toFixed(2)
-      : (ev.confidence != null && typeof ev.confidence === 'number' ? ev.confidence.toFixed(2) : null);
-    html += `
-      <tr class="clickable" onclick="toggleEventRow(this, 'ev-${i}')">
-        <td><span class="relative-time" title="${fmtDateFull(ts)}">${fmtDate(ts)}</span></td>
-        <td>${eventTypeBadge(typeLabel)}</td>
-        <td class="truncate">${escapeHtml(snippet)}</td>
-        <td class="mono text-dim truncate" title="${escapeHtml(sessionId)}">${escapeHtml(truncate(String(sessionId), 20))}</td>
-      </tr>
-      <tr id="ev-${i}" style="display:none" class="expanded-row">
-        <td colspan="4">
-          <div class="expanded-content">${escapeHtml(fullContent)}</div>
-          ${relScore ? `<div style="margin-top:8px;font-size:0.7rem;color:var(--text-muted)">${ev.confidence != null ? 'Confidence' : 'Relevance'}: ${relScore}</div>` : ''}
-        </td>
-      </tr>`;
-  });
-
-  html += '</tbody></table></div>';
-  container.innerHTML = html;
-}
-
-function toggleEventRow(row, targetId) {
-  const target = document.getElementById(targetId);
-  if (!target) return;
-  target.style.display = target.style.display === 'none' ? '' : 'none';
-}
-
-/* ══════════════════════════════════════════════
-   ║  INGESTION TAB
-   ══════════════════════════════════════════════ */
-
-async function loadIngestion() {
-  const statsCards = document.getElementById('ingestion-stats-cards');
-  const pipeline = document.getElementById('ingestion-pipeline');
-  statsCards.innerHTML = spinner();
-  pipeline.innerHTML = spinner();
-
-  const [statusRes, statsRes] = await Promise.allSettled([
-    apiFetch('/api/v1/ingestion/sessions/status'),
-    apiFetch('/api/v1/ingestion/stats'),
-  ]);
-
-  const status = statusRes.value?.ok ? statusRes.value.data : null;
-  const stats = statsRes.value?.ok ? statsRes.value.data : null;
-
-  // Build status cards
-  const st = status?.status || {};
-  statsCards.innerHTML = `
-    <div class="card">
-      <div class="card-header"><h3 class="card-title">Last Ingestion</h3></div>
-      <div class="card-value">${fmtDate(st.last_ingestion_at) === '—' ? 'Never' : fmtDate(st.last_ingestion_at)}</div>
-      <div class="card-sub">Sessions ingested: ${fmtNum(st.total_sessions_ingested || 0)}</div>
-    </div>
-    <div class="card">
-      <div class="card-header"><h3 class="card-title">Events</h3></div>
-      <div class="card-value">${fmtNum(st.total_events_stored || 0)}</div>
-      <div class="card-sub">Errors: ${fmtNum(st.errors || 0)} · Duration: ${st.last_duration_ms ? (st.last_duration_ms / 1000).toFixed(1) + 's' : '—'}</div>
-    </div>
-  `;
-
-  // Build pipeline stats
-  const pst = stats?.statistics || {};
-  pipeline.innerHTML = statsRes.value?.ok
-    ? `<div class="json-viewer">${escapeHtml(JSON.stringify(stats, null, 2))}</div>`
-    : errorMsg(statsRes.value?.data?.error || 'Failed to load pipeline stats', loadIngestion);
-}
-
-async function triggerIngestion() {
-  const btn = document.getElementById('ingest-btn');
-  const resultDiv = document.getElementById('ingestion-result');
-  btn.disabled = true;
-  resultDiv.innerHTML = '<div class="loading-center"><span class="spinner"></span>Processing ingestion…</div>';
-
-  const { ok, data, status } = await apiFetch('/api/v1/ingestion/sessions/ingest', { method: 'POST' });
-  btn.disabled = false;
-
-  if (!ok) {
-    resultDiv.innerHTML = `<div style="padding:12px;background:rgba(239,68,68,0.1);border-radius:var(--radius-sm);color:var(--red);font-size:0.8rem;">
-      ${escapeHtml(data?.error || `HTTP ${status}: Ingestion failed`)}</div>`;
-    toast('Ingestion failed', 'error');
-    return;
-  }
-
-  resultDiv.innerHTML = `<div style="padding:12px;background:rgba(34,197,94,0.08);border-radius:var(--radius-sm);font-size:0.8rem;">
-    ✅ <strong>Ingestion complete</strong> — ${fmtNum(data?.result?.events_processed || 0)} events processed, ${fmtNum(data?.result?.events_stored || 0)} stored
-  </div>`;
-  toast('Ingestion completed successfully');
-
-  // Refresh the stats
-  setTimeout(loadIngestion, 1000);
-}
-
-/* ══════════════════════════════════════════════
-   ║  KNOWLEDGE GRAPH TAB
-   ══════════════════════════════════════════════ */
-
-async function loadGraphStats() {
-  const footer = document.getElementById('graph-footer');
-  footer.textContent = 'Loading stats…';
-  const { ok, data } = await apiFetch('/api/v1/memory/enhance/stats');
-  if (ok && data?.data) {
-    footer.textContent = `${data.data.node_count} nodes · ${data.data.edge_count} edges · Queue: ${data.data.queue_depth}`;
-  } else {
-    footer.textContent = 'Could not load graph stats';
-  }
-}
-
-async function buildGraph() {
-  const btn = document.getElementById('build-graph-btn');
-  const footer = document.getElementById('graph-footer');
-  btn.disabled = true;
-  btn.textContent = 'Building…';
-  footer.textContent = 'Extracting entities from semantic memories via LLM…';
-
-  const { ok, data } = await apiFetch('/api/v1/memory/enhance/build-from-facts', { method: 'POST' });
-
-  btn.disabled = false;
-  btn.textContent = 'Build Graph';
-
-  if (ok && data?.success) {
-    footer.textContent = data.message || 'Graph built successfully';
-    toast(`✅ ${data.graph?.node_count || 0} nodes, ${data.graph?.edge_count || 0} edges`);
-    loadGraph();
-  } else {
-    footer.textContent = data?.error || 'Failed to build graph';
-    toast(data?.error || 'Failed to build graph', 'error');
-  }
-}
-
-async function loadGraph() {
-  const query = document.getElementById('graph-query').value.trim();
-  const userId = document.getElementById('graph-user').value.trim();
-  const limit = parseInt(document.getElementById('graph-limit').value) || 100;
-  const footer = document.getElementById('graph-footer');
-  const svg = document.getElementById('graph-svg');
-  svg.innerHTML = '';
-  footer.textContent = 'Loading graph…';
-
-  let nodes = [], edges = [];
-
-  const params = new URLSearchParams();
-  if (userId) params.set('user_id', userId);
-  params.set('limit', String(limit));
-
-  if (query) {
-    // Query-specific exploration (scoped to user when supported)
-    footer.textContent = 'Exploring graph…';
-    const exploreBody = { query, depth: 2, limit };
-    if (userId) exploreBody.userId = userId;
-
-    const [exploreRes, graphRes] = await Promise.allSettled([
-      apiFetch('/api/v1/memory/enhance/explore', { method: 'POST', body: exploreBody }),
-      apiFetch(`/api/v1/memory/knowledge-graph?${params.toString()}`),
-    ]);
-
-    if (exploreRes.value?.ok && exploreRes.value.data?.data) {
-      const d = exploreRes.value.data.data;
-      if (d.total_nodes > 0) {
-        footer.textContent = `${d.total_nodes} nodes · ${d.total_edges} edges · Depth: ${d.depth}`;
-      }
-    }
-
-    if (graphRes.value?.ok && graphRes.value.data) {
-      const g = graphRes.value.data.graph_data || graphRes.value.data;
-      nodes = (g.nodes || []).map(n => ({ id: n.id || n._id, label: n.properties?.name || n.label || n.type || 'node', type: n.type || 'concept', ...n }));
-      edges = (g.links || g.relationships || []).map(e => ({ source: e.from_id || e.source, target: e.to_id || e.target, label: e.relationship_type || e.relationship || e.type || '' }));
-      footer.textContent = `${nodes.length} nodes · ${edges.length} edges`;
-    }
-  } else {
-    // No query — load scoped knowledge graph data
-    const { ok, data } = await apiFetch(`/api/v1/memory/knowledge-graph?${params.toString()}`);
-    if (ok && data) {
-      const g = data.graph_data || data;
-      nodes = (g.nodes || []).map(n => ({ id: n.id || n._id, label: n.properties?.name || n.label || n.type || 'node', type: n.type || 'concept', ...n }));
-      edges = (g.links || g.relationships || []).map(e => ({ source: e.from_id || e.source, target: e.to_id || e.target, label: e.relationship_type || e.relationship || e.type || '' }));
-      footer.textContent = `${nodes.length} nodes · ${edges.length} edges`;
-    }
-  }
-
-  if (nodes.length === 0) {
-    footer.innerHTML = 'No graph data yet. Click <strong>Build Graph</strong> to extract entities from your semantic memories.';
-    renderGraph([], []);
-    return;
-  }
-
-  renderGraph(nodes, edges);
-}
-
-function renderGraph(nodes, edges) {
-  const container = document.getElementById('graph-container');
-  const svg = document.getElementById('graph-svg');
-  const W = container.clientWidth;
-  const H = container.clientHeight;
-
-  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
-  svg.innerHTML = '';
-
-  if (nodes.length === 0) {
-    svg.innerHTML = `<text x="${W/2}" y="${H/2}" text-anchor="middle" fill="#5c5c63" font-size="14">No graph data to display</text>`;
-    return;
-  }
-
-  // Simple force layout
-  const simNodes = nodes.map((n, i) => ({
-    ...n,
-    x: W / 2 + (Math.random() - 0.5) * W * 0.6,
-    y: H / 2 + (Math.random() - 0.5) * H * 0.6,
-    vx: 0, vy: 0,
-    index: i,
-  }));
-
-  const simEdges = edges.map(e => {
-    const srcIdx = simNodes.findIndex(n => n.id === e.source);
-    const tgtIdx = simNodes.findIndex(n => n.id === e.target);
-    return {
-      ...e,
-      source: srcIdx >= 0 ? srcIdx : simNodes.findIndex(n => n.id === e.source || n.label === e.source),
-      target: tgtIdx >= 0 ? tgtIdx : simNodes.findIndex(n => n.id === e.target || n.label === e.target),
-    };
-  }).filter(e => e.source >= 0 && e.target >= 0);
-
-  // Adaptive force parameters
-  const nodeCount = simNodes.length;
-  const repelStrength = Math.max(200, 1200 / Math.max(1, Math.sqrt(nodeCount)));
-  const maxIterations = Math.min(300, 100 + nodeCount * 3);
-
-  // Run simulation
-  for (let iter = 0; iter < maxIterations; iter++) {
-    const alpha = 0.5 * (1 - iter / maxIterations);
-
-    // Repulsion between all nodes
-    for (let i = 0; i < simNodes.length; i++) {
-      for (let j = i + 1; j < simNodes.length; j++) {
-        const dx = simNodes[i].x - simNodes[j].x;
-        const dy = simNodes[i].y - simNodes[j].y;
-        const dist = Math.max(1, Math.sqrt(dx * dx + dy * dy));
-        const force = repelStrength / (dist * dist);
-        const fx = (dx / dist) * force * alpha;
-        const fy = (dy / dist) * force * alpha;
-        simNodes[i].vx += fx;
-        simNodes[i].vy += fy;
-        simNodes[j].vx -= fx;
-        simNodes[j].vy -= fy;
-      }
-    }
-
-    // Attraction along edges
-    for (const e of simEdges) {
-      if (e.source < 0 || e.target < 0 || e.source >= simNodes.length || e.target >= simNodes.length) continue;
-      const dx = simNodes[e.source].x - simNodes[e.target].x;
-      const dy = simNodes[e.source].y - simNodes[e.target].y;
-      const dist = Math.max(1, Math.sqrt(dx * dx + dy * dy));
-      const force = dist * 0.001;
-      const fx = (dx / dist) * force * alpha;
-      const fy = (dy / dist) * force * alpha;
-      simNodes[e.source].vx -= fx;
-      simNodes[e.source].vy -= fy;
-      simNodes[e.target].vx += fx;
-      simNodes[e.target].vy += fy;
-    }
-
-    // Centering force
-    for (const n of simNodes) {
-      n.vx += (W / 2 - n.x) * 0.001 * alpha;
-      n.vy += (H / 2 - n.y) * 0.001 * alpha;
-    }
-
-    // Apply velocities
-    for (const n of simNodes) {
-      n.x += n.vx;
-      n.y += n.vy;
-      n.vx *= 0.65;
-      n.vy *= 0.65;
-      // Keep in bounds
-      n.x = Math.max(40, Math.min(W - 40, n.x));
-      n.y = Math.max(40, Math.min(H - 40, n.y));
-    }
-  }
-
-  // Store for zoom/pan
-  state.graphNodes = simNodes;
-  state.graphEdges = simEdges;
-
-  // Build SVG
-  const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-  g.setAttribute('id', 'graph-g');
-  g.setAttribute('transform', `translate(${state.graphTransform.x},${state.graphTransform.y}) scale(${state.graphTransform.scale})`);
-
-  // Draw edges
-  for (const e of simEdges) {
-    if (e.source >= simNodes.length || e.target >= simNodes.length) continue;
-    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-    line.setAttribute('x1', simNodes[e.source].x);
-    line.setAttribute('y1', simNodes[e.source].y);
-    line.setAttribute('x2', simNodes[e.target].x);
-    line.setAttribute('y2', simNodes[e.target].y);
-    line.setAttribute('stroke', '#2e2e34');
-    line.setAttribute('stroke-width', '1.5');
-    line.setAttribute('opacity', '0.6');
-    if (e.label) {
-      line.innerHTML = `<title>${escapeHtml(e.label)}</title>`;
-    }
-    g.appendChild(line);
-  }
-
-  // Draw nodes
-  for (const n of simNodes) {
-    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-    const r = Math.min(24, 6 + (n.type === 'concept' ? 6 : 4));
-    circle.setAttribute('cx', n.x);
-    circle.setAttribute('cy', n.y);
-    circle.setAttribute('r', r);
-    circle.setAttribute('fill', getNodeColor(n.type));
-    circle.setAttribute('stroke', 'var(--border)');
-    circle.setAttribute('stroke-width', '1.5');
-    circle.setAttribute('cursor', 'pointer');
-    circle.setAttribute('data-node-id', n.id);
-
-    const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-    label.setAttribute('x', n.x);
-    label.setAttribute('y', n.y + r + 14);
-    label.setAttribute('text-anchor', 'middle');
-    label.setAttribute('fill', '#e4e4e7');
-    label.setAttribute('font-size', '10');
-    label.setAttribute('font-family', 'var(--font)');
-    label.setAttribute('pointer-events', 'none');
-    label.textContent = truncate(n.label || n.id, 18);
-
-    const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-    group.setAttribute('cursor', 'pointer');
-    group.addEventListener('click', () => showNodeDetails(n));
-    group.appendChild(circle);
-    group.appendChild(label);
-    g.appendChild(group);
-  }
-
-  svg.appendChild(g);
-}
-
-function getNodeColor(type) {
-  const colors = {
-    concept: '#6366f1', algorithm: '#ec4899', entity: '#22c55e',
-    person: '#f59e0b', event: '#3b82f6', place: '#06b6d4',
-    default: '#6366f1',
-  };
-  return colors[type] || colors.default;
-}
-
-function showNodeDetails(node) {
-  const details = document.getElementById('node-details');
-  const content = document.getElementById('node-details-content');
-  details.classList.add('visible');
-  content.innerHTML = `
-    <h4>${escapeHtml(node.label || node.id)}</h4>
-    <div style="color:var(--text-muted);font-size:0.72rem;margin-bottom:8px;">${escapeHtml(node.type || 'node')} · ${escapeHtml(node.id)}</div>
-    <div class="json-viewer" style="max-height:100px;font-size:0.7rem;">${escapeHtml(JSON.stringify(node.properties || node, null, 2))}</div>
-    ${state.graphEdges.filter(e => e.source === node.id || e.target === node.id).length > 0
-      ? `<div style="margin-top:8px;font-size:0.72rem;color:var(--text-muted)">Edges: ${state.graphEdges.filter(e => e.source === node.id || e.target === node.id).length}</div>`
-      : ''}
-  `;
-}
-
-function closeNodeDetails() {
-  document.getElementById('node-details').classList.remove('visible');
-}
-
-function zoomGraph(delta) {
-  state.graphTransform.scale = Math.max(0.3, Math.min(3, state.graphTransform.scale + delta));
-  applyGraphTransform();
-}
-
-function resetGraphView() {
-  state.graphTransform = { x: 0, y: 0, scale: 1 };
-  applyGraphTransform();
-}
-
-function applyGraphTransform() {
-  const g = document.getElementById('graph-g');
-  if (g) g.setAttribute('transform', `translate(${state.graphTransform.x},${state.graphTransform.y}) scale(${state.graphTransform.scale})`);
-}
-
-// Pan the graph
-document.addEventListener('DOMContentLoaded', () => {
-  const container = document.getElementById('graph-container');
-  let isPanning = false, startX, startY;
-  container.addEventListener('mousedown', (e) => {
-    if (e.target.closest('circle') || e.target.closest('.node-details')) return;
-    isPanning = true;
-    startX = e.clientX - state.graphTransform.x;
-    startY = e.clientY - state.graphTransform.y;
-    container.style.cursor = 'grabbing';
-  });
-  document.addEventListener('mousemove', (e) => {
-    if (!isPanning) return;
-    state.graphTransform.x = e.clientX - startX;
-    state.graphTransform.y = e.clientY - startY;
-    applyGraphTransform();
-  });
-  document.addEventListener('mouseup', () => {
-    isPanning = false;
-    container.style.cursor = '';
-  });
-  container.addEventListener('wheel', (e) => {
-    e.preventDefault();
-    zoomGraph(e.deltaY > 0 ? -0.1 : 0.1);
-  });
-});
-
-/* ══════════════════════════════════════════════
-   ║  SETTINGS TAB
-   ══════════════════════════════════════════════ */
-
-function saveSettings() {
-  state.baseUrl = document.getElementById('settings-url').value.trim();
-  state.apiKey = document.getElementById('settings-key').value.trim();
-  localStorage.setItem('katra_baseUrl', state.baseUrl);
-  localStorage.setItem('katra_apiKey', state.apiKey);
-  toast('Settings saved');
-}
-
-async function testConnection() {
-  const btn = document.getElementById('test-conn-btn');
-  const resultDiv = document.getElementById('settings-result');
-  btn.disabled = true;
-  resultDiv.innerHTML = '<div class="loading-center"><span class="spinner"></span>Testing…</div>';
-
-  // Save first
-  saveSettings();
-
-  const start = performance.now();
-  const { ok, data } = await apiFetch('/');
-  const latency = Math.round(performance.now() - start);
-
-  btn.disabled = false;
-  if (ok) {
-    resultDiv.innerHTML = `<div style="padding:12px;background:rgba(34,197,94,0.08);border-radius:var(--radius-sm);font-size:0.8rem;">
-      ✅ <strong>Connected</strong> — ${data?.name || 'Katra'} v${data?.version || '—'} · ${latency}ms latency
-    </div>`;
-    toast('Connection successful');
-    switchTab('overview');
-  } else {
-    const msg = data?.error || `HTTP ${data ? 'error' : 'connection failed'}`;
-    resultDiv.innerHTML = `<div style="padding:12px;background:rgba(239,68,68,0.1);border-radius:var(--radius-sm);color:var(--red);font-size:0.8rem;">
-      ❌ <strong>Connection failed</strong> — ${escapeHtml(msg)}</div>`;
-    toast('Connection failed', 'error');
-  }
-}
-
-async function loadSettingsConfig() {
-  const container = document.getElementById('settings-config');
-  container.innerHTML = spinner();
-
-  // Load saved values
-  document.getElementById('settings-url').value = state.baseUrl;
-  document.getElementById('settings-key').value = state.apiKey;
-
-  const { ok, data } = await apiFetch('/');
-  if (ok) {
-    const safe = {
-      name: data.name,
-      version: data.version,
-      description: data.description,
-      docs: data.docs,
-      mcp: data.mcp,
-      timestamp: new Date().toISOString(),
-    };
-    container.innerHTML = `<div class="json-viewer">${escapeHtml(JSON.stringify(safe, null, 2))}</div>`;
-  } else {
-    container.innerHTML = errorMsg('Could not reach server. Check your Base URL and API Key.', loadSettingsConfig);
-  }
-  loadMemoryScope();
-  loadLLMConfig();
-}
-
-/* ══════════════════════════════════════════════
-   ║  MEMORY SCOPE
-   ══════════════════════════════════════════════ */
-
-let visibleUsers = [];
-
-function applyDefaultUserId(userId) {
-  if (!userId) return;
-  const inputs = [
-    document.getElementById('mem-search-user'),
-    document.getElementById('mem-filter-user'),
-    document.getElementById('graph-user')
-  ];
-  for (const input of inputs) {
-    if (input && !input.value.trim()) {
-      input.value = userId;
-    }
-  }
-}
-
-function getCurrentUserId() {
-  return (
-    document.getElementById('mem-filter-user')?.value.trim() ||
-    document.getElementById('mem-search-user')?.value.trim() ||
-    document.getElementById('graph-user')?.value.trim() ||
-    ''
-  );
-}
-
-async function loadMemoryScope() {
-  const container = document.getElementById('scope-content');
-  if (!container) return;
-
-  const { ok, data } = await apiFetch('/api/v1/admin/memory-scope');
-  if (!ok || !data?.scope) {
-    container.innerHTML = errorMsg('Could not load memory scope.', loadMemoryScope);
-    return;
-  }
-
-  const scope = data.scope;
-
-  // Pre-fill user_id inputs based on scope mode
-  let defaultUserId = '';
-  if (scope.mode === 'shared' && scope.shared_id) {
-    defaultUserId = scope.shared_id;
-  } else if (scope.mode === 'hybrid') {
-    defaultUserId = scope.hybrid_visible_user_ids?.[0] || '';
-  }
-  applyDefaultUserId(defaultUserId);
-  const descs = {
-    personal: 'Each agent has private memories, isolated by user_id. No sharing.',
-    shared: 'All agents with the same shared_id see everything. Communal consciousness.',
-    hybrid: 'Personal memories + shared pool + visible users. Best of both worlds.',
-  };
-
-  container.innerHTML = `
-    <div style="display:flex;flex-direction:column;gap:18px">
-      <div style="display:flex;align-items:center;gap:10px">
-        <span style="font-size:0.8rem;color:var(--text-muted)">Current mode:</span>
-        <span style="font-size:0.95rem;font-weight:600;color:var(--accent);text-transform:uppercase;letter-spacing:0.05em">${scope.mode}</span>
-      </div>
-      <p style="font-size:0.82rem;color:var(--text-muted);margin:-10px 0 0 0">${descs[scope.mode] || ''}</p>
-
-      <div>
-        <label class="label">Mode</label>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button class="btn ${scope.mode==='personal'?'btn-primary':'btn-secondary'}" onclick="setScopeMode('personal')" style="flex:1;min-width:100px">\u{1F512} Personal</button>
-          <button class="btn ${scope.mode==='shared'?'btn-primary':'btn-secondary'}" onclick="setScopeMode('shared')" style="flex:1;min-width:100px">\u{1F310} Shared</button>
-          <button class="btn ${scope.mode==='hybrid'?'btn-primary':'btn-secondary'}" onclick="setScopeMode('hybrid')" style="flex:1;min-width:100px">\u{1F517} Hybrid</button>
-        </div>
-      </div>
-
-      <div>
-        <label class="label" for="scope-shared-id">Shared ID</label>
-        <input class="input mono" id="scope-shared-id" placeholder="e.g. solomem-collective" value="${scope.shared_id || ''}" ${scope.mode==='personal'?'disabled':''}>
-        <span style="font-size:0.7rem;color:var(--text-dim)">Used in shared & hybrid modes — all agents with this ID share memories</span>
-      </div>
-
-      <div id="hybrid-section" style="display:${scope.mode==='hybrid'?'block':'none'}">
-        <label class="label">Hybrid Visible User IDs</label>
-        <div style="display:flex;gap:8px;margin-bottom:6px">
-          <input class="input mono" id="scope-new-user" placeholder="user_id to add">
-          <button class="btn btn-secondary" onclick="addVisibleUser()" style="flex-shrink:0">Add</button>
-        </div>
-        <div id="visible-users-list" style="display:flex;flex-wrap:wrap;gap:6px"></div>
-        <span style="font-size:0.7rem;color:var(--text-dim)">These agents' memories are visible in hybrid mode</span>
-      </div>
-
-      <div style="display:flex;gap:8px;align-items:center">
-        <button class="btn btn-primary" onclick="saveMemoryScope()" id="scope-save-btn">Save Changes</button>
-        <span id="scope-save-status" style="font-size:0.8rem;color:var(--text-muted)"></span>
-      </div>
-    </div>
-  `;
-
-  container.dataset.selectedMode = scope.mode;
-  renderVisibleUsers(scope.hybrid_visible_user_ids || []);
-}
-
-function renderVisibleUsers(users) {
-  visibleUsers = users.slice();
-  const c = document.getElementById('visible-users-list');
-  if (!c) return;
-  if (visibleUsers.length === 0) {
-    c.innerHTML = '<span style="font-size:0.8rem;color:var(--text-dim)">No additional visible users</span>';
-    return;
-  }
-  c.innerHTML = visibleUsers.map((u, i) =>
-    `<span style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:var(--bg-input);border:1px solid var(--border-light);border-radius:20px;font-size:0.8rem;font-family:var(--font-mono)">${escapeHtml(u)}<button onclick="removeVisibleUser(${i})" style="background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:1rem;padding:0 0 0 2px;line-height:1">\u00d7</button></span>`
+  document.getElementById('overview-cards').innerHTML = cards.map(c =>
+    `<div class="card"><div class="card-title">${c.title} <span class="status-dot status-${c.color==='green'?'on':c.color==='red'?'off':'warn'}"></span></div><div class="card-value" style="color:var(--${c.color==='green'?'green':c.color==='red'?'red':'amber'})">${c.value}</div><div class="card-sub">${c.sub}</div></div>`
   ).join('');
+
+  // Service detail cards with record counts
+  try {
+    const r = await fetch(`${API}/memory/status`, {headers: authHeaders()});
+    const detail = await r.json();
+    const svcDetail = [
+      {title:'Episodic Events', value:detail?.episodic_events || '—', sub:'Raw conversation turns', color:'blue'},
+      {title:'Semantic Facts', value:detail?.semantic_facts || '—', sub:'Distilled knowledge', color:'purple'},
+      {title:'Knowledge Nodes', value:detail?.knowledge_nodes || '—', sub:'Entities + relationships', color:'blue'},
+      {title:'Reflection Journals', value:detail?.reflective_journals || '—', sub:'Sleep consolidation output', color:'purple'},
+    ];
+    document.getElementById('service-cards').innerHTML = svcDetail.map(s =>
+      `<div class="card"><div class="card-title">${s.title}</div><div class="card-value">${s.value}</div><div class="card-sub">${s.sub}</div></div>`
+    ).join('');
+  } catch(e) {}
+
+  // Recent autonomous activity
+  try {
+    const r = await fetch(`${API}/memory/episodic/events?event_type=autonomous_action,heartbeat_action,task_execution&limit=10`, {headers: authHeaders()});
+    const data = await r.json();
+    const events = data?.events || data?.data || [];
+    document.getElementById('recent-activity').innerHTML = events.slice(0,10).map(e => {
+      const ts = e.timestamp ? new Date(e.timestamp).toLocaleTimeString() : '—';
+      const type = e.event_type || e.metadata?.source || '—';
+      const entity = (e.content?.message || '').substring(0, 80);
+      const agent = e.user_id || '—';
+      const status = e.metadata?.task_status || e.metadata?.status || '—';
+      return `<tr><td>${ts}</td><td><span class="badge badge-${type.includes('heartbeat')?'green':type.includes('execution')?'blue':'purple'}">${type}</span></td><td class="mono">${entity}</td><td>${agent}</td><td>${status}</td></tr>`;
+    }).join('') || '<tr><td colspan="5" style="color:var(--text3)">No autonomous activity yet. Start the adaptive heartbeat.</td></tr>';
+  } catch(e) {}
 }
 
-function addVisibleUser() {
-  const input = document.getElementById('scope-new-user');
-  const user = input.value.trim();
-  if (!user) return;
-  if (!visibleUsers.includes(user)) {
-    visibleUsers.push(user);
-    renderVisibleUsers(visibleUsers);
-  }
-  input.value = '';
-}
-
-function removeVisibleUser(idx) {
-  visibleUsers.splice(idx, 1);
-  renderVisibleUsers(visibleUsers);
-}
-
-function setScopeMode(mode) {
-  const c = document.getElementById('scope-content');
-  if (!c) return;
-  c.dataset.selectedMode = mode;
-  // Update mode buttons
-  c.querySelectorAll('button').forEach(btn => {
-    const map = { '\u{1F512} Personal': 'personal', '\u{1F310} Shared': 'shared', '\u{1F517} Hybrid': 'hybrid' };
-    const m = map[btn.textContent.trim()];
-    if (m) btn.className = `btn ${m === mode ? 'btn-primary' : 'btn-secondary'}`;
-  });
-  // Enable/disable shared_id
-  const sharedInput = document.getElementById('scope-shared-id');
-  if (sharedInput) sharedInput.disabled = (mode === 'personal');
-  // Show/hide hybrid section
-  const hs = document.getElementById('hybrid-section');
-  if (hs) hs.style.display = (mode === 'hybrid') ? 'block' : 'none';
-}
-
-async function saveMemoryScope() {
-  const c = document.getElementById('scope-content');
-  const mode = c?.dataset?.selectedMode || 'personal';
-  const sharedId = document.getElementById('scope-shared-id')?.value.trim() || undefined;
-  const statusEl = document.getElementById('scope-save-status');
-  const btn = document.getElementById('scope-save-btn');
-
-  if ((mode === 'shared' || mode === 'hybrid') && !sharedId) {
-    statusEl.textContent = '\u26a0\ufe0f Shared ID is required for shared/hybrid mode';
-    statusEl.style.color = 'var(--red)';
-    return;
-  }
-
-  btn.disabled = true;
-  btn.textContent = 'Saving\u2026';
-  statusEl.textContent = '';
-
-  const body = { mode };
-  if (sharedId) body.shared_id = sharedId;
-  if (mode === 'hybrid') body.hybrid_visible_user_ids = visibleUsers;
-
-  const { ok, data } = await apiFetch('/api/v1/admin/memory-scope', { method: 'PUT', body });
-
-  btn.disabled = false;
-  btn.textContent = 'Save Changes';
-
-  if (ok && data.success) {
-    statusEl.textContent = '\u2705 Saved';
-    statusEl.style.color = 'var(--green)';
-    setTimeout(() => { statusEl.textContent = ''; }, 3000);
-    loadMemoryScope();
-    loadOverview(); // Refresh the badge
-  } else {
-    statusEl.textContent = `\u26a0\ufe0f ${data?.error || 'Failed to save'}`;
-    statusEl.style.color = 'var(--red)';
-  }
-}
-
-/* ══════════════════════════════════════════════
-   ║  GRAPH TAB — handle window resize for SVG
-   ══════════════════════════════════════════════ */
-
-let graphResizeObserver = null;
-document.addEventListener('DOMContentLoaded', () => {
-  const graphContainer = document.getElementById('graph-container');
-  if (graphContainer && window.ResizeObserver) {
-    graphResizeObserver = new ResizeObserver(() => {
-      if (state.currentTab === 'graph' && state.graphNodes.length > 0) {
-        renderGraph(state.graphNodes, state.graphEdges);
-      }
-    });
-    graphResizeObserver.observe(graphContainer);
-  }
-});
-
-/* ══════════════════════════════════════════════
-   ║  INIT
-   ══════════════════════════════════════════════ */
-
-// ── LLM Configuration ──────────────────────────────────────────
-
-async function loadLLMConfig() {
-  const container = document.getElementById('llm-config-content');
-  if (!container) return;
-
-  const { ok, data } = await apiFetch('/api/v1/admin/llm-config');
-  if (!ok || !data?.config) {
-    container.innerHTML = errorMsg('Could not load LLM config.', loadLLMConfig);
-    return;
-  }
-
-  const cfg = data.config;
-  const status = data.status || {};
-  const providers = [
-    { name: 'deepseek', label: 'DeepSeek', default_model: 'deepseek-v4-flash', default_url: 'https://api.deepseek.com/v1' },
-    { name: 'openai', label: 'OpenAI', default_model: 'gpt-4o', default_url: 'https://api.openai.com/v1' },
-    { name: 'moonshot', label: 'Moonshot', default_model: 'moonshot-v1-8k', default_url: 'https://api.moonshot.cn/v1' },
-    { name: 'ollama', label: 'Ollama (local)', default_model: 'llama3.2', default_url: 'http://host.docker.internal:11434/v1' },
-    { name: 'custom', label: 'Custom', default_model: '', default_url: '' },
-  ];
-
-  const currentProvider = cfg.provider || 'none';
-  const isConfigured = data.configured && currentProvider !== 'none';
-
-  container.innerHTML = `
-    <div style="display:flex;flex-direction:column;gap:18px">
-      <div style="display:flex;align-items:center;gap:10px">
-        <span style="font-size:0.8rem;color:var(--text-muted)">Status:</span>
-        ${status?.available
-          ? '<span style="font-size:0.85rem;font-weight:600;color:#22c55e">✅ ' + escapeHtml(status.provider) + ' (' + escapeHtml(status.model) + ')</span>'
-          : isConfigured
-            ? '<span style="font-size:0.85rem;font-weight:600;color:#f59e0b">⏳ ' + escapeHtml(currentProvider) + ' (validating...)</span>'
-            : '<span style="font-size:0.85rem;font-weight:600;color:#ef4444">❌ Not configured</span>'
-        }
-      </div>
-
-      ${!isConfigured ? '<div style="padding:10px 14px;background:var(--bg-input);border-radius:8px;font-size:0.8rem;color:var(--text-muted)">No LLM configured. Semantic extraction, auto-journaling, and summaries are disabled. Configure below or use the <code>configure_llm</code> MCP tool.</div>' : ''}
-
-      <div>
-        <label class="label">Provider</label>
-        <select class="input" id="llm-provider" onchange="onLLMProviderChange()" style="width:100%">
-          <option value="" ${!isConfigured ? 'selected' : ''}>— Select provider —</option>
-          ${providers.map(p => `<option value="${p.name}" ${currentProvider === p.name ? 'selected' : ''}>${p.label}</option>`).join('')}
-        </select>
-      </div>
-
-      <div>
-        <label class="label" for="llm-api-key">API Key ${cfg.provider === 'ollama' ? '<span style="color:var(--text-dim)">(not required for Ollama)</span>' : ''}</label>
-        <input class="input mono" id="llm-api-key" type="password" placeholder="sk-..." value="${cfg.api_key || ''}" ${cfg.provider === 'ollama' ? 'disabled' : ''}>
-      </div>
-
-      <div>
-        <label class="label" for="llm-base-url">Base URL</label>
-        <input class="input mono" id="llm-base-url" placeholder="https://api.example.com/v1" value="${escapeHtml(cfg.base_url || '')}">
-      </div>
-
-      <div>
-        <label class="label" for="llm-model">Model</label>
-        <input class="input mono" id="llm-model" placeholder="model-name" value="${escapeHtml(cfg.model || '')}">
-      </div>
-
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <button class="btn btn-primary" onclick="saveLLMConfig()" id="llm-save-btn">Save & Apply</button>
-        <button class="btn btn-secondary" onclick="testLLMConfig()" id="llm-test-btn">Test Connection</button>
-        <span id="llm-save-status" style="font-size:0.8rem;color:var(--text-muted)"></span>
-      </div>
-    </div>
-  `;
-}
-
-function onLLMProviderChange() {
-  const sel = document.getElementById('llm-provider');
-  const provider = sel.value;
+// ═══════════ API KEYS ═══════════
+function updateLLMDefaults() {
+  const p = document.getElementById('llm-provider').value;
   const defaults = {
-    deepseek: { base_url: 'https://api.deepseek.com/v1', model: 'deepseek-v4-flash' },
-    openai: { base_url: 'https://api.openai.com/v1', model: 'gpt-4o' },
-    moonshot: { base_url: 'https://api.moonshot.cn/v1', model: 'moonshot-v1-8k' },
-    ollama: { base_url: 'http://host.docker.internal:11434/v1', model: 'llama3.2' },
+    deepseek: {base:'https://api.deepseek.com/v1', model:'deepseek-chat'},
+    openai: {base:'https://api.openai.com/v1', model:'gpt-4o-mini'},
+    moonshot: {base:'https://api.moonshot.cn/v1', model:'moonshot-v1-8k'},
+    ollama: {base:'http://localhost:11434/v1', model:'llama3'},
+    custom: {base:'', model:''}
   };
+  const d = defaults[p] || {};
+  document.getElementById('llm-base').value = d.base || '';
+  document.getElementById('llm-model').value = d.model || '';
+}
 
-  const keyInput = document.getElementById('llm-api-key');
-  const urlInput = document.getElementById('llm-base-url');
-  const modelInput = document.getElementById('llm-model');
-
-  if (provider === 'ollama') {
-    keyInput.disabled = true;
-    keyInput.value = '';
-  } else {
-    keyInput.disabled = false;
-  }
-
-  if (defaults[provider]) {
-    urlInput.value = defaults[provider].base_url;
-    modelInput.value = defaults[provider].model;
-  }
+async function loadKeys() {
+  try {
+    const r = await fetch(`${API}/admin/llm-config`, {headers: authHeaders()});
+    if (r.ok) {
+      const d = await r.json();
+      document.getElementById('llm-current').innerHTML = `
+        <p><strong>Provider:</strong> ${d.provider || 'not configured'}</p>
+        <p><strong>Model:</strong> ${d.model || '—'}</p>
+        <p><strong>Base URL:</strong> ${d.base_url || '—'}</p>
+        <p><strong>Key:</strong> ${d.api_key_present ? '✅ Configured (SHA-256 hashed)' : '❌ Not configured'}</p>
+        <p><strong>Status:</strong> <span class="badge badge-${d.available ? 'green' : 'red'}">${d.available ? 'Available' : 'Unavailable'}</span></p>`;
+    }
+  } catch(e) {}
 }
 
 async function saveLLMConfig() {
-  const provider = document.getElementById('llm-provider').value;
-  const api_key = document.getElementById('llm-api-key').value;
-  const base_url = document.getElementById('llm-base-url').value;
-  const model = document.getElementById('llm-model').value;
-  const statusEl = document.getElementById('llm-save-status');
+  if (!requireAuth()) return;
+  const body = {
+    provider: document.getElementById('llm-provider').value,
+    api_key: document.getElementById('llm-key').value,
+    base_url: document.getElementById('llm-base').value,
+    model: document.getElementById('llm-model').value,
+  };
+  if (!body.api_key) { toast('API key is required', 'error'); return; }
+  document.getElementById('llm-status').innerHTML = '<span class="spinner"></span> Saving…';
+  try {
+    const r = await fetch(`${API}/admin/llm-config`, {method:'PUT', headers:authHeaders(), body: JSON.stringify(body)});
+    const d = await r.json();
+    document.getElementById('llm-status').textContent = d.success ? '✅ LLM config saved' : '❌ ' + (d.error || 'Failed');
+    toast(d.success ? 'LLM config saved' : d.error, d.success ? 'success' : 'error');
+    if (d.success) loadKeys();
+  } catch(e) { document.getElementById('llm-status').textContent = '❌ ' + e.message; }
+}
 
-  if (!provider) { toast('Select a provider first', 'error'); return; }
-  if (provider !== 'ollama' && !api_key) { toast('API key required for this provider', 'error'); return; }
-  if (!base_url || !model) { toast('Base URL and model are required', 'error'); return; }
+async function testLLM() {
+  document.getElementById('llm-status').innerHTML = '<span class="spinner"></span> Testing…';
+  try {
+    const r = await fetch(`${API}/admin/test-llm`, {method:'POST', headers:authHeaders()});
+    const d = await r.json();
+    document.getElementById('llm-status').textContent = d.success ? '✅ LLM connection successful' : '❌ ' + (d.error || 'Failed');
+    toast(d.success ? 'LLM connected' : d.error, d.success ? 'success' : 'error');
+  } catch(e) { document.getElementById('llm-status').textContent = '❌ ' + e.message; }
+}
 
-  // If key is masked (•••), don't send it — keep existing
-  const keyToSend = api_key.includes('••') ? '' : api_key;
+async function saveAPIKeys() {
+  toast('API keys are auto-generated. To regenerate, restart without env vars.', 'error');
+}
 
-  const btn = document.getElementById('llm-save-btn');
-  btn.disabled = true;
-  btn.textContent = 'Saving...';
-  statusEl.textContent = '';
+async function regenerateKeys() {
+  if (!confirm('Regenerating keys will invalidate all existing keys. Continue?')) return;
+  toast('Restart Katra without MCP_API_KEY/KATRA_API_KEY env vars to auto-generate new keys.', 'error');
+}
 
-  const { ok, data } = await apiFetch('/api/v1/admin/llm-config', {
-    method: 'PUT',
-    body: { provider, api_key: keyToSend, base_url, model },
-  });
+// ═══════════ AGENTS ═══════════
+async function loadAgents() {
+  try {
+    // Get distinct user IDs with event counts
+    const r = await fetch(`${API}/memory/episodic/events?limit=1`, {headers: authHeaders()});
+    await r.json(); // warm up
+    
+    // Try to get agent stats from diagnostics
+    const diag = await fetch(`${API}/admin/diagnostics`, {headers: authHeaders()});
+    const d = await diag.json();
+    
+    const agents = d?.agent_stats || d?.data?.agents || [];
+    document.getElementById('agents-table').innerHTML = agents.length > 0 ? agents.map(a => 
+      `<tr><td class="mono">${a.user_id || a.agent || '—'}</td><td>${a.events || a.count || '—'}</td><td>${a.last_active || '—'}</td><td>${a.emotional_footprint || '—'}</td><td><span class="badge badge-blue">${a.scope || 'personal'}</span></td></tr>`
+    ).join('') : '<tr><td colspan="5" style="color:var(--text3)">Load agent data by clicking Refresh after entering admin key</td></tr>';
+  } catch(e) {
+    // Fallback: get user counts from search endpoint
+    document.getElementById('agents-table').innerHTML = '<tr><td colspan="5" style="color:var(--text3)">Enter admin key and refresh to load agent data</td></tr>';
+  }
+  loadScope();
+}
 
-  btn.disabled = false;
-  btn.textContent = 'Save & Apply';
+async function loadScope() {
+  try {
+    const r = await fetch(`${API}/admin/memory-scope`, {headers: authHeaders()});
+    const d = await r.json();
+    if (d.scope) {
+      document.getElementById('scope-mode').value = d.scope.mode || 'personal';
+      document.getElementById('scope-shared-id').value = d.scope.shared_id || '';
+      document.getElementById('scope-visible-ids').value = (d.scope.hybrid_visible_user_ids || []).join(', ');
+      document.getElementById('scope-current').innerHTML = `
+        <p><strong>Mode:</strong> <span class="badge badge-${d.scope.mode==='shared'?'green':d.scope.mode==='hybrid'?'purple':'blue'}">${d.scope.mode}</span></p>
+        <p><strong>Shared ID:</strong> ${d.scope.shared_id || 'not set'}</p>
+        <p><strong>Visible Users:</strong> ${(d.scope.hybrid_visible_user_ids||[]).join(', ') || 'none'}</p>`;
+      document.getElementById('scope-badge').textContent = d.scope.mode;
+    }
+  } catch(e) {}
+}
 
-  if (ok && data.success) {
-    toast(data.message || 'LLM configured');
-    statusEl.textContent = 'Validating in background...';
-    setTimeout(() => loadLLMConfig(), 3000);
-  } else {
-    toast(data.error || 'Failed to save', 'error');
-    statusEl.textContent = '';
+async function saveScope() {
+  if (!requireAuth()) return;
+  const body = {
+    mode: document.getElementById('scope-mode').value,
+    shared_id: document.getElementById('scope-shared-id').value,
+    hybrid_visible_user_ids: document.getElementById('scope-visible-ids').value.split(',').map(s => s.trim()).filter(Boolean),
+  };
+  try {
+    const r = await fetch(`${API}/admin/memory-scope`, {method:'PUT', headers:authHeaders(), body: JSON.stringify(body)});
+    const d = await r.json();
+    document.getElementById('scope-status').textContent = d.success ? '✅ Scope saved' : '❌ ' + (d.error || '');
+    toast(d.success ? 'Memory scope updated' : d.error, d.success ? 'success' : 'error');
+    if (d.success) loadScope();
+  } catch(e) { document.getElementById('scope-status').textContent = '❌ ' + e.message; }
+}
+
+// ═══════════ MEMORY ═══════════
+async function searchMemory() {
+  const query = document.getElementById('mem-query').value;
+  const collection = document.getElementById('mem-collection').value;
+  const user = document.getElementById('mem-user').value;
+  const limit = document.getElementById('mem-limit').value || 20;
+  
+  // Use the episodic events endpoint for search
+  let path = `/memory/episodic/events?limit=${limit}`;
+  if (user) path += `&user_id=${user}`;
+  
+  try {
+    const r = await fetch(`${API}${path}`, {headers: authHeaders()});
+    const d = await r.json();
+    const events = d?.events || d?.data || [];
+    document.getElementById('mem-results').innerHTML = events.map(e => {
+      const ts = e.timestamp ? new Date(e.timestamp).toLocaleString() : '—';
+      const col = e.event_type || 'episodic';
+      const usr = e.user_id || '—';
+      const msg = (e.content?.message || JSON.stringify(e.content || {})).substring(0, 150);
+      return `<tr><td style="white-space:nowrap">${ts}</td><td><span class="badge badge-blue">${col}</span></td><td class="mono">${usr}</td><td class="mono">${msg}${msg.length >= 150 ? '…' : ''}</td></tr>`;
+    }).join('') || '<tr><td colspan="4" style="color:var(--text3)">No results. Try a search or enter admin key.</td></tr>';
+  } catch(e) {
+    document.getElementById('mem-results').innerHTML = `<tr><td colspan="4" style="color:var(--red)">Error: ${e.message}</td></tr>`;
   }
 }
 
-async function testLLMConfig() {
-  const btn = document.getElementById('llm-test-btn');
-  const statusEl = document.getElementById('llm-save-status');
-  btn.disabled = true;
-  btn.textContent = 'Testing...';
-  statusEl.textContent = '';
-
-  const { ok, data } = await apiFetch('/api/v1/admin/llm-config/test', { method: 'POST' });
-
-  btn.disabled = false;
-  btn.textContent = 'Test Connection';
-
-  if (ok && data.success) {
-    toast(`✅ ${data.provider} (${data.model}) — working!`);
-    statusEl.textContent = 'Connection successful';
-  } else {
-    toast(data.error || 'Test failed', 'error');
-    statusEl.textContent = data.error || 'Failed';
-  }
+// ═══════════ SETTINGS ═══════════
+async function loadSettings() {
+  loadBGStatus();
+  try {
+    const r = await fetch(`${API}/health`);
+    const d = await r.json();
+    document.getElementById('embed-status').textContent = `Embeddings: ${d.services?.embeddings || 'unknown'}`;
+  } catch(e) {}
 }
 
-// Load settings from localStorage on start
-document.getElementById('settings-url').value = state.baseUrl;
-document.getElementById('settings-key').value = state.apiKey;
+async function loadBGStatus() {
+  try {
+    const r = await fetch(`${API}/memory/status`, {headers: authHeaders()});
+    const d = await r.json();
+    document.getElementById('bg-status').innerHTML = `
+      <p><strong>Events:</strong> ${d?.episodic_events || '—'} total | ${d?.unprocessed || '—'} unprocessed</p>
+      <p><strong>Semantic Facts:</strong> ${d?.semantic_facts || '—'}</p>
+      <p><strong>Processing:</strong> ${d?.background_processing || '30s interval'}</p>`;
+  } catch(e) { document.getElementById('bg-status').textContent = 'Enter admin key and refresh'; }
+}
 
-// Start on overview tab
-loadOverview();
-startHealthPolling();
+async function triggerReflection() {
+  if (!requireAuth()) return;
+  try {
+    const r = await fetch(`${API}/admin/trigger-reflection`, {method:'POST', headers:authHeaders(), body:'{"period_type":"daily"}'});
+    const d = await r.json();
+    document.getElementById('sys-status').textContent = d.success ? '✅ Reflection triggered' : '❌ ' + (d.error || '');
+    toast(d.success ? 'Sleep consolidation triggered' : d.error, d.success ? 'success' : 'error');
+  } catch(e) { document.getElementById('sys-status').textContent = '❌ ' + e.message; }
+}
+
+async function forceProcess() {
+  if (!requireAuth()) return;
+  try {
+    const r = await fetch(`${API}/admin/background/force-process`, {method:'POST', headers:authHeaders()});
+    const d = await r.json();
+    document.getElementById('sys-status').textContent = d.success ? '✅ Force process triggered' : '❌ ' + (d.error || '');
+    toast(d.success ? 'Background processor triggered' : d.error, d.success ? 'success' : 'error');
+  } catch(e) { document.getElementById('sys-status').textContent = '❌ ' + e.message; }
+}
+
+// ── Init ──
+async function init() {
+  const svc = await checkHealth();
+  if (svc) {
+    document.getElementById('refresh-badge').style.display = 'inline';
+    loadTab('overview');
+  }
+  // Auto-refresh every 30s
+  refreshTimer = setInterval(() => { if (document.hidden) return; loadTab(currentTab); }, 30000);
+}
+
+document.addEventListener('DOMContentLoaded', init);
 </script>
-
 </body>
 </html>
