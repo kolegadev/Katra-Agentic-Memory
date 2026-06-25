@@ -522,13 +522,27 @@ async function regenerateKeys() {
 }
 
 // ═══════════ AGENTS ═══════════
+function agentScope(agentId, scope) {
+  if (!scope || !scope.mode) return { label: 'personal', cls: 'blue' };
+  if (scope.mode === 'shared') return { label: 'shared', cls: 'green' };
+  if (scope.mode === 'hybrid') {
+    const visible = scope.hybrid_visible_user_ids || [];
+    return visible.includes(agentId) ? { label: 'hybrid', cls: 'purple' } : { label: 'personal', cls: 'blue' };
+  }
+  return { label: scope.mode, cls: 'blue' };
+}
+
+function renderAgentRow(a, scope) {
+  const s = agentScope(a.user_id, scope);
+  return `<tr><td class="mono">${a.user_id || '—'}</td><td>${a.events || '—'}</td><td>${a.last_active ? new Date(a.last_active).toLocaleString() : '—'}</td><td>—</td><td><span class="badge badge-${s.cls}">${s.label}</span></td></tr>`;
+}
+
 async function loadAgents() {
   // Reuse dashboard data loaded by Overview tab
   if (dashboardData && dashboardData.agents) {
     const agents = dashboardData.agents;
-    document.getElementById('agents-table').innerHTML = agents.length > 0 ? agents.map(a => 
-      `<tr><td class="mono">${a.user_id || '—'}</td><td>${a.events || '—'}</td><td>${a.last_active ? new Date(a.last_active).toLocaleString() : '—'}</td><td>—</td><td><span class="badge badge-blue">personal</span></td></tr>`
-    ).join('') : '<tr><td colspan="5" style="color:var(--text3)">No agents found</td></tr>';
+    const scope = dashboardData.memory_scope;
+    document.getElementById('agents-table').innerHTML = agents.length > 0 ? agents.map(a => renderAgentRow(a, scope)).join('') : '<tr><td colspan="5" style="color:var(--text3)">No agents found</td></tr>';
   } else {
     // Fallback: fetch directly
     try {
@@ -537,9 +551,8 @@ async function loadAgents() {
       if (d.success && d.agents) {
         dashboardData = d;
         const agents = d.agents;
-        document.getElementById('agents-table').innerHTML = agents.map(a => 
-          `<tr><td class="mono">${a.user_id || '—'}</td><td>${a.events || '—'}</td><td>${a.last_active ? new Date(a.last_active).toLocaleString() : '—'}</td><td>—</td><td><span class="badge badge-blue">personal</span></td></tr>`
-        ).join('');
+        const scope = d.memory_scope;
+        document.getElementById('agents-table').innerHTML = agents.map(a => renderAgentRow(a, scope)).join('');
       } else {
         document.getElementById('agents-table').innerHTML = '<tr><td colspan="5" style="color:var(--text3)">No agent data available</td></tr>';
       }
