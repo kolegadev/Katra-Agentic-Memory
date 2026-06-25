@@ -448,6 +448,42 @@ export const create_admin_routes = (): Hono => {
   });
 
   /**
+   * POST /api/v1/admin/update-task-status
+   * Body: { id: "task-id", status: "approved" | "rejected" }
+   * Used by the dashboard to approve/reject pending autonomous tasks.
+   */
+  router.post('/update-task-status', async (c) => {
+    try {
+      const body = await c.req.json();
+      const { id, status } = body;
+
+      if (!id || !status || !['approved', 'rejected'].includes(status)) {
+        return c.json({ success: false, error: 'id and status (approved|rejected) required' }, 400);
+      }
+
+      const db = get_database();
+      const result = await db.collection('episodic_events').updateOne(
+        { id: id },
+        { $set: { 'metadata.status': status, 'metadata.task_status': status, 'metadata.reviewed_at': new Date() } }
+      );
+
+      if (result.matchedCount === 0) {
+        return c.json({ success: false, error: 'Task not found' }, 404);
+      }
+
+      return c.json({
+        success: true,
+        message: `Task ${status}`,
+        status: status,
+      });
+    } catch (error: any) {
+      console.error('Error updating task status:', error.message);
+      return c.json({ success: false, error: 'Internal server error' }, 500);
+    }
+  });
+
+
+  /**
    * Get background processor status
    */
   router.get('/background/status', async (c) => {
