@@ -135,9 +135,55 @@ KATRA_API_KEY=katra-local-admin-2026
 
 > **Note:** The `Authorization` header in the OpenClaw MCP config is protected — it can't be modified via `gateway config.patch`. To rotate the API key, edit `openclaw.json` directly and restart the gateway.
 
-### OpenClaw `openclaw.json` — Local Memory Disable
+### Memory Migration — Phased Cutover (CRITICAL ORDER)
 
-OpenClaw's built-in `memory_search` tool (local SQLite per-agent) conflicts with Katra. Disable it:
+> **Do NOT disable OpenClaw's built-in memory first.** If you disable `memory_search` and `memory-core` before Katra is wired in, your agent becomes memory-less — losing `MEMORY.md`, session notes, drafts, and preferences. Migrate in this order:
+
+#### Phase 1: Wire Katra into OpenClaw
+
+Add the MCP server config (see above) and restart the gateway. Verify Katra is reachable:
+
+```bash
+# From the Pi5:
+curl -H "Authorization: Bearer <MCP_API_KEY>" http://localhost:3112/health
+# Expected: { "status": "ok", "version": "3.0.0", "transport": "http-sse", ... }
+```
+
+Confirm MCP tools are visible in the agent session — the agent should see `katra__store_memory`, `katra__search_memories`, and other Katra tools in its tool list.
+
+#### Phase 2: Backfill Existing Memory Files
+
+Have your agent read and store its existing local memory into Katra:
+
+```
+Agent prompt: "Read MEMORY.md, memory/2026-06-25.md, memory/katra-project.md,
+and any other memory files you have. Store each one in Katra with appropriate
+tags and categories."
+```
+
+Verify backfill with a search:
+```bash
+curl -H "Authorization: Bearer <MCP_API_KEY>" \
+  "http://localhost:3112/mcp" -d '{
+    "jsonrpc":"2.0","method":"tools/call",
+    "params":{"name":"katra__search_memories","arguments":{"query":"preferences"}},
+    "id":1
+  }'
+```
+
+#### Phase 3: Verify Katra Handles Recall
+
+Test that the agent can recall backfilled memories before cutting over:
+
+```
+Agent prompt: "What are my preferences and project context? Use Katra tools only."
+```
+
+If the agent correctly recalls your identity, preferences, and project details from Katra, proceed to cutover.
+
+#### Phase 4: Cut Over — Disable OpenClaw's Local Memory
+
+Only now, after Katra is verified working with backfilled data, disable the local memory system. Add to `openclaw.json`:
 
 ```json
 {
@@ -155,6 +201,8 @@ OpenClaw's built-in `memory_search` tool (local SQLite per-agent) conflicts with
 ```
 
 Without this, agents see two competing memory systems — OpenClaw's broken local memory (0/0 chunks, "index metadata is missing") and Katra — causing confusion.
+
+Restart the gateway after adding this config.
 
 ## Agent Katra Tool Allocation
 
