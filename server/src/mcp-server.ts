@@ -2269,8 +2269,16 @@ async function startHTTPServer(): Promise<void> {
           // adapter where GET SSE streams produce an empty response. Return 405
           // to signal that we don't support standalone SSE streams. The client
           // SDK handles 405 gracefully (POST-only mode).
-          res.writeHead(405, { 'Allow': 'POST' });
-          res.end();
+          // IMPORTANT: OpenClaw must use transport: "streamable-http", NOT "sse".
+          res.writeHead(405, { 'Allow': 'POST', 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            jsonrpc: '2.0',
+            error: {
+              code: -32000,
+              message: 'SSE GET not supported — use POST-only streamable-http transport. OpenClaw: set transport to "streamable-http", not "sse".'
+            },
+            id: null
+          }));
           return;
         }
         if (req.method === 'DELETE') {

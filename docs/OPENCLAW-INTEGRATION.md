@@ -130,6 +130,9 @@ KATRA_API_KEY=katra-local-admin-2026
 }
 ```
 
+> **Critical: `transport` must be `"streamable-http"`, NOT `"sse"`.**  
+> The MCP SDK's `StreamableHTTPServerTransport` has a bug in its Node.js adapter where GET SSE streams produce an empty response. Katra rejects GET requests on `/mcp` with HTTP 405 to force POST-only mode. If you use `"sse"` transport, OpenClaw will fail with `"Server not initialized"` or silent timeouts. Only `"streamable-http"` (POST) works correctly.
+
 > **Note:** The `Authorization` header in the OpenClaw MCP config is protected — it can't be modified via `gateway config.patch`. To rotate the API key, edit `openclaw.json` directly and restart the gateway.
 
 ### OpenClaw `openclaw.json` — Local Memory Disable
