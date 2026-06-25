@@ -353,12 +353,12 @@ async function loadOverview() {
     `<div class="card"><div class="card-title">${c.title} <span class="status-dot status-${c.color==='green'?'on':c.color==='red'?'off':'warn'}"></span></div><div class="card-value" style="color:var(--${c.color==='green'?'green':c.color==='red'?'red':'amber'})">${c.value}</div><div class="card-sub">${c.sub}</div></div>`
   ).join('');
 
-  // Fetch all dashboard data from single admin endpoint
+  // Fetch all dashboard data (no auth needed for viewing)
   try {
-    const r = await fetch(`${API}/admin/dashboard-stats`, {headers: authHeaders()});
-    if (!r.ok) { showNoAuthMessage(); return; }
+    const r = await fetch(`${API}/admin/dashboard-stats`);
+    if (!r.ok) { showLoadError(); return; }
     const data = await r.json();
-    if (!data.success) { showNoAuthMessage(); return; }
+    if (!data.success) { showLoadError(); return; }
 
     // Service detail cards
     const svcDetail = [
@@ -407,8 +407,14 @@ async function loadOverview() {
     }
 
   } catch(e) {
-    showNoAuthMessage();
+    showLoadError();
   }
+}
+
+function showLoadError() {
+  document.getElementById('service-cards').innerHTML = '<div class="card" style="grid-column:1/-1;text-align:center;padding:24px;color:var(--text3)">⚠️ Could not load service stats — check server connection</div>';
+  document.getElementById('recent-activity').innerHTML = '<tr><td colspan="5" style="color:var(--text3)">⚠️ Could not load activity data</td></tr>';
+  document.getElementById('no-pending-msg').textContent = '⚠️ Could not load pending approvals';
 }
 
 function showNoAuthMessage() {
@@ -418,7 +424,7 @@ function showNoAuthMessage() {
 }
 
 async function approveTask(taskId) {
-  if (!requireAuth()) return;
+  if (!adminKey) { const k = prompt('Admin key required for approvals:'); if (k) adminKey = k; else return; }
   try {
     const r = await fetch(`${API}/admin/update-task-status`, {
       method: 'POST',
@@ -432,7 +438,7 @@ async function approveTask(taskId) {
 }
 
 async function rejectTask(taskId) {
-  if (!requireAuth()) return;
+  if (!adminKey) { const k = prompt('Admin key required:'); if (k) adminKey = k; else return; }
   try {
     const r = await fetch(`${API}/admin/update-task-status`, {
       method: 'POST',

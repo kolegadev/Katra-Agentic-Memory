@@ -20,6 +20,11 @@ export const create_admin_routes = (): Hono => {
   // middleware state (no open-access fallback even in dev mode). Rejects tenant
   // keys in multi-tenant deployments because only the master admin key matches.
   router.use('*', async (c, next) => {
+    // Dashboard stats is read-only — no auth required
+    if (c.req.path === '/admin/dashboard-stats' || c.req.path === '/api/v1/admin/dashboard-stats') {
+      return next();
+    }
+
     const header = c.req.header('Authorization') ?? '';
     const presented = /^Bearer\s+(.+)$/i.exec(header)?.[1];
 
