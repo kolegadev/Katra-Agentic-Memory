@@ -342,14 +342,7 @@ async function loadOverview() {
   const svc = await checkHealth();
   if (!svc) return;
 
-  // Try to get stats from diagnostics
-  let stats = {};
-  try {
-    const r = await fetch(`${API}/memory/status`, {headers: authHeaders()});
-    if (r.ok) stats = await r.json();
-  } catch(e) {}
-
-  // Overview cards
+  // Health cards
   const cards = [
     {title:'MongoDB', value:svc.mongodb, sub:'Primary Database', color:svc.mongodb==='connected'?'green':'red'},
     {title:'Redis', value:svc.redis, sub:'Cache + Locks', color:svc.redis==='connected'?'green':'red'},
@@ -360,86 +353,68 @@ async function loadOverview() {
     `<div class="card"><div class="card-title">${c.title} <span class="status-dot status-${c.color==='green'?'on':c.color==='red'?'off':'warn'}"></span></div><div class="card-value" style="color:var(--${c.color==='green'?'green':c.color==='red'?'red':'amber'})">${c.value}</div><div class="card-sub">${c.sub}</div></div>`
   ).join('');
 
-  // Service detail cards with record counts
+  // Fetch all dashboard data from single admin endpoint
   try {
-    const r = await fetch(`${API}/memory/status`, {headers: authHeaders()});
-    const detail = await r.json();
+    const r = await fetch(`${API}/admin/dashboard-stats`, {headers: authHeaders()});
+    if (!r.ok) { showNoAuthMessage(); return; }
+    const data = await r.json();
+    if (!data.success) { showNoAuthMessage(); return; }
+
+    // Service detail cards
     const svcDetail = [
-      {title:'Episodic Events', value:detail?.episodic_events || '—', sub:'Raw conversation turns', color:'blue'},
-      {title:'Semantic Facts', value:detail?.semantic_facts || '—', sub:'Distilled knowledge', color:'purple'},
-      {title:'Knowledge Nodes', value:detail?.knowledge_nodes || '—', sub:'Entities + relationships', color:'blue'},
-      {title:'Reflection Journals', value:detail?.reflective_journals || '—', sub:'Sleep consolidation output', color:'purple'},
+      {title:'Episodic Events', value:data.counts?.episodic_events || 0, sub:'Raw conversation turns'},
+      {title:'Semantic Facts', value:data.counts?.semantic_facts || 0, sub:'Distilled knowledge'},
+      {title:'Knowledge Nodes', value:data.counts?.knowledge_nodes || 0, sub:'Entities + relationships'},
+      {title:'Reflection Journals', value:data.counts?.reflective_journals || 0, sub:'Sleep consolidation output'},
     ];
     document.getElementById('service-cards').innerHTML = svcDetail.map(s =>
       `<div class="card"><div class="card-title">${s.title}</div><div class="card-value">${s.value}</div><div class="card-sub">${s.sub}</div></div>`
     ).join('');
-  } catch(e) {}
 
-  // Recent autonomous activity
-  try {
-    const r = await fetch(`${API}/memory/episodic/events?event_type=autonomous_action,heartbeat_action,task_execution&limit=10`, {headers: authHeaders()});
-    const data = await r.json();
-    const events = data?.events || data?.data || [];
+    // Recent autonomous activity
+    const events = data.recent_activity || [];
     document.getElementById('recent-activity').innerHTML = events.slice(0,10).map(e => {
       const ts = e.timestamp ? new Date(e.timestamp).toLocaleTimeString() : '—';
-      const type = e.event_type || e.metadata?.source || '—';
-      const entity = (e.content?.message || '').substring(0, 80);
+      const type = e.event_type || '—';
+      const entity = (e.content || '').substring(0, 80);
       const agent = e.user_id || '—';
-      const status = e.metadata?.task_status || e.metadata?.status || '—';
+      const status = e.status || '—';
       return `<tr><td>${ts}</td><td><span class="badge badge-${type.includes('heartbeat')?'green':type.includes('execution')?'blue':'purple'}">${type}</span></td><td class="mono">${entity}</td><td>${agent}</td><td>${status}</td></tr>`;
     }).join('') || '<tr><td colspan="5" style="color:var(--text3)">No autonomous activity yet. Start the adaptive heartbeat.</td></tr>';
-  } catch(e) {}
 
-  // Load pending approvals (Scope B/C tasks awaiting human review)
-  await loadPendingApprovals();
-}
-
-async function loadPendingApprovals() {
-  const msg = document.getElementById('no-pending-msg');
-  const tbody = document.getElementById('pending-approvals');
-  
-  try {
-    // Query via admin diagnostics for raw events
-    const r = await fetch(`${API}/admin/diagnostics`, {headers: authHeaders()});
-    if (!r.ok) { msg.textContent = 'Enter admin key to view pending approvals'; return; }
-    
-    // Fallback: query episodic events with adaptive-heartbeat user
-    const r2 = await fetch(`${API}/memory/episodic/events?user_id=adaptive-heartbeat&limit=50`, {headers: authHeaders()});
-    const data = await r2.json();
-    const events = data?.results || data?.events || data?.data || [];
-    const pending = events.filter(e => 
-      e.metadata?.status === 'pending_approval' || e.metadata?.task_status === 'pending_approval'
-    );
-    
+    // Pending approvals
+    const pending = data.pending_approvals || [];
+    const msg = document.getElementById('no-pending-msg');
+    const tbody = document.getElementById('pending-approvals');
     if (pending.length === 0) {
       tbody.innerHTML = '';
       msg.textContent = '✅ No pending approvals — autonomous loop is clear.';
-      return;
+    } else {
+      msg.textContent = '';
+      tbody.innerHTML = pending.map(p => {
+        const ts = p.timestamp ? new Date(p.timestamp).toLocaleTimeString() : '—';
+        return `<tr>
+          <td>${ts}</td><td class="mono">${p.entity || 'unknown'}</td>
+          <td><span class="badge badge-amber">Scope ${p.scope || 'B'}</span></td>
+          <td>${p.assigned_agent || '—'}</td>
+          <td>${(p.action || '').substring(0, 100)}</td>
+          <td>
+            <button class="btn btn-primary btn-xs" onclick="approveTask('${p.id}')">✓ Approve</button>
+            <button class="btn btn-danger btn-xs" onclick="rejectTask('${p.id}')">✗ Reject</button>
+          </td>
+        </tr>`;
+      }).join('');
     }
-    
-    msg.textContent = '';
-    tbody.innerHTML = pending.map(e => {
-      const ts = e.timestamp ? new Date(e.timestamp).toLocaleTimeString() : '—';
-      const msg_text = e.content?.message || '';
-      const entity = (msg_text.match(/Entity: (.+)/) || [])[1] || 'unknown';
-      const scope = 'B';
-      const agent = e.metadata?.assigned_agent || '—';
-      const action = (msg_text.match(/Output: (.+)/) || [])[1]?.substring(0, 100) || '—';
-      return `<tr>
-        <td>${ts}</td>
-        <td class="mono">${entity}</td>
-        <td><span class="badge badge-amber">Scope ${scope}</span></td>
-        <td>${agent}</td>
-        <td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${action}</td>
-        <td>
-          <button class="btn btn-primary btn-xs" onclick="approveTask('${e.id}')" style="margin-right:4px">✓ Approve</button>
-          <button class="btn btn-danger btn-xs" onclick="rejectTask('${e.id}')">✗ Reject</button>
-        </td>
-      </tr>`;
-    }).join('');
+
   } catch(e) {
-    msg.textContent = '⚠️ Could not load pending approvals — enter admin key.';
+    showNoAuthMessage();
   }
+}
+
+function showNoAuthMessage() {
+  document.getElementById('service-cards').innerHTML = '<div class="card" style="grid-column:1/-1;text-align:center;padding:24px;color:var(--text3)">🔐 Enter admin key to load service stats</div>';
+  document.getElementById('recent-activity').innerHTML = '<tr><td colspan="5" style="color:var(--text3)">🔐 Enter admin key to view autonomous activity</td></tr>';
+  document.getElementById('no-pending-msg').textContent = '🔐 Enter admin key to view pending approvals';
 }
 
 async function approveTask(taskId) {

@@ -167,6 +167,94 @@ export const create_admin_routes = (): Hono => {
   });
 
   /**
+   * GET /api/v1/admin/dashboard-stats
+   * Returns all data needed by the dashboard: collection counts,
+   * recent autonomous activity, and pending approvals.
+   */
+  router.get('/dashboard-stats', async (c) => {
+    try {
+      const db = get_database();
+      const counts = await Promise.all([
+        db.collection('episodic_events').countDocuments({}),
+        db.collection('semantic_facts').countDocuments({}),
+        db.collection('knowledge_nodes').countDocuments({}),
+        db.collection('reflective_journals').countDocuments({}),
+        db.collection('reflection_nodes').countDocuments({}),
+        db.collection('reflection_edges').countDocuments({}),
+        db.collection('philosophical_insights').countDocuments({}),
+        db.collection('agent_journal_auto').countDocuments({}),
+      ]);
+
+      // Recent autonomous activity
+      const recent = await db.collection('episodic_events')
+        .find({ event_type: { $in: ['heartbeat_action', 'task_execution', 'autonomous_action'] } })
+        .sort({ timestamp: -1 })
+        .limit(20)
+        .toArray();
+
+      // Pending approvals
+      const pending = await db.collection('episodic_events')
+        .find({ 
+          'metadata.status': 'pending_approval',
+          shared_id: 'neural-link' 
+        })
+        .sort({ timestamp: -1 })
+        .limit(10)
+        .toArray();
+
+      // Agent stats
+      const agents = await db.collection('episodic_events').aggregate([
+        { $group: { _id: '$user_id', count: { $sum: 1 }, last_active: { $max: '$timestamp' } } },
+        { $sort: { count: -1 } },
+        { $limit: 20 }
+      ]).toArray();
+
+      return c.json({
+        success: true,
+        counts: {
+          episodic_events: counts[0],
+          semantic_facts: counts[1],
+          knowledge_nodes: counts[2],
+          reflective_journals: counts[3],
+          reflection_nodes: counts[4],
+          reflection_edges: counts[5],
+          philosophical_insights: counts[6],
+          auto_journals: counts[7],
+        },
+        recent_activity: recent.map(e => ({
+          id: e.id,
+          timestamp: e.timestamp,
+          event_type: e.event_type,
+          user_id: e.user_id,
+          content: e.content?.message?.substring(0, 200) || '',
+          status: e.metadata?.status || e.metadata?.task_status || '—',
+          entity: (e.content?.message || '').match(/Entity: (.+)/)?.[1] || '',
+          assigned_agent: e.metadata?.assigned_agent || '',
+          confidence: e.metadata?.confidence || 0,
+        })),
+        pending_approvals: pending.map(p => ({
+          id: p.id,
+          timestamp: p.timestamp,
+          entity: (p.content?.message || '').match(/Entity: (.+)/)?.[1] || 'unknown',
+          assigned_agent: p.metadata?.assigned_agent || '',
+          confidence: p.metadata?.confidence || 0,
+          scope: 'B',
+          action: (p.content?.message || '').match(/Output: (.+)/)?.[1] || '',
+          status: p.metadata?.status || 'pending_approval',
+        })),
+        agents: agents.map(a => ({
+          user_id: a._id,
+          events: a.count,
+          last_active: a.last_active,
+        })),
+      });
+    } catch (error: any) {
+      console.error('Dashboard stats error:', error.message);
+      return c.json({ success: false, error: 'Internal server error' }, 500);
+    }
+  });
+
+  /**
    * Get database statistics (useful for confirming clear operation)
    */
   router.get('/database-stats', async (c) => {
