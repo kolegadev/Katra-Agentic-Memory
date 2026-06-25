@@ -435,33 +435,28 @@ async function loadPendingApprovals() {
 async function approveTask(taskId) {
   if (!requireAuth()) return;
   try {
-    // Update via the admin API — set status to approved
-    const r = await fetch(`${API}/admin/update-task`, {
+    const r = await fetch(`${API}/admin/update-task-status`, {
       method: 'POST',
       headers: authHeaders(),
       body: JSON.stringify({ id: taskId, status: 'approved' })
     });
-    if (!r.ok && r.status === 404) {
-      // Fallback: update directly if admin endpoint doesn't exist
-      toast('Task approved — executor will pick it up', 'success');
-    } else {
-      const d = await r.json();
-      toast(d.success ? 'Task approved ✓' : (d.error || 'Approved'), d.success ? 'success' : 'error');
-    }
-    loadPendingApprovals();
+    const d = await r.json();
+    toast(d.success ? 'Task approved ✓ — executor will execute on next cycle' : (d.error || 'Failed'), d.success ? 'success' : 'error');
+    if (d.success) loadPendingApprovals();
   } catch(e) { toast('Error: ' + e.message, 'error'); }
 }
 
 async function rejectTask(taskId) {
   if (!requireAuth()) return;
   try {
-    const r = await fetch(`${API}/admin/update-task`, {
+    const r = await fetch(`${API}/admin/update-task-status`, {
       method: 'POST',
       headers: authHeaders(),
       body: JSON.stringify({ id: taskId, status: 'rejected' })
     });
-    toast('Task rejected ✗', 'success');
-    loadPendingApprovals();
+    const d = await r.json();
+    toast(d.success ? 'Task rejected ✗' : (d.error || 'Failed'), d.success ? 'success' : 'error');
+    if (d.success) loadPendingApprovals();
   } catch(e) { toast('Error: ' + e.message, 'error'); }
 }
 
