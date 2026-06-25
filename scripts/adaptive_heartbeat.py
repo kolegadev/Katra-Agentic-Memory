@@ -44,9 +44,15 @@ def _mongo_query(js):
 
 # ── Brain State Reader ──────────────────────────────────────────────
 def read_brain_state():
+    # Only count real user/agent events — exclude heartbeat/executor self-events
     vol = _mongo_query('''
-var h = db.episodic_events.countDocuments({timestamp: {$gte: new Date(Date.now()-3600000)}});
-var t = db.episodic_events.countDocuments({});
+var systemAgents = ["adaptive-heartbeat", "salience-agent", "default"];
+var h = db.episodic_events.countDocuments({
+  timestamp: {$gte: new Date(Date.now()-3600000)},
+  user_id: {$nin: systemAgents},
+  event_type: {$nin: ["heartbeat_action", "task_execution", "autonomous_action"]}
+});
+var t = db.episodic_events.countDocuments({user_id: {$nin: systemAgents}});
 print(JSON.stringify({last_hour: h, total: t}));
 ''').strip()
     vol_data = json.loads('\n'.join(vol.split('\n')[-3:]).strip() or '{}')
@@ -246,6 +252,29 @@ def run_pulse(dry_run=False):
     if ahash in executed.get("hashes", []):
         print(f"  ⏭️  Already executed: {top['entity']}. HEARTBEAT_OK")
         return {"status": "HEARTBEAT_OK", "interval": interval, "brain": brain}
+    
+    # Skip entities with recently completed tasks (avoid re-allocation loop)
+    recent_completed = _mongo_query(f'''
+var cutoff = new Date(Date.now() - {interval * 1000});
+var count = db.episodic_events.countDocuments({{
+  "metadata.assigned_agent": {{$exists: true}},
+  "metadata.task_status": "completed",
+  timestamp: {{$gte: cutoff}},
+  $or: [
+    {{"content.message": {{$regex: "{top['entity']}", $options: "i"}}}}
+  ]
+}});
+print(count);
+''').strip()
+    if int(recent_completed.split('\n')[-1].strip() or '0') > 0:
+        # Try next entity if available, otherwise report idle
+        next_entity = ranked[1] if len(ranked) > 1 else None
+        if next_entity and next_entity.get("score", 0) > 0.15:
+            top = next_entity
+            print(f"  ⏭️  Skipping {ranked[0]['entity']} (recently completed) → {top['entity']}")
+        else:
+            print(f"  ⏭️  All top entities recently completed. HEARTBEAT_OK (idle)")
+            return {"status": "HEARTBEAT_OK", "interval": interval, "brain": brain}
     
     print(f"  🎯 Selected: {top['entity']} [{top['emotion']}] score={top['score']:.3f}")
     
