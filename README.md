@@ -31,6 +31,34 @@ It is typically initiated through physical contact with specific points on the s
 - **Transfer of the Katra**: In sacred or emergency circumstances, a mind meld can transfer a person's **katra**—their soul, consciousness, and core essence—into another living being or object prior to death.
 - **Side Effects**: The experience can be physically and emotionally draining. Incorrectly performed melds can damage neural pathways, and participants may retain "echoes" of each other's memories and personalities long after the link is broken.
 
+## Comparison to Other Major Approaches
+
+Katra aims to provide a more comprehensive **cognitive memory infrastructure** rather than a single-purpose memory library. Here's how it positions against popular alternatives (as of mid-2026):
+
+| Approach                  | Memory Layers                  | Cognitive/Reflective Features | Protocol Support | Deployment Model          | Best For                          | Key Differentiator vs Katra |
+|---------------------------|--------------------------------|-------------------------------|------------------|---------------------------|-----------------------------------|-----------------------------|
+| **Simple Vector Stores + RAG** (Chroma, Pinecone, etc.) | Semantic only                 | None                         | None            | Various                  | Basic retrieval                  | No structure, no reflection, no working memory |
+| **Mem0**                  | Vector + optional Graph       | Extraction-focused           | SDK / API       | Self-hosted or Cloud     | Personalization & long-term user memory | Stronger multi-layer architecture + explicit reflection layer |
+| **Zep (Graphiti)**        | Temporal Knowledge Graph      | Temporal reasoning           | SDK             | Self-hosted / Cloud      | Time-sensitive & relational reasoning | Broader layers + sleep consolidation for deeper emergence |
+| **mcp-memory-service**    | Semantic + Typed KG           | Auto-consolidation           | **MCP** + REST  | Docker / Self-hosted     | MCP-native semantic memory       | Adds episodic + working memory, identity modes, and autonomous loop |
+| **Vestige**               | Cognitive modules + Spaced repetition | Neuroscience-inspired (FSRS, memory states) | **MCP**         | Single Rust binary       | Local cognitive modeling         | More layers + background watchers + full appliance stack |
+| **Letta (MemGPT)**        | Tiered (Core / Recall / Archival) | Agent self-manages memory    | Tools           | Full agent runtime       | Stateful agents that edit their own memory | Katra is a dedicated memory *service*, not a full runtime |
+| **LangGraph / Framework Memory** | Short-term + checkpoints     | Limited                      | Framework-native| Integrated with agent    | Short-term state management      | Persistent long-term + cross-session cognitive layer |
+| **Katra (this project)**  | Episodic + Semantic + KG + Working + Temporal | **Sleep consolidation + reflection** | **MCP** (35 tools) | Full Docker appliance (Mongo + Redis + MinIO) | Long-running agents needing emergent behaviors | — |
+
+### Key Differentiators of Katra
+- **Multi-layered by design** — Not just retrieval, but structured episodic memory, working memory cache, and temporal querying.
+- **Cognitive layer** — Sleep consolidation enables reflection, insight generation, and movement toward emergent behaviors (learning, personality, shared consciousness via identity modes).
+- **MCP-native with rich tooling** — 35 specialized tools instead of generic add/search.
+- **Background & autonomous capabilities** — Passive collection via watchers + salience-driven autonomous loop.
+- **Local-first & appliance model** — Everything runs in one Docker compose with portable data. No external dependencies for core functionality.
+- **Shared memory focus** — Hybrid identity modes make multi-agent collaboration more natural.
+
+Katra is still early-stage compared to more mature projects like Mem0 or mcp-memory-service. We see it as complementary — many teams may use Katra alongside or instead of simpler retrieval layers when they need deeper cognitive capabilities.
+
+Contributions and comparisons from the community are very welcome!
+
+
 ## Quick Start (Install using one of the agentic applications, it will sort out any shortcomings)
 
 ```bash
