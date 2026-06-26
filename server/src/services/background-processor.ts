@@ -141,6 +141,41 @@ export class BackgroundProcessor {
       }
       this.processingCycleCount = (this.processingCycleCount || 0) + 1;
 
+      // Auto-journal distillation: distill aged-out conversation turns into
+      // concise insights stored in agent_journal_auto. Runs every 10 cycles
+      // (~5 min at 30s interval). Only does work when session has > 5 events.
+      if (this.processingCycleCount % 10 === 0) {
+        try {
+          const { get_database: gdb } = await import('../database/connection.js');
+          const db2 = gdb();
+          const prospective = new ProspectiveMemoryService(db2);
+
+          // Get all sessions with recent conversation activity
+          const recentSessions = await db2.collection('episodic_events')
+            .aggregate([
+              { $match: { event_type: { $in: ['conversation', 'user_message', 'assistant_response'] } } },
+              { $group: { _id: { user_id: '$user_id', session_id: '$session_id' } } },
+              { $limit: 20 },
+            ]).toArray();
+
+          let totalDistilled = 0;
+          for (const s of recentSessions) {
+            const uid = s._id.user_id as string;
+            const sid = s._id.session_id as string;
+            if (uid && sid) {
+              const count = await prospective.distillAgedTurns(uid, sid);
+              totalDistilled += count;
+            }
+          }
+
+          if (totalDistilled > 0) {
+            console.log(`📓 Auto-journal: ${totalDistilled} turns distilled across ${recentSessions.length} sessions`);
+          }
+        } catch (distillErr) {
+          console.warn('⚠️ Auto-journal distillation failed:', distillErr);
+        }
+      }
+
       // Auto-expire missions paused > 24h (every 60 cycles ~30 min)
       if (this.processingCycleCount % 60 === 0) {
         try {
