@@ -411,7 +411,7 @@ katra/
 ├── watcher/                 Passive session-log extractors (Solomem)
 ├── integrations/            Agent-specific dynamic-retrieval integrations
 │   └── kolega-code/         Kolega Code lifecycle-hook bridge
-├── SKILL.md                 Multi-platform deployment guide
+├── docs/AGENT-SETUP.md                 Multi-platform deployment guide
 └── docs/                    Full documentation
 ```
 
@@ -549,7 +549,7 @@ ingress with path routing, HPA, and PDB. See [Deployment Guide](docs/DEPLOYMENT.
 - [Deployment Guide](docs/DEPLOYMENT.md) — Docker, cloud, K8s
 - [Migration Guide](docs/MIGRATION.md) — Migrate from cognitive-memory-chat
 - [Data Processing Pipelines](docs/Data-Processing-Pipelines.md) — Full memory pipeline architecture
-- [Multi-Platform Setup](SKILL.md) — Platform-specific agent configuration
+- [Multi-Platform Setup](docs/AGENT-SETUP.md) — Platform-specific agent configuration
 
 ## License
 
