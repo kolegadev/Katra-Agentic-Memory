@@ -1,17 +1,17 @@
 import { Hono } from 'hono';
 import { get_database } from '../database/connection.js';
-import { getEpisodicEventManager } from '../services/episodic-event-manager.js';
+import { getEpisodicEventManager } from '../services/memory/episodic-event-manager.js';
 import { get_redis_client } from '../database/redis-connection.js';
-import { llmService } from '../services/llm-service.js';
-import { backgroundProcessor } from '../services/background-processor.js';
+import { llmService } from '../services/infrastructure/llm-service.js';
+import { backgroundProcessor } from '../services/processing/background-processor.js';
 import { IndexManager } from '../database/index-management.js';
 import { get_error_message, get_error_stack } from '../utils/error-utils.js';
-import { getMemoryScope, invalidateScopeCache, DEFAULT_USER_ID } from '../services/memory-scope-service.js';
-import { get_llm_config_from_db, save_llm_config_to_db, type LLMConfig } from '../services/llm-service.js';
-import { entityResolver } from '../services/entity-resolver.js';
+import { getMemoryScope, invalidateScopeCache, DEFAULT_USER_ID } from '../services/memory/memory-scope-service.js';
+import { get_llm_config_from_db, save_llm_config_to_db, type LLMConfig } from '../services/infrastructure/llm-service.js';
+import { entityResolver } from '../services/integration/entity-resolver.js';
 import { create_rate_limiter } from '../middleware/rate-limit.js';
 import { validateKatraKey } from '../utils/api-key-manager.js';
-import { SleepConsolidationService } from '../services/sleep-consolidation-service.js';
+import { SleepConsolidationService } from '../services/processing/sleep-consolidation-service.js';
 import { escape_regex } from '../utils/regex-escape.js';
 
 export const create_admin_routes = (): Hono => {

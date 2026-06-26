@@ -6,14 +6,14 @@
  */
 
 import { Hono } from 'hono';
-import { working_memory_service } from '../services/working-memory-service.js';
-import { learning_feedback_service, AuthorizationError } from '../services/learning-feedback-service.js';
-import { database_optimization_service } from '../services/database-optimization-service.js';
+import { working_memory_service } from '../services/memory/working-memory-service.js';
+import { learning_feedback_service, AuthorizationError } from '../services/processing/learning-feedback-service.js';
+import { database_optimization_service } from '../services/infrastructure/database-optimization-service.js';
 import { get_database } from '../database/connection.js';
 import { escape_regex } from '../utils/regex-escape.js';
 import { v4 as uuidv4 } from 'uuid';
-import { generateContentHash, generateIdempotencyKey } from '../services/content-hash-utils.js';
-import { buildScopeFilter, DEFAULT_USER_ID } from '../services/memory-scope-service.js';
+import { generateContentHash, generateIdempotencyKey } from '../services/infrastructure/content-hash-utils.js';
+import { buildScopeFilter, DEFAULT_USER_ID } from '../services/memory/memory-scope-service.js';
 import { validateKatraKey } from '../utils/api-key-manager.js';
 
 const DEBUG_ENDPOINTS_ENABLED = process.env.KATRA_ENABLE_DEBUG_ENDPOINTS === 'true';

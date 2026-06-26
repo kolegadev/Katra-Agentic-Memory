@@ -34,21 +34,21 @@ import { z } from 'zod';
 import { zodToJsonSchema } from 'zod-to-json-schema';
 import { connect_to_mongodb, get_database, is_database_connected } from './database/connection.js';
 import { get_redis_client, is_redis_healthy } from './database/redis-connection.js';
-import { working_memory_service } from './services/working-memory-service.js';
+import { working_memory_service } from './services/memory/working-memory-service.js';
 import {
   getSemanticMemoryService,
   getCompactionQueueService,
   getMemorySynthesisService,
   getProspectiveMemoryService,
-} from './services/knowledge-graph-factory.js';
-import { embeddingService } from './services/embedding-service.js';
-import { getMemoryScope, buildScopeFilter, resolveSharedId, invalidateScopeCache, DEFAULT_USER_ID } from './services/memory-scope-service.js';
-import { llmService, get_llm_config_from_db, save_llm_config_to_db } from './services/llm-service.js';
-import { getEpisodicEventManager } from './services/episodic-event-manager.js';
-import { stableContentHash } from './services/content-hash-utils.js';
+} from './services/integration/knowledge-graph-factory.js';
+import { embeddingService } from './services/infrastructure/embedding-service.js';
+import { getMemoryScope, buildScopeFilter, resolveSharedId, invalidateScopeCache, DEFAULT_USER_ID } from './services/memory/memory-scope-service.js';
+import { llmService, get_llm_config_from_db, save_llm_config_to_db } from './services/infrastructure/llm-service.js';
+import { getEpisodicEventManager } from './services/memory/episodic-event-manager.js';
+import { stableContentHash } from './services/infrastructure/content-hash-utils.js';
 import { ensureApiKeys, logGeneratedKeys, validateMcpKey, isMcpAuthConfigured, validateKatraKey, isKatraAuthConfigured } from './utils/api-key-manager.js';
-import { ReflectionStore } from './services/reflection-store.js';
-import { SleepConsolidationService } from './services/sleep-consolidation-service.js';
+import { ReflectionStore } from './services/infrastructure/reflection-store.js';
+import { SleepConsolidationService } from './services/processing/sleep-consolidation-service.js';
 
 dotenv.config();
 

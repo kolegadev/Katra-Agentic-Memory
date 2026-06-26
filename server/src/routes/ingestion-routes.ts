@@ -1,11 +1,11 @@
 import { Hono } from 'hono';
 import { v4 as uuidv4 } from 'uuid';
-import { extraction_service, ExtractionContext, ExtractionResult } from '../services/extraction-service.js';
-import { dispatch_service, DispatchContext } from '../services/dispatch-service.js';
-import { getSessionIngestionService } from '../services/session-ingestion-service.js';
+import { extraction_service, ExtractionContext, ExtractionResult } from '../services/processing/extraction-service.js';
+import { dispatch_service, DispatchContext } from '../services/processing/dispatch-service.js';
+import { getSessionIngestionService } from '../services/processing/session-ingestion-service.js';
 import { getTenantContext } from '../database/tenant-context.js';
 import { create_rate_limiter } from '../middleware/rate-limit.js';
-import { DEFAULT_USER_ID } from '../services/memory-scope-service.js';
+import { DEFAULT_USER_ID } from '../services/memory/memory-scope-service.js';
 
 export const create_ingestion_routes = (): Hono => {
   const router = new Hono();

@@ -3,10 +3,10 @@
  */
 
 import { Hono } from 'hono';
-import { ReflectionStore } from '../services/reflection-store.js';
-import { SleepConsolidationService } from '../services/sleep-consolidation-service.js';
+import { ReflectionStore } from '../services/infrastructure/reflection-store.js';
+import { SleepConsolidationService } from '../services/processing/sleep-consolidation-service.js';
 import { validateKatraKey } from '../utils/api-key-manager.js';
-import { DEFAULT_USER_ID } from '../services/memory-scope-service.js';
+import { DEFAULT_USER_ID } from '../services/memory/memory-scope-service.js';
 import { create_rate_limiter } from '../middleware/rate-limit.js';
 
 export const create_reflection_routes = (): Hono => {

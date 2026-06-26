@@ -14,11 +14,11 @@ import fs from 'fs';
 
 import { connect_to_mongodb, is_database_connected, get_pool_health, get_client } from './database/connection.js';
 import { close_redis_connection, is_redis_healthy } from './database/redis-connection.js';
-import { llmService } from './services/llm-service.js';
-import { get_llm_config_from_db } from './services/llm-service.js';
-import { embeddingService } from './services/embedding-service.js';
-import { BackgroundProcessor } from './services/background-processor.js';
-import { SleepConsolidationService } from './services/sleep-consolidation-service.js';
+import { llmService } from './services/infrastructure/llm-service.js';
+import { get_llm_config_from_db } from './services/infrastructure/llm-service.js';
+import { embeddingService } from './services/infrastructure/embedding-service.js';
+import { BackgroundProcessor } from './services/processing/background-processor.js';
+import { SleepConsolidationService } from './services/processing/sleep-consolidation-service.js';
 
 // Routes
 import { create_memory_routes } from './routes/memory-routes.js';
@@ -34,7 +34,7 @@ import { create_reflection_routes } from './routes/reflection-routes.js';
 // MCP server
 import { startMcpServer } from './mcp-server.js';
 import { isMultiTenant, runWithTenant } from './database/tenant-context.js';
-import { resolveTenant, initTenantSystem } from './services/tenant-service.js';
+import { resolveTenant, initTenantSystem } from './services/integration/tenant-service.js';
 import { ensureApiKeys, logGeneratedKeys, validateKatraKey, isKatraAuthConfigured } from './utils/api-key-manager.js';
 
 dotenv.config();

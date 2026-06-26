@@ -1,9 +1,9 @@
 import { Hono } from 'hono';
-import { queryOrchestrationService } from '../services/query-orchestration-service.js';
-import { contextSynthesisService } from '../services/context-synthesis-service.js';
+import { queryOrchestrationService } from '../services/infrastructure/query-orchestration-service.js';
+import { contextSynthesisService } from '../services/processing/context-synthesis-service.js';
 import { escape_regex } from '../utils/regex-escape.js';
 import { z } from 'zod';
-import { DEFAULT_USER_ID } from '../services/memory-scope-service.js';
+import { DEFAULT_USER_ID } from '../services/memory/memory-scope-service.js';
 
 // Request validation schemas
 const RecallRequestSchema = z.object({

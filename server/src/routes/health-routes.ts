@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
-import { llmService } from '../services/llm-service.js';
-import { embeddingService } from '../services/embedding-service.js';
+import { llmService } from '../services/infrastructure/llm-service.js';
+import { embeddingService } from '../services/infrastructure/embedding-service.js';
 import { get_database } from '../database/connection.js';
 import { is_database_connected } from '../database/connection.js';
 import { is_redis_healthy } from '../database/redis-connection.js';

@@ -6,12 +6,12 @@
  */
 
 import { Hono } from 'hono';
-import { s3_asset_service } from '../services/s3-asset-service.js';
+import { s3_asset_service } from '../services/infrastructure/s3-asset-service.js';
 import { get_database } from '../database/connection.js';
 import { v4 as uuidv4 } from 'uuid';
-import { generateContentHash } from '../services/content-hash-utils.js';
+import { generateContentHash } from '../services/infrastructure/content-hash-utils.js';
 import { validateKatraKey } from '../utils/api-key-manager.js';
-import { DEFAULT_USER_ID } from '../services/memory-scope-service.js';
+import { DEFAULT_USER_ID } from '../services/memory/memory-scope-service.js';
 
 /**
  * Create asset management routes

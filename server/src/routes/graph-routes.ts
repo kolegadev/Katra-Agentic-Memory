@@ -7,9 +7,9 @@
 
 import { timingSafeEqual } from 'node:crypto';
 import { Hono } from 'hono';
-import { getCompactionQueueService, getSemanticMemoryService, getMemorySynthesisService } from '../services/knowledge-graph-factory.js';
+import { getCompactionQueueService, getSemanticMemoryService, getMemorySynthesisService } from '../services/integration/knowledge-graph-factory.js';
 import { get_database } from '../database/connection.js';
-import { DEFAULT_USER_ID } from '../services/memory-scope-service.js';
+import { DEFAULT_USER_ID } from '../services/memory/memory-scope-service.js';
 
 function safeEqual(a: string, b: string): boolean {
     const ab = Buffer.from(a);

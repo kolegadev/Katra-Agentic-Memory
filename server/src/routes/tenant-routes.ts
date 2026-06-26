@@ -13,7 +13,7 @@ import {
   updateTenant,
   regenerateApiKey,
   deleteTenant,
-} from '../services/tenant-service.js';
+} from '../services/integration/tenant-service.js';
 import { validateKatraKey } from '../utils/api-key-manager.js';
 
 export function create_tenant_routes(): Hono {
