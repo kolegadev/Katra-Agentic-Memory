@@ -2002,7 +2002,7 @@ export const create_memory_routes = (): Hono => {
      */
     router.get('/semantic/facts', async (c) => {
         try {
-            const user_id = DEFAULT_USER_ID;
+            const user_id = c.req.query('user_id') || DEFAULT_USER_ID;
             const limit = parseInt(c.req.query('limit') || '50');
             const scopeFilter = await buildScopeFilter(user_id);
 
