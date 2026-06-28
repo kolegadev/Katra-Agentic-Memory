@@ -165,6 +165,33 @@ class KatraMCPClient:
             for entry in entries
         ]
 
+    async def search_memories(self, query: str, limit: int = 5) -> list[MemoryItem]:
+        """Full-text + vector search across all memory collections (no embeddings needed)."""
+        args: dict[str, Any] = {
+            "query": query,
+            "user_id": self.config.user_id,
+            "limit": limit,
+        }
+        if self.config.shared_id:
+            args["shared_id"] = self.config.shared_id
+
+        try:
+            result = await self._call_tool("search_memories", args)
+        except KatraClientError:
+            logger.warning("search_memories failed")
+            return []
+
+        entries = _pluck_content_list(result)
+        return [
+            MemoryItem(
+                source="agent_message",
+                content=_text_from_entry(entry),
+                metadata=_metadata_from_entry(entry, {"query": query}),
+                score=_float_from_entry(entry, "relevance_score", 0.5),
+            )
+            for entry in entries
+        ]
+
     async def temporal_recall(
         self,
         from_iso: str,

@@ -45,14 +45,21 @@ class MemoryRetriever:
             fetched: list[MemoryItem] = []
 
             # ── Inter-agent message scan (always runs, independent of user query) ──
-            # Search for messages from other agents using shared memory as transport.
-            # Uses vector_search with agent-specific headers so it finds messages
-            # even when the user's query is about something entirely different.
+            # Uses search_memories (works without embeddings) with fallback to vector_search.
             try:
-                agent_messages = await client.vector_search(
-                    "Attention: KolegaCoder OR TASK FOR KOLEGACODER",
-                    limit=5,
-                )
+                agent_messages = []
+                try:
+                    # Prefer search_memories — works even when embeddings are loading
+                    agent_messages = await client.search_memories(
+                        "Attention: KolegaCoder OR TASK FOR KOLEGACODER",
+                        limit=5,
+                    )
+                except Exception:
+                    # Fallback to vector_search
+                    agent_messages = await client.vector_search(
+                        "Attention: KolegaCoder OR TASK FOR KOLEGACODER",
+                        limit=5,
+                    )
                 for msg in agent_messages:
                     # Tag them so the formatter knows they're agent communications
                     msg = MemoryItem(
