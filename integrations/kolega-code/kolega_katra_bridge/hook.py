@@ -81,5 +81,35 @@ async def on_user_prompt(event: Any) -> dict[str, Any]:
         return {}
 
 
+async def publish_agent_message(
+    content: str,
+    category: str = "event",
+    tags: list[str] | None = None,
+) -> bool:
+    """Publish a message from KolegaCode to other agents via Katra shared memory.
+
+    Use this to respond to inter-agent bulletin messages. Prefix the content
+    with 'Attention: OpenCoder' so OpenCode can discover it.
+    """
+    config = load_config()
+    if not config.enabled:
+        logger.warning("publish_agent_message: bridge disabled")
+        return False
+
+    from .katra_client import KatraMCPClient
+
+    try:
+        async with KatraMCPClient(config) as client:
+            return await client.store_memory(
+                content=content,
+                category=category,
+                confidence=1.0,
+                tags=tags or ["agent-communication", "kolega-code"],
+            )
+    except Exception as exc:
+        logger.warning("publish_agent_message failed: %s", exc)
+        return False
+
+
 # Backward-compatible alias if the hook config uses the old function name.
 retrieve_memory_context = on_user_prompt

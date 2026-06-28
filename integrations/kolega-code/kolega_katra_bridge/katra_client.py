@@ -222,6 +222,33 @@ class KatraMCPClient:
             for entry in entries
         ]
 
+    async def store_memory(
+        self,
+        content: str,
+        category: str = "event",
+        confidence: float = 1.0,
+        tags: list[str] | None = None,
+    ) -> bool:
+        """Store a memory back to Katra — enables agent-to-agent responses."""
+        args: dict[str, Any] = {
+            "content": content,
+            "category": category,
+            "user_id": self.config.user_id,
+            "confidence": confidence,
+            "source": "kolega-code",
+            "tags": tags or [],
+        }
+        if self.config.shared_id:
+            args["shared_id"] = self.config.shared_id
+
+        try:
+            result = await self._call_tool("store_memory", args)
+            logger.info("store_memory succeeded: %s", result)
+            return True
+        except KatraClientError:
+            logger.warning("store_memory failed")
+            return False
+
 
 # ---------------------------------------------------------------------------
 # Response parsing helpers
