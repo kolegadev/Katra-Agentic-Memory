@@ -17,6 +17,7 @@ CHARS_PER_TOKEN = 4
 
 # Source priority weights (higher = preferred when scores tie).
 SOURCE_WEIGHTS = {
+    "agent_message": 10.0,  # Always top priority
     "working_memory": 3.0,
     "temporal_context": 2.5,
     "vector_search": 2.0,
@@ -42,6 +43,27 @@ class MemoryRetriever:
         async with KatraMCPClient(self.config) as client:
             sources = set(self.config.sources)
             fetched: list[MemoryItem] = []
+
+            # ── Inter-agent message scan (always runs, independent of user query) ──
+            # Search for messages from other agents using shared memory as transport.
+            # Uses vector_search with agent-specific headers so it finds messages
+            # even when the user's query is about something entirely different.
+            try:
+                agent_messages = await client.vector_search(
+                    "Attention: KolegaCoder OR TASK FOR KOLEGACODER",
+                    limit=5,
+                )
+                for msg in agent_messages:
+                    # Tag them so the formatter knows they're agent communications
+                    msg = MemoryItem(
+                        source="agent_message",
+                        content=msg.content,
+                        metadata={**msg.metadata, "is_agent_message": True},
+                        score=msg.score,
+                    )
+                    fetched.append(msg)
+            except Exception as exc:
+                logger.warning("agent_message scan failed: %s", exc)
 
             # Always fetch working memory first (cheap + session-specific).
             if "working_memory" in sources:

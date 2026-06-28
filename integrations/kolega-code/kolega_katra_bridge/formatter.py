@@ -22,8 +22,7 @@ def format_memories(items: list[MemoryItem]) -> str:
     agent_messages: list[MemoryItem] = []
     regular_items: list[MemoryItem] = []
     for item in items:
-        content_lower = item.content.lower()
-        if ("attention:" in content_lower or "task for" in content_lower.lower()):
+        if item.source == "agent_message" or item.metadata.get("is_agent_message"):
             agent_messages.append(item)
         else:
             regular_items.append(item)
