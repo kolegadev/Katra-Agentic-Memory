@@ -55,16 +55,39 @@ export class SleepConsolidationService {
     console.log('🌙 Sleep Consolidation Service scheduled:');
     this.schedulePeriod('daily', config.daily.hour, config.daily.minute);
     console.log(`   Daily:    ${String(config.daily.hour).padStart(2, '0')}:${String(config.daily.minute).padStart(2, '0')}`);
-    
+
     this.scheduleWeekly('weekly', config.weekly.dayOfWeek, config.weekly.hour, config.weekly.minute);
     console.log(`   Weekly:   Day ${config.weekly.dayOfWeek} at ${String(config.weekly.hour).padStart(2, '0')}:${String(config.weekly.minute).padStart(2, '0')}`);
-    
+
     this.scheduleMonthly('monthly', config.monthly.dayOfMonth, config.monthly.hour, config.monthly.minute);
     console.log(`   Monthly:  Day ${config.monthly.dayOfMonth} at ${String(config.monthly.hour).padStart(2, '0')}:${String(config.monthly.minute).padStart(2, '0')}`);
+
+    // Safety net: poll every 30 min to catch missed timer callbacks
+    this.startHeartbeat();
   }
+
+  private startHeartbeat(): void {
+    setInterval(() => {
+      for (const [period, lastRun] of this.lastRunTimes) {
+        const now = Date.now();
+        const threshold = period === 'daily' ? 25 * 60 * 60 * 1000  // 25h
+                        : period === 'weekly' ? 8 * 24 * 60 * 60 * 1000  // 8d
+                        : 32 * 24 * 60 * 60 * 1000;  // monthly: 32d
+        if (now - lastRun > threshold) {
+          console.log(`⏰ ${period} consolidation overdue (last: ${new Date(lastRun).toISOString()}), running...`);
+          this.runConsolidation(period).catch((err) =>
+            console.error(`❌ ${period} consolidation failed:`, err)
+          );
+        }
+      }
+    }, 30 * 60 * 1000); // every 30 minutes
+  }
+
+  private lastRunTimes: Map<string, number> = new Map();
 
   private schedulePeriod(key: string, hour: number, minute: number): void {
     const ms = this.msUntil(hour, minute);
+    console.log(`   ⏰ Next ${key} in ${Math.round(ms / 60000)} minutes (${new Date(Date.now() + ms).toISOString()})`);
     const timer = setTimeout(() => {
       this.runConsolidation(key as 'daily').catch((err) =>
         console.error(`❌ ${key} consolidation failed:`, err)
@@ -161,6 +184,9 @@ export class SleepConsolidationService {
 
     try {
       console.log(`🌙 Starting ${period} sleep consolidation for ${userId}...`);
+
+      // Phase 0: Record run attempt timestamp (for heartbeat safety net)
+      this.lastRunTimes.set(period, Date.now());
 
       // Phase 1: Gather
       const data = await this.gatherData(userId, periodStart, now, period);
