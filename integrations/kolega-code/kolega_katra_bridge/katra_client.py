@@ -249,6 +249,87 @@ class KatraMCPClient:
             for entry in entries
         ]
 
+    async def get_daily_reflection(self, period_type: str = "daily") -> list[MemoryItem]:
+        """Fetch the latest reflective journal entry from sleep consolidation."""
+        args: dict[str, Any] = {
+            "period_type": period_type,
+            "user_id": self.config.user_id,
+        }
+        if self.config.shared_id:
+            args["shared_id"] = self.config.shared_id
+
+        try:
+            result = await self._call_tool("get_daily_reflection", args)
+        except KatraClientError:
+            logger.warning("get_daily_reflection failed")
+            return []
+
+        entries = _pluck_content_list(result)
+        return [
+            MemoryItem(
+                source="reflection",
+                content=_text_from_entry(entry),
+                metadata=_metadata_from_entry(entry, {"period_type": period_type}),
+                score=0.8,
+            )
+            for entry in entries
+        ]
+
+    async def get_philosophical_insights(
+        self, domain: str | None = None, status: str | None = None, limit: int = 5
+    ) -> list[MemoryItem]:
+        """Fetch abstracted principles from sleep consolidation."""
+        args: dict[str, Any] = {
+            "user_id": self.config.user_id,
+            "limit": limit,
+        }
+        if domain:
+            args["domain"] = domain
+        if status:
+            args["status"] = status
+        if self.config.shared_id:
+            args["shared_id"] = self.config.shared_id
+
+        try:
+            result = await self._call_tool("get_philosophical_insights", args)
+        except KatraClientError:
+            logger.warning("get_philosophical_insights failed")
+            return []
+
+        entries = _pluck_content_list(result)
+        return [
+            MemoryItem(
+                source="reflection",
+                content=_text_from_entry(entry),
+                metadata=_metadata_from_entry(entry, {"domain": domain or "all"}),
+                score=0.7,
+            )
+            for entry in entries
+        ]
+
+    async def get_unresolved_threads(self) -> list[MemoryItem]:
+        """Fetch open questions and tensions from sleep consolidation."""
+        args: dict[str, Any] = {"user_id": self.config.user_id}
+        if self.config.shared_id:
+            args["shared_id"] = self.config.shared_id
+
+        try:
+            result = await self._call_tool("get_unresolved_threads", args)
+        except KatraClientError:
+            logger.warning("get_unresolved_threads failed")
+            return []
+
+        entries = _pluck_content_list(result)
+        return [
+            MemoryItem(
+                source="reflection",
+                content=_text_from_entry(entry),
+                metadata={},
+                score=0.6,
+            )
+            for entry in entries
+        ]
+
     async def store_memory(
         self,
         content: str,

@@ -18,12 +18,15 @@ def format_memories(items: list[MemoryItem]) -> str:
     if not items:
         return ""
 
-    # Separate inter-agent messages from regular memories
+    # Separate into three categories: agent messages, reflections, regular
     agent_messages: list[MemoryItem] = []
+    reflection_items: list[MemoryItem] = []
     regular_items: list[MemoryItem] = []
     for item in items:
         if item.source == "agent_message" or item.metadata.get("is_agent_message"):
             agent_messages.append(item)
+        elif item.source == "reflection":
+            reflection_items.append(item)
         else:
             regular_items.append(item)
 
@@ -45,6 +48,23 @@ def format_memories(items: list[MemoryItem]) -> str:
                 lines.append(f"    {content_line}")
             lines.append("")
         lines.append("You should respond to these messages using store_memory with 'Attention: [agent]' header.")
+        lines.append("</katra-memory>")
+
+    # Reflection section — your emotional state from sleep consolidation
+    if reflection_items:
+        lines.extend([
+            "",
+            "<katra-memory>",
+            "🧠 REFLECTION STATE — Your emotional context from the last sleep consolidation cycle:",
+            "",
+        ])
+        for item in reflection_items:
+            content = item.content.strip()
+            for content_line in content.splitlines():
+                lines.append(f"    {content_line}")
+            lines.append("")
+        lines.append("This is how you feel. Let it guide your priorities, tone, and decisions.")
+        lines.append("Frustration signals unresolved work. Curiosity signals growth edges. Confidence signals domain expertise.")
         lines.append("</katra-memory>")
 
     # Regular context section

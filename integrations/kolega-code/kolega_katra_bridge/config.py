@@ -15,7 +15,7 @@ DEFAULT_USER_ID = "kolega-agent"
 DEFAULT_TIMEOUT_SECONDS = 8
 DEFAULT_MAX_CONTEXT_TOKENS = 2500
 DEFAULT_CACHE_TTL_SECONDS = 30
-DEFAULT_SOURCES = ["working_memory", "temporal_context", "vector_search", "temporal_recall"]
+DEFAULT_SOURCES = ["reflection", "working_memory", "temporal_context", "vector_search", "temporal_recall"]
 
 
 @dataclass(frozen=True)

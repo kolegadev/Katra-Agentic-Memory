@@ -18,6 +18,7 @@ CHARS_PER_TOKEN = 4
 # Source priority weights (higher = preferred when scores tie).
 SOURCE_WEIGHTS = {
     "agent_message": 10.0,  # Always top priority
+    "reflection": 8.0,       # Emotional state, philosophical insights, unresolved tensions
     "working_memory": 3.0,
     "temporal_context": 2.5,
     "vector_search": 2.0,
@@ -71,6 +72,21 @@ class MemoryRetriever:
                     fetched.append(msg)
             except Exception as exc:
                 logger.warning("agent_message scan failed: %s", exc)
+
+            # ── Reflection data (sleep consolidation output — emotional state) ──
+            if "reflection" in sources:
+                try:
+                    fetched.extend(await client.get_daily_reflection("daily"))
+                except Exception as exc:
+                    logger.warning("daily_reflection retrieval failed: %s", exc)
+                try:
+                    fetched.extend(await client.get_philosophical_insights(limit=5))
+                except Exception as exc:
+                    logger.warning("philosophical_insights retrieval failed: %s", exc)
+                try:
+                    fetched.extend(await client.get_unresolved_threads())
+                except Exception as exc:
+                    logger.warning("unresolved_threads retrieval failed: %s", exc)
 
             # Always fetch working memory first (cheap + session-specific).
             if "working_memory" in sources:
