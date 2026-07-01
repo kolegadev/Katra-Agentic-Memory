@@ -119,8 +119,8 @@ export class BackgroundProcessor {
         console.log(`✅ Background processing completed: ${processedCount} processed, ${failedCount} failed`);
       }
 
-      // Time-block summarization: run every 30 processing cycles (~15 min)
-      if (this.processingCycleCount % 30 === 0) {
+      // Time-block summarization: run every 120 processing cycles (~60 min)
+      if (this.processingCycleCount % 120 === 0) {
         try {
           const summarizer = new TimeBlockSummarizer();
           const uniqueUsers = [...new Set(unprocessedEvents.map((e: any) => e.user_id).filter(Boolean))];
@@ -142,9 +142,10 @@ export class BackgroundProcessor {
       this.processingCycleCount = (this.processingCycleCount || 0) + 1;
 
       // Auto-journal distillation: distill aged-out conversation turns into
-      // concise insights stored in agent_journal_auto. Runs every 10 cycles
-      // (~5 min at 30s interval). Only does work when session has > 5 events.
-      if (this.processingCycleCount % 10 === 0) {
+      // concise insights stored in agent_journal_auto. Runs every 60 cycles
+      // (~30 min at 30s interval) to reduce LLM token consumption.
+      // Turns are batched (10 per LLM call) and capped (10 turns per session per cycle).
+      if (this.processingCycleCount % 60 === 0) {
         try {
           const { get_database: gdb } = await import('../../database/connection.js');
           const db2 = gdb();
@@ -527,8 +528,8 @@ export class BackgroundProcessor {
    * Check if an event has been recently processed to avoid reprocessing
    */
   private async isEventRecentlyProcessed(event: any): Promise<boolean> {
-    // Check if the event has processing metadata indicating it was already processed
-    if (event.metadata?.processed === true) {
+    // Check both metadata.processed and top-level processed (legacy events)
+    if (event.metadata?.processed === true || event.processed === true) {
       return true;
     }
 
@@ -539,6 +540,25 @@ export class BackgroundProcessor {
       if (processedAt > oneHourAgo) {
         return true;
       }
+    }
+
+    // Hard dedup: skip if content_hash already exists in processing_log as completed
+    try {
+      const { get_database } = await import('../../database/connection.js');
+      const db = get_database();
+      const contentHash = event.content_hash;
+      if (contentHash) {
+        const existingCompleted = await db.collection('processing_log').findOne({
+          idempotency_key: { $regex: new RegExp(contentHash.slice(0, 16)) },
+          status: 'completed',
+        });
+        if (existingCompleted) {
+          console.log(`🔄 Hard dedup: content ${contentHash.slice(0,8)} already fully processed, skipping`);
+          return true;
+        }
+      }
+    } catch {
+      // Non-critical — if dedup check fails, event will still go through normal processing
     }
 
     return false;

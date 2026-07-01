@@ -388,9 +388,8 @@ export const create_memory_routes = (): Hono => {
                 content,
                 content_hash: contentHash,
                 idempotency_key: generateIdempotencyKey({ event_type, user_id, session_id: session_id || uuidv4() }, contentHash),
-                metadata: metadata || {},
+                metadata: { ...(metadata || {}), processed: false },
                 timestamp: new Date(),
-                processed: false
             });
 
             console.log('📝 Stored episodic event');
@@ -843,9 +842,8 @@ export const create_memory_routes = (): Hono => {
                 content: { message, intent: 'learning_inquiry' },
                 content_hash: contentHash,
                 idempotency_key: generateIdempotencyKey({ event_type: 'user_message', user_id, session_id }, contentHash),
-                metadata: { demo: true },
+                metadata: { demo: true, processed: false },
                 timestamp: new Date(),
-                processed: false
             });
 
             // Step 2: Add to working memory

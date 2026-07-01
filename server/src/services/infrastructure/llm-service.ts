@@ -151,6 +151,21 @@ export class LLMService {
     };
   }
 
+  /** Track DeepSeek auto-caching stats from an API response. */
+  private _trackCacheStats(response: any): void {
+    const usage = response?.usage;
+    if (!usage) return;
+    this.cacheStats.totalCalls++;
+    this.cacheStats.totalTokens += usage.prompt_tokens || 0;
+    const cached = usage.prompt_tokens_details?.cached_tokens || usage.prompt_cache_hit_tokens || 0;
+    if (cached > 0) {
+      this.cacheStats.cacheHits++;
+      this.cacheStats.cachedTokens += cached;
+    } else {
+      this.cacheStats.cacheMisses++;
+    }
+  }
+
   /**
    * Initialize from env vars (immediate, non-blocking).
    * DB config is loaded async via reconfigure_from_db() on startup.
@@ -408,19 +423,7 @@ export class LLMService {
       const msg = response.choices[0]?.message as any;
       content = msg?.content || msg?.reasoning_content || null;
 
-      // Track cache performance (DeepSeek reports prompt_tokens_details.cached_tokens)
-      const usage = response.usage as any;
-      if (usage) {
-        this.cacheStats.totalCalls++;
-        this.cacheStats.totalTokens += usage.prompt_tokens || 0;
-        const cached = usage.prompt_tokens_details?.cached_tokens || usage.prompt_cache_hit_tokens || 0;
-        if (cached > 0) {
-          this.cacheStats.cacheHits++;
-          this.cacheStats.cachedTokens += cached;
-        } else {
-          this.cacheStats.cacheMisses++;
-        }
-      }
+      this._trackCacheStats(response);
     } catch (error: any) {
       if (error?.status === 401 || error?.status === 403) {
         provider.available = false;
@@ -598,6 +601,7 @@ CRITICAL RULES:
         max_tokens: maxTokens,
         response_format: { type: 'json_object' },
       });
+      this._trackCacheStats(response);
       const msg = response.choices[0]?.message as any;
       const content = msg?.content || '{}';
       return JSON.parse(content);
@@ -621,6 +625,7 @@ CRITICAL RULES:
         temperature: 0.0,
         max_tokens: maxTokens,
       });
+      this._trackCacheStats(response);
       const msg = response.choices[0]?.message as any;
       let content = msg?.content || '{}';
       content = content.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
@@ -666,6 +671,7 @@ CRITICAL RULES:
       });
       const msg = response.choices[0]?.message as any;
       content = msg?.content || msg?.reasoning_content || '';
+      this._trackCacheStats(response);
     } catch (error: any) {
       if (error?.status === 401 || error?.status === 403) {
         provider.available = false;
@@ -709,7 +715,8 @@ CRITICAL RULES:
       });
       const msg = response.choices[0]?.message as any;
       let content = msg?.content || msg?.reasoning_content || '';
-      content = content.replace(/<｜f###｜>]*>/g, '').trim();
+      content = content.replace(/<｜###｜>]*>/g, '').trim();
+      this._trackCacheStats(response);
       return content;
     } catch (error: any) {
       if (error?.status === 401 || error?.status === 403) {

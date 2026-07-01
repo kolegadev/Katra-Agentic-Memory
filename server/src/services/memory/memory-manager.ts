@@ -116,6 +116,10 @@ export class MemoryManager {
       timestamp: new Date(),
       content_hash: contentHash,
       idempotency_key: generateIdempotencyKey(event, contentHash),
+      metadata: {
+        ...((event as any).metadata || {}),
+        processed: false,
+      },
     };
 
     const result = await db.collection('episodic_events').insertOne(episodicEvent);
@@ -695,6 +699,7 @@ export class MemoryManager {
     const events = await db.collection('episodic_events')
       .find({ 
         'metadata.processed': { $ne: true },
+        'metadata.terminal_failure': { $ne: true },
         // Must have required fields for processing
         id: { $exists: true, $ne: null },
         content_hash: { $exists: true, $ne: null },

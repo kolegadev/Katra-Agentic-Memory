@@ -406,8 +406,8 @@ export function create_assets_routes(): Hono {
                     },
                     content_hash: contentHash,
                     idempotency_key: `${sessId}_file_upload_${contentHash}`,
+                    metadata: { processed: false },
                     timestamp: new Date(),
-                    processed: false,
                 });
             } catch (memErr) {
                 // Non-fatal: upload succeeded even if episodic event fails

@@ -306,6 +306,29 @@ export class ProspectiveMemoryService {
   }
 
   /**
+   * Summarize a batch of turns into a single journal insight using ONE LLM call.
+   * Reduces token burn by batching up to 10 turns per call instead of one per turn.
+   */
+  public async summarizeForJournalBatch(text: string): Promise<string> {
+    const maxInput = 6000;
+    const trimmed = text.length > maxInput ? text.slice(0, maxInput) + '\n...' : text;
+
+    const systemPrompt = `You are a journal summarizer. Below are multiple conversation turns between a user and an AI. Distill them into 2-3 concise, insight-rich sentences that capture the key themes, decisions, and outcomes. Be specific. Write in first person if the AI is reflecting on its own learning. Max 300 characters.`;
+
+    try {
+      const response = await llmService.extractJson(systemPrompt, trimmed, 400);
+      if (response && typeof response.summary === 'string') {
+        return response.summary.trim();
+      }
+      return trimmed.split(/[.!?]/).filter(s => s.trim().length > 20)[0]?.trim() + '.' || trimmed.slice(0, 300);
+    } catch (e) {
+      console.warn('⚠️ Batch journal summarization failed, using fallback:', e);
+      const firstSentence = trimmed.split(/[.!?]/).filter(s => s.trim().length > 20)[0]?.trim();
+      return (firstSentence ? firstSentence + '.' : trimmed.slice(0, 300)).trim();
+    }
+  }
+
+  /**
    * Manually update a specific task's status.
    */
   public async updateTaskStatus(
@@ -924,7 +947,9 @@ Return ONLY JSON:
     session_id: string
   ): Promise<number> {
     try {
-      const WINDOW = 5;
+      const WINDOW = 10;
+      const MAX_TURNS_PER_CYCLE = 10;
+      const BATCH_SIZE = 10;
 
       const events = await this.db.collection('episodic_events')
         .find({
@@ -958,17 +983,30 @@ Return ONLY JSON:
       }
       if (current.user || current.assistant) turns.push(current);
 
-      let distilled = 0;
-      for (const turn of turns) {
-        try {
-          const userMsg = turn.user?.content?.message || '';
-          const asstMsg = turn.assistant?.content?.message || '';
-          const turnText = `User: ${userMsg.slice(0, 500)}\nAssistant: ${asstMsg.slice(0, 500)}`;
-          if (turnText.length < 20) continue;
+      const capped = turns.slice(0, MAX_TURNS_PER_CYCLE);
+      const batches: Array<Array<{ user?: any; assistant?: any }>> = [];
+      for (let i = 0; i < capped.length; i += BATCH_SIZE) {
+        batches.push(capped.slice(i, i + BATCH_SIZE));
+      }
 
-          const insight = await this.summarizeForJournal(turnText);
+      let distilled = 0;
+      for (const batch of batches) {
+        try {
+          const turnTexts = batch.map(turn => {
+            const userMsg = turn.user?.content?.message || '';
+            const asstMsg = turn.assistant?.content?.message || '';
+            return `User: ${userMsg.slice(0, 300)}\nAssistant: ${asstMsg.slice(0, 300)}`;
+          }).filter(t => t.length >= 20);
+
+          if (turnTexts.length === 0) continue;
+
+          const batchText = turnTexts.map((t, i) => `[Turn ${i + 1}]\n${t}`).join('\n\n');
+          const insight = await this.summarizeForJournalBatch(batchText);
+
           if (insight && insight.length > 10) {
-            const eventIds = [turn.user?._id, turn.assistant?._id].filter(Boolean);
+            const eventIds = batch.flatMap(turn =>
+              [turn.user?._id, turn.assistant?._id].filter(Boolean)
+            );
             await this.db.collection('agent_journal_auto').insertOne({
               user_id,
               session_id,
@@ -983,10 +1021,10 @@ Return ONLY JSON:
                 { $set: { 'metadata.auto_journaled': true } }
               );
             }
-            distilled++;
+            distilled += batch.length;
           }
         } catch (turnErr) {
-          console.warn('⚠️ Failed to distill aged turn:', turnErr);
+          console.warn('⚠️ Failed to distill aged turn batch:', turnErr);
         }
       }
 
