@@ -51,8 +51,8 @@ class MemoryRetriever:
                 agent_messages = []
                 try:
                     # Prefer search_memories — works even when embeddings are loading
-                    agent_messages = await client.search_memories(
-                        "Attention: KolegaCoder OR TASK FOR KOLEGACODER",
+                agent_messages = await client.search_memories(
+                    "\"Attention: KolegaCode\" OR \"Attention: KolegaCoder\" OR \"FROM: OpenCode\"",
                         limit=5,
                     )
                 except Exception:
