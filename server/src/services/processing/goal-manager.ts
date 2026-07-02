@@ -10,6 +10,7 @@
 import { get_database } from '../../database/connection.js';
 import { llmService } from '../infrastructure/llm-service.js';
 import { stableContentHash } from '../infrastructure/content-hash-utils.js';
+import { DecisionActionService } from './decision-action-service.js';
 
 export interface DependencyTask {
   id: string;
@@ -126,15 +127,46 @@ export class GoalManager {
    * Respects dependency ordering: a task is only available when all its
    * dependencies are completed.
    */
+  /**
+   * Get the next unblocked subtask. When multiple tasks are available,
+   * uses RL-guided selection (the bottleneck forces a choice — learn from it).
+   * Falls back to topological ordering when RL has no data yet.
+   */
   getNextAction(plan: GoalPlan): DependencyTask | null {
-    for (const task of plan.subtasks) {
-      if (task.status === 'completed' || task.status === 'blocked') continue;
-      const allDepsDone = task.dependsOn.every(depId =>
-        plan.subtasks.find(t => t.id === depId)?.status === 'completed'
+    const unblocked = plan.subtasks.filter(t => {
+      if (t.status === 'completed' || t.status === 'blocked') return false;
+      return t.dependsOn.every(depId =>
+        plan.subtasks.find(st => st.id === depId)?.status === 'completed'
       );
-      if (allDepsDone) return task;
-    }
-    return null; // All done or all blocked
+    });
+
+    if (unblocked.length === 0) return null;
+    if (unblocked.length === 1) return unblocked[0];
+
+    // ── Bottleneck → RL Decision ──────────────────────────────
+    // Multiple tasks available — use RL to choose. Falls back to
+    // topological ordering when Q-values are uninitialized.
+    try {
+      const actionIds = unblocked.map(t => t.id);
+      const result = DecisionActionService.get_instance().selectAction(
+        `goal:${plan.goalId}`,
+        actionIds,
+        {
+          activeGoalTerms: plan.goalText.split(/\s+/).slice(0, 5),
+        }
+      );
+
+      if (result.crossed && result.selected_action) {
+        const chosen = unblocked.find(t => t.id === result.selected_action);
+        if (chosen) {
+          // Record that we made this choice (outcome recorded when task completes)
+          return chosen;
+        }
+      }
+    } catch { /* RL unavailable — fall through to topological */ }
+
+    // Fallback: first unblocked task (topological)
+    return unblocked[0];
   }
 
   /**
@@ -167,6 +199,24 @@ export class GoalManager {
       { goalId: plan.goalId },
       { $set: { subtasks: plan.subtasks.map(t => this.serializeTask(t)), updatedAt: plan.updatedAt } }
     );
+
+    // ── RL Outcome Recording ──────────────────────────────────
+    // Feed task outcome back into the RL loop so it learns which
+    // task selections lead to good outcomes.
+    try {
+      const expectedOutcome = 0.7; // Baseline: expect tasks to progress
+      let actualOutcome = expectedOutcome;
+      if (status === 'completed') actualOutcome = 1.0;
+      else if (status === 'blocked') actualOutcome = 0.2;
+      else if (status === 'in_progress') actualOutcome = 0.6;
+      
+      DecisionActionService.get_instance().recordOutcome(
+        `goal:${plan.goalId}`,
+        taskId,
+        expectedOutcome,
+        actualOutcome
+      );
+    } catch { /* non-critical */ }
 
     return plan;
   }
