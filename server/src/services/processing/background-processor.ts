@@ -17,6 +17,7 @@ import { ProspectiveMemoryService } from '../memory/prospective-memory-service.j
 import { embeddingService } from '../infrastructure/embedding-service.js';
 import { entityResolver } from '../integration/entity-resolver.js';
 import { stableContentHash } from '../infrastructure/content-hash-utils.js';
+import { DecisionActionService } from './decision-action-service.js';
 
 export class BackgroundProcessor {
   private static instance: BackgroundProcessor;
@@ -397,6 +398,25 @@ export class BackgroundProcessor {
       }
     });
 
+    // ── RL Outcome Recording ──────────────────────────────────────
+    // Feed extraction quality into the RL loop so Q-values are learned
+    // from real processing outcomes. Fire-and-forget: never throw.
+    try {
+      const qualityScore = Math.min(1, (
+        (extractionResult.entities.length * 0.3) +
+        (extractionResult.relationships.length * 0.3) +
+        (extractionResult.semantic_facts.length * 0.4)
+      ) / 10);
+      DecisionActionService.get_instance().recordOutcome(
+        `extraction:${event.event_type || 'unknown'}`,
+        'full_extraction',
+        0.5,
+        parseFloat(qualityScore.toFixed(4))
+      );
+    } catch (rlErr: any) {
+      // Non-critical — RL loop failure must not break processing
+    }
+
     // Update processing log to completed status — store summary only (not raw data)
     if (idempotencyKey) {
       await this.updateProcessingLogEntry(idempotencyKey, 'completed', {
@@ -452,6 +472,16 @@ export class BackgroundProcessor {
         reason: 'system_event_triaged',
       },
     });
+
+    // ── RL Outcome Recording (triage) ────────────────────────────
+    try {
+      DecisionActionService.get_instance().recordOutcome(
+        `triage:${event.event_type || 'unknown'}`,
+        'lightweight_triage',
+        1.0,
+        1.0
+      );
+    } catch { /* non-critical */ }
   }
 
   /**
