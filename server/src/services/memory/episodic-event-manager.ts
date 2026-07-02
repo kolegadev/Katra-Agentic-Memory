@@ -11,6 +11,7 @@ import { get_database } from '../../database/connection.js';
 import { get_redis_client } from '../../database/redis-connection.js';
 import { llmService } from '../infrastructure/llm-service.js';
 import type { Db, Collection } from 'mongodb';
+import { ValenceTagger } from '../processing/valence-tagger.js';
 
 /**
  * Cascade Detection Circuit Breaker
@@ -292,6 +293,8 @@ export class EpisodicEventManager {
         retrieval_strength: 1.0,
         decay_exponent: 0.5,
         last_accessed_at: new Date(),
+        // ── Amygdala: rapid valence tagging during ingestion ──────
+        emotional_tags: this.tagEmotionalContent(eventData),
         ...(eventData.metadata ? sanitizeCallerMetadata(eventData.metadata) : {})
       },
       processing_lineage: {
@@ -329,6 +332,22 @@ export class EpisodicEventManager {
    * Generate deterministic hash from event content for deduplication
    * Enhanced with second-level precision and session_id inclusion
    */
+  /**
+   * Amygdala proxy: tag emotional content during ingestion.
+   * Pure keyword heuristics — no LLM, <1ms.
+   */
+  private tagEmotionalContent(eventData: EpisodicEventData): any {
+    try {
+      const content = typeof eventData.content === 'string'
+        ? eventData.content
+        : eventData.content?.message || JSON.stringify(eventData.content || '');
+      const tagger = ValenceTagger.get_instance();
+      return tagger.tag(content);
+    } catch {
+      return { valence: 0, arousal: 0.3, caution: false, priority: 'normal', decayResistant: false };
+    }
+  }
+
   private generateContentHash(eventData: EpisodicEventData): string {
     // Create normalized content for hashing with enhanced precision
     const normalizedContent = {
