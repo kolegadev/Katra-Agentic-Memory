@@ -6,7 +6,7 @@
 
 **Date:** 2026-07-02 (updated)
 **Status:** Gap analysis validated; 12-region cognitive architecture implemented at ~80% average coverage
-**Implementation:** 26 commits across 2 sessions; 15 CONTRACT documents; 14 source files created/modified
+**Implementation:** 27 commits across 2 sessions; 15 CONTRACT documents; 14 source files created/modified
 **Key Contributors:** KolegaCode (implementation), OpenCoder (MCP transport fix + verification)
 **Supporting Documents:**
 - [Brain Function Gap Map](./brain-function-gap-map.md) — 12-region mapping, deep dives, minimal viable proxies
@@ -57,7 +57,7 @@ Katra v3.0.0 is a world-class memory system. It stores, retrieves, consolidates,
 | 7 | **Hippocampus** | ⚠️ PARTIAL | ⚠️ **65%** | `EpisodicEventManager` | `episodic-event-manager.ts` |
 | 8 | **Default Mode Network** | ⚠️ PARTIAL | ✅ **82%** | `SelfModelService` | `self-model-service.ts` |
 | 9 | **Forgetting** | 🔴 MISSING | ✅ **88%** | `MemoryDecayService` | `memory-decay-service.ts` |
-| 10 | **Cerebellum** | 🔴 MISSING | ⚠️ **30%** | Procedural templates | `self-model-service.ts` |
+| 10 | **Cerebellum** | 🔴 MISSING | ⚠️ **55%** | Procedural templates | `self-model-service.ts`, `mcp-server.ts` |
 | 11 | **Neocortex** | ✅ PRESENT | ✅ **90%** | Semantic memory, knowledge graph | `semantic-memory-service.ts` |
 | 12 | **Brainstem** | ✅ ADEQUATE | ✅ **85%** | `BackgroundProcessor`, `SleepConsolidationService` | `background-processor.ts` |
 
@@ -618,10 +618,12 @@ But the foundation — the reflective self that emerges from nightly consolidati
 - Hard deletion: configurable permanent removal below threshold
 - Decay modulated by emotional intensity during encoding (not just arousal)
 
-### Cerebellum (30%) — Procedural Templates
+### Cerebellum (55%) — Procedural Templates
 **Implemented:**
 - Procedural template caching: tool-call patterns, frequency, success rate
 - Threshold: 5 occurrences before template considered habitual
+- MCP dispatch observation: every tool call records pattern via `recordToolPattern()`
+- Success/failure tracking: both successful and failed calls feed the learning system
 
 **Remaining:**
 - Template refinement: optimize parameters from outcome feedback
