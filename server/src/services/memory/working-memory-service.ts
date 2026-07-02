@@ -8,6 +8,7 @@
 import { get_redis_client, is_redis_healthy } from '../../database/redis-connection.js';
 import { get_database } from '../../database/connection.js';
 import { v4 as uuidv4 } from 'uuid';
+import { DecisionActionService } from '../processing/decision-action-service.js';
 
 export interface WorkingMemoryItem {
     id: string;
@@ -662,6 +663,8 @@ export class WorkingMemoryService {
     private readonly MAX_ACTIVE_ITEMS = 5;
     private readonly DECAY_RATE = 0.10;  // 10% per minute
     private readonly STRENGTH_FLOOR = 0.2;
+    private readonly EVICTED_PREFIX = 'evicted:';
+    private readonly REGRET_TTL = 3600;  // 1 hour to detect regret
 
     /**
      * Add an item to the active working memory set. Enforces capacity limit
@@ -692,10 +695,43 @@ export class WorkingMemoryService {
         // Use sorted set: score = salience for eviction ordering
         await redis.zadd(key, item.salience, JSON.stringify(item));
 
-        // Enforce capacity: evict lowest score (salience) if over limit
+        // ── Bottleneck: capacity 5 forces eviction choice ──────────
+        // Each eviction is an RL decision: "which item do I sacrifice?"
+        // Regret signal: if evicted item is later recalled, that was bad.
         const count = await redis.zcard(key);
         if (count > this.MAX_ACTIVE_ITEMS) {
-            await redis.zremrangebyrank(key, 0, count - this.MAX_ACTIVE_ITEMS - 1);
+            // Get all items to choose which to evict
+            const allItems = await redis.zrange(key, 0, -1);
+            const parsed: any[] = allItems.map((r: string) => JSON.parse(r));
+
+            // Choose eviction target: lowest salience + strength combo
+            // (RL learns which combinations are worth keeping over time)
+            parsed.sort((a, b) =>
+                (a.salience * a.strength) - (b.salience * b.strength)
+            );
+
+            const toRemove = count - this.MAX_ACTIVE_ITEMS;
+            for (let i = 0; i < toRemove && i < parsed.length; i++) {
+                const victim = parsed[i];
+                // Record eviction in regret tracker
+                await redis.setex(
+                    `${this.EVICTED_PREFIX}${tenantId}:${victim.id}`,
+                    this.REGRET_TTL,
+                    JSON.stringify({ id: victim.id, content: victim.content, evictedAt: Date.now() })
+                );
+                // Record RL outcome: expected to be a good eviction
+                try {
+                    DecisionActionService.get_instance().recordOutcome(
+                        `wm_eviction:${sessionId}`,
+                        victim.id,
+                        0.7,  // Expected: this was a reasonable eviction
+                        0.5   // Actual: neutral until regret/confirmation
+                    );
+                } catch { /* non-critical */ }
+            }
+
+            // Remove lowest items
+            await redis.zremrangebyrank(key, 0, toRemove - 1);
         }
 
         // Set TTL on the key
@@ -784,6 +820,32 @@ export class WorkingMemoryService {
         return raw
             .map((r: string) => JSON.parse(r))
             .filter((item: any) => item.strength > this.STRENGTH_FLOOR);
+    }
+
+    /**
+     * Bottleneck → RL: Check if a requested item was recently evicted.
+     * If so, that was a bad eviction — feed negative RL signal (regret).
+     * Call this when an item that was evicted is later accessed.
+     */
+    async detectRegret(tenantId: string, itemId: string, sessionId: string): Promise<boolean> {
+        const redis = await get_redis_client();
+        const regretKey = `${this.EVICTED_PREFIX}${tenantId}:${itemId}`;
+        const evicted = await redis.get(regretKey);
+
+        if (evicted) {
+            // Regret detected — the evicted item was needed again
+            try {
+                DecisionActionService.get_instance().recordOutcome(
+                    `wm_eviction:${sessionId}`,
+                    itemId,
+                    0.7,   // Expected: good eviction
+                    0.15   // Actual: regretted (item was needed)
+                );
+            } catch { /* non-critical */ }
+            await redis.del(regretKey); // Clear after recording
+            return true;
+        }
+        return false;
     }
 }
 
