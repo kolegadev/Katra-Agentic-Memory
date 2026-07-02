@@ -192,6 +192,10 @@ export class AutonomousExecutive {
     try {
       const gm = GoalManager.get_instance();
       const plan = await gm.decomposeGoal(USER_ID, goalText);
+
+      // Bridge: mirror the goal into memory_missions so list_missions can see it
+      await this.bridgeToMission(goalText, plan, dominant);
+
       const nextTask = gm.getNextAction(plan);
 
       if (!nextTask) {
@@ -445,6 +449,57 @@ export class AutonomousExecutive {
     }
 
     return executed;
+  }
+
+  /**
+   * Bridge: write the decomposed goal to memory_missions so the MCP
+   * list_missions tool can find it. Without this, Executive goals are
+   * invisible — they only exist in goal_plans which list_missions
+   * doesn't query.
+   */
+  private async bridgeToMission(
+    goalText: string,
+    plan: { goalId: string; subtasks: Array<{ id: string; title: string; dependsOn: string[] }> },
+    dominant: DriveName
+  ): Promise<void> {
+    try {
+      const db = get_database();
+      const missionId = `exec_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+      const taskTree = (plan.subtasks || []).map((t, i) => ({
+        id: t.id || `st${i + 1}`,
+        description: t.title,
+        status: i === 0 ? ('IN_PROGRESS' as const) : ('PENDING' as const),
+      }));
+
+      // Deactivate other autonomous missions to keep the list clean
+      await db.collection('memory_missions').updateMany(
+        {
+          user_id: USER_ID,
+          status: 'ACTIVE',
+          session_id: 'autonomous-executive',
+          _id: { $ne: missionId },
+        },
+        { $set: { status: 'PAUSED', pause_reason: 'New autonomous goal generated', updated_at: new Date() } }
+      );
+
+      await db.collection('memory_missions').insertOne({
+        _id: missionId,
+        user_id: USER_ID,
+        status: 'ACTIVE',
+        meta_goal: goalText,
+        internal_monologue: `Autonomous goal from ${dominant} drive (deficit-driven)`,
+        self_journal: [],
+        task_tree: taskTree,
+        session_id: 'autonomous-executive',
+        created_at: new Date(),
+        updated_at: new Date(),
+      });
+
+      console.log(`   🌉 Bridged to mission ${missionId}: "${goalText}" (${taskTree.length} tasks)`);
+    } catch (err: any) {
+      console.warn('   ⚠️ Mission bridge failed:', err.message);
+    }
   }
 
   private extractEntityFromGoal(goalText: string): string {

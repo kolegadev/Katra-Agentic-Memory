@@ -1560,10 +1560,10 @@ async function handleListMissions(args: unknown): Promise<TextContent[]> {
   const lines = [`## Missions — ${input.user_id}`, `*${missions.length} missions*\n`];
   if (missions.length === 0) lines.push('*No missions.*');
   else missions.forEach((m: any) => {
-    const emoji = m.status === 'active' ? '🔄' : m.status === 'completed' ? '✅' : m.status === 'paused' ? '⏸️' : '📝';
-    const done = m.tasks?.filter((t: any) => t.status === 'completed').length || 0;
-    const total = m.tasks?.length || 0;
-    lines.push(`- ${emoji} **${m.title || m.goal}** (${done}/${total}) — ${m.status}`);
+    const emoji = m.status === 'ACTIVE' ? '🔄' : m.status === 'COMPLETED' ? '✅' : m.status === 'PAUSED' ? '⏸️' : '📝';
+    const done = m.task_tree?.filter((t: any) => t.status === 'COMPLETED').length || 0;
+    const total = m.task_tree?.length || 0;
+    lines.push(`- ${emoji} **${m.title || m.meta_goal}** (${done}/${total}) — ${m.status}`);
   });
 
   return [{ type: 'text', text: lines.join('\n') }];
@@ -1624,29 +1624,33 @@ async function handleCreateMission(args: unknown): Promise<TextContent[]> {
 
   // Apply shared_id if in shared/hybrid mode
   const sharedId = await resolveSharedId(input.shared_id);
-  if (sharedId && mission.id) {
+  if (sharedId && mission._id) {
     const db = get_database();
     await db.collection('memory_missions').updateOne(
-      { id: mission.id },
+      { _id: mission._id },
       { $set: { shared_id: sharedId } }
     );
   }
 
-  if (input.tasks?.length && mission.tasks) {
+  if (input.tasks?.length && mission.task_tree) {
     for (const title of input.tasks) {
-      mission.tasks.push({
+      mission.task_tree.push({
         id: `t${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-        title,
-        status: 'pending',
-        created_at: new Date(),
+        description: title,
+        status: 'PENDING' as const,
       });
     }
-    await pms.updateMission(input.user_id, mission.id, { tasks: mission.tasks });
+    // Update the task_tree directly — updateMissionStatus only handles status changes
+    const db = get_database();
+    await db.collection('memory_missions').updateOne(
+      { _id: mission._id },
+      { $set: { task_tree: mission.task_tree, updated_at: new Date() } }
+    );
   }
 
   return [{
     type: 'text',
-    text: `✅ Mission created.\n\n**ID:** \`${mission.id}\`\n**Title:** ${mission.title || mission.goal}\n${input.tasks ? `**Tasks:** ${input.tasks.length} added` : ''}`,
+    text: `✅ Mission created.\n\n**ID:** \`${mission._id}\`\n**Title:** ${mission.meta_goal}\n${input.tasks ? `**Tasks:** ${input.tasks.length} added` : ''}`,
   }];
 }
 

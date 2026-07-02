@@ -15,7 +15,7 @@ import { getTenantContext } from '../../database/tenant-context.js';
  * when no user_id is supplied, so the two sides stay aligned. Reads from
  * SOLOMEM_USER_ID (set in .env) so deployments can configure it in one place.
  */
-export const DEFAULT_USER_ID = process.env.SOLOMEM_USER_ID || 'mcp-user';
+export const DEFAULT_USER_ID = process.env.SOLOMEM_USER_ID || 'kolega-agent';
 
 export interface MemoryScopeConfig {
   mode: 'personal' | 'shared' | 'hybrid';
