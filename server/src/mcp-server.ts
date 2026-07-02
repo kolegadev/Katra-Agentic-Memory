@@ -1563,7 +1563,10 @@ async function handleListMissions(args: unknown): Promise<TextContent[]> {
     const emoji = m.status === 'ACTIVE' ? '🔄' : m.status === 'COMPLETED' ? '✅' : m.status === 'PAUSED' ? '⏸️' : '📝';
     const done = m.task_tree?.filter((t: any) => t.status === 'COMPLETED').length || 0;
     const total = m.task_tree?.length || 0;
-    lines.push(`- ${emoji} **${m.title || m.meta_goal}** (${done}/${total}) — ${m.status}`);
+    const displayTitle = typeof m.title === 'string' ? m.title 
+      : (typeof m.meta_goal === 'string' ? m.meta_goal 
+      : (m.meta_goal?.goal || m.meta_goal?.title || 'Untitled'));
+    lines.push(`- ${emoji} **${displayTitle}** (${done}/${total}) — ${m.status}`);
   });
 
   return [{ type: 'text', text: lines.join('\n') }];
@@ -1617,10 +1620,8 @@ async function handleCreateMission(args: unknown): Promise<TextContent[]> {
   if (!is_database_connected()) return [{ type: 'text', text: '⚠️ MongoDB disconnected.' }];
 
   const pms = getProspectiveMemoryService();
-  const mission = await pms.createMission(input.user_id, {
-    goal: input.goal,
-    title: input.title || input.goal,
-  });
+  const goalText = input.title || input.goal;
+  const mission = await pms.createMission(input.user_id, goalText);
 
   // Apply shared_id if in shared/hybrid mode
   const sharedId = await resolveSharedId(input.shared_id);
