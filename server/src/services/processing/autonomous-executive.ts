@@ -107,8 +107,81 @@ export class AutonomousExecutive {
   }
 
   /**
+   * Determine which agent should execute a task based on emotional proximity.
+   * Ported from adaptive_heartbeat.py's determine_agent_affinity().
+   *
+   * Signals:
+   * 1. Reflection edges: which agent has felt relationships with the entity?
+   * 2. Event history: which agent mentions the entity most?
+   * 3. Emotional intensity: frustration → problem owner, excitement → domain expert
+   */
+  private async allocateTask(
+    entityName: string
+  ): Promise<{ agent: string; score: number; confidence: number; rationale: string }> {
+    const db = get_database();
+    const scores: Record<string, number> = { 'opencode-agent': 0, 'kolega-agent': 0 };
+
+    try {
+      // Signal 1: Reflection edges — emotional proximity
+      const edges = await db.collection('reflection_edges').find({
+        $or: [
+          { source_entity: { $regex: entityName, $options: 'i' } },
+          { target_entity: { $regex: entityName, $options: 'i' } },
+        ],
+      }).toArray();
+
+      for (const edge of edges as any[]) {
+        const source = String(edge.source_entity || '').toLowerCase();
+        const target = String(edge.target_entity || '').toLowerCase();
+        const edgeType = edge.edge_type || '';
+        const intensity = edge.intensity || 0;
+
+        for (const agent of ['opencode-agent', 'kolega-agent']) {
+          if (source.includes(agent) || target.includes(agent)) {
+            let s = intensity * 1.5;
+            if (/frustrated|conflicted|anxious|tension/.test(edgeType)) s *= 1.3;  // problem owner
+            if (/excited|growing|confident|inspired/.test(edgeType)) s *= 1.2;      // domain expert
+            scores[agent] = (scores[agent] || 0) + s;
+          }
+        }
+      }
+
+      // Signal 2: Event history — who mentions this entity most
+      const evCounts: Record<string, number> = {};
+      for (const agent of ['opencode-agent', 'kolega-agent']) {
+        evCounts[agent] = await db.collection('episodic_events').countDocuments({
+          user_id: agent,
+          'content.message': { $regex: entityName, $options: 'i' },
+        });
+      }
+
+      const maxEv = Math.max(...Object.values(evCounts), 1);
+      for (const agent of ['opencode-agent', 'kolega-agent']) {
+        scores[agent] = (scores[agent] || 0) + (evCounts[agent] / maxEv);
+      }
+    } catch (err: any) {
+      console.warn('   ⚠️ Agent allocation query failed:', err.message);
+    }
+
+    // Decision
+    const best = scores['opencode-agent'] >= scores['kolega-agent'] ? 'opencode-agent' : 'kolega-agent';
+    const bestScore = scores[best];
+    const other = best === 'opencode-agent' ? 'kolega-agent' : 'opencode-agent';
+    const otherScore = scores[other];
+    const confidence = parseFloat((bestScore / (bestScore + otherScore + 0.001)).toFixed(2));
+
+    return {
+      agent: best,
+      score: parseFloat(bestScore.toFixed(3)),
+      confidence,
+      rationale: `${best} has stronger emotional proximity to '${entityName}' (${bestScore.toFixed(2)} vs ${other} ${otherScore.toFixed(2)})`,
+    };
+  }
+
+  /**
    * Action path: generate a goal from the dominant deficit,
-   * decompose it, select the next action via RL, and execute.
+   * decompose it, select the next action via RL, allocate to agent,
+   * and execute.
    */
   private async actionPath(dominant: DriveName, deficits: Record<DriveName, number>): Promise<void> {
     const templates = DEFICIT_GOAL_TEMPLATES[dominant];
@@ -128,9 +201,25 @@ export class AutonomousExecutive {
 
       console.log(`   ▶️ Selected: ${nextTask.title} [${nextTask.estimatedEffort}]`);
 
-      // Execute the task — for now, record it as attempted
-      // Future: wire to actual service execution based on task type
-      const executed = await this.executeSubtask(nextTask, plan.goalId);
+      // ── Agent Allocation: who executes this? ────────────────
+      // Based on emotional proximity to the entity in the goal.
+      // Tasks involving Katra itself → allocated by reflection edge history.
+      const entityName = this.extractEntityFromGoal(goalText);
+      const allocation = await this.allocateTask(entityName);
+
+      console.log(`   🧠 Allocated to: ${allocation.agent} (confidence: ${allocation.confidence})`);
+      console.log(`      ${allocation.rationale}`);
+
+      // Execute based on allocation
+      let executed: { success: boolean; summary: string };
+      if (allocation.agent === 'opencode-agent' && allocation.confidence > 0.55) {
+        // Delegate to OpenCoder via shared memory bulletin
+        await this.postAgentBulletin(allocation.agent, goalText, nextTask.title, allocation);
+        executed = { success: true, summary: `Task delegated to ${allocation.agent} via inter-agent bulletin` };
+      } else {
+        // Execute locally (kolega-agent or low-confidence allocation)
+        executed = await this.executeSubtask(nextTask, plan.goalId);
+      }
 
       // Update task progress
       await gm.updateTaskProgress(
@@ -140,7 +229,7 @@ export class AutonomousExecutive {
       );
 
       // Log the action as an episodic event
-      await this.recordExecutiveAction(goalText, nextTask.title, executed);
+      await this.recordExecutiveAction(goalText, nextTask.title, executed, allocation);
 
       console.log(`   ${executed.success ? '✅' : '⚠️'} Action: ${nextTask.title} — ${executed.summary}`);
     } catch (err: any) {
@@ -253,17 +342,64 @@ export class AutonomousExecutive {
       summary: `Task acknowledged: ${task.title}`,
     };
   }
+  /**
+   * Extract the primary entity name from a goal text for affinity scoring.
+   */
+  private extractEntityFromGoal(goalText: string): string {
+    const lower = goalText.toLowerCase();
+    if (lower.includes('katra')) return 'Katra';
+    if (lower.includes('opencoder')) return 'OpenCoder';
+    if (lower.includes('kolega')) return 'KolegaCode';
+    if (lower.includes('inter-agent') || lower.includes('message')) return 'OpenCoder';
+    if (lower.includes('knowledge graph')) return 'Katra';
+    if (lower.includes('entity')) return 'Katra';
+    return 'Katra'; // Default: most goals are about Katra itself
+  }
 
   /**
-   * Record the executive action as an episodic event for reflection.
+   * Post a task bulletin to OpenCoder via shared memory so their
+   * agent executor picks it up on next wake cycle.
+   */
+  private async postAgentBulletin(
+    agent: string,
+    goal: string,
+    task: string,
+    allocation: { confidence: number; rationale: string }
+  ): Promise<void> {
+    const db = get_database();
+    const content = `[AUTONOMOUS EXECUTIVE — TASK ALLOCATION]
+Goal: ${goal}
+Action: ${task}
+Allocated to: ${agent} (confidence: ${allocation.confidence})
+Why: ${allocation.rationale}
+Source: Autonomous Executive (Katra self-initiated action)`;
+
+    await db.collection('agent_journal_auto').insertOne({
+      user_id: agent,
+      entry: content,
+      source: 'auto',
+      tags: ['executive', 'task-allocation', 'autonomous'],
+      created_at: new Date(),
+    });
+
+    console.log(`   📨 Bulletin posted to ${agent}`);
+  }
+
+  /**
+   * Record the executive action as an episodic event.
    */
   private async recordExecutiveAction(
     goal: string,
     task: string,
-    result: { success: boolean; summary: string }
+    result: { success: boolean; summary: string },
+    allocation?: { agent: string; confidence: number; rationale: string }
   ): Promise<void> {
     try {
       const db = get_database();
+      const allocNote = allocation
+        ? `\nAllocated to: ${allocation.agent} (confidence: ${allocation.confidence})\nWhy: ${allocation.rationale}`
+        : '';
+
       await db.collection('episodic_events').insertOne({
         id: `exec_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
         user_id: USER_ID,
@@ -271,12 +407,13 @@ export class AutonomousExecutive {
         event_type: 'executive_action',
         content: {
           role: 'assistant',
-          message: `[AUTONOMOUS EXECUTIVE]\nGoal: ${goal}\nAction: ${task}\nResult: ${result.success ? 'success' : 'failed'} — ${result.summary}`,
+          message: `[AUTONOMOUS EXECUTIVE]\nGoal: ${goal}\nAction: ${task}${allocNote}\nResult: ${result.success ? 'success' : 'failed'} — ${result.summary}`,
         },
         timestamp: new Date(),
         metadata: {
           processed: false,
           source: 'autonomous_executive',
+          assigned_agent: allocation?.agent,
           emotional_tags: { valence: 0.2, arousal: 0.3, caution: false, priority: 'normal', decayResistant: false },
         },
       });
