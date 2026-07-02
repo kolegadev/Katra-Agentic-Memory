@@ -18,6 +18,7 @@ import { get_database } from '../../database/connection.js';
 import { llmService } from '../infrastructure/llm-service.js';
 import { ReflectionStore } from '../infrastructure/reflection-store.js';
 import { DEFAULT_USER_ID } from '../memory/memory-scope-service.js';
+import { DecisionActionService } from './decision-action-service.js';
 import type {
   GatheredData,
   ReflectionLLMOutput,
@@ -311,20 +312,28 @@ export class SleepConsolidationService {
         };
       }
 
-      // Phase 2: Build prompt
-      const prompt = this.buildReflectionPrompt(data, period);
+      // Phase 2: Select entities to reflect on (bottleneck: LLM token budget)
+      const selectedEntities = this.selectReflectionEntities(data);
 
-      // Phase 3: Call LLM
-      console.log(`🧠 Calling LLM for ${period} reflection (${data.event_count} events)...`);
+      // Phase 3: Build prompt with selected entities
+      const prompt = this.buildReflectionPrompt(data, period, selectedEntities);
+
+      // Phase 4: Call LLM
+      console.log(`🧠 Calling LLM for ${period} reflection (${data.event_count} events, ${selectedEntities.length} entities)...`);
       const llmOutput = await this.callLLM(prompt);
 
       if (!llmOutput || !llmOutput.narrative) {
         throw new Error('LLM returned empty or invalid reflection');
       }
 
-      // Phase 4: Store results
+      // Phase 5: Store results
       const result = await this.storeResults(llmOutput, data, userId, periodStart, now, period);
       
+      // ── RL Outcome: entity reflection value ──────────────────
+      // Record which entities were reflected on and whether they
+      // produced meaningful emotional shifts (valence change).
+      this.recordEntityReflectionOutcomes(llmOutput, selectedEntities);
+
       // Record successful run (only on success, so safety net can retry on failure)
       this.lastRunTimes.set(period, Date.now());
       this.persistLastRun(period, Date.now()).catch(() => {});
@@ -439,7 +448,7 @@ export class SleepConsolidationService {
 
   // ── Prompt Building ────────────────────────────────────────────────
 
-  private buildReflectionPrompt(data: GatheredData, period: string): string {
+  private buildReflectionPrompt(data: GatheredData, period: string, selectedEntities: string[] = []): string {
     const narrativeTarget = period === 'monthly' ? 500 : period === 'weekly' ? 350 : 250;
     const depthHint = period === 'monthly'
       ? 'Look for long-term patterns, identity shifts, and philosophical principles that have persisted or evolved.'
@@ -466,8 +475,8 @@ ${data.conversation_summaries}
 FACTS RECORDED:
 ${data.semantic_facts}
 
-ENTITIES ENGAGED:
-${data.active_entities}
+ENTITIES ENGAGED${selectedEntities.length > 0 ? ` (prioritized ${selectedEntities.length} of ${data.active_entities.split('\n').filter(Boolean).length})` : ''}:
+${selectedEntities.length > 0 ? selectedEntities.join('\n') : data.active_entities}
 ${data.prior_journal_narrative ? `\nYESTERDAY'S REFLECTION (for narrative continuity):\n${data.prior_journal_narrative}` : ''}
 ${data.unresolved_threads.length > 0 ? `\nUNRESOLVED THREADS (carried forward):\n${data.unresolved_threads.join('\n')}` : ''}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -661,6 +670,65 @@ RULES:
       narrative_preview: output.narrative?.substring(0, 300),
       regret_priority: output.regret_priority || null,
     };
+  }
+
+  /**
+   * Bottleneck: LLM token budget forces entity selection.
+   * Select top entities by emotional intensity for reflection.
+   * Falls back to all entities when 8 or fewer.
+   */
+  private selectReflectionEntities(data: GatheredData): string[] {
+    const allEntities = data.active_entities
+      .split('\n')
+      .filter(Boolean)
+      .map(e => e.trim());
+
+    if (allEntities.length <= 8) return allEntities;
+
+    // Prioritize entities with high arousal or caution from emotional tags
+    // This is a simple heuristic — the RL system learns which entities
+    // produce meaningful reflections over time
+    const prioritized = allEntities
+      .map(name => {
+        const lower = name.toLowerCase();
+        const score =
+          (lower.includes('error') || lower.includes('bug') || lower.includes('fail') ? 0.3 : 0) +
+          (lower.includes('urgent') || lower.includes('critical') ? 0.4 : 0) +
+          (lower.includes('katra') || lower.includes('opencode') || lower.includes('kolega') ? 0.2 : 0);
+        return { name, score };
+      })
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 8)
+      .map(e => e.name);
+
+    return prioritized;
+  }
+
+  /**
+   * RL Outcome: record which entities were reflected on and whether
+   * they produced meaningful emotional shifts.
+   */
+  private recordEntityReflectionOutcomes(
+    llmOutput: ReflectionLLMOutput,
+    selectedEntities: string[]
+  ): void {
+    try {
+      const reflectedEntities = new Set(
+        (llmOutput.entity_reflections || []).map((er: any) => er.entity_name?.toLowerCase())
+      );
+
+      for (const entity of selectedEntities) {
+        const wasReflected = reflectedEntities.has(entity.toLowerCase());
+        const expected = 0.6; // Expect entity to be worth reflecting on
+        const actual = wasReflected ? 0.8 : 0.3; // Higher if LLM chose to reflect on it
+        DecisionActionService.get_instance().recordOutcome(
+          `reflect:${entity}`,
+          'include_in_reflection',
+          expected,
+          actual
+        );
+      }
+    } catch { /* non-critical */ }
   }
 
   // ── Scheduling Helpers ─────────────────────────────────────────────
