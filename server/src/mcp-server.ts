@@ -634,7 +634,7 @@ async function handleGetMemoryDecayStats(args: unknown): Promise<TextContent[]> 
   const service = MemoryDecayService.get_instance();
   const stats = await service.getDecayStats(userId);
   if (stats.length === 0) return [{ type: 'text', text: 'No memory decay data available yet.' }];
-  const lines = stats.map(s => `**${(s.memory_type || 'unknown').toUpperCase()}** — ${s.total_memories} total, ${s.active_memories} active, ${s.decaying_memories} decaying, ${s.forgotten_memories} forgotten (avg strength: ${s.average_strength})`);
+  const lines = stats.map(s => `**${(s.memoryType || 'unknown').toUpperCase()}** — ${s.totalMemories} total, ${s.decayedCount} decayed, ${s.reinforcedCount} reinforced (avg strength: ${s.averageStrength}, min: ${s.minStrength}, max: ${s.maxStrength})`);
   return [{ type: 'text', text: `## Memory Decay Statistics\n\n${lines.join('\n\n')}` }];
 }
 
@@ -664,14 +664,28 @@ async function handleGetQuarantinedMemories(args: unknown): Promise<TextContent[
 async function handleGetSalienceState(): Promise<TextContent[]> {
   const service = SalienceService.get_instance();
   const report = service.getAttentionReport();
-  const lines = [`**Meta-State:** \`${report.meta_state}\``, `**Attention Threshold:** ${report.threshold}`, `**Avg Score:** ${report.average_score}`, `**Active Goals:** ${report.active_goals.length > 0 ? report.active_goals.join(', ') : 'none'}`, '', '### Distribution', `- High: ${report.recent_high_salience_count}`, `- Medium: ${report.recent_medium_salience_count}`, `- Low: ${report.recent_low_salience_count}`];
+  const scores = report.recent_scores || [];
+  const avgScore = scores.length > 0
+    ? parseFloat((scores.reduce((a: number, b: number) => a + b, 0) / scores.length).toFixed(4))
+    : 0;
+  const highCount = scores.filter((s: number) => s > 0.7).length;
+  const medCount = scores.filter((s: number) => s >= 0.35 && s <= 0.7).length;
+  const lowCount = scores.filter((s: number) => s < 0.35).length;
+  const lines = [`**Meta-State:** \`${report.meta_state}\``, `**Attention Threshold:** ${report.threshold}`, `**Avg Score:** ${avgScore}`, `**Active Goals:** ${report.goal_count || 0}`, '', '### Distribution', `- High (>0.7): ${highCount}`, `- Medium (0.35-0.7): ${medCount}`, `- Low (<0.35): ${lowCount}`];
   return [{ type: 'text', text: `## Salience / Attention State\n\n${lines.join('\n')}` }];
 }
 
 async function handleGetAttentionReport(): Promise<TextContent[]> {
   const service = SalienceService.get_instance();
   const report = service.getAttentionReport();
-  const lines = [`## Attention Report`, '', `**Meta-State:** \`${report.meta_state}\``, `**Threshold:** ${report.threshold}`, `**Avg Score:** ${report.average_score}`, '', '### Processing Distribution (last 50)', `- High (>0.7): ${report.recent_high_salience_count}`, `- Medium (0.35-0.7): ${report.recent_medium_salience_count}`, `- Low (<0.35): ${report.recent_low_salience_count}`, '', '*High → full processing. Medium → embedding only. Low → minimal storage, faster decay.*'];
+  const scores = report.recent_scores || [];
+  const avgScore = scores.length > 0
+    ? parseFloat((scores.reduce((a: number, b: number) => a + b, 0) / scores.length).toFixed(4))
+    : 0;
+  const highCount = scores.filter((s: number) => s > 0.7).length;
+  const medCount = scores.filter((s: number) => s >= 0.35 && s <= 0.7).length;
+  const lowCount = scores.filter((s: number) => s < 0.35).length;
+  const lines = [`## Attention Report`, '', `**Meta-State:** \`${report.meta_state}\``, `**Threshold:** ${report.threshold}`, `**Avg Score:** ${avgScore}`, '', '### Processing Distribution (last 50)', `- High (>0.7): ${highCount}`, `- Medium (0.35-0.7): ${medCount}`, `- Low (<0.35): ${lowCount}`, '', '*High → full processing. Medium → embedding only. Low → minimal storage, faster decay.*'];
   return [{ type: 'text', text: lines.join('\n') }];
 }
 
@@ -701,7 +715,10 @@ async function handleGetSourceTrust(args: unknown): Promise<TextContent[]> {
 async function handleGetErrorReport(): Promise<TextContent[]> {
   const service = DecisionActionService.get_instance();
   const report = service.getErrorReport();
-  const lines = [`**Accuracy:** ${(report.accuracy * 100).toFixed(1)}%`, `**Avg TD Error:** ${report.average_td_error}`, `**Surprise Rate:** ${(report.surprise_rate * 100).toFixed(1)}%`, `**Conflicts:** ${report.conflict_count}`, `**Recent Errors Tracked:** ${report.recent_prediction_errors}`];
+  const recentDeltasStr = report.recentDeltas && report.recentDeltas.length > 0
+    ? report.recentDeltas.slice(-5).map((d: number) => d.toFixed(4)).join(', ')
+    : 'none';
+  const lines = [`**Accuracy:** ${(report.accuracy * 100).toFixed(1)}%`, `**Avg TD Error:** ${report.avgTdError}`, `**Surprise Rate:** ${(report.surpriseRate * 100).toFixed(1)}%`, `**Conflicts:** ${report.conflictCount}`, `**Recent TD Errors:** ${recentDeltasStr}`];
   return [{ type: 'text', text: `## Error Monitor (ACC)\n\n${lines.join('\n')}` }];
 }
 
