@@ -55,6 +55,7 @@ import { SalienceService } from './services/processing/salience-service.js';
 import { MotivationalEngine } from './services/processing/motivational-engine.js';
 import { DecisionActionService } from './services/processing/decision-action-service.js';
 import { SelfModelService } from './services/processing/self-model-service.js';
+import { GoalManager } from './services/processing/goal-manager.js';
 
 dotenv.config();
 
@@ -288,6 +289,11 @@ const UpdateMissionTaskInput = z.object({
   status: z.enum(['pending', 'in_progress', 'completed', 'blocked']),
 });
 
+const DecomposeGoalInput = z.object({
+  user_id: z.string().optional().describe('User ID'),
+  goal: z.string().min(1).describe('The goal text to decompose into subtasks'),
+});
+
 const GetMemoryDiagnosticsInput = z.object({
   user_id: z.string().optional(),
 });
@@ -416,6 +422,12 @@ const tools = [
     name: 'update_mission_task',
     description: 'Update the status of a task within a mission. Status can be: pending, in_progress, completed, or blocked.',
     inputSchema: zodToJsonSchema(UpdateMissionTaskInput) as Record<string, unknown>,
+  },
+  // ── PFC Goal Manager ──────────────────────────────────────
+  {
+    name: 'decompose_goal',
+    description: 'Decompose a goal into a dependency-ordered subtask graph. The Goal Manager (PFC proxy) uses LLM to break the goal into 3-7 subtasks with dependencies, then returns the next unblocked action. Use for planning multi-step work.',
+    inputSchema: zodToJsonSchema(DecomposeGoalInput) as Record<string, unknown>,
   },
   // ── Diagnostics ───────────────────────────────────────────
   {
@@ -1667,6 +1679,47 @@ async function handleUpdateMissionTask(args: unknown): Promise<TextContent[]> {
   }];
 }
 
+// ── PFC Goal Manager handler ──────────────────────────────────────
+
+async function handleDecomposeGoal(args: unknown): Promise<TextContent[]> {
+  const input = DecomposeGoalInput.parse(args);
+  const userId = resolveUserId(input.user_id);
+
+  const gm = GoalManager.get_instance();
+  const plan = await gm.decomposeGoal(userId, input.goal);
+  const nextAction = gm.getNextAction(plan);
+  const completion = gm.getCompletionPercent(plan);
+
+  const lines: string[] = [
+    `## Goal Decomposition`,
+    `**Goal:** ${input.goal}`,
+    `**Goal ID:** \`${plan.goalId}\``,
+    `**Progress:** ${completion}%`,
+    '',
+    '### Subtask Dependency Graph',
+  ];
+
+  for (const task of plan.subtasks) {
+    const icon = task.status === 'completed' ? '✅' : task.status === 'in_progress' ? '🔄' : task.status === 'blocked' ? '🚫' : '⬜';
+    const deps = task.dependsOn.length > 0 ? ` ← depends on: ${task.dependsOn.join(', ')}` : '';
+    const effort = `[${task.estimatedEffort}]`;
+    lines.push(`- ${icon} **${task.title}** ${effort}${deps}`);
+  }
+
+  if (nextAction) {
+    lines.push('', `### Next Action`, `▶️ **${nextAction.title}** (${nextAction.estimatedEffort})`);
+  } else {
+    const stalled = gm.detectStalledGoal(plan);
+    if (stalled) {
+      lines.push('', `⚠️ **Goal appears stalled** — no progress in 24h. Consider replanning or abandoning.`);
+    } else {
+      lines.push('', `✅ All tasks complete or blocked. No next action available.`);
+    }
+  }
+
+  return [{ type: 'text', text: lines.join('\n') }];
+}
+
 // ── Diagnostic handlers ────────────────────────────────────────────
 
 async function handleGetMemoryDiagnostics(args: unknown): Promise<TextContent[]> {
@@ -2291,8 +2344,9 @@ function registerHandlers(server: Server) {
         case 'list_missions': result = await handleListMissions(args); break;
         case 'get_mission': result = await handleGetMission(args); break;
         case 'create_mission': result = await handleCreateMission(args); break;
-        case 'update_mission_task': result = await handleUpdateMissionTask(args); break;
-        case 'get_memory_diagnostics': result = await handleGetMemoryDiagnostics(args); break;
+      case 'update_mission_task': result = await handleUpdateMissionTask(args); break;
+      case 'decompose_goal': result = await handleDecomposeGoal(args); break;
+      case 'get_memory_diagnostics': result = await handleGetMemoryDiagnostics(args); break;
         case 'get_background_status': result = await handleGetBackgroundStatus(args); break;
         case 'get_health': result = await handleGetHealth(); break;
         case 'explore_graph': result = await handleExploreGraph(args); break;
