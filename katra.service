@@ -1,0 +1,38 @@
+# Katra Cognitive Memory — Systemd Service
+# Ensures Katra starts on boot and stays running.
+#
+# Install:
+#   sudo cp katra.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now katra.service
+#
+# Check:
+#   systemctl status katra
+#   docker logs katra-server --tail 30
+#
+# Katra's Autonomous Executive provides the adaptive heartbeat:
+#   survival deficit > 0.2 → adrenaline mode (2 min)
+#   avg deficit > 0.5     → stressed (5 min)
+#   avg deficit > 0.3     → normal (10 min)
+#   avg deficit > 0.1     → calm (30 min)
+#   avg deficit ≤ 0.1     → rest (60 min)
+
+[Unit]
+Description=Katra Cognitive Memory Service
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/home/johnpellew/Katra-Agentic-Memory
+ExecStart=/usr/bin/docker compose up -d
+ExecStop=/usr/bin/docker compose down
+ExecReload=/usr/bin/docker compose up -d --force-recreate server
+Restart=on-failure
+RestartSec=30
+User=johnpellew
+
+[Install]
+WantedBy=multi-user.target

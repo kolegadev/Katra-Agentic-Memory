@@ -86,6 +86,33 @@ describe('Motivational Engine — Drives', () => {
     const after24h = tickDrive(0.5, 0.003, 24);
     expect(after24h).toBeCloseTo(0.428, 5);
   });
+
+  it('survival depletion rate is 0.002/hr (slowest — root drive)', () => {
+    const after24h = tickDrive(0.95, 0.002, 24);
+    expect(after24h).toBeCloseTo(0.902, 5);
+    const strength = computeDriveStrength(after24h, 0.95);
+    expect(strength).toBeCloseTo(0.050526, 3);
+  });
+
+  it('survival has the highest target (0.95) — it is the root drive', () => {
+    expect(computeDriveStrength(0.95, 0.95)).toBe(0);
+    // Even a small depletion of survival registers as significant
+    const afterDepletion = computeDriveStrength(0.85, 0.95);
+    expect(afterDepletion).toBeCloseTo(0.105263, 3);
+  });
+
+  it('survival depletes slower than all other drives', () => {
+    const driveDepletionRates = {
+      coherence: 0.005,
+      novelty: 0.01,
+      connection: 0.008,
+      growth: 0.003,
+      survival: 0.002,
+    };
+    // Survival has the lowest depletion rate
+    const rates = Object.values(driveDepletionRates);
+    expect(driveDepletionRates.survival).toBe(Math.min(...rates));
+  });
 });
 
 describe('Motivational Engine — Wanting/Liking', () => {

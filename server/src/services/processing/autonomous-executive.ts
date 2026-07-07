@@ -19,8 +19,20 @@ import { DecisionActionService } from './decision-action-service.js';
 import { get_database } from '../../database/connection.js';
 import { DEFAULT_USER_ID } from '../memory/memory-scope-service.js';
 
-const EXECUTIVE_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+// Adaptive cadence — like a biological heart:
+//   Survival threat (adrenaline):  2 min  — fastest, existential urgency
+//   High deficit (stressed):       5 min  — urgent, needs attention
+//   Moderate deficit (normal):    10 min  — attentive, engaged
+//   Low deficit (calm):           30 min  — satiated, cruising
+//   Very low deficit (rest):      60 min  — sleep-like, conservation
+const CADENCE_SURVIVAL_MS   = 2 * 60 * 1000;   // 2 minutes — survival threat
+const CADENCE_HIGH_MS       = 5 * 60 * 1000;   // 5 minutes — high deficit
+const CADENCE_MODERATE_MS   = 10 * 60 * 1000;  // 10 minutes — moderate
+const CADENCE_LOW_MS        = 30 * 60 * 1000;  // 30 minutes — low deficit
+const CADENCE_REST_MS       = 60 * 60 * 1000;  // 60 minutes — resting
+
 const DEFICIT_THRESHOLD = 0.3;
+const SURVIVAL_URGENCY_THRESHOLD = 0.2; // survival deficit > 0.2 → adrenaline mode
 
 const DEFICIT_GOAL_TEMPLATES: Record<DriveName, string[]> = {
   coherence: [
@@ -43,6 +55,13 @@ const DEFICIT_GOAL_TEMPLATES: Record<DriveName, string[]> = {
     'Fix a known limitation or unresolved thread',
     'Optimize a cognitive service based on error report data',
   ],
+  survival: [
+    'Verify Katra sleep consolidation ran successfully',
+    'Check memory integrity and protect against data loss',
+    'Strengthen identity kernel by reinforcing stable philosophical insights',
+    'Ensure the agent remains accessible and responsive to users',
+    'Defend against memory decay by reinforcing high-salience episodic memories',
+  ],
 };
 
 const USER_ID = DEFAULT_USER_ID;
@@ -62,22 +81,80 @@ export class AutonomousExecutive {
 
   start(): void {
     if (this.interval) return;
-    console.log('🧠 Autonomous Executive started (5-min cycle)');
+    console.log('💓 Autonomous Executive started (adaptive cadence)');
 
     // Run immediately on start
     this.tick().catch(err => console.error('Executive tick failed:', err));
 
-    this.interval = setInterval(() => {
-      this.tick().catch(err => console.error('Executive tick failed:', err));
-    }, EXECUTIVE_INTERVAL_MS);
+    // Use adaptive scheduling instead of fixed interval
+    this.scheduleNextTick();
   }
 
   stop(): void {
     if (this.interval) {
-      clearInterval(this.interval);
+      clearTimeout(this.interval);
       this.interval = null;
-      console.log('🧠 Autonomous Executive stopped');
+      console.log('💓 Autonomous Executive stopped');
     }
+  }
+
+  /**
+   * Compute adaptive cadence based on biological-heart metaphor.
+   *
+   * Survival deficit > 0.2 → adrenaline mode (2 min)
+   * Average deficit > 0.5  → stressed (5 min)
+   * Average deficit > 0.3  → normal (10 min)
+   * Average deficit > 0.1  → calm (30 min)
+   * Average deficit ≤ 0.1  → rest (60 min)
+   *
+   * This mirrors how a biological heart beats faster under stress
+   * (adrenaline/cortisol) and slows during rest (parasympathetic).
+   */
+  private computeAdaptiveCadence(): { intervalMs: number; mode: string } {
+    const engine = MotivationalEngine.get_instance();
+    const deficits = engine.getDriveDeficits();
+    const survivalDeficit = deficits.survival || 0;
+    const avgDeficit = engine.getAverageDeficit();
+
+    // Survival is the root drive — any significant depletion triggers adrenaline
+    if (survivalDeficit > SURVIVAL_URGENCY_THRESHOLD) {
+      return { intervalMs: CADENCE_SURVIVAL_MS, mode: 'adrenaline' };
+    }
+
+    if (avgDeficit > 0.5) {
+      return { intervalMs: CADENCE_HIGH_MS, mode: 'stressed' };
+    }
+
+    if (avgDeficit > DEFICIT_THRESHOLD) {
+      return { intervalMs: CADENCE_MODERATE_MS, mode: 'normal' };
+    }
+
+    if (avgDeficit > 0.1) {
+      return { intervalMs: CADENCE_LOW_MS, mode: 'calm' };
+    }
+
+    return { intervalMs: CADENCE_REST_MS, mode: 'rest' };
+  }
+
+  /**
+   * Schedule the next tick with adaptive cadence.
+   * Uses setTimeout recursively so the interval can change each cycle.
+   */
+  private scheduleNextTick(): void {
+    const { intervalMs, mode } = this.computeAdaptiveCadence();
+    const intervalMin = (intervalMs / 60000).toFixed(1);
+    console.log(`💓 Next heartbeat in ${intervalMin}m (${mode} mode)`);
+
+    this.interval = setTimeout(() => {
+      this.tick()
+        .catch(err => console.error('Executive tick failed:', err))
+        .finally(() => {
+          // Schedule next tick after current one completes
+          if (this.interval !== null) {
+            this.scheduleNextTick();
+          }
+        });
+    }, intervalMs);
   }
 
   private async tick(): Promise<void> {
@@ -92,9 +169,12 @@ export class AutonomousExecutive {
       const dominant = engine.getDominantDrive();
       const avgDeficit = engine.getAverageDeficit();
 
-      console.log(`\n🧠 Executive tick #${this.tickCount}`);
-      console.log(`   Dominant drive: ${dominant} (deficit: ${(deficits[dominant] * 100).toFixed(0)}%)`);
-      console.log(`   Avg deficit: ${(avgDeficit * 100).toFixed(0)}% (threshold: ${(DEFICIT_THRESHOLD * 100).toFixed(0)}%)`);
+      const survivalDeficit = deficits.survival || 0;
+      const cadence = this.computeAdaptiveCadence();
+
+      console.log(`\n💓 Executive tick #${this.tickCount} [${cadence.mode} mode]`);
+      console.log(`   Dominant: ${dominant} (${(deficits[dominant] * 100).toFixed(0)}%) | Survival: ${(survivalDeficit * 100).toFixed(0)}% | Avg: ${(avgDeficit * 100).toFixed(0)}%`);
+      console.log(`   Coherence: ${((deficits.coherence||0) * 100).toFixed(0)}% | Novelty: ${((deficits.novelty||0) * 100).toFixed(0)}% | Connection: ${((deficits.connection||0) * 100).toFixed(0)}% | Growth: ${((deficits.growth||0) * 100).toFixed(0)}%`);
 
       if (avgDeficit > DEFICIT_THRESHOLD) {
         await this.actionPath(dominant, deficits);
@@ -318,6 +398,48 @@ export class AutonomousExecutive {
         };
       } catch {
         return { success: false, summary: 'Failed to read error report' };
+      }
+    }
+
+    // ── Survival tasks: protect memory and identity ─────────────
+    if (title.includes('sleep consolidation') || title.includes('memory integrity') || title.includes('identity kernel') ||
+        title.includes('accessible') || title.includes('responsive') || title.includes('memory decay') || title.includes('reinforce')) {
+      try {
+        const db = get_database();
+        // Check if sleep consolidation has run recently
+        const lastReflection = await db.collection('reflective_journals').find({
+          period_type: 'daily',
+        }).sort({ created_at: -1 }).limit(1).toArray();
+
+        const lastRun = lastReflection[0]?.created_at
+          ? new Date(lastReflection[0].created_at).toISOString()
+          : 'never';
+
+        // Count stable philosophical insights (identity kernel health)
+        const stableInsights = await db.collection('philosophical_insights').countDocuments({
+          status: 'stable',
+          user_id: USER_ID,
+        });
+
+        // Check for unresolved threads that might indicate degradation
+        const unresolved = await db.collection('unresolved_threads').countDocuments({
+          status: 'active',
+          user_id: USER_ID,
+        });
+
+        const healthSummary = [
+          `Last sleep consolidation: ${lastRun}`,
+          `Stable insights (identity kernel): ${stableInsights}`,
+          `Active unresolved threads: ${unresolved}`,
+          `Memory state: ${stableInsights >= 1 ? 'healthy' : 'needs attention'}`,
+        ].join(' | ');
+
+        return {
+          success: true,
+          summary: healthSummary,
+        };
+      } catch {
+        return { success: false, summary: 'Failed to verify survival state' };
       }
     }
 

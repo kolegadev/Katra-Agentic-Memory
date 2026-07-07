@@ -1,6 +1,6 @@
 import { get_database } from '../../database/connection.js';
 
-export type DriveName = 'coherence' | 'novelty' | 'connection' | 'growth';
+export type DriveName = 'coherence' | 'novelty' | 'connection' | 'growth' | 'survival';
 
 interface DriveConfig {
   target: number;
@@ -54,10 +54,11 @@ export interface SourceTrustRecord {
 type TrustEventType = 'corroboration' | 'contradiction';
 
 const DRIVE_CONFIGS: Record<DriveName, DriveConfig> = {
-  coherence:  { target: 0.8, depletionRate: 0.005 },
-  novelty:    { target: 0.7, depletionRate: 0.01 },
-  connection: { target: 0.6, depletionRate: 0.008 },
-  growth:     { target: 0.5, depletionRate: 0.003 },
+  coherence:  { target: 0.8,  depletionRate: 0.005 },
+  novelty:    { target: 0.7,  depletionRate: 0.01 },
+  connection: { target: 0.6,  depletionRate: 0.008 },
+  growth:     { target: 0.5,  depletionRate: 0.003 },
+  survival:   { target: 0.95, depletionRate: 0.002 },
 };
 
 export class MotivationalEngine {
@@ -69,12 +70,13 @@ export class MotivationalEngine {
   private constructor() {
     const now = new Date();
     this.drives = {
-      coherence:  { current: 0.8, target: 0.8, strength: 0, trend: 'stable', lastTick: now },
-      novelty:    { current: 0.7, target: 0.7, strength: 0, trend: 'stable', lastTick: now },
-      connection: { current: 0.6, target: 0.6, strength: 0, trend: 'stable', lastTick: now },
-      growth:     { current: 0.5, target: 0.5, strength: 0, trend: 'stable', lastTick: now },
+      coherence:  { current: 0.8,  target: 0.8,  strength: 0, trend: 'stable', lastTick: now },
+      novelty:    { current: 0.7,  target: 0.7,  strength: 0, trend: 'stable', lastTick: now },
+      connection: { current: 0.6,  target: 0.6,  strength: 0, trend: 'stable', lastTick: now },
+      growth:     { current: 0.5,  target: 0.5,  strength: 0, trend: 'stable', lastTick: now },
+      survival:   { current: 0.95, target: 0.95, strength: 0, trend: 'stable', lastTick: now },
     };
-    this.previousDrives = { coherence: 0.8, novelty: 0.7, connection: 0.6, growth: 0.5 };
+    this.previousDrives = { coherence: 0.8, novelty: 0.7, connection: 0.6, growth: 0.5, survival: 0.95 };
   }
 
   static get_instance(): MotivationalEngine {

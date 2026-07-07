@@ -81,6 +81,8 @@ services:
       - .env
     environment:
       - KATRA_DISABLE_BACKGROUND_PROCESSOR=${KATRA_DISABLE_BACKGROUND_PROCESSOR:-false}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       mongo:
         condition: service_healthy

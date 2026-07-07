@@ -553,6 +553,30 @@ ingress with path routing, HPA, and PDB. See [Deployment Guide](docs/DEPLOYMENT.
 
 ## Maintenance & Operations
 
+### 🔄 Automatic Restart After Crashes (systemd)
+
+Katra runs an adaptive autonomic heartbeat that varies cadence based on drive
+deficits (survival=2min, stressed=5min, normal=10min, calm=30min, rest=60min).
+To ensure Katra survives host reboots and container crashes, install the
+systemd service:
+
+```bash
+sudo cp katra.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now katra
+```
+
+Verify:
+```bash
+systemctl status katra
+```
+
+Katra will now start on boot and restart automatically. This is your **personal
+fail-safe** — if Katra is down, run:
+```bash
+cd ~/Katra-Agentic-Memory && docker compose up -d
+```
+
 ### Rebuilding after code changes
 
 Katra bakes the TypeScript source into the Docker image at build time — there
