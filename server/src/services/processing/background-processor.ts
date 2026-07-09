@@ -119,7 +119,7 @@ export class BackgroundProcessor {
       // Only 5 conversation events per cycle. This forces real
       // prioritization — the RL loop must choose which events
       // get the expensive LLM extraction.
-      const CONVERSATION_BATCH_SIZE = 5;
+      const CONVERSATION_BATCH_SIZE = 12;
       const allUnprocessed = await this.memoryManager.get_unprocessed_events(100);
       const convEvents = allUnprocessed
         .filter((e: any) => !SYSTEM_EVENT_TYPES.has(e.event_type))

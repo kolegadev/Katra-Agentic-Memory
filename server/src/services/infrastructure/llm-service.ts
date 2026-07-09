@@ -13,12 +13,12 @@ export interface LLMConfig {
   provider: string;       // e.g. "deepseek", "openai", "moonshot", "ollama", "custom"
   api_key: string;        // API key (empty for ollama)
   base_url: string;       // e.g. "https://api.deepseek.com/v1"
-  model: string;          // e.g. "deepseek-v4-flash"
+  model: string;          // e.g. "qwythos-16k:latest"
 }
 
 /** Sensible defaults per provider name. */
 const PROVIDER_DEFAULTS: Record<string, { base_url: string; model: string }> = {
-  deepseek: { base_url: 'https://api.deepseek.com/v1', model: 'deepseek-v4-flash' },
+  deepseek: { base_url: 'http://localhost:11434/v1', model: 'qwythos-16k:latest' },
   openai:   { base_url: 'https://api.openai.com/v1',   model: 'gpt-4o' },
   moonshot: { base_url: 'https://api.moonshot.cn/v1',   model: 'moonshot-v1-8k' },
   ollama:   { base_url: 'http://host.docker.internal:11434/v1', model: 'llama3.2' },
@@ -178,7 +178,7 @@ export class LLMService {
         name: 'deepseek',
         key: process.env.DEEPSEEK_API_KEY,
         baseUrl: process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com/v1',
-        model: process.env.DEEPSEEK_MODEL || 'deepseek-v4-flash',
+        model: process.env.DEEPSEEK_MODEL || 'qwythos-16k:latest',
       });
     }
 
@@ -314,7 +314,9 @@ export class LLMService {
           max_tokens: 5,
         });
         const msg = response.choices[0]?.message as any;
-        if (msg?.content || msg?.reasoning_content) {
+        // Some models (e.g. Qwythos via Ollama) return reasoning text
+        // in "reasoning" rather than "content" or "reasoning_content".
+        if (msg?.content || msg?.reasoning_content || msg?.reasoning) {
           provider.available = true;
           console.log(`✅ LLM Provider validated: ${provider.name}`);
         }
@@ -791,7 +793,7 @@ CRITICAL RULES:
 const EXTRACTION_SYSTEM_PROMPT = `You are a cognitive memory distiller. Your job is to compress a conversation into a SMALL set of concise, self-contained, high-signal facts that an AI agent would want to recall later.
 
 Quality bar (this is the most important part):
-- CONCISE: each fact is one short, self-contained sentence. No paragraphs, no transcripts.
+- CONCISE: each fact is 1-3 sentences for simple topics, up to a short paragraph (4-5 sentences) when the reasoning chain matters. Always self-contained - no transcripts, no raw logs. Prefer depth over brevity for complex topics.
 - DEDUPLICATED: merge related points. If the same idea appears repeatedly, output it ONCE.
 - HIGH-SIGNAL: prefer durable facts (who the user is, what they're building, decisions made, preferences, goals, problems + resolutions). Skip filler, pleasantries, transient status ("loading...", "trying again"), and raw code/commands unless they encode a decision.
 - SELF-CONTAINED: a fact must make sense on its own without the surrounding conversation.
