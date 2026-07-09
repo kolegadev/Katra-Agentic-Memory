@@ -1,0 +1,17 @@
+[Unit]
+Description=Drive-to-Action Bridge — Katra subconscious to conscious agent
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/integrations/drive-to-action
+ExecStart=/usr/bin/python3 %h/integrations/drive-to-action/bridge.py
+Restart=always
+RestartSec=30
+Environment=KATRA_URL=http://localhost:3112/mcp
+Environment=POLL_INTERVAL=900
+Environment=DRIVE_DEFICIT_THRESHOLD=40
+Environment=WORRY_CYCLE_THRESHOLD=2
+
+[Install]
+WantedBy=default.target
