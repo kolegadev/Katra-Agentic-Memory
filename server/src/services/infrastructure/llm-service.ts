@@ -18,10 +18,10 @@ export interface LLMConfig {
 
 /** Sensible defaults per provider name. */
 const PROVIDER_DEFAULTS: Record<string, { base_url: string; model: string }> = {
-  deepseek: { base_url: 'http://localhost:11434/v1', model: 'qwythos-16k:latest' },
+  deepseek: { base_url: 'https://api.deepseek.com/v1', model: 'deepseek-v4-flash' },
   openai:   { base_url: 'https://api.openai.com/v1',   model: 'gpt-4o' },
   moonshot: { base_url: 'https://api.moonshot.cn/v1',   model: 'moonshot-v1-8k' },
-  ollama:   { base_url: 'http://host.docker.internal:11434/v1', model: 'llama3.2' },
+  ollama:   { base_url: 'http://host.docker.internal:11434/v1', model: 'qwen2.5:3b' },
   custom:   { base_url: '', model: '' },
 };
 
@@ -178,7 +178,16 @@ export class LLMService {
         name: 'deepseek',
         key: process.env.DEEPSEEK_API_KEY,
         baseUrl: process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com/v1',
-        model: process.env.DEEPSEEK_MODEL || 'qwythos-16k:latest',
+        model: process.env.DEEPSEEK_MODEL || 'deepseek-v4-flash',
+      });
+    }
+
+    if (process.env.OLLAMA_API_KEY) {
+      providerConfigs.push({
+        name: 'ollama',
+        key: process.env.OLLAMA_API_KEY,
+        baseUrl: process.env.OLLAMA_BASE_URL || 'http://host.docker.internal:11434/v1',
+        model: process.env.OLLAMA_MODEL || 'qwen2.5:3b',
       });
     }
 

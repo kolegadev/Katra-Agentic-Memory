@@ -233,38 +233,46 @@ See `integrations/kolega-code/README.md` for full configuration options.
 ## LLM Configuration
 
 Katra needs an LLM provider for semantic extraction, auto-journaling, entity
-extraction, and summaries. **Three ways to configure — no `.env` editing required:**
+extraction, and summaries. **Three ways to configure:**
 
-1. **MCP tool** (agents self-configure): Call `configure_llm` with provider,
+1. **Environment variables** (`.env` — read on startup): The simplest path.
+   See `.env.example` for all provider blocks. Ollama can now be configured
+   directly via `OLLAMA_API_KEY`, `OLLAMA_BASE_URL`, and `OLLAMA_MODEL`.
+2. **MCP tool** (agents self-configure): Call `configure_llm` with provider,
    API key, base URL, and model. Stored in MongoDB, applied live.
-2. **Dashboard UI**: Settings → LLM Configuration → select provider, enter key.
-3. **Environment variables**: Set in `.env` (fallback, read on startup only).
+3. **Dashboard UI**: Settings → LLM Configuration → select provider, enter key.
 
 Supported providers: DeepSeek, OpenAI, Moonshot, Ollama, Custom (any OpenAI-compatible).
 
 ### 💰 Reduce Inference Costs — Run Models Locally
 
 If you want more frequent semantic distillation, auto-journaling, and reflection
-without API bills, you can run open-source models locally via Ollama. With 32GB
-RAM, you have plenty of headroom. All models below run on CPU (no GPU needed),
-and work as drop-in replacements via Ollama's OpenAI-compatible API.
+without API bills, you can run open-source models locally via Ollama. On a
+machine with 32 GB RAM and a GPU (Vulkan/CUDA), Ollama auto-detects the GPU
+for hardware acceleration.
 
-**Recommended models for local inference on 32GB RAM:**
+**Recommended models for local inference:**
 
-| Model | RAM (Q4) | Best for |
-|---|---|---|
-| **Qwen 2.5 14B** | ~9 GB | Highest quality — best for serious distillation pipelines |
-| **Qwen 2.5 7B** | ~4.5 GB | Sweet spot — excellent quality, fast, leaves RAM for other services |
-| **Mistral 7B** | ~4.5 GB | Solid all-rounder for classification and structured extraction |
-| **Phi-4 14B** | ~8.5 GB | Microsoft — punches above weight on reasoning tasks |
-| **Gemma 3 12B** | ~7 GB | Google — strong at following templates/schemas |
-| **Llama 3.2 3B** | ~2.5 GB | Smallest/fastest — good enough for basic extraction, runs on anything |
+| Model | RAM (Q4) | Context | Best for |
+|---|---|---|---|
+| **Qwen 2.5 14B** | ~9 GB | 32K | Highest quality — best for serious distillation pipelines |
+| **Qwen 2.5 7B** | ~4.5 GB | 32K | Sweet spot — excellent quality, fast, leaves RAM for other services |
+| **Qwen 2.5 3B Instruct** ⭐ | ~1.9 GB | 32K | **Default** — best fit for semantic distillation, GQA, tools-capable |
+| **Mistral 7B** | ~4.5 GB | 32K | Solid all-rounder for classification and structured extraction |
+| **Phi-4 14B** | ~8.5 GB | 16K | Microsoft — punches above weight on reasoning tasks |
+| **Gemma 3 12B** | ~7 GB | 8K | Google — strong at following templates/schemas |
+| **Llama 3.2 3B** | ~2.5 GB | 128K | Huge context window for long transcripts |
 
 **Setup:**
 ```bash
-ollama pull qwen2.5:7b          # or llama3.2:3b, mistral, phi4:14b, etc.
-# Then configure Katra via dashboard or MCP:
-# Provider: Ollama, Base URL: http://localhost:11434, Model: qwen2.5:7b
+ollama pull qwen2.5:3b          # ⭐ recommended default for semantic distillation
+# Then configure Katra via .env, dashboard, or MCP:
+# .env:
+#   OLLAMA_API_KEY=ollama-no-key
+#   OLLAMA_BASE_URL=http://host.docker.internal:11434/v1
+#   OLLAMA_MODEL=qwen2.5:3b
+#
+# Dashboard/MCP: Provider: Ollama, Model: qwen2.5:3b
 ```
 
 The local embedding model (Xenova/all-MiniLM-L6-v2, ~80MB) is already free and
