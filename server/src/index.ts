@@ -138,8 +138,13 @@ async function main() {
 
   // Simple API key auth (skip for health endpoints)
   app.use('/api/*', async (c, next) => {
-    // Skip auth for health checks
-    if (c.req.path === '/api/v1/health' || c.req.path === '/api/v1/admin/dashboard-stats' || c.req.path === '/api/v1/admin/memory-search') {
+    // Skip auth for health checks, read-only dashboard/API data
+    if (c.req.path === '/api/v1/health' ||
+        c.req.path === '/api/v1/admin/dashboard-stats' ||
+        c.req.path === '/api/v1/admin/memory-search' ||
+        c.req.path === '/api/v1/admin/pubsub/presence' ||
+        c.req.path === '/api/v1/admin/pubsub/topics' ||
+        c.req.path === '/api/v1/admin/pubsub/muted') {
       return next();
     }
 

@@ -119,6 +119,7 @@ button{padding:8px 16px;border-radius:var(--radius-sm);border:none;font-size:0.8
       <button class="nav-btn" data-tab="keys"><span class="nav-icon">🔑</span> API Keys</button>
       <button class="nav-btn" data-tab="agents"><span class="nav-icon">🤖</span> Agents</button>
       <button class="nav-btn" data-tab="memory"><span class="nav-icon">🧠</span> Memory</button>
+      <button class="nav-btn" data-tab="bus"><span class="nav-icon">📡</span> Bus</button>
       <button class="nav-btn" data-tab="settings"><span class="nav-icon">⚙️</span> Settings</button>
     </nav>
     <div class="sidebar-footer">
@@ -223,6 +224,25 @@ button{padding:8px 16px;border-radius:var(--radius-sm);border:none;font-size:0.8
     <button class="btn btn-primary" onclick="searchMemory()">Search</button>
   </div>
   <div class="card"><div class="table-wrap"><table><thead><tr><th>Time</th><th>Collection</th><th>User</th><th>Content</th></tr></thead><tbody id="mem-results"></tbody></table></div></div>
+</section>
+
+<!-- ═══════════ BUS ═══════════ -->
+<section class="tab" id="tab-bus">
+  <div class="section-title">📡 Presence Board — Agents on the Pub-Sub Bus</div>
+  <div class="card"><div class="table-wrap"><table><thead><tr><th>Agent</th><th>Interests</th><th>Capabilities</th><th>Last Seen</th><th>Actions</th></tr></thead><tbody id="bus-presence"></tbody></table></div></div>
+  <div id="no-presence-msg" style="padding:16px;text-align:center;color:var(--text3)">Loading presence board…</div>
+
+  <div class="section-title">📬 Active Topic Channels</div>
+  <div class="card"><div class="table-wrap"><table><thead><tr><th>Topic</th><th>Channel</th><th>Subscribers</th></tr></thead><tbody id="bus-topics"></tbody></table></div></div>
+  <div id="no-topics-msg" style="padding:16px;text-align:center;color:var(--text3)">Loading topic channels…</div>
+
+  <div class="section-title">🔇 Muted Agents</div>
+  <div class="card">
+    <div id="bus-muted" style="font-size:0.82rem;line-height:1.8;padding:8px 0">Loading muted list…</div>
+  </div>
+  <div style="margin-top:14px">
+    <button class="btn btn-secondary" onclick="loadBus()">↻ Refresh Bus</button>
+  </div>
 </section>
 
 <!-- ═══════════ SETTINGS ═══════════ -->
@@ -334,6 +354,7 @@ async function loadTab(tab) {
     case 'keys': await loadKeys(); break;
     case 'agents': await loadAgents(); break;
     case 'memory': await searchMemory(); break;
+    case 'bus': await loadBus(); break;
     case 'settings': await loadSettings(); break;
   }
 }
@@ -700,6 +721,119 @@ async function forceProcess() {
     document.getElementById('sys-status').textContent = d.success ? '✅ Force process triggered' : '❌ ' + (d.error || '');
     toast(d.success ? 'Background processor triggered' : d.error, d.success ? 'success' : 'error');
   } catch(e) { document.getElementById('sys-status').textContent = '❌ ' + e.message; }
+}
+
+// ═══════════ PUB-SUB BUS ═══════════
+
+async function loadBus() {
+  await Promise.all([loadPresence(), loadTopics(), loadMuted()]);
+  document.getElementById('scope-badge').textContent = 'bus';
+}
+
+async function loadPresence() {
+  try {
+    const r = await fetch(`${API}/admin/pubsub/presence`);
+    const d = await r.json();
+    if (!d.success) {
+      document.getElementById('no-presence-msg').textContent = '⚠️ ' + (d.error || 'Could not load presence data');
+      return;
+    }
+
+    const agents = d.agents || {};
+    const ids = Object.keys(agents);
+    document.getElementById('no-presence-msg').textContent = ids.length === 0
+      ? '🔇 No agents on the bus. Agents join by calling bus.register() from katra_pubsub.'
+      : '';
+    document.getElementById('no-presence-msg').style.display = ids.length === 0 ? 'block' : 'none';
+
+    const tbody = document.getElementById('bus-presence');
+    tbody.innerHTML = ids.map(id => {
+      const a = agents[id];
+      const interests = (a.interests || []).map(i => `<span class="badge badge-blue" style="margin:1px">${i}</span>`).join(' ') || '—';
+      const capabilities = (a.capabilities || []).map(c => `<span class="badge badge-purple" style="margin:1px">${c}</span>`).join(' ') || '—';
+      const lastSeen = a.last_seen ? new Date(a.last_seen).toLocaleTimeString() : '—';
+      // Check if stale (>120s)
+      const stale = a.last_seen && (Date.now() - new Date(a.last_seen).getTime()) > 120000;
+      const statusDot = stale ? '<span class="status-dot status-off" title="Stale — no heartbeat in 120s"></span>' : '<span class="status-dot status-on" title="Online"></span>';
+      return `<tr>
+        <td>${statusDot} <span class="mono">${id}</span></td>
+        <td>${interests}</td>
+        <td>${capabilities}</td>
+        <td style="white-space:nowrap">${lastSeen}</td>
+        <td><button class="btn btn-danger btn-xs" onclick="muteAgent('${id}')" title="Remove from bus">🔇 Mute</button></td>
+      </tr>`;
+    }).join('');
+  } catch(e) {
+    document.getElementById('no-presence-msg').textContent = '⚠️ Error loading presence: ' + e.message;
+  }
+}
+
+async function loadTopics() {
+  try {
+    const r = await fetch(`${API}/admin/pubsub/topics`);
+    const d = await r.json();
+    if (!d.success) {
+      document.getElementById('no-topics-msg').textContent = '⚠️ ' + (d.error || 'Could not load topics');
+      return;
+    }
+    const topics = d.topics || [];
+    document.getElementById('no-topics-msg').textContent = topics.length === 0
+      ? '📭 No active topic channels. Topics are created when agents call bus.subscribe().'
+      : '';
+    document.getElementById('no-topics-msg').style.display = topics.length === 0 ? 'block' : 'none';
+
+    document.getElementById('bus-topics').innerHTML = topics.map(t => {
+      const subBadge = t.subscribers > 0 ? `<span class="badge badge-green">${t.subscribers}</span>` : `<span class="badge" style="background:var(--bg4);color:var(--text3)">0</span>`;
+      return `<tr>
+        <td><span class="badge badge-amber">${t.topic}</span></td>
+        <td class="mono" style="font-size:0.7rem">${t.channel}</td>
+        <td>${subBadge}</td>
+      </tr>`;
+    }).join('');
+  } catch(e) {
+    document.getElementById('no-topics-msg').textContent = '⚠️ Error loading topics: ' + e.message;
+  }
+}
+
+async function loadMuted() {
+  try {
+    const r = await fetch(`${API}/admin/pubsub/muted`);
+    const d = await r.json();
+    const muted = d.muted || [];
+    document.getElementById('bus-muted').innerHTML = muted.length === 0
+      ? '✅ No muted agents'
+      : muted.map(m => `<span class="badge badge-red" style="margin:2px">${m}</span> <button class="btn btn-primary btn-xs" onclick="unmuteAgent('${m}')">🔊 Unmute</button>`).join(' ');
+  } catch(e) {
+    document.getElementById('bus-muted').textContent = '⚠️ Error loading muted list';
+  }
+}
+
+async function muteAgent(agentId) {
+  if (!requireAuth()) return;
+  try {
+    const r = await fetch(`${API}/admin/pubsub/mute`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ agent_id: agentId, muted: true })
+    });
+    const d = await r.json();
+    toast(d.success ? `${agentId} muted ✓` : (d.error || 'Failed'), d.success ? 'success' : 'error');
+    if (d.success) loadBus();
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
+async function unmuteAgent(agentId) {
+  if (!requireAuth()) return;
+  try {
+    const r = await fetch(`${API}/admin/pubsub/mute`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ agent_id: agentId, muted: false })
+    });
+    const d = await r.json();
+    toast(d.success ? `${agentId} unmuted — needs re-register` : (d.error || 'Failed'), d.success ? 'success' : 'error');
+    if (d.success) loadBus();
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
 }
 
 // ── Init ──

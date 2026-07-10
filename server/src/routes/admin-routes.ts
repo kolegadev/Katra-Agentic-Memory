@@ -21,9 +21,12 @@ export const create_admin_routes = (): Hono => {
   // middleware state (no open-access fallback even in dev mode). Rejects tenant
   // keys in multi-tenant deployments because only the master admin key matches.
   router.use('*', async (c, next) => {
-    // Dashboard stats and memory search are read-only — no auth required
+    // Dashboard stats, memory search, and pub-sub bus read-only endpoints — no auth required
     if (c.req.path === '/admin/dashboard-stats' || c.req.path === '/api/v1/admin/dashboard-stats' ||
-        c.req.path === '/admin/memory-search' || c.req.path === '/api/v1/admin/memory-search') {
+        c.req.path === '/admin/memory-search' || c.req.path === '/api/v1/admin/memory-search' ||
+        c.req.path === '/admin/pubsub/presence' || c.req.path === '/api/v1/admin/pubsub/presence' ||
+        c.req.path === '/admin/pubsub/topics' || c.req.path === '/api/v1/admin/pubsub/topics' ||
+        c.req.path === '/admin/pubsub/muted' || c.req.path === '/api/v1/admin/pubsub/muted') {
       return next();
     }
 
@@ -1323,6 +1326,137 @@ export const create_admin_routes = (): Hono => {
   router.delete('/cache-stats', async (c) => {
     llmService.resetCacheStats();
     return c.json({ success: true, message: 'Cache stats reset' });
+  });
+
+  // ── Agent Pub-Sub Bus ────────────────────────────────
+
+  /**
+   * GET /api/v1/admin/pubsub/presence
+   * Returns the presence board — all agents registered on the pub-sub bus,
+   * their interests, capabilities, and last seen timestamps.
+   * Read-only, no auth required.
+   */
+  router.get('/pubsub/presence', async (c) => {
+    try {
+      const redis = await get_redis_client();
+      if (!redis) {
+        return c.json({ success: false, error: 'Redis not available' }, 503);
+      }
+
+      const raw = await redis.hGetAll('katra:presence');
+      const agents: Record<string, any> = {};
+      for (const [agent_id, json] of Object.entries(raw)) {
+        try {
+          agents[agent_id] = JSON.parse(json);
+        } catch {
+          agents[agent_id] = { agent_id, error: 'invalid json' };
+        }
+      }
+
+      // Also grab active pub-sub channels for context
+      const channels = await redis.pubSubChannels();
+      const topic_channels = channels.filter((ch: string) => ch.startsWith('katra:topics:'));
+
+      return c.json({
+        success: true,
+        agents,
+        agent_count: Object.keys(agents).length,
+        active_topics: topic_channels.length,
+      });
+    } catch (error: any) {
+      console.error('Pub-sub presence error:', error.message);
+      return c.json({ success: false, error: 'Internal server error' }, 500);
+    }
+  });
+
+  /**
+   * GET /api/v1/admin/pubsub/topics
+   * Returns active topic channels with subscriber counts and
+   * recent message counts where available.
+   * Read-only, no auth required.
+   */
+  router.get('/pubsub/topics', async (c) => {
+    try {
+      const redis = await get_redis_client();
+      if (!redis) {
+        return c.json({ success: false, error: 'Redis not available' }, 503);
+      }
+
+      const channels = await redis.pubSubChannels();
+      const topic_channels = channels.filter((ch: string) => ch.startsWith('katra:topics:'));
+
+      // Get subscriber counts for each topic channel
+      const topics: Array<{ channel: string; topic: string; subscribers: number }> = [];
+      for (const ch of topic_channels) {
+        const subs = await redis.pubSubNumSub(ch);
+        // subs is [channel, count] or an object depending on Redis client version
+        const count = Array.isArray(subs) ? (subs[1] || 0) : (typeof subs === 'object' ? (subs as any)[ch] || 0 : 0);
+        const topic = ch.replace('katra:topics:', '');
+        topics.push({ channel: ch, topic, subscribers: count });
+      }
+
+      return c.json({
+        success: true,
+        topics,
+        total_active_topics: topics.length,
+        total_subscriptions: topics.reduce((sum, t) => sum + t.subscribers, 0),
+      });
+    } catch (error: any) {
+      console.error('Pub-sub topics error:', error.message);
+      return c.json({ success: false, error: 'Internal server error' }, 500);
+    }
+  });
+
+  /**
+   * POST /api/v1/admin/pubsub/mute
+   * Mute/unmute an agent on the bus by removing/restoring their presence entry.
+   * Requires admin auth. Body: { agent_id: string, muted: boolean }
+   */
+  router.post('/pubsub/mute', async (c) => {
+    try {
+      const body = await c.req.json();
+      const { agent_id, muted } = body;
+
+      if (!agent_id) {
+        return c.json({ success: false, error: 'agent_id is required' }, 400);
+      }
+
+      // Store muted agents in a Redis set
+      const redis = await get_redis_client();
+      if (!redis) {
+        return c.json({ success: false, error: 'Redis not available' }, 503);
+      }
+
+      if (muted) {
+        await redis.sAdd('katra:pubsub:muted', agent_id);
+        // Remove from presence
+        await redis.hDel('katra:presence', agent_id);
+        return c.json({ success: true, message: `${agent_id} muted and removed from bus` });
+      } else {
+        await redis.sRem('katra:pubsub:muted', agent_id);
+        return c.json({ success: true, message: `${agent_id} unmuted — agent must re-register to rejoin` });
+      }
+    } catch (error: any) {
+      console.error('Pub-sub mute error:', error.message);
+      return c.json({ success: false, error: 'Internal server error' }, 500);
+    }
+  });
+
+  /**
+   * GET /api/v1/admin/pubsub/muted
+   * Returns list of currently muted agents.
+   */
+  router.get('/pubsub/muted', async (c) => {
+    try {
+      const redis = await get_redis_client();
+      if (!redis) {
+        return c.json({ success: false, error: 'Redis not available' }, 503);
+      }
+      const muted = await redis.sMembers('katra:pubsub:muted');
+      return c.json({ success: true, muted });
+    } catch (error: any) {
+      return c.json({ success: false, error: 'Internal server error' }, 500);
+    }
   });
 
   return router;
