@@ -90,7 +90,7 @@ async function main() {
   // Pre-warm embedding service (lazy load the ONNX model)
   // Must happen before REST API starts so health check shows correct status
   try {
-    const vec = await embeddingService.encode('warmup');
+    const vec = await embeddingService.encode('Embedding model warmup — initializing vector search');
     if (vec && embeddingService.isReady) {
       console.log('  Embeddings: ✅ available');
     } else {

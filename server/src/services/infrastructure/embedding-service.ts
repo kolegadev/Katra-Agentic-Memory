@@ -122,8 +122,13 @@ export class EmbeddingService {
       console.log('✅ Embedding model loaded:', MODEL_NAME);
       return true;
     } catch (error: any) {
-      this.initError = error;
-      console.warn('⚠️ Failed to load embedding model:', error.message);
+      // Only permanently disable for permanent conditions (glibc/musl mismatch).
+      // Transient failures (filesystem race, memory pressure) may succeed on
+      // a subsequent call once the container has fully initialized.
+      if (this.initError !== null) {
+        // Already blocked by glibc check — don't overwrite with transient error
+      }
+      console.warn('⚠️ Failed to load embedding model (will retry):', error.message);
       return false;
     } finally {
       this.initializing = false;

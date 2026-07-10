@@ -151,8 +151,12 @@ async function initializeServices(): Promise<void> {
 
   // Pre-warm embedding model (lazy init, non-blocking)
   try {
-    await embeddingService.encode('warmup');
-    console.error('  ✅ Embedding service ready');
+    const ready = await embeddingService.encode('Embedding model warmup — initializing vector search');
+    if (ready && embeddingService.isReady) {
+      console.error('  ✅ Embedding service ready');
+    } else {
+      console.error('  ⚠️ Embedding service unavailable — keyword search only');
+    }
   } catch {
     console.error('  ⚠️ Embedding service unavailable (Alpine/musl?) — keyword search only');
   }
