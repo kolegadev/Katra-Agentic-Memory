@@ -102,7 +102,7 @@ class ExtractionService {
     
     // Lightweight pattern extraction (fast, no LLM).
     const simpleResult = this.extractSimpleFacts(input_text, context);
-    const isSubstantial = input_text.length >= 500;
+    const isSubstantial = input_text.length >= 50;
 
     // For SHORT messages the lightweight patterns are sufficient — avoid the
     // expensive LLM call. Only short-circuit here when there is a hit AND the
