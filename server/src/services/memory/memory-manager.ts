@@ -731,12 +731,27 @@ export class MemoryManager {
   }
 
   async add_relationship(relationship: KnowledgeRelationship): Promise<void> {
-    console.log(`🔗 Adding relationship (stub implementation)`);
     const db = get_database();
-    await db.collection('knowledge_relationships').insertOne({
-      ...relationship,
-      created_at: new Date()
-    });
+    // Idempotent upsert keyed on the unique triple (from_id, to_id,
+    // relationship_type). Re-observing the same edge updates properties and
+    // bumps last_accessed_at instead of throwing a duplicate-key error — the
+    // knowledge graph strengthens edges over time rather than rejecting them.
+    const { from_id, to_id, relationship_type } = relationship;
+    // Strip created_at from the $set payload so it doesn't conflict with the
+    // $setOnInsert below (MongoDB rejects a field appearing in both).
+    const { created_at: _ignore, ...rel_fields } = relationship as any;
+    await db.collection('knowledge_relationships').updateOne(
+      { from_id, to_id, relationship_type },
+      {
+        $set: {
+          ...rel_fields,
+          last_accessed_at: new Date(),
+        },
+        $setOnInsert: { created_at: new Date() },
+        $inc: { access_count: 1 },
+      },
+      { upsert: true }
+    );
   }
 
   async get_connected_nodes(node_id: string, max_depth: number = 2): Promise<any[]> {

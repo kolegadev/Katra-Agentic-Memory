@@ -82,8 +82,8 @@ export const MEMORY_SYSTEM_INDEXES: CollectionIndexes = {
   
   knowledge_relationships: [
     {
-      keys: { source_id: 1, target_id: 1, relationship_type: 1 },
-      options: { name: 'source_target_type', unique: true, background: true }
+      keys: { from_id: 1, to_id: 1, relationship_type: 1 },
+      options: { name: 'from_to_type', unique: true, background: true, sparse: true }
     },
     {
       keys: { user_id: 1, relationship_type: 1 },

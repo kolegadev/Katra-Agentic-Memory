@@ -1857,7 +1857,7 @@ async function handleExploreGraph(args: unknown): Promise<TextContent[]> {
   if (input.include_edges && nodes.length > 0) {
     const nodeIds = nodes.map(n => n._id);
     edges = await db.collection('knowledge_relationships')
-      .find({ $or: [{ source: { $in: nodeIds } }, { target: { $in: nodeIds } }] })
+      .find({ $or: [{ from_id: { $in: nodeIds } }, { to_id: { $in: nodeIds } }] })
       .limit(50)
       .toArray();
   }

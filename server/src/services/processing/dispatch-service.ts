@@ -743,6 +743,8 @@ class DispatchService {
                   from_id: relationship.from_entity_id,
                   to_id: relationship.to_entity_id,
                   relationship_type: relationship.relationship_type,
+                  user_id: context.user_id,
+                  session_id: context.session_id,
                   properties: {
                     ...relationship.properties,
                     session_id: context.session_id,
