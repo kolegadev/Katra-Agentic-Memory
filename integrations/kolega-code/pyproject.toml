@@ -23,7 +23,7 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/kolega_katra_bridge"]
+packages = ["kolega_katra_bridge"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
