@@ -235,34 +235,35 @@ def check_graph_integrity() -> dict:
     """Knowledge graph should have named nodes and, if it has nodes, some
     edges. Catches the field-name schisms (blank names / edges that can't
     store) that made the graph silently useless."""
-    # enhance/stats wraps its payload in "data"; it may count a different
-    # (in-memory graph) collection than dashboard-stats' knowledge_nodes, so
-    # prefer dashboard-stats for the authoritative node count and use
-    # enhance/stats only for the edge count.
-    code, body = _get("/memory/enhance/stats", auth=True)
-    edge_count = None
+    # Authoritative counts come from database-stats (raw collection counts).
+    # The enhance/stats endpoint reflects a separate in-memory graph service
+    # that can report 0 even when knowledge_relationships is populated, so we
+    # do NOT trust it for health.
+    node_count = edge_count = None
+    code, body = _get("/admin/database-stats", auth=True)
     if code == 200 and body:
-        data = body.get("data", body)
-        edge_count = data.get("edge_count", data.get("edges"))
-
-    node_count = None
-    c2, b2 = _get("/admin/dashboard-stats")
-    if c2 == 200 and b2:
-        node_count = b2.get("counts", {}).get("knowledge_nodes")
+        cols = body.get("stats", {}).get("mongodb", {}).get("collection_details", [])
+        by_name = {c.get("name"): c.get("documents") for c in cols}
+        node_count = by_name.get("knowledge_nodes")
+        edge_count = by_name.get("knowledge_relationships")
+    # Fall back to dashboard-stats for node count if database-stats unavailable.
+    if node_count is None:
+        c2, b2 = _get("/admin/dashboard-stats")
+        if c2 == 200 and b2:
+            node_count = b2.get("counts", {}).get("knowledge_nodes")
 
     metrics = {"nodes": node_count, "edges": edge_count}
     if node_count is None:
         return {"check": "graph_integrity", "status": WARN,
                 "detail": "could not read graph stats", "metrics": metrics}
-    # NOTE: enhance/stats edge_count reflects the in-memory graph service, which
-    # may differ from the knowledge_relationships collection — so "nodes but no
-    # edges" is a WARN (investigate), not a hard FAIL, to avoid false alarms.
+    # Authoritative edge count from the collection: many nodes but zero edges
+    # is the field-name-schism signature (relationship writes silently failing).
     if node_count > 20 and edge_count == 0:
-        return {"check": "graph_integrity", "status": WARN,
-                "detail": f"{node_count} nodes but graph service reports 0 edges — verify relationship writes",
+        return {"check": "graph_integrity", "status": FAIL,
+                "detail": f"{node_count} nodes but 0 relationships — edge writes are failing",
                 "metrics": metrics}
     return {"check": "graph_integrity", "status": OK,
-            "detail": f"{node_count} nodes, {edge_count} edges", "metrics": metrics}
+            "detail": f"{node_count} nodes, {edge_count} relationships", "metrics": metrics}
 
 
 def check_reader_writer_vocab() -> dict:
