@@ -13,9 +13,24 @@ DEFAULT_MCP_URL = "http://localhost:3112/mcp"
 DEFAULT_API_KEY = ""  # Must be configured via katra-hook.json — no default key
 DEFAULT_USER_ID = "kolega-agent"
 DEFAULT_TIMEOUT_SECONDS = 8
-DEFAULT_MAX_CONTEXT_TOKENS = 2500
+DEFAULT_MAX_CONTEXT_TOKENS = 5000
 DEFAULT_CACHE_TTL_SECONDS = 30
+DEFAULT_PERSONALITY = "balanced"
 DEFAULT_SOURCES = ["reflection", "working_memory", "temporal_context", "vector_search", "temporal_recall"]
+
+# Legacy umbrella source names expanded to concrete retriever sources.
+_SOURCE_EXPANSIONS = {
+    "reflection": ["daily_reflection", "philosophical_insights", "unresolved_threads"],
+}
+
+
+def _expand_sources(sources: list[str]) -> list[str]:
+    expanded: list[str] = []
+    for source in sources:
+        for concrete in _SOURCE_EXPANSIONS.get(source, [source]):
+            if concrete not in expanded:
+                expanded.append(concrete)
+    return expanded
 
 
 @dataclass(frozen=True)
@@ -33,11 +48,23 @@ class BridgeConfig:
     cache_ttl_seconds: float = DEFAULT_CACHE_TTL_SECONDS
     include_thinking: bool = False
     debug: bool = False
+    # ── Personality (memory-disposition) settings ──────────────────
+    # Named profile from personality.PROFILES ("balanced", "scholar",
+    # "pragmatist", "strategist", "historian", "empath", "analyst",
+    # "sentinel", "dreamer", "legacy").
+    personality: str = DEFAULT_PERSONALITY
+    # Optional per-source weight overrides on top of the named profile.
+    source_weights: dict = None  # type: ignore[assignment]
+    # Optional scoring parameter overrides (relevance_multiplier,
+    # recency_half_life_days, budget_floors, max_single_source_pct,
+    # vector_fetch_limit, vector_sample, min_fetch_weight).
+    scoring: dict = None  # type: ignore[assignment]
 
     def __post_init__(self) -> None:
-        object.__setattr__(
-            self, "sources", list(self.sources) if self.sources else list(DEFAULT_SOURCES)
-        )
+        raw_sources = list(self.sources) if self.sources else list(DEFAULT_SOURCES)
+        object.__setattr__(self, "sources", _expand_sources(raw_sources))
+        object.__setattr__(self, "source_weights", dict(self.source_weights or {}))
+        object.__setattr__(self, "scoring", dict(self.scoring or {}))
 
 
 def _default_state_dir() -> Path:
@@ -86,6 +113,9 @@ def load_config(path: Path | str | None = None) -> BridgeConfig:
         cache_ttl_seconds=_float(data.get("cache_ttl_seconds"), DEFAULT_CACHE_TTL_SECONDS),
         include_thinking=bool(data.get("include_thinking", False)),
         debug=bool(data.get("debug", False)),
+        personality=_str(data.get("personality"), DEFAULT_PERSONALITY),
+        source_weights=_dict(data.get("source_weights")),
+        scoring=_dict(data.get("scoring")),
     )
 
 
@@ -114,3 +144,7 @@ def _list_str(value: Any, default: list[str]) -> list[str]:
     if isinstance(value, list):
         return [str(v) for v in value if v is not None]
     return list(default)
+
+
+def _dict(value: Any) -> dict:
+    return dict(value) if isinstance(value, dict) else {}
