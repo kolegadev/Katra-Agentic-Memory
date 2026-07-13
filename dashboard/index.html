@@ -120,6 +120,7 @@ button{padding:8px 16px;border-radius:var(--radius-sm);border:none;font-size:0.8
       <button class="nav-btn" data-tab="agents"><span class="nav-icon">🤖</span> Agents</button>
       <button class="nav-btn" data-tab="memory"><span class="nav-icon">🧠</span> Memory</button>
       <button class="nav-btn" data-tab="bus"><span class="nav-icon">📡</span> Bus</button>
+      <button class="nav-btn" data-tab="personality"><span class="nav-icon">🎭</span> Personality</button>
       <button class="nav-btn" data-tab="settings"><span class="nav-icon">⚙️</span> Settings</button>
     </nav>
     <div class="sidebar-footer">
@@ -245,6 +246,54 @@ button{padding:8px 16px;border-radius:var(--radius-sm);border:none;font-size:0.8
   </div>
 </section>
 
+<!-- ═══════════ PERSONALITY ═══════════ -->
+<section class="tab" id="tab-personality">
+  <div class="section-title">🎭 Memory Personality — Retrieval Disposition</div>
+  <div class="cards cols-2">
+    <div class="card">
+      <div class="form-group">
+        <label>Personality Profile</label>
+        <select id="pers-profile" onchange="onProfileChange()"></select>
+        <div class="hint" id="pers-desc" style="margin-top:6px;min-height:32px"></div>
+      </div>
+      <div class="form-group">
+        <label>Max Context Tokens</label>
+        <input type="number" id="pers-budget" min="500" max="20000" step="500">
+        <div class="hint">Token budget for injected memories (recommended shown per profile)</div>
+      </div>
+      <div class="input-row">
+        <button class="btn btn-primary" onclick="savePersonality()">Save Personality</button>
+        <button class="btn btn-secondary" onclick="resetPersonalityToProfile()">Reset to Profile</button>
+        <button class="btn btn-secondary" onclick="loadPersonality()">Reload</button>
+      </div>
+      <div id="pers-status" style="margin-top:8px;font-size:0.78rem"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Scoring Parameters</div>
+      <div class="form-group">
+        <label>Relevance Multiplier (k) <span id="pers-k-val" class="mono"></span></label>
+        <input type="range" id="pers-k" min="1" max="4" step="0.5" oninput="document.getElementById('pers-k-val').textContent=this.value">
+        <div class="hint">How strongly cue-relevance can override disposition (higher = more cue-driven)</div>
+      </div>
+      <div class="form-group">
+        <label>Recency Half-Life (days) <span id="pers-hl-val" class="mono"></span></label>
+        <input type="range" id="pers-hl" min="2" max="90" step="1" oninput="document.getElementById('pers-hl-val').textContent=this.value">
+        <div class="hint">Power-law forgetting: lower = forgets stale memories faster</div>
+      </div>
+      <div class="form-group">
+        <label>Max Single Source % <span id="pers-cap-val" class="mono"></span></label>
+        <input type="range" id="pers-cap" min="20" max="100" step="5" oninput="document.getElementById('pers-cap-val').textContent=this.value+'%'">
+        <div class="hint">Homeostatic cap — prevents any one source dominating (anti-rumination)</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-title">⚖️ Source Weights <span style="font-size:0.72rem;font-weight:400;color:var(--text3)">(0–10; agent_message pinned at 10)</span></div>
+  <div class="card">
+    <div id="pers-weights" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:10px"></div>
+  </div>
+</section>
+
 <!-- ═══════════ SETTINGS ═══════════ -->
 <section class="tab" id="tab-settings">
   <div class="section-title">🧠 Embedding Configuration</div>
@@ -355,6 +404,7 @@ async function loadTab(tab) {
     case 'agents': await loadAgents(); break;
     case 'memory': await searchMemory(); break;
     case 'bus': await loadBus(); break;
+    case 'personality': await loadPersonality(); break;
     case 'settings': await loadSettings(); break;
   }
 }
@@ -834,6 +884,167 @@ async function unmuteAgent(agentId) {
     toast(d.success ? `${agentId} unmuted — needs re-register` : (d.error || 'Failed'), d.success ? 'success' : 'error');
     if (d.success) loadBus();
   } catch(e) { toast('Error: ' + e.message, 'error'); }
+}
+
+// ═══════════ PERSONALITY ═══════════
+let personalityRegistry = null;   // { profiles, sources, agent_message_weight, recommended_budgets }
+let activePersonalityCfg = null;  // persisted config
+
+const SOURCE_LABELS = {
+  agent_message: "Agent Messages (pinned)",
+  daily_reflection: "Daily Reflection",
+  philosophical_insights: "Philosophical Insights",
+  unresolved_threads: "Unresolved Threads",
+  working_memory: "Working Memory",
+  temporal_context: "Temporal Context",
+  vector_search: "Vector Search (semantic)",
+  temporal_recall: "Temporal Recall (episodic)",
+  emotional_context: "Emotional Context",
+  missions: "Missions / Goals",
+  knowledge_graph: "Knowledge Graph",
+};
+
+async function loadPersonality() {
+  document.getElementById('scope-badge').textContent = 'personality';
+  try {
+    if (!personalityRegistry) {
+      const rr = await fetch(`${API}/admin/personality/profiles`);
+      personalityRegistry = await rr.json();
+    }
+    const r = await fetch(`${API}/admin/personality`);
+    const d = await r.json();
+    if (!d.success) { toast(d.error || 'Failed to load personality', 'error'); return; }
+    activePersonalityCfg = d.config;
+
+    // Populate profile dropdown
+    const sel = document.getElementById('pers-profile');
+    const profiles = personalityRegistry.profiles || {};
+    sel.innerHTML = Object.keys(profiles).map(name =>
+      `<option value="${name}"${name === d.config.personality ? ' selected' : ''}>${name}</option>`
+    ).join('');
+
+    renderPersonalityForm(d.config.personality, d.config);
+  } catch (e) {
+    toast('Error loading personality: ' + e.message, 'error');
+  }
+}
+
+function effectiveProfile(profileName, cfg) {
+  // Merge base profile with any saved overrides for display.
+  const base = JSON.parse(JSON.stringify(personalityRegistry.profiles[profileName] || {}));
+  const weights = { ...(base.weights || {}) };
+  const overrides = (cfg && cfg.source_weights) || {};
+  for (const [k, v] of Object.entries(overrides)) weights[k] = v;
+  weights.agent_message = personalityRegistry.agent_message_weight; // pin
+  const scoring = { ...base, ...((cfg && cfg.scoring) || {}) };
+  return { weights, scoring, base };
+}
+
+function renderPersonalityForm(profileName, cfg) {
+  const prof = personalityRegistry.profiles[profileName];
+  if (!prof) return;
+  const eff = effectiveProfile(profileName, cfg || {});
+
+  // Description
+  document.getElementById('pers-desc').textContent = prof.description || '';
+
+  // Budget
+  const recBudget = (personalityRegistry.recommended_budgets || {})[profileName] || 5000;
+  document.getElementById('pers-budget').value = (cfg && cfg.max_context_tokens) || recBudget;
+  document.getElementById('pers-budget').placeholder = `recommended: ${recBudget}`;
+
+  // Scoring sliders
+  const k = eff.scoring.relevance_multiplier ?? 2.0;
+  const hl = eff.scoring.recency_half_life_days ?? 14.0;
+  const cap = Math.round((eff.scoring.max_single_source_pct ?? 0.4) * 100);
+  document.getElementById('pers-k').value = k;
+  document.getElementById('pers-k-val').textContent = k;
+  document.getElementById('pers-hl').value = hl;
+  document.getElementById('pers-hl-val').textContent = hl;
+  document.getElementById('pers-cap').value = cap;
+  document.getElementById('pers-cap-val').textContent = cap + '%';
+
+  // Weight grid
+  const sources = personalityRegistry.sources || Object.keys(eff.weights);
+  const grid = document.getElementById('pers-weights');
+  grid.innerHTML = sources.map(src => {
+    const val = eff.weights[src] ?? 0;
+    const pinned = src === 'agent_message';
+    const label = SOURCE_LABELS[src] || src;
+    return `<div style="display:flex;align-items:center;gap:8px">
+      <label style="flex:1;font-size:0.78rem;color:var(--text2)" title="${src}">${label}</label>
+      <input type="range" min="0" max="10" step="0.5" value="${val}"
+        data-source="${src}" ${pinned ? 'disabled' : ''}
+        style="flex:1.4" oninput="this.nextElementSibling.textContent=this.value">
+      <span class="mono" style="width:32px;text-align:right;color:${pinned ? 'var(--text3)' : 'var(--accent)'}">${val}</span>
+    </div>`;
+  }).join('');
+}
+
+function onProfileChange() {
+  const name = document.getElementById('pers-profile').value;
+  // When switching profiles, show that profile's defaults (drop prior overrides in the UI).
+  renderPersonalityForm(name, { max_context_tokens: null, source_weights: {}, scoring: {} });
+}
+
+function resetPersonalityToProfile() {
+  const name = document.getElementById('pers-profile').value;
+  renderPersonalityForm(name, { max_context_tokens: null, source_weights: {}, scoring: {} });
+  toast('Reset to profile defaults (not yet saved)', 'success');
+}
+
+function collectPersonalityOverrides() {
+  const name = document.getElementById('pers-profile').value;
+  const base = personalityRegistry.profiles[name];
+  const baseWeights = (base && base.weights) || {};
+
+  // Only send weights that differ from the base profile (true overrides).
+  const source_weights = {};
+  document.querySelectorAll('#pers-weights input[type=range]').forEach(inp => {
+    const src = inp.dataset.source;
+    if (src === 'agent_message') return;
+    const val = parseFloat(inp.value);
+    if (Math.abs((baseWeights[src] ?? 0) - val) > 1e-9) source_weights[src] = val;
+  });
+
+  const scoring = {};
+  const k = parseFloat(document.getElementById('pers-k').value);
+  const hl = parseFloat(document.getElementById('pers-hl').value);
+  const cap = parseFloat(document.getElementById('pers-cap').value) / 100;
+  if (Math.abs((base.relevance_multiplier ?? 2.0) - k) > 1e-9) scoring.relevance_multiplier = k;
+  if (Math.abs((base.recency_half_life_days ?? 14.0) - hl) > 1e-9) scoring.recency_half_life_days = hl;
+  if (Math.abs((base.max_single_source_pct ?? 0.4) - cap) > 1e-9) scoring.max_single_source_pct = cap;
+
+  return {
+    personality: name,
+    source_weights,
+    scoring,
+    max_context_tokens: parseInt(document.getElementById('pers-budget').value) || undefined,
+  };
+}
+
+async function savePersonality() {
+  if (!requireAuth()) return;
+  const body = collectPersonalityOverrides();
+  document.getElementById('pers-status').innerHTML = '<span class="spinner"></span> Saving…';
+  try {
+    const r = await fetch(`${API}/admin/personality`, {
+      method: 'PUT', headers: authHeaders(), body: JSON.stringify(body),
+    });
+    const d = await r.json();
+    if (d.success) {
+      const nOverrides = Object.keys(body.source_weights).length + Object.keys(body.scoring).length;
+      document.getElementById('pers-status').textContent =
+        `✅ Saved '${body.personality}'` + (nOverrides ? ` with ${nOverrides} override(s)` : '');
+      toast(`Personality set to '${body.personality}'`, 'success');
+      loadPersonality();
+    } else {
+      document.getElementById('pers-status').textContent = '❌ ' + (d.error || 'Failed');
+      toast(d.error || 'Failed', 'error');
+    }
+  } catch (e) {
+    document.getElementById('pers-status').textContent = '❌ ' + e.message;
+  }
 }
 
 // ── Init ──

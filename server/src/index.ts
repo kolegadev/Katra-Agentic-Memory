@@ -144,7 +144,9 @@ async function main() {
         c.req.path === '/api/v1/admin/memory-search' ||
         c.req.path === '/api/v1/admin/pubsub/presence' ||
         c.req.path === '/api/v1/admin/pubsub/topics' ||
-        c.req.path === '/api/v1/admin/pubsub/muted') {
+        c.req.path === '/api/v1/admin/pubsub/muted' ||
+        c.req.path === '/api/v1/admin/personality' ||
+        c.req.path === '/api/v1/admin/personality/profiles') {
       return next();
     }
 

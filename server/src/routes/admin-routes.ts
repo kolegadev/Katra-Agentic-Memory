@@ -13,6 +13,7 @@ import { create_rate_limiter } from '../middleware/rate-limit.js';
 import { validateKatraKey } from '../utils/api-key-manager.js';
 import { SleepConsolidationService } from '../services/processing/sleep-consolidation-service.js';
 import { escape_regex } from '../utils/regex-escape.js';
+import { PROFILES, ALL_SOURCES, AGENT_MESSAGE_WEIGHT, RECOMMENDED_BUDGETS } from '../services/integration/personality-profiles.js';
 
 export const create_admin_routes = (): Hono => {
   const router = new Hono();
@@ -21,12 +22,18 @@ export const create_admin_routes = (): Hono => {
   // middleware state (no open-access fallback even in dev mode). Rejects tenant
   // keys in multi-tenant deployments because only the master admin key matches.
   router.use('*', async (c, next) => {
-    // Dashboard stats, memory search, and pub-sub bus read-only endpoints — no auth required
-    if (c.req.path === '/admin/dashboard-stats' || c.req.path === '/api/v1/admin/dashboard-stats' ||
-        c.req.path === '/admin/memory-search' || c.req.path === '/api/v1/admin/memory-search' ||
-        c.req.path === '/admin/pubsub/presence' || c.req.path === '/api/v1/admin/pubsub/presence' ||
-        c.req.path === '/admin/pubsub/topics' || c.req.path === '/api/v1/admin/pubsub/topics' ||
-        c.req.path === '/admin/pubsub/muted' || c.req.path === '/api/v1/admin/pubsub/muted') {
+    // Dashboard stats, memory search, pub-sub bus, and personality read-only
+    // endpoints — no auth required (read-only, dashboard-facing).
+    const readOnlyPaths = [
+      '/admin/dashboard-stats', '/api/v1/admin/dashboard-stats',
+      '/admin/memory-search', '/api/v1/admin/memory-search',
+      '/admin/pubsub/presence', '/api/v1/admin/pubsub/presence',
+      '/admin/pubsub/topics', '/api/v1/admin/pubsub/topics',
+      '/admin/pubsub/muted', '/api/v1/admin/pubsub/muted',
+      '/admin/personality', '/api/v1/admin/personality',
+      '/admin/personality/profiles', '/api/v1/admin/personality/profiles',
+    ];
+    if (readOnlyPaths.includes(c.req.path)) {
       return next();
     }
 
@@ -1455,6 +1462,137 @@ export const create_admin_routes = (): Hono => {
       const muted = await redis.sMembers('katra:pubsub:muted');
       return c.json({ success: true, muted });
     } catch (error: any) {
+      return c.json({ success: false, error: 'Internal server error' }, 500);
+    }
+  });
+
+  // ── Personality (memory-weighted retrieval disposition) ────────────
+
+  /**
+   * GET /api/v1/admin/personality/profiles
+   * Returns the built-in personality profile registry (read-only reference)
+   * so the dashboard can populate the selector and pre-fill the weight grid.
+   */
+  router.get('/personality/profiles', async (c) => {
+    return c.json({
+      success: true,
+      profiles: PROFILES,
+      sources: ALL_SOURCES,
+      agent_message_weight: AGENT_MESSAGE_WEIGHT,
+      recommended_budgets: RECOMMENDED_BUDGETS,
+    });
+  });
+
+  /**
+   * GET /api/v1/admin/personality
+   * Returns the currently active personality config (persisted selection +
+   * overrides), or the default 'balanced' if none has been saved.
+   * Read-only, no auth required.
+   */
+  router.get('/personality', async (c) => {
+    try {
+      const db = get_database();
+      const doc = await db.collection('system_settings').findOne({ key: 'personality_config' });
+      const active = doc?.personality || 'balanced';
+      const resolvedBase = PROFILES[active] || PROFILES['balanced'];
+      return c.json({
+        success: true,
+        config: {
+          personality: active,
+          source_weights: doc?.source_weights || {},
+          scoring: doc?.scoring || {},
+          max_context_tokens: doc?.max_context_tokens ?? (RECOMMENDED_BUDGETS[active] || 5000),
+          updated_at: doc?.updated_at || null,
+        },
+        // Echo the resolved base profile so the UI can show effective weights.
+        base_profile: resolvedBase,
+      });
+    } catch (error: any) {
+      console.error('Personality get error:', error.message);
+      return c.json({ success: false, error: 'Internal server error' }, 500);
+    }
+  });
+
+  /**
+   * PUT /api/v1/admin/personality
+   * Persist the active personality selection + optional overrides.
+   * Requires admin auth. Body:
+   *   { personality: string, source_weights?: {}, scoring?: {}, max_context_tokens?: number }
+   * The agent_message weight is force-pinned to 10.0 (cannot be overridden).
+   */
+  router.put('/personality', async (c) => {
+    try {
+      const body = await c.req.json();
+      const { personality, source_weights, scoring, max_context_tokens } = body;
+
+      if (!personality || typeof personality !== 'string') {
+        return c.json({ success: false, error: 'personality (profile name) is required' }, 400);
+      }
+      if (!PROFILES[personality]) {
+        return c.json({
+          success: false,
+          error: `Unknown personality '${personality}'. Valid: ${Object.keys(PROFILES).join(', ')}`,
+        }, 400);
+      }
+
+      // Sanitize weight overrides: only known sources, numeric, and never
+      // allow agent_message to be lowered (operational invariant).
+      const cleanWeights: Record<string, number> = {};
+      if (source_weights && typeof source_weights === 'object') {
+        for (const [src, val] of Object.entries(source_weights)) {
+          if (!ALL_SOURCES.includes(src as any)) continue;
+          const num = Number(val);
+          if (!Number.isFinite(num)) continue;
+          if (src === 'agent_message') continue; // pinned — ignore attempts to change
+          cleanWeights[src] = Math.max(0, Math.min(10, num)); // clamp 0..10
+        }
+      }
+
+      // Sanitize scoring params.
+      const cleanScoring: Record<string, any> = {};
+      if (scoring && typeof scoring === 'object') {
+        const allowed = [
+          'relevance_multiplier', 'recency_half_life_days',
+          'budget_floors', 'max_single_source_pct',
+          'vector_fetch_limit', 'vector_sample', 'min_fetch_weight',
+        ];
+        for (const [k, v] of Object.entries(scoring)) {
+          if (allowed.includes(k)) cleanScoring[k] = v;
+        }
+      }
+
+      const budget = Number.isFinite(Number(max_context_tokens))
+        ? Math.max(500, Math.min(20000, Number(max_context_tokens)))
+        : undefined;
+
+      const db = get_database();
+      const update: Record<string, unknown> = {
+        key: 'personality_config',
+        personality,
+        source_weights: cleanWeights,
+        scoring: cleanScoring,
+        updated_at: new Date(),
+      };
+      if (budget !== undefined) update.max_context_tokens = budget;
+
+      await db.collection('system_settings').updateOne(
+        { key: 'personality_config' },
+        { $set: update },
+        { upsert: true },
+      );
+
+      return c.json({
+        success: true,
+        message: `Personality set to '${personality}'`,
+        config: {
+          personality,
+          source_weights: cleanWeights,
+          scoring: cleanScoring,
+          max_context_tokens: budget ?? (RECOMMENDED_BUDGETS[personality] || 5000),
+        },
+      });
+    } catch (error: any) {
+      console.error('Personality put error:', error.message);
       return c.json({ success: false, error: 'Internal server error' }, 500);
     }
   });
