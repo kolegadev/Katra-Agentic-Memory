@@ -9,6 +9,7 @@ from typing import Any
 
 from .config import BridgeConfig, load_config
 from .formatter import format_memories
+from .logging_setup import configure_logging
 from .retriever import MemoryRetriever
 
 logger = logging.getLogger(__name__)
@@ -34,8 +35,9 @@ async def on_user_prompt(event: Any) -> dict[str, Any]:
     if not config.enabled:
         return {}
 
-    if config.debug:
-        logging.basicConfig(level=logging.DEBUG)
+    # Attach the persistent rotating log handler (idempotent). Level tracks
+    # config.debug so toggling debug in katra-hook.json takes effect next prompt.
+    configure_logging(config)
 
     user_message = ""
     if hasattr(event, "payload") and isinstance(event.payload, dict):
