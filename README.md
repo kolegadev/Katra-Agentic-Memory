@@ -197,7 +197,7 @@ Configure the bridge (`~/Library/Application Support/kolega-code/katra-hook.json
   "api_key": "YOUR_MCP_API_KEY",
   "user_id": "kolega-agent",
   "sources": ["working_memory", "temporal_context", "vector_search", "temporal_recall"],
-  "max_context_tokens": 2500,
+  "max_context_tokens": 5000,
   "timeout_seconds": 8
 }
 ```

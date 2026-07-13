@@ -1,0 +1,41 @@
+{
+  "_comment": "Example katra-hook.json with personality-weighted retrieval (v2). Copy to ~/Library/Application Support/kolega-code/katra-hook.json (macOS) or ~/.local/state/kolega-code/katra-hook.json (Linux).",
+
+  "mcp_url": "http://localhost:3112/mcp",
+  "api_key": "YOUR_MCP_API_KEY",
+  "user_id": "kolega-agent",
+  "timeout_seconds": 8,
+
+  "_comment_personality": "One of: balanced (default), scholar, pragmatist, strategist, historian, empath, analyst, sentinel, dreamer, legacy (pre-v2 behavior for A/B).",
+  "personality": "balanced",
+
+  "_comment_budget": "Interiority-heavy profiles (scholar, empath, dreamer) work best at 4000-5000. pragmatist/sentinel are fine at 2500 — being context-lean IS their personality.",
+  "max_context_tokens": 5000,
+
+  "_comment_sources": "'reflection' is a legacy umbrella that expands to daily_reflection + philosophical_insights + unresolved_threads. New sources are opt-in: emotional_context, missions, knowledge_graph. A source is only fetched if it is listed here AND its personality weight >= min_fetch_weight (default 1.0).",
+  "sources": [
+    "reflection",
+    "working_memory",
+    "temporal_context",
+    "vector_search",
+    "temporal_recall",
+    "emotional_context",
+    "missions",
+    "knowledge_graph"
+  ],
+
+  "_comment_overrides": "Optional per-source weight overrides on top of the named profile. agent_message is always pinned to 10.0 regardless of what you put here (operational invariant).",
+  "source_weights": {},
+
+  "_comment_scoring": "Optional scoring overrides. relevance_multiplier is k in: composite = weight * (1 + k*vector_score + recency). recency uses power-law: 1/(1 + age_days/half_life). budget_floors are guaranteed minimum budget shares. max_single_source_pct is the homeostatic cap.",
+  "scoring": {},
+
+  "_example_custom_personality": {
+    "personality": "scholar",
+    "source_weights": { "missions": 4.0 },
+    "scoring": { "recency_half_life_days": 30, "max_single_source_pct": 0.35 }
+  },
+
+  "cache_ttl_seconds": 30,
+  "debug": false
+}

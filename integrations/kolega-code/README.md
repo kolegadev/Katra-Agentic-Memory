@@ -30,7 +30,7 @@ uv pip install --python ~/.local/share/uv/tools/kolega-code/bin/python -e .
      "shared_id": "my-team",
      "enabled": true,
      "timeout_seconds": 8,
-     "max_context_tokens": 2500,
+     "max_context_tokens": 5000,
      "sources": ["working_memory", "temporal_context", "vector_search", "temporal_recall"],
      "cache_ttl_seconds": 30,
      "debug": false
