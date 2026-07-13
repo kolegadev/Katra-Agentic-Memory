@@ -267,7 +267,7 @@ class KatraMCPClient:
         entries = _pluck_content_list(result)
         return [
             MemoryItem(
-                source="reflection",
+                source="daily_reflection",
                 content=_text_from_entry(entry),
                 metadata=_metadata_from_entry(entry, {"period_type": period_type}),
                 score=0.8,
@@ -299,7 +299,7 @@ class KatraMCPClient:
         entries = _pluck_content_list(result)
         return [
             MemoryItem(
-                source="reflection",
+                source="philosophical_insights",
                 content=_text_from_entry(entry),
                 metadata=_metadata_from_entry(entry, {"domain": domain or "all"}),
                 score=0.7,
@@ -322,10 +322,85 @@ class KatraMCPClient:
         entries = _pluck_content_list(result)
         return [
             MemoryItem(
-                source="reflection",
+                source="unresolved_threads",
                 content=_text_from_entry(entry),
                 metadata={},
                 score=0.6,
+            )
+            for entry in entries
+        ]
+
+    async def get_emotional_context(self, entity_name: str) -> list[MemoryItem]:
+        """Fetch the emotional signature for an entity (person/project/concept)."""
+        args: dict[str, Any] = {
+            "entity_name": entity_name,
+            "user_id": self.config.user_id,
+        }
+        if self.config.shared_id:
+            args["shared_id"] = self.config.shared_id
+
+        try:
+            result = await self._call_tool("get_emotional_context", args)
+        except KatraClientError:
+            logger.warning("get_emotional_context failed for %r", entity_name)
+            return []
+
+        entries = _pluck_content_list(result)
+        return [
+            MemoryItem(
+                source="emotional_context",
+                content=_text_from_entry(entry),
+                metadata=_metadata_from_entry(entry, {"entity_name": entity_name}),
+                score=0.6,
+            )
+            for entry in entries
+        ]
+
+    async def list_missions(self, limit: int = 5) -> list[MemoryItem]:
+        """Fetch active goals/missions with progress."""
+        args: dict[str, Any] = {
+            "user_id": self.config.user_id,
+            "limit": limit,
+        }
+        if self.config.shared_id:
+            args["shared_id"] = self.config.shared_id
+
+        try:
+            result = await self._call_tool("list_missions", args)
+        except KatraClientError:
+            logger.warning("list_missions failed")
+            return []
+
+        entries = _pluck_content_list(result)
+        return [
+            MemoryItem(
+                source="missions",
+                content=_text_from_entry(entry),
+                metadata=_metadata_from_entry(entry, {}),
+                score=0.6,
+            )
+            for entry in entries
+        ]
+
+    async def explore_graph(self, query: str, limit: int = 10) -> list[MemoryItem]:
+        """Fetch knowledge-graph nodes/edges related to the query."""
+        args: dict[str, Any] = {"limit": limit, "include_edges": True}
+        if query.strip():
+            args["query"] = query.strip()[:200]
+
+        try:
+            result = await self._call_tool("explore_graph", args)
+        except KatraClientError:
+            logger.warning("explore_graph failed")
+            return []
+
+        entries = _pluck_content_list(result)
+        return [
+            MemoryItem(
+                source="knowledge_graph",
+                content=_text_from_entry(entry),
+                metadata=_metadata_from_entry(entry, {}),
+                score=0.5,
             )
             for entry in entries
         ]
