@@ -18,14 +18,15 @@ def format_memories(items: list[MemoryItem]) -> str:
     if not items:
         return ""
 
-    # Separate into three categories: agent messages, reflections, regular
+    # Separate into three categories: agent messages, reflection-family, regular
+    reflection_family = {"reflection", "daily_reflection", "philosophical_insights", "unresolved_threads"}
     agent_messages: list[MemoryItem] = []
     reflection_items: list[MemoryItem] = []
     regular_items: list[MemoryItem] = []
     for item in items:
         if item.source == "agent_message" or item.metadata.get("is_agent_message"):
             agent_messages.append(item)
-        elif item.source == "reflection":
+        elif item.source in reflection_family:
             reflection_items.append(item)
         else:
             regular_items.append(item)

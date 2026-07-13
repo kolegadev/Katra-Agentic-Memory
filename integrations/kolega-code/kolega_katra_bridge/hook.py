@@ -17,8 +17,8 @@ logger = logging.getLogger(__name__)
 _cache: dict[tuple[str, str], tuple[float, str]] = {}
 
 
-def _cache_key(session_id: str, query: str) -> tuple[str, str]:
-    normalized = " ".join(query.lower().split())[:200]
+def _cache_key(session_id: str, query: str, personality: str = "") -> tuple[str, str]:
+    normalized = " ".join(query.lower().split())[:200] + "|" + personality
     digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
     return (session_id, digest)
 
@@ -50,7 +50,7 @@ async def on_user_prompt(event: Any) -> dict[str, Any]:
 
     # Check cache.
     if config.cache_ttl_seconds > 0 and session_id:
-        key = _cache_key(session_id, user_message)
+        key = _cache_key(session_id, user_message, config.personality)
         cached = _cache.get(key)
         if cached:
             cached_at, context_text = cached
@@ -73,7 +73,7 @@ async def on_user_prompt(event: Any) -> dict[str, Any]:
 
         # Store in cache.
         if config.cache_ttl_seconds > 0 and session_id:
-            _cache[_cache_key(session_id, user_message)] = (time.time(), context_text)
+            _cache[_cache_key(session_id, user_message, config.personality)] = (time.time(), context_text)
 
         return {"additional_context": context_text}
     except Exception as exc:  # noqa: BLE001 - hooks must never crash the turn
