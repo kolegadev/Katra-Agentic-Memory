@@ -714,11 +714,21 @@ export class MemoryManager {
 
   // Knowledge Graph Methods (Stub implementations)
   async upsert_node(node: KnowledgeNode): Promise<void> {
-    console.log(`🔗 Upserting node ${node.id} (stub implementation)`);
     const db = get_database();
+    // The canonical data lives in node.properties, but several read paths
+    // (graph search, explore_graph, graph stats, dashboard) query/display
+    // top-level name/summary/node_type. Denormalize those to the top level
+    // so every reader resolves a real label instead of falling back to _id.
+    const props = node.properties || {};
+    const denormalized = {
+      ...node,
+      name: (node as any).name ?? props.name ?? props.label ?? undefined,
+      summary: (node as any).summary ?? props.summary ?? props.description ?? undefined,
+      node_type: (node as any).node_type ?? node.type,
+    };
     await db.collection('knowledge_nodes').replaceOne(
       { id: node.id },
-      node,
+      denormalized,
       { upsert: true }
     );
   }
