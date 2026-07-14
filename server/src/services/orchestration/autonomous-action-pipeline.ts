@@ -333,7 +333,7 @@ export class AutonomousActionPipeline {
     if (!data) return null;
 
     // Parse unprocessed count and embedding coverage
-    const unprocessedMatch = /Unprocessed\|\s*(\d+)/.exec(data);
+    const unprocessedMatch = /\*\*Unprocessed:\*\*\s*(\d+)/.exec(data);
     const embeddingMatch = /Embeddings\|\s*(\d+)\/(\d+)\s*\((\d+)\.?\d*%\)/.exec(data);
 
     const unprocessed = unprocessedMatch ? parseInt(unprocessedMatch[1], 10) : 0;
@@ -367,7 +367,7 @@ export class AutonomousActionPipeline {
     const data = await this._fetchKatraTool('get_anomaly_report', {});
     if (!data) return null;
 
-    const anomalyMatch = /Anomalous\|\s*(\d+)/.exec(data);
+    const anomalyMatch = /\*\*Anomalous:\*\*\s*(\d+)/.exec(data);
     const anomalyCount = anomalyMatch ? parseInt(anomalyMatch[1], 10) : 0;
 
     if (anomalyCount === 0) return null;
@@ -395,7 +395,7 @@ export class AutonomousActionPipeline {
     const data = await this._fetchKatraTool('get_error_report', {});
     if (!data) return null;
 
-    const surpriseMatch = /Surprise Rate\|\s*(\d+)\.?\d*%/.exec(data);
+    const surpriseMatch = /\*\*Surprise Rate:\*\*\s*(\d+\.?\d*)%/.exec(data);
     const surpriseRate = surpriseMatch ? parseFloat(surpriseMatch[1]) / 100 : 0;
 
     if (surpriseRate < 0.3) return null;
