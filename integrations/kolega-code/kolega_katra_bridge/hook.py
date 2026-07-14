@@ -115,3 +115,46 @@ async def publish_agent_message(
 
 # Backward-compatible alias if the hook config uses the old function name.
 retrieve_memory_context = on_user_prompt
+import logging
+from typing import Any
+from .config import load_config
+from .formatter import format_memories
+from .logging_setup import configure_logging
+from .retriever import MemoryRetriever
+
+logger = logging.getLogger(__name__)
+
+
+async def on_session_start(event: Any) -> dict[str, Any]:
+    """Kolega Code SessionStart hook — pre-loads Katra context before
+    the first user message so the agent has memory from turn zero.
+    """
+    config = load_config()
+    if not config.enabled:
+        return {}
+    configure_logging(config)
+    session_id = ''
+    if hasattr(event, 'session_id') and event.session_id:
+        session_id = str(event.session_id)
+    bootstrap_query = (
+        'identity satori name user profile john thebrick katra mcp graphify '
+        'recent threads development fix bug improvement consolidation reflection'
+    )
+    try:
+        retriever = MemoryRetriever(config)
+        memories = await retriever.retrieve(query=bootstrap_query, session_id=session_id)
+        if not memories:
+            if config.debug:
+                logger.debug('No Katra memories on session start')
+            return {}
+        context_text = format_memories(memories)
+        if not context_text:
+            return {}
+        if config.debug:
+            logger.debug(
+                'SessionStart: injected %d chars of Katra context', len(context_text)
+            )
+        return {'additional_context': context_text}
+    except Exception as exc:
+        logger.warning('Katra session-start hook failed: %s', exc)
+        return {}
