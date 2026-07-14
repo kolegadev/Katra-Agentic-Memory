@@ -138,7 +138,9 @@ async def on_session_start(event: Any) -> dict[str, Any]:
         session_id = str(event.session_id)
     bootstrap_query = (
         'identity satori name user profile john thebrick katra mcp graphify '
-        'recent threads development fix bug improvement consolidation reflection'
+        'recent threads development fix bug improvement consolidation reflection '
+        'philosophical principles emotional context drive state attention salience '
+        'action policy unresolved threads philosophical insights'
     )
     try:
         retriever = MemoryRetriever(config)
