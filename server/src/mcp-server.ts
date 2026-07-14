@@ -1853,13 +1853,37 @@ async function handleExploreGraph(args: unknown): Promise<TextContent[]> {
     .limit(input.limit)
     .toArray();
 
+  // Node identity/label helpers. Nodes store their business fields under
+  // `properties` (name/summary), and relationships reference nodes by the
+  // UUID `id` field (NOT the Mongo `_id`). Read from both, preferring
+  // `properties`, so labels render and edges actually match.
+  const nodeName = (n: any): string =>
+    n?.properties?.name || n?.name || n?.id || String(n?._id);
+  const nodeSummary = (n: any): string =>
+    n?.properties?.summary || n?.summary || n?.properties?.description || '';
+
   let edges: any[] = [];
+  const idToName = new Map<string, string>();
   if (input.include_edges && nodes.length > 0) {
-    const nodeIds = nodes.map(n => n._id);
+    // Relationships link nodes by their UUID `id`, so match on that.
+    const nodeUuids = nodes.map(n => n.id).filter(Boolean);
+    for (const n of nodes) if (n.id) idToName.set(n.id, nodeName(n));
     edges = await db.collection('knowledge_relationships')
-      .find({ $or: [{ from_id: { $in: nodeIds } }, { to_id: { $in: nodeIds } }] })
+      .find({ $or: [{ from_id: { $in: nodeUuids } }, { to_id: { $in: nodeUuids } }] })
       .limit(50)
       .toArray();
+    // Resolve any endpoint names we don't already have loaded, for readability.
+    const missing = new Set<string>();
+    for (const e of edges) {
+      if (e.from_id && !idToName.has(e.from_id)) missing.add(e.from_id);
+      if (e.to_id && !idToName.has(e.to_id)) missing.add(e.to_id);
+    }
+    if (missing.size > 0) {
+      const extra = await db.collection('knowledge_nodes')
+        .find({ id: { $in: [...missing] } })
+        .toArray();
+      for (const n of extra) if (n.id) idToName.set(n.id, nodeName(n));
+    }
   }
 
   const lines: string[] = [
@@ -1870,14 +1894,17 @@ async function handleExploreGraph(args: unknown): Promise<TextContent[]> {
   ];
   if (nodes.length === 0) lines.push('*None found*');
   else nodes.forEach((n: any) => {
-    lines.push(`- **${n.name || n._id}** [${n.type || 'entity'}] — ${(n.summary || '').slice(0, 100)}`);
+    const summary = nodeSummary(n);
+    lines.push(`- **${nodeName(n)}** [${n.type || 'entity'}]${summary ? ` — ${summary.slice(0, 100)}` : ''}`);
   });
 
   if (input.include_edges) {
     lines.push('', '### Relationships');
     if (edges.length === 0) lines.push('*None*');
     else edges.forEach((e: any) => {
-      lines.push(`- ${e.source} —[${e.type || 'related'}]→ ${e.target}`);
+      const from = idToName.get(e.from_id) || e.from_id;
+      const to = idToName.get(e.to_id) || e.to_id;
+      lines.push(`- ${from} —[${e.relationship_type || e.type || 'related'}]→ ${to}`);
     });
   }
   return [{ type: 'text', text: lines.join('\n') }];
@@ -1990,7 +2017,14 @@ async function handleGetHeartbeatStatus(_args: unknown): Promise<TextContent[]> 
   if (recentRuns.length === 0) lines.push('*No runs recorded.*');
   else recentRuns.forEach((r: any) => {
     const ts = r.started_at ? new Date(r.started_at).toISOString() : '?';
-    const icon = r.status === 'ok' ? '✅' : r.status === 'alert' ? '⚠️' : '❌';
+    // The heartbeat writer (adaptive_heartbeat.py) emits its own status
+    // vocabulary — "HEARTBEAT_OK"/"completed" mean success, "action_needed"
+    // means attention required. Normalize before choosing an icon so healthy
+    // runs don't render as ❌ (producer/consumer contract mismatch).
+    const status = String(r.status ?? '').toLowerCase();
+    const ok = status === 'ok' || status === 'heartbeat_ok' || status === 'completed';
+    const alert = status === 'alert' || status === 'action_needed';
+    const icon = ok ? '✅' : alert ? '⚠️' : '❌';
     lines.push(`- ${icon} [${ts}] ${r.status} — ${(r.tasks_due || []).join(', ') || 'no tasks'}`);
   });
   return [{ type: 'text', text: lines.join('\n') }];
@@ -2000,7 +2034,7 @@ async function handleListAssets(args: unknown): Promise<TextContent[]> {
   const input = ListAssetsInput.parse(args);
 
   try {
-    const { s3_asset_service } = await import('./services/s3-asset-service.js');
+    const { s3_asset_service } = await import('./services/infrastructure/s3-asset-service.js');
     const result = await s3_asset_service.list_assets({
       limit: input.limit,
       prefix: input.user_id,
