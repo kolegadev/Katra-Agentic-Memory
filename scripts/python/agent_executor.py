@@ -177,8 +177,55 @@ var r = db.agent_journal_auto.insertOne({{
 print("Bulletin posted: " + r.insertedId);
 ''')
 
+
+def _check_drive_deficits_via_katra(entity, output, agent_id):
+    try:
+        import json, time, re
+        from urllib import request as ur
+        katra_url = os.environ.get("KATRA_URL", "http://localhost:3112/mcp")
+        token = os.environ.get("KATRA_TOKEN", "")
+        if not token: return
+        body = json.dumps({"jsonrpc":"2.0","id":"hb-"+str(int(time.time())),"method":"tools/call",
+            "params":{"name":"get_drive_state","arguments":{}}}).encode()
+        req = ur.Request(katra_url, data=body, headers={
+            "Content-Type":"application/json","Authorization":f"Bearer {token}",
+            "Accept":"application/json, text/event-stream"})
+        resp = ur.urlopen(req, timeout=8)
+        text = resp.read().decode()
+        m = re.search(r"data: (\{.*\})", text)
+        if not m: return
+        data = json.loads(m.group(1))
+        content = data.get("result",{}).get("content",[{}])[0].get("text","")
+        deficits = {}
+        for line in content.split("
+"):
+            m2 = re.match(r"\|\s*(\w+)\s*\|\s*(\d+)%\s*\|\s*(\d+)%\s*\|", line)
+            if m2:
+                deficits[m2.group(1)] = 100 - int(m2.group(2))
+        if not deficits: return
+        survival_deficit = deficits.get("survival", 0)
+        coherence_deficit = deficits.get("coherence", 0)
+        max_deficit = max(deficits.values())
+        worst_drive = max(deficits, key=deficits.get)
+        if max_deficit > 40:
+            severity = "critical" if max_deficit > 65 else "urgent"
+            card = json.dumps({"type":"action_card","reason":f"Autonomous heartbeat on {entity}: {worst_drive} at {max_deficit}% deficit","severity":severity,"suggested_prompt":f"{entity} heartbeat detected {worst_drive} deficit ({max_deficit}%). Context: {output[:200]}","driver":worst_drive})
+            card_body = json.dumps({"jsonrpc":"2.0","id":"card-"+str(int(time.time())),"method":"tools/call",
+                "params":{"name":"store_memory","arguments":{"content":card,"category":"event","source":"autonomous-pipeline","confidence":0.95,"tags":["autonomous","heartbeat",f"drive:{worst_drive}"]}}}).encode()
+            try: ur.urlopen(ur.Request(katra_url, data=card_body, headers={"Content-Type":"application/json","Authorization":f"Bearer {token}","Accept":"application/json, text/event-stream"}), timeout=5)
+            except: pass
+        if survival_deficit > 80 or coherence_deficit > 65:
+            import subprocess as sp
+            kolega_bin = os.environ.get("KOLEGA_BIN", "kolega-code")
+            goal = f"[AUTONOMOUS ALERT] {severity} from heartbeat. {worst_drive} deficit: {max_deficit}%. Entity: {entity}. Investigate and take corrective action."
+            sp.Popen([kolega_bin, "ask", "--goal", goal, "--permission-mode", "auto", "--trust-mcp", "--goal-max-turns", "10", "--save"], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
+    except Exception: pass
+
 def _trigger_agent(task, result):
     import subprocess, shlex
+    entity = task.get("entity", "unknown")
+    output = result.get("output", "")
+    _check_drive_deficits_via_katra(entity, output, AGENT_ID)
     trigger_cmd = os.environ.get("TRIGGER_COMMAND", "")
     if not trigger_cmd: return
     prompt = f"[Autonomous Heartbeat] {task['entity']}: {result['output'][:200]}. AGENT_ID={AGENT_ID}"
