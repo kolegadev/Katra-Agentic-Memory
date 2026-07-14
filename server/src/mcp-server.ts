@@ -48,6 +48,7 @@ import { getEpisodicEventManager } from './services/memory/episodic-event-manage
 import { stableContentHash } from './services/infrastructure/content-hash-utils.js';
 import { ensureApiKeys, logGeneratedKeys, validateMcpKey, isMcpAuthConfigured, validateKatraKey, isKatraAuthConfigured } from './utils/api-key-manager.js';
 import { ReflectionStore } from './services/infrastructure/reflection-store.js';
+import { MemoryIntegrityService } from './services/infrastructure/memory-integrity.js';
 import { SleepConsolidationService } from './services/processing/sleep-consolidation-service.js';
 import { MemoryDecayService } from './services/processing/memory-decay-service.js';
 import { AnomalyDetectionService } from './services/processing/anomaly-detection-service.js';
@@ -1814,6 +1815,7 @@ async function handleGetHealth(): Promise<TextContent[]> {
   const mongoOk = is_database_connected();
   const redisOk = await is_redis_healthy();
   const llmStatus = llmService.getServiceStatus();
+  const integrityReport = await MemoryIntegrityService.get_instance().getIntegrityReport();
 
   return [{
     type: 'text',
@@ -1827,6 +1829,13 @@ async function handleGetHealth(): Promise<TextContent[]> {
       `| Embeddings | ${embeddingService.isReady ? '🟢' : '🔴'} |`,
       '',
       `**Version:** 3.0.0`,
+      '',
+      '## Memory Integrity',
+      `| Metric | Value |`,
+      `|--------|-------|`,
+      `| Episodic Events (total/orphaned) | ${integrityReport.episodic_events.total}/${integrityReport.episodic_events.orphaned} |`,
+      `| Semantic Facts (total/stale/missing emb) | ${integrityReport.semantic_facts.total}/${integrityReport.semantic_facts.stale}/${integrityReport.semantic_facts.missing_embeddings} |`,
+      `| Healthy | ${integrityReport.healthy ? '✅' : '❌'} |`,
     ].join('\n'),
   }];
 }
@@ -2691,6 +2700,7 @@ async function startHTTPServer(): Promise<void> {
           llm: llmStatus.available ? `${llmStatus.provider}` : 'unavailable',
           embeddings: embeddingService.isReady ? 'ready' : 'unavailable',
         },
+        memory_integrity: integrityReport,
         active_sessions: transports.size,
         auth: {
           required: isMcpAuthConfigured(),

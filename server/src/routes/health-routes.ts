@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { llmService } from '../services/infrastructure/llm-service.js';
 import { embeddingService } from '../services/infrastructure/embedding-service.js';
+import { MemoryIntegrityService } from '../services/infrastructure/memory-integrity.js';
 import { get_database } from '../database/connection.js';
 import { is_database_connected } from '../database/connection.js';
 import { is_redis_healthy } from '../database/redis-connection.js';
@@ -15,6 +16,8 @@ export const create_diagnostic_routes = (): Hono => {
     const mongoOk = is_database_connected();
     const redisOk = await is_redis_healthy();
     const llmStatus = llmService.getServiceStatus();
+    const integrityService = MemoryIntegrityService.get_instance();
+    const integrityReport = await integrityService.getIntegrityReport();
     return c.json({
       status: mongoOk && redisOk ? 'ok' : 'degraded',
       services: {
@@ -24,6 +27,7 @@ export const create_diagnostic_routes = (): Hono => {
         embeddings: embeddingService.isReady ? 'available' : 'unavailable',
       },
       version: '1.0.0',
+        memory_integrity: integrityReport,
     });
   });
 
