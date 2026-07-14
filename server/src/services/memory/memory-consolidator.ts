@@ -6,6 +6,7 @@
  */
 
 import { get_database } from '../../database/connection.js';
+import { consolidationOutputBus } from '../infrastructure/consolidation-output-bus.js';
 import { MemoryManager } from './memory-manager.js';
 import type { EpisodicEvent, SemanticFact, KnowledgeNode } from '../../types/memory.js';
 
@@ -195,6 +196,7 @@ class MemoryConsolidator {
 
       // Store profile in memory system
       await this.storeUserProfile(profile);
+    await consolidationOutputBus.publish(profile);
 
       const executionTime = Date.now() - startTime;
 

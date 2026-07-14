@@ -156,6 +156,58 @@ export class MotivationalEngine {
     return dominant;
   }
 
+  /**
+   * Receive consolidation results and adjust drive states accordingly.
+   * Called by ConsolidationOutputBus after each memory profile build.
+   *
+   * Mapping:
+   *  - Rich knowledge evolution (multiple entities, deep expertise) -> replenish coherence + connection
+   *  - New interests or unfamiliar entities -> replenish novelty
+   *  - Growth signals (increasing knowledge depth) -> replenish growth
+   *  - Stagnation or empty analysis -> deplete coherence (alarm signal)
+   */
+  receiveConsolidationResult(result: {
+    expertiseCount: number;
+    interestCount: number;
+    entityCount: number;
+    knowledgeEvolution?: { trend?: string; depth_change?: number } | null;
+    activityPatterns?: { total_conversations?: number }[] | null;
+    communicationStyle?: { formality?: string } | null;
+    memoryStats?: Record<string, number> | null;
+  }): void {
+    // Coherence: rewarded by meaningful analysis output, penalised by emptiness
+    if (result.expertiseCount > 0 && result.entityCount > 0) {
+      this.replenishDrive('coherence', 0.03 * Math.min(result.entityCount, 10));
+    } else if (result.expertiseCount === 0 && result.entityCount === 0) {
+      this.depleteDrive('coherence', 0.05);
+    }
+
+    // Novelty: new interests or unfamiliar entities
+    if (result.interestCount > 0) {
+      this.replenishDrive('novelty', 0.02 * Math.min(result.interestCount, 5));
+    }
+    if (result.entityCount > 5) {
+      this.replenishDrive('novelty', 0.01);
+    }
+
+    // Connection: communication style variety + social signal
+    if (result.communicationStyle?.formality) {
+      this.replenishDrive('connection', 0.01);
+    }
+
+    // Growth: knowledge depth is increasing
+    if (result.knowledgeEvolution?.trend === 'deepening') {
+      this.replenishDrive('growth', 0.03);
+    } else if (result.knowledgeEvolution?.trend === 'stable') {
+      this.replenishDrive('growth', 0.005);
+    }
+
+    // Survival: memory stats health — if consolidation ran, survival is validated
+    if (result.memoryStats) {
+      this.replenishDrive('survival', 0.01);
+    }
+  }
+
   getDriveDeficits(): Record<DriveName, number> {
     const deficits: Record<string, number> = {};
     for (const name of Object.keys(this.drives) as DriveName[]) {
