@@ -20,7 +20,7 @@ const SKIP_PATTERNS = [
   /^(go on|continue|proceed|next|and then|what else|anything else|tell me more)$/i,
 ];
 
-const MIN_CONTENT_LENGTH = 30;
+const MIN_CONTENT_LENGTH = 100;
 const EMBEDDING_DIMENSION = 384;
 const MODEL_NAME = 'Xenova/all-MiniLM-L6-v2';
 const EMBEDDING_VERSION = 1;
