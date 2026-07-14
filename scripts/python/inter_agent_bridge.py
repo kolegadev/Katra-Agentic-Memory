@@ -23,12 +23,16 @@ from typing import Any, Optional
 from urllib.request import urlopen, Request
 from urllib.error import URLError
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from katra_env import get_key
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("inter-agent-bridge")
 
 # ── Config ────────────────────────────────────────────────────────────────
-MCP_URL = "http://localhost:3112/mcp"
-API_KEY = "katra-mcp-key-2026"
+MCP_URL = os.environ.get("KATRA_MCP_URL", "http://localhost:3112/mcp")
+# Secret sourced from environment / project .env (never hardcoded/committed).
+API_KEY = get_key("MCP_API_KEY")
 MY_AGENT_ID = "kolega-agent"
 PEER_AGENT_ID = "opencode-agent"
 SHARED_ID = "my-team"
@@ -43,6 +47,15 @@ SEEN_HASHES_FILE = os.path.expanduser("~/.katra/inter-agent-seen.json")
 class MCPClient:
     def __init__(self):
         self._session_id: Optional[str] = None
+        # Monotonic JSON-RPC request id. Concurrent calls multiplexed over a
+        # single mcp-session-id are matched to responses BY id; reusing a fixed
+        # id (previously always 1) collides under concurrency and cross-wires or
+        # drops responses. A unique id per request keeps them demultiplexable.
+        self._rpc_id = 0
+
+    def _next_id(self) -> int:
+        self._rpc_id += 1
+        return self._rpc_id
 
     def _headers(self) -> dict:
         h = {
@@ -55,7 +68,7 @@ class MCPClient:
         return h
 
     def _rpc(self, method: str, params: dict) -> Any:
-        payload = {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
+        payload = {"jsonrpc": "2.0", "id": self._next_id(), "method": method, "params": params}
         req = Request(MCP_URL, data=json.dumps(payload).encode(), headers=self._headers(), method="POST")
         try:
             with urlopen(req, timeout=15) as resp:

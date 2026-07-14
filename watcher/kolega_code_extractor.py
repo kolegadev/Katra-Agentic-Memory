@@ -20,6 +20,7 @@ import json
 import os
 import sys
 import time
+import uuid
 import hashlib
 import logging
 import argparse
@@ -240,7 +241,9 @@ def initialize_mcp(session: requests.Session, mcp_url: str, api_key: str) -> Opt
             headers=headers,
             json={
                 "jsonrpc": "2.0",
-                "id": 1,
+                # Unique per-request id — avoids response cross-wiring when calls
+                # are multiplexed over a shared mcp-session-id.
+                "id": f"init-{uuid.uuid4().hex}",
                 "method": "initialize",
                 "params": {
                     "protocolVersion": "2024-11-05",
@@ -289,7 +292,7 @@ def store_session(session: dict, mcp_url: str, api_key: str, user_id: str, share
             headers=headers,
             json={
                 "jsonrpc": "2.0",
-                "id": 2,
+                "id": f"call-{uuid.uuid4().hex}",
                 "method": "tools/call",
                 "params": {
                     "name": "store_memory",

@@ -26,6 +26,7 @@ import json
 import os
 import sys
 import time
+import uuid
 import hashlib
 import logging
 import argparse
@@ -135,7 +136,9 @@ def store_session_to_memory(session_id: str, turns: list[str], provider: str, mo
             mcp_url,
             headers=headers,
             json={
-                "jsonrpc": "2.0", "id": 1, "method": "initialize",
+                # Unique per-request id — avoids response cross-wiring when calls
+                # are multiplexed over a shared mcp-session-id.
+                "jsonrpc": "2.0", "id": f"init-{uuid.uuid4().hex}", "method": "initialize",
                 "params": {
                     "protocolVersion": "2024-11-05",
                     "capabilities": {},
@@ -173,7 +176,7 @@ def store_session_to_memory(session_id: str, turns: list[str], provider: str, mo
             mcp_url,
             headers=init_headers,
             json={
-                "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                "jsonrpc": "2.0", "id": f"call-{uuid.uuid4().hex}", "method": "tools/call",
                 "params": {
                     "name": "store_memory",
                     "arguments": {

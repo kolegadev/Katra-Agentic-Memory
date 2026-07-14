@@ -17,6 +17,7 @@ import json
 import os
 import sqlite3
 import time
+import uuid
 import hashlib
 import logging
 import argparse
@@ -129,7 +130,9 @@ class McpClient:
                 headers=self.session_headers,
                 json={
                     "jsonrpc": "2.0",
-                    "id": 0,
+                    # Unique per-request id — avoids response cross-wiring when
+                    # calls are multiplexed over a shared mcp-session-id.
+                    "id": f"init-{uuid.uuid4().hex}",
                     "method": "initialize",
                     "params": {
                         "protocolVersion": "2024-11-05",
@@ -161,7 +164,7 @@ class McpClient:
                 headers=self.session_headers,
                 json={
                     "jsonrpc": "2.0",
-                    "id": 1,
+                    "id": f"call-{uuid.uuid4().hex}",
                     "method": "tools/call",
                     "params": {"name": tool_name, "arguments": arguments},
                 },
