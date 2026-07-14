@@ -49,6 +49,7 @@ import { stableContentHash } from './services/infrastructure/content-hash-utils.
 import { ensureApiKeys, logGeneratedKeys, validateMcpKey, isMcpAuthConfigured, validateKatraKey, isKatraAuthConfigured } from './utils/api-key-manager.js';
 import { ReflectionStore } from './services/infrastructure/reflection-store.js';
 import { MemoryIntegrityService } from './services/infrastructure/memory-integrity.js';
+import { salienceService, driveStateService, emotionalContextService, identityKernelService, actionPolicyService } from './services/orchestration/orchestration-services.js';
 import { SleepConsolidationService } from './services/processing/sleep-consolidation-service.js';
 import { MemoryDecayService } from './services/processing/memory-decay-service.js';
 import { AnomalyDetectionService } from './services/processing/anomaly-detection-service.js';
@@ -709,12 +710,10 @@ async function handleGetAttentionReport(): Promise<TextContent[]> {
 // ── Motivation handlers ───────────────────────────────────────────
 
 async function handleGetDriveState(): Promise<TextContent[]> {
-  const engine = MotivationalEngine.get_instance();
-  const snapshot = engine.tick();
-  const dominant = engine.getDominantDrive();
-  const lines = [`**Dominant Drive:** \`${dominant}\``, '', '| Drive | Level | Strength | Trend |', '|-------|-------|----------|-------|'];
+  const snapshot = driveStateService.getDriveState();
+  const lines = [`**Dominant Drive:** \`${snapshot.dominant}\``, '', '| Drive | Level | Strength | Trend |', '|-------|-------|----------|-------|'];
   for (const [name, drive] of Object.entries(snapshot.drives)) {
-    lines.push(`| ${name} | ${((drive as any).current * 100).toFixed(0)}% | ${(drive.strength * 100).toFixed(0)}% | ${drive.trend} |`);
+    lines.push(`| ${name} | ${(drive.current * 100).toFixed(0)}% | ${(drive.strength * 100).toFixed(0)}% | ${drive.trend} |`);
   }
   return [{ type: 'text', text: `## Homeostatic Drive State\n\n${lines.join('\n')}` }];
 }
@@ -756,8 +755,7 @@ async function handleGetIdentityKernel(args: unknown): Promise<TextContent[]> {
   }).parse(args);
   const userId = resolveUserId(input.user_id);
 
-  const service = SelfModelService.get_instance();
-  const kernel = await service.getIdentityKernel(userId);
+  const kernel = await identityKernelService.getIdentityKernel(userId);
 
   const lines: string[] = [
     '## Identity Kernel',
