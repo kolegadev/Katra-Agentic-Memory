@@ -37,8 +37,11 @@ describe('Integration: System Health', () => {
 
   it('MCP endpoint is reachable', async () => {
     const status = await mcpHealth();
-    // 200 = OK, 406 = needs Accept header, 400 = needs init first
-    expect([200, 400, 406]).toContain(status);
+    // This is a reachability probe, not an auth-correctness check: any HTTP
+    // response proves the server is up and listening. A network failure would
+    // throw instead of returning a status. 200 = OK, 400 = needs init first,
+    // 401 = up but auth required/mismatched, 406 = needs Accept header.
+    expect([200, 400, 401, 406]).toContain(status);
   });
 
   it('healthz endpoint reports docker_available', async () => {

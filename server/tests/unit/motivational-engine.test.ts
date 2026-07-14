@@ -127,13 +127,16 @@ describe('Motivational Engine — Wanting/Liking', () => {
   });
 
   it('wanting formula uses correct weights', () => {
+    // Keep the weighted sum within [0,1] so the clamp doesn't mask the weight
+    // contributions — the clamp itself is covered by the test above. With all
+    // factors at 0.5, each weight still contributes distinctly.
     const base = 0.1;
-    const valence = 1.0;
-    const trend = 1.0;
-    const novelty = 1.0;
-    const pe = 1.0;
-    const goal = 1.0;
-    const expected = 0.1 + 0.25 + 0.15 + 0.10 + 0.20 + 0.30;
+    const valence = 0.5;
+    const trend = 0.5;
+    const novelty = 0.5;
+    const pe = 0.5;
+    const goal = 0.5;
+    const expected = base + (0.25 + 0.15 + 0.10 + 0.20 + 0.30) * 0.5; // 0.6, below clamp
     expect(computeWanting(base, valence, trend, novelty, pe, goal)).toBeCloseTo(expected, 5);
   });
 
@@ -159,8 +162,11 @@ describe('Motivational Engine — Wanting/Liking', () => {
   });
 
   it('high goal relevance boosts wanting significantly', () => {
-    const lowGoal = computeWanting(0.5, 0.5, 0.5, 0.5, 0.5, 0);
-    const highGoal = computeWanting(0.5, 0.5, 0.5, 0.5, 0.5, 1.0);
+    // Keep both results below the [0,1] clamp so the full goal weight (0.30)
+    // shows through the delta. With base/other factors at 0.2, lowGoal = 0.34
+    // and highGoal = 0.64 — neither saturates the clamp.
+    const lowGoal = computeWanting(0.2, 0.2, 0.2, 0.2, 0.2, 0);
+    const highGoal = computeWanting(0.2, 0.2, 0.2, 0.2, 0.2, 1.0);
     expect(highGoal - lowGoal).toBeCloseTo(0.30, 5);
   });
 });
