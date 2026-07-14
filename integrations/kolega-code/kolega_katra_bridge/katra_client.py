@@ -35,6 +35,15 @@ class KatraMCPClient:
         self.config = config
         self._client: Optional[httpx.AsyncClient] = None
         self._mcp_session_id: Optional[str] = None
+        # Monotonic JSON-RPC request id. The retriever fires many tool calls
+        # concurrently over a single mcp-session-id; responses are matched to
+        # requests BY id, so a fixed id (previously 1/2) cross-wires or drops
+        # responses. A unique id per request keeps them demultiplexable.
+        self._rpc_id = 0
+
+    def _next_id(self) -> int:
+        self._rpc_id += 1
+        return self._rpc_id
 
     async def __aenter__(self) -> "KatraMCPClient":
         timeout = httpx.Timeout(self.config.timeout_seconds, connect=2.0)
@@ -64,7 +73,7 @@ class KatraMCPClient:
 
         init_payload = {
             "jsonrpc": "2.0",
-            "id": 1,
+            "id": self._next_id(),
             "method": "initialize",
             "params": {
                 "protocolVersion": "2024-11-05",
@@ -100,7 +109,7 @@ class KatraMCPClient:
 
         payload = {
             "jsonrpc": "2.0",
-            "id": 2,
+            "id": self._next_id(),
             "method": "tools/call",
             "params": {"name": name, "arguments": arguments},
         }

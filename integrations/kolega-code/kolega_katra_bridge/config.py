@@ -105,6 +105,54 @@ def config_path() -> Path:
     return _default_state_dir() / "katra-hook.json"
 
 
+# Candidate locations for the project .env that holds the real secrets.
+# Checked in order; the first existing file wins. Overridable via KATRA_ENV_FILE.
+_ENV_FILE_CANDIDATES = [
+    "~/Projects/katra/.env",
+    "~/katra/.env",
+]
+
+
+def _parse_env_file(path: Path) -> dict[str, str]:
+    data: dict[str, str] = {}
+    try:
+        for raw in path.read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, val = line.partition("=")
+            data[key.strip()] = val.strip().strip('"').strip("'")
+    except Exception:  # noqa: BLE001 - config parsing must never crash the hook
+        pass
+    return data
+
+
+def _resolve_secret(name: str, file_value: str) -> str:
+    """Resolve a secret with precedence: explicit file value (if non-empty) is
+    kept for backward-compat, else os.environ[name], else project .env[name].
+
+    This lets the API key live in the gitignored project .env (or the process
+    environment) instead of being hardcoded in katra-hook.json. An explicit,
+    non-empty value in the config file still takes precedence so existing
+    deployments are unaffected.
+    """
+    if file_value:
+        return file_value
+    if os.environ.get(name):
+        return os.environ[name]
+    override = os.environ.get("KATRA_ENV_FILE")
+    candidates = [override] if override else _ENV_FILE_CANDIDATES
+    for candidate in candidates:
+        if not candidate:
+            continue
+        env_path = Path(candidate).expanduser()
+        if env_path.exists():
+            parsed = _parse_env_file(env_path)
+            if parsed.get(name):
+                return parsed[name]
+    return ""
+
+
 def _rest_base_from_mcp(mcp_url: str) -> str | None:
     """Derive the Katra REST admin base URL from the MCP URL.
 
@@ -202,22 +250,29 @@ def _apply_server_personality(cfg: BridgeConfig) -> BridgeConfig:
 def load_config(path: Path | str | None = None) -> BridgeConfig:
     """Load configuration from disk, then optionally overlay the server-managed
     personality (dashboard-controlled). Falls back to sensible defaults."""
+    # Even with no/invalid config file, resolve the API key from the
+    # environment / project .env so the hook still authenticates.
+    def _default_cfg() -> BridgeConfig:
+        return BridgeConfig(api_key=_resolve_secret("MCP_API_KEY", DEFAULT_API_KEY))
+
     target = Path(path) if path else config_path()
     if not target.exists():
-        return _apply_server_personality(BridgeConfig())
+        return _apply_server_personality(_default_cfg())
 
     try:
         with open(target, "r", encoding="utf-8") as f:
             data = json.load(f)
     except (OSError, json.JSONDecodeError):
-        return _apply_server_personality(BridgeConfig())
+        return _apply_server_personality(_default_cfg())
 
     if not isinstance(data, dict):
-        return _apply_server_personality(BridgeConfig())
+        return _apply_server_personality(_default_cfg())
 
     local = BridgeConfig(
         mcp_url=_str(data.get("mcp_url"), DEFAULT_MCP_URL),
-        api_key=_str(data.get("api_key"), DEFAULT_API_KEY),
+        # Secret precedence: explicit file value > MCP_API_KEY env > project .env.
+        # Keeps the key out of katra-hook.json while staying backward-compatible.
+        api_key=_resolve_secret("MCP_API_KEY", _str(data.get("api_key"), DEFAULT_API_KEY)),
         user_id=_str(data.get("user_id"), DEFAULT_USER_ID),
         shared_id=_str(data.get("shared_id"), ""),
         enabled=bool(data.get("enabled", True)),
