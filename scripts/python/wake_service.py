@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
 import time
 import logging
 from datetime import datetime, timezone
@@ -25,6 +26,9 @@ from urllib.error import URLError
 
 import redis
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from katra_env import get_key
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("wake-service")
 
@@ -33,8 +37,9 @@ REDIS_HOST = "localhost"
 REDIS_PORT = 6384
 SHARED_ID = "my-team"
 REDIS_CHANNEL = f"katra:events:{SHARED_ID}"
-KATRA_API = "http://localhost:9012/api/v1"
-KATRA_KEY = "katra-admin-key-2026"
+KATRA_API = os.environ.get("KATRA_API", "http://localhost:9012/api/v1")
+# Secret sourced from environment / project .env (never hardcoded/committed).
+KATRA_KEY = get_key("KATRA_API_KEY")
 WAKE_DIR = os.path.expanduser("~/.katra/bulletins")
 
 # Attention pattern: "Attention: AgentName — ..." or "Attention: AgentName\n..."

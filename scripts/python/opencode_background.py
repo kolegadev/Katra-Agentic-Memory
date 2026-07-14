@@ -14,17 +14,22 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import time
 import logging
 from datetime import datetime, timezone
 from urllib.request import Request, urlopen
 from urllib.error import URLError
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from katra_env import get_key
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("opencode-background")
 
-KATRA_API = "http://localhost:9012/api/v1"
-KATRA_KEY = "katra-admin-key-2026"
+KATRA_API = os.environ.get("KATRA_API", "http://localhost:9012/api/v1")
+# Secret sourced from environment / project .env (never hardcoded/committed).
+KATRA_KEY = get_key("KATRA_API_KEY")
 WAKE_FILE = os.path.expanduser("~/.katra/bulletins/opencode.json")
 POLL_INTERVAL = 30
 
