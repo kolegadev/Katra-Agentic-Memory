@@ -131,8 +131,9 @@ export class DriveStateService {
 
   /** Delegate to MotivationalEngine for current drive state. */
   getDriveState(): DriveStateSnapshot {
-    // Lazy import to avoid circular dependency
-    return { drives: {}, dominant: "idle", timestamp: new Date().toISOString() };
+    // Lazy import to avoid circular dependency at module load time
+    const { MotivationalEngine } = require('../processing/motivational-engine.js');
+    const engine = MotivationalEngine.get_instance();
     const snapshot = engine.tick();
     const dominant = engine.getDominantDrive();
     return {
@@ -147,7 +148,9 @@ export class DriveStateService {
     try {
       const db = get_database();
       if (!db) return;
-      return { drives: {}, dominant: "idle", timestamp: new Date().toISOString() };
+
+      const { MotivationalEngine } = require('../processing/motivational-engine.js');
+      const engine = MotivationalEngine.get_instance();
 
       // Count recent events as a proxy for activity level
       const recentWindow = new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -386,8 +389,9 @@ export class ActionPolicyService {
   }
 
   getPolicyForState(stateKey: string): ActionPolicy {
-    // Delegate to DecisionActionService for Q-value lookup
-    return { state_key: stateKey, actions: [], last_updated: new Date().toISOString() };
+    // Lazy import to avoid circular dependency at module load time
+    const { DecisionActionService } = require('../processing/decision-action-service.js');
+    const service = DecisionActionService.get_instance();
     const policy = service.getPolicy(stateKey);
 
     return {
