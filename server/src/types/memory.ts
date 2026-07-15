@@ -263,6 +263,7 @@ export interface ReflectionLLMOutput {
   identity_delta: string | null;
   unresolved_threads: string[];
   narrative: string;
+  regret_score?: string | null;
 }
 
 export interface ConsolidationResult {
@@ -275,6 +276,7 @@ export interface ConsolidationResult {
   edges_upserted: number;
   insights_upserted: number;
   narrative_preview?: string;
+  regret_score?: string | null;
   error?: string;
 }
 

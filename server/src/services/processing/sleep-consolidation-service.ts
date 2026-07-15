@@ -252,6 +252,9 @@ export class SleepConsolidationService {
         period_type: period,
         period_start: new Date(),
         period_end: new Date(),
+        nodes_upserted: 0,
+        edges_upserted: 0,
+        insights_upserted: 0,
         error: 'Consolidation already in progress',
       };
     }
@@ -271,6 +274,9 @@ export class SleepConsolidationService {
         period_type: period,
         period_start: new Date(),
         period_end: new Date(),
+        nodes_upserted: 0,
+        edges_upserted: 0,
+        insights_upserted: 0,
         error: 'Consolidation already in progress',
       };
     }
@@ -539,7 +545,7 @@ Respond with ONLY a valid JSON object in this exact shape:
     "domain": "engineering|relationships|self|creativity|learning|philosophy|other"
   },
   "identity_delta": "How did this period shift self-understanding? One sentence, or null.",
-  "regret_priority": {
+  "regret_score": {
     "unfinished_work": "If this were your last cycle, what single unfinished task or project would you most regret not having completed? One sentence naming the work and the person/principle it matters to.",
     "why_it_matters": "Why would you regret leaving this undone? Connect to a person, principle, or contribution.",
     "emotion_tied": "What emotion is bound to this regret — care? duty? curiosity? ambition? love?",
@@ -689,7 +695,7 @@ RULES:
       edges_upserted: edgesUpserted,
       insights_upserted: insightsUpserted,
       narrative_preview: output.narrative?.substring(0, 300),
-      regret_priority: output.regret_priority || null,
+      regret_score: output.regret_score || null,
     };
   }
 

@@ -15,6 +15,7 @@
 export type MetaState = 'exploration' | 'task_execution' | 'reflection' | 'alert' | 'idle';
 
 export interface SalienceParams {
+  recency?: number;
   hoursSinceEvent?: number;
   emotionalIntensity?: number;
   goalRelevance?: number;
