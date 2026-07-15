@@ -74,15 +74,17 @@ export class ConsolidationOutputBus {
   private async _updateDriveStates(profile: UserMemoryProfile): Promise<void> {
     try {
       // Lazy import to avoid circular dependency at module load time
-      const { motivationalEngine } = await import('../processing/motivational-engine.js');
-      motivationalEngine.receiveConsolidationResult({
-        expertiseCount: profile.expertise?.length ?? 0,
-        interestCount: profile.interests?.length ?? 0,
-        entityCount: profile.entities?.length ?? 0,
-        knowledgeEvolution: profile.knowledge_evolution,
-        activityPatterns: profile.activity_patterns,
-        communicationStyle: profile.communication_style,
-        memoryStats: profile.memory_stats,
+      const { MotivationalEngine } = await import('../processing/motivational-engine.js');
+      const engine = MotivationalEngine.get_instance();
+      engine.receiveConsolidationResult({
+        expertiseCount: profile.expertiseAreas?.length ?? 0,
+        interestCount: profile.interestAreas?.length ?? 0,
+        entityCount: profile.keyEntities?.length ?? 0,
+        knowledgeEvolution: undefined,
+        // Cast to match MotivationalEngine's expected parameter shapes
+        activityPatterns: profile.activityPatterns as any,
+        communicationStyle: profile.communicationStyle as any,
+        memoryStats: profile.memoryStats as any,
       });
     } catch (err) {
       console.error('[ConsolidationOutputBus] drive state update failed:', err);
@@ -96,20 +98,20 @@ export class ConsolidationOutputBus {
 
       const summary: Record<string, unknown> = {
         type: 'consolidation_output',
-        user_id: profile.user_id,
-        expertise_domains: profile.expertise?.map(e => e.domain) ?? [],
-        interest_areas: profile.interests?.map(i => i.area) ?? [],
-        top_entities: profile.entities?.slice(0, 10).map(e => e.name) ?? [],
-        knowledge_depth_trend: profile.knowledge_evolution?.trend ?? 'stable',
-        total_conversation_turns: profile.activity_patterns?.reduce((s, p) => s + (p.total_conversations || 0), 0) ?? 0,
-        communication_formality: profile.communication_style?.formality ?? 'unknown',
-        memory_stats: profile.memory_stats ?? {},
+        user_id: profile.userId,
+        expertise_domains: profile.expertiseAreas?.map((e: any) => e.domain) ?? [],
+        interest_areas: profile.interestAreas?.map((i: any) => i.topic) ?? [],
+        top_entities: profile.keyEntities?.slice(0, 10).map((e: any) => e.entityName) ?? [],
+        knowledge_depth_trend: 'stable',
+        total_conversation_turns: profile.activityPatterns?.length ?? 0,
+        communication_formality: profile.communicationStyle?.formalityLevel ?? 'unknown',
+        memory_stats: profile.memoryStats ?? {},
         consolidation_run_at: new Date().toISOString(),
       };
 
       await db.collection('semantic_facts').insertOne({
         ...summary,
-        content: `Consolidation run for ${profile.user_id}: ${summary.expertise_domains.length} expertise areas, ${summary.interest_areas.length} interests, ${summary.top_entities.length} key entities. Knowledge depth trend: ${summary.knowledge_depth_trend}.`,
+        content: `Consolidation run for ${profile.userId}: ${(summary.expertise_domains as any[]).length} expertise areas, ${(summary.interest_areas as any[]).length} interests, ${(summary.top_entities as any[]).length} key entities. Knowledge depth trend: ${summary.knowledge_depth_trend}.`,
         category: 'fact',
         source: 'consolidation-output-bus',
         confidence: 0.9,
