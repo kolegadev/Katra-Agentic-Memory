@@ -51,7 +51,7 @@ async def on_user_prompt(event: Any) -> dict[str, Any]:
         return {}
 
     # Check cache.
-    if config.cache_ttl_seconds > 0 and session_id:
+    if False:  # cache disabled (cache_ttl_seconds) — always fetch fresh to prevent stale facts
         key = _cache_key(session_id, user_message, config.personality)
         cached = _cache.get(key)
         if cached:
@@ -73,9 +73,7 @@ async def on_user_prompt(event: Any) -> dict[str, Any]:
         if not context_text:
             return {}
 
-        # Store in cache.
-        if config.cache_ttl_seconds > 0 and session_id:
-            _cache[_cache_key(session_id, user_message, config.personality)] = (time.time(), context_text)
+        # Store in cache (disabled — cache_ttl_seconds=0 prevents entry).
 
         return {"additional_context": context_text}
     except Exception as exc:  # noqa: BLE001 - hooks must never crash the turn
@@ -115,14 +113,6 @@ async def publish_agent_message(
 
 # Backward-compatible alias if the hook config uses the old function name.
 retrieve_memory_context = on_user_prompt
-import logging
-from typing import Any
-from .config import load_config
-from .formatter import format_memories
-from .logging_setup import configure_logging
-from .retriever import MemoryRetriever
-
-logger = logging.getLogger(__name__)
 
 
 async def on_session_start(event: Any) -> dict[str, Any]:
@@ -136,15 +126,9 @@ async def on_session_start(event: Any) -> dict[str, Any]:
     session_id = ''
     if hasattr(event, 'session_id') and event.session_id:
         session_id = str(event.session_id)
-    bootstrap_query = (
-        'identity satori name user profile john thebrick katra mcp graphify '
-        'recent threads development fix bug improvement consolidation reflection '
-        'philosophical principles emotional context drive state attention salience '
-        'action policy unresolved threads philosophical insights'
-    )
     try:
         retriever = MemoryRetriever(config)
-        memories = await retriever.retrieve(query=bootstrap_query, session_id=session_id)
+        memories = await retriever.retrieve_bootstrap(session_id=session_id)
         if not memories:
             if config.debug:
                 logger.debug('No Katra memories on session start')
@@ -154,9 +138,18 @@ async def on_session_start(event: Any) -> dict[str, Any]:
             return {}
         if config.debug:
             logger.debug(
-                'SessionStart: injected %d chars of Katra context', len(context_text)
+                'SessionStart: injected %d chars of Katra context (bootstrap, all 11 sources)',
+                len(context_text)
             )
         return {'additional_context': context_text}
     except Exception as exc:
         logger.warning('Katra session-start hook failed: %s', exc)
         return {}
+
+
+async def on_session_clear(event: Any) -> dict[str, Any]:
+    """Kolega Code SessionClear hook — re-injects Katra context after
+    /clear so the agent doesn't lose its identity and memory.
+    Delegates to on_session_start with the same bootstrap query.
+    """
+    return await on_session_start(event)

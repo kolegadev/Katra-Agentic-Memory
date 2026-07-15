@@ -41,6 +41,16 @@ CHARS_PER_TOKEN = 4
 
 # Max entities probed for emotional_context per prompt (naive extraction).
 MAX_EMOTIONAL_ENTITIES = 2
+# Bootstrap entities for emotional_context at session start (bypasses
+# the lowercase query extraction limitation — the bootstrap query has no
+# Capitalised words or "quoted phrases" for _extract_entities to find).
+BOOTSTRAP_EMOTIONAL_ENTITIES = [
+    "Satori", "Katra", "Graphify", "kolega-agent", "thebrick",
+    "memory", "autonomy", "identity", "John", "Kolega Code",
+    "OpenCode", "opencode-agent"
+]
+MAX_BOOTSTRAP_EMOTIONAL_ENTITIES = 3
+
 
 
 class MemoryRetriever:
@@ -131,6 +141,92 @@ class MemoryRetriever:
 
         ranked = self._rank_and_dedupe(fetched, query)
         return self._apply_token_budget(ranked)
+
+    async def retrieve_bootstrap(
+        self,
+        session_id: str,
+    ) -> list[MemoryItem]:
+        """Bootstrap retrieval: fetch ALL 11 sources unconditionally,
+        bypassing personality-weight filtering. Uses a curated entity
+        list for emotional_context so session-start always has full
+        memory context regardless of personality profile.
+        """
+        if not self.config.enabled:
+            return []
+
+        # --- Cue-driven semantic retrieval (broad bootstrap query) ---
+        bootstrap_query = (
+            "identity satori name user profile john thebrick katra mcp "
+            "graphify recent threads development fix bug improvement "
+            "consolidation reflection philosophical principles emotional "
+            "context drive state attention salience action policy "
+            "unresolved threads philosophical insights memory system"
+        )
+
+        async with KatraMCPClient(self.config) as client:
+            tasks: list[tuple[str, Awaitable[list[MemoryItem]]]] = []
+
+            # --- Inter-agent message scan (always) ---
+            tasks.append(("agent_message", self._fetch_agent_messages(client)))
+
+            # --- Reflection family (always, unconditional) ---
+            tasks.append(("daily_reflection", client.get_daily_reflection("daily")))
+            tasks.append(
+                ("philosophical_insights", client.get_philosophical_insights(limit=5))
+            )
+            tasks.append(("unresolved_threads", client.get_unresolved_threads()))
+
+            # --- Present-focus sources ---
+            tasks.append(
+                ("working_memory", client.get_working_memory(session_id, limit=20))
+            )
+            tasks.append(
+                ("temporal_context", client.get_temporal_context(session_id))
+            )
+
+            # --- Cue-driven semantic retrieval ---
+            tasks.append(
+                ("vector_search", client.vector_search(bootstrap_query, limit=10))
+            )
+
+            # --- Episodic recall ---
+            now = datetime.now(timezone.utc)
+            from_dt = now - timedelta(days=14)  # wider window for bootstrap
+            tasks.append(
+                (
+                    "temporal_recall",
+                    client.temporal_recall(from_dt.isoformat(), now.isoformat(), limit=15),
+                )
+            )
+
+            # --- Mission / goal context ---
+            tasks.append(("missions", client.list_missions(limit=5)))
+
+            # --- Knowledge graph ---
+            tasks.append(
+                ("knowledge_graph", client.explore_graph("satori katra thebrick memory identity", limit=10))
+            )
+
+            # --- Emotional context with hardcoded entities ---
+            entities = BOOTSTRAP_EMOTIONAL_ENTITIES[:MAX_BOOTSTRAP_EMOTIONAL_ENTITIES]
+            for entity in entities:
+                tasks.append(
+                    ("emotional_context", client.get_emotional_context(entity))
+                )
+
+            fetched = await self._gather(tasks)
+
+        if self.config.debug:
+            by_source: dict[str, int] = {}
+            for item in fetched:
+                by_source[item.source] = by_source.get(item.source, 0) + 1
+            logger.info(
+                "Bootstrap fetch [personality=%s]: %s", self.profile.name, by_source
+            )
+
+        ranked = self._rank_and_dedupe(fetched, bootstrap_query)
+        return self._apply_token_budget(ranked)
+
 
     async def _gather(
         self, tasks: list[tuple[str, Awaitable[list[MemoryItem]]]]
