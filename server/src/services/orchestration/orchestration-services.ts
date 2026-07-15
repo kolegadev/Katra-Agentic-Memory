@@ -15,6 +15,7 @@
  */
 
 import { get_database } from '../../database/connection.js';
+import { DecisionActionService } from '../processing/decision-action-service.js';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // 1. SALIENCE SERVICE
@@ -41,6 +42,7 @@ export class SalienceService {
   private currentMode: SalienceState['mode'] = 'idle';
   private entitySalience: Map<string, { salience: number; last_updated: Date }> = new Map();
   private attentionStart: Date = new Date();
+  private _initialized = false;
 
   private constructor() {}
 
@@ -49,6 +51,27 @@ export class SalienceService {
       SalienceService.instance = new SalienceService();
     }
     return SalienceService.instance;
+  }
+
+  /** Load persisted salience from MongoDB on first use. Safe to call multiple times. */
+  async initialize(): Promise<void> {
+    if (this._initialized) return;
+    try {
+      const db = get_database();
+      if (!db) return;
+      const rows = await db.collection('entity_salience').find({}).toArray();
+      for (const row of rows) {
+        if (row.entity && row.salience != null) {
+          this.entitySalience.set(row.entity, {
+            salience: row.salience,
+            last_updated: row.last_updated ? new Date(row.last_updated) : new Date(),
+          });
+        }
+      }
+      this._initialized = true;
+    } catch (err) {
+      console.error('[SalienceService] initialize failed:', err);
+    }
   }
 
   getCurrentSalience(): SalienceState {
@@ -65,13 +88,26 @@ export class SalienceService {
     };
   }
 
-  shiftSalience(entity: string, weight: number): void {
+  async shiftSalience(entity: string, weight: number): Promise<void> {
     const existing = this.entitySalience.get(entity);
     const decayed = existing ? existing.salience * 0.85 : 0;
-    this.entitySalience.set(entity, {
-      salience: Math.min(1, decayed + weight),
-      last_updated: new Date(),
-    });
+    const salience = Math.min(1, decayed + weight);
+    const last_updated = new Date();
+    this.entitySalience.set(entity, { salience, last_updated });
+
+    // Persist to MongoDB
+    try {
+      const db = get_database();
+      if (db) {
+        await db.collection('entity_salience').updateOne(
+          { entity },
+          { $set: { entity, salience, last_updated } },
+          { upsert: true }
+        );
+      }
+    } catch (err) {
+      console.error('[SalienceService] persist failed:', err);
+    }
 
     // Determine mode from highest-salience entity
     const top = this.getCurrentSalience().active_entities[0];
@@ -196,6 +232,31 @@ export class EmotionalContextService {
       EmotionalContextService.instance = new EmotionalContextService();
     }
     return EmotionalContextService.instance;
+  }
+
+  /** Subscribe to ConsolidationOutputBus for profile-driven emotional updates. */
+  async subscribeToConsolidationBus(): Promise<void> {
+    try {
+      const { consolidationOutputBus } = await import('../infrastructure/consolidation-output-bus.js');
+      consolidationOutputBus.onConsolidationComplete(async (profile: any) => {
+        // Update emotional context for key entities from the consolidation profile
+        const entities = [
+          ...(profile.expertise?.map((e: any) => e.domain) ?? []),
+          ...(profile.interests?.map((i: any) => i.area) ?? []),
+          ...(profile.entities?.slice(0, 5).map((e: any) => e.name) ?? []),
+        ];
+        for (const entity of entities) {
+          if (entity) {
+            await this.updateEmotionalResponse(entity, {
+              emotion: profile.communication_style?.formality > 0.7 ? 'engaged' : 'curious',
+              intensity: 0.3,
+            });
+          }
+        }
+      });
+    } catch (err) {
+      console.error('[EmotionalContextService] bus subscription failed:', err);
+    }
   }
 
   async getEmotionalContext(entity: string): Promise<EmotionalContext | null> {
@@ -389,8 +450,6 @@ export class ActionPolicyService {
   }
 
   getPolicyForState(stateKey: string): ActionPolicy {
-    // Lazy import to avoid circular dependency at module load time
-    const { DecisionActionService } = require('../processing/decision-action-service.js');
     const service = DecisionActionService.get_instance();
     const policy = service.getPolicy(stateKey);
 

@@ -15,6 +15,7 @@
  */
 
 import { get_database } from '../../database/connection.js';
+import { consolidationOutputBus } from '../infrastructure/consolidation-output-bus.js';
 import { llmService } from '../infrastructure/llm-service.js';
 import { ReflectionStore } from '../infrastructure/reflection-store.js';
 import { DEFAULT_USER_ID } from '../memory/memory-scope-service.js';
@@ -339,6 +340,26 @@ export class SleepConsolidationService {
       this.persistLastRun(period, Date.now()).catch(() => {});
       
       console.log(`✅ ${period} consolidation complete in ${Date.now() - startTime}ms`);
+
+      // Publish to ConsolidationOutputBus so drive/emotional/identity services react
+      consolidationOutputBus.publish({
+        userId,
+        profileCreated: new Date(),
+        lastUpdated: new Date(),
+        totalSessions: data.session_count,
+        totalMessages: data.event_count,
+        avgSessionLength: data.session_count > 0 ? data.event_count / data.session_count : 0,
+        preferredTopics: [],
+        communicationStyle: { formalityLevel: 0, technicalDepth: 0, questionFrequency: 0, avgMessageLength: 0, preferredResponseLength: 'brief' as const, commonPhrases: [] },
+        expertiseAreas: [],
+        interestAreas: [],
+        keyEntities: selectedEntities.map(e => ({ entityId: '', entityName: e, entityType: 'concept', mentionCount: 0, relationship: 'interest' as const, lastInteraction: new Date(), contextSummary: '' })),
+        activityPatterns: [],
+        knowledgeEvolution: [],
+        memoryStats: { totalEvents: data.event_count, totalSessions: data.session_count, totalFacts: 0, totalNodes: 0, avgConfidence: 0, oldestMemory: new Date(), newestMemory: new Date() },
+        // Pass sleep-specific metadata through extension
+        __sleep_consolidation: { period, narrative: llmOutput.narrative, emotionalArcs: llmOutput.emotional_arc },
+      } as any).catch(err => console.error('[SleepConsolidation] bus publish failed:', err));
       return result;
 
     } catch (error: any) {

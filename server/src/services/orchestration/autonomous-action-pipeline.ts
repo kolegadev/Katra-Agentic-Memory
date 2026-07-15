@@ -19,7 +19,8 @@
  * priority one. This ensures emergence is not limited to survival crises.
  */
 
-import { get_database } from '../database/connection.js';
+import { get_database } from '../../database/connection.js';
+import { driveStateService } from './orchestration-services.js';
 
 // ── Trigger Taxonomy ─────────────────────────────────────────────────────
 
@@ -191,17 +192,27 @@ export class AutonomousActionPipeline {
 
   // ── Evaluators (one per trigger type) ──────────────────────────────────
 
-  private async _evaluateDriveDeficits(
+  private _evaluateDriveDeficits(
     entity: string,
     output: string
-  ): Promise<TriggerEvaluation | null> {
-    const driveState = await this._fetchKatraTool('get_drive_state', {});
-    if (!driveState) return null;
+  ): TriggerEvaluation | null {
+    // Direct import of driveStateService — no HTTP round-trip needed
+    const driveState = driveStateService.getDriveState();
+    if (!driveState || !driveState.drives) return null;
 
-    const deficits = this._parseDriveTable(driveState);
+    // Calculate deficits: 100 - (current/target) * 100 for each drive
+    const deficits: Record<string, number> = {};
+    for (const [name, drive] of Object.entries(driveState.drives)) {
+      if (drive.target > 0) {
+        deficits[name] = Math.max(0, Math.round(100 - (drive.current / drive.target) * 100));
+      }
+    }
+
+    const entries = Object.entries(deficits);
+    if (entries.length === 0) return null;
+
     const maxDeficit = Math.max(...Object.values(deficits), 0);
-    const worstDrive = Object.entries(deficits)
-      .sort(([, a], [, b]) => b - a)[0];
+    const worstDrive = entries.sort(([, a], [, b]) => b - a)[0];
 
     if (maxDeficit <= 0) return null;
 
