@@ -172,12 +172,14 @@ const SearchMemoriesInput = z.object({
   query: z.string().min(1).describe('Search query for memories'),
   user_id: z.string().optional().describe('Optional user ID to filter by'),
   limit: z.number().int().min(1).max(50).optional().default(10).describe('Max results'),
+  include_retracted: z.boolean().optional().default(false).describe('Include retracted memories in results (default: false)'),
 });
 
 const VectorSearchInput = z.object({
   query: z.string().min(1).describe('Search query for semantic vector search'),
   user_id: z.string().optional().describe('Optional user ID'),
   limit: z.number().int().min(1).max(20).optional().default(10).describe('Max results'),
+  include_retracted: z.boolean().optional().default(false).describe('Include retracted memories in results (default: false)'),
 });
 
 const StoreMemoryInput = z.object({
@@ -189,6 +191,12 @@ const StoreMemoryInput = z.object({
   session_id: z.string().optional().describe('Optional session ID. Required for episodic event routing (category "event").'),
   source: z.string().optional().describe('Optional origin of the memory (e.g. "kolega-code", "mcp_store").'),
   tags: z.array(z.string()).optional().describe('Optional tags for categorisation/filtering.'),
+});
+
+const RetractMemoryInput = z.object({
+  memory_id: z.string().min(1).describe('ID of the memory to retract (the _id from store_memory response)'),
+  reason: z.string().min(1).describe('Reason for retraction — stored as audit trail'),
+  superseded_by_id: z.string().optional().describe('Optional ID of the replacement/superseding memory'),
 });
 
 const GetMemoryScopeInput = z.object({}).describe('Get current memory scope settings');
@@ -350,6 +358,11 @@ const tools = [
     name: 'store_memory',
     description: 'Store a new memory (fact, preference, insight, or event) into the long-term semantic memory. Returns confirmation with stored ID.',
     inputSchema: zodToJsonSchema(StoreMemoryInput) as Record<string, unknown>,
+  },
+  {
+    name: 'retract_memory',
+    description: 'Retract a previously stored memory by ID. The memory is marked as retracted and excluded from search_memories and vector_search results by default. Retracted memories remain in the database for full auditability. Use include_retracted=true in search tools to view them. Retraction requires a reason (stored as audit trail) and optionally accepts a superseding memory ID to create a correction chain.',
+    inputSchema: zodToJsonSchema(RetractMemoryInput) as Record<string, unknown>,
   },
   {
     name: 'search_memories',
@@ -1010,6 +1023,49 @@ async function handleStoreMemory(args: unknown): Promise<TextContent[]> {
   }];
 }
 
+async function handleRetractMemory(args: unknown): Promise<TextContent[]> {
+  const input = RetractMemoryInput.parse(args);
+  if (!is_database_connected()) {
+    return [{ type: 'text', text: '⚠️ MongoDB is not connected.' }];
+  }
+
+  const db = get_database();
+
+  // Validate ObjectId format
+  let docId: any;
+  try {
+    const { ObjectId } = await import('mongodb');
+    docId = new ObjectId(input.memory_id);
+  } catch {
+    return [{ type: 'text', text: `❌ Invalid memory_id format: "${input.memory_id}". Must be a valid MongoDB ObjectId.` }];
+  }
+
+  const result = await db.collection('semantic_facts').findOneAndUpdate(
+    { _id: docId },
+    {
+      $set: {
+        status: 'retracted',
+        retracted_at: new Date(),
+        retracted_reason: input.reason,
+        ...(input.superseded_by_id ? { superseded_by: input.superseded_by_id } : {}),
+      },
+    },
+    { returnDocument: 'after' }
+  );
+
+  if (!result) {
+    return [{ type: 'text', text: `❌ No memory found with ID: \`${input.memory_id}\`` }];
+  }
+
+  const supersededNote = input.superseded_by_id
+    ? `\n**Superseded by:** \`${input.superseded_by_id}\``
+    : '';
+  return [{
+    type: 'text',
+    text: `✅ Memory retracted.\n\n**ID:** \`${input.memory_id}\`\n**Reason:** ${input.reason}\n**Retracted at:** ${new Date().toISOString()}${supersededNote}\n**Content:** ${(result as any).content?.slice(0, 200) || '(unknown)'}`,
+  }];
+}
+
 async function handleSearchMemories(args: unknown): Promise<TextContent[]> {
   const input = SearchMemoriesInput.parse(args);
   if (!is_database_connected()) {
@@ -1061,8 +1117,12 @@ async function handleSearchMemories(args: unknown): Promise<TextContent[]> {
     if (embeddingService.isReady) {
       const queryVec = await embeddingService.encode(input.query);
       if (queryVec) {
+        const factsFilter: Record<string, unknown> = { embedding: { $exists: true } };
+        if (!input.include_retracted) {
+          factsFilter.status = { $ne: 'retracted' };
+        }
         const facts = await db.collection('semantic_facts')
-          .find({ embedding: { $exists: true } })
+          .find(factsFilter)
           .limit(100)
           .toArray();
         if (facts.length > 0) {
@@ -1103,16 +1163,22 @@ async function handleSearchMemories(args: unknown): Promise<TextContent[]> {
     let docs: any[] = [];
     const contentField = col.contentPath;
 
+    // Build collection-specific filter with retraction exclusion
+    const colFilter: Record<string, unknown> = { ...baseFilter };
+    if (col.name === 'semantic_facts' && !input.include_retracted) {
+      colFilter.status = { $ne: 'retracted' };
+    }
+
     try {
       // Try  index first
       docs = await db.collection(col.name)
-        .find({ ...baseFilter, $text: { $search: input.query } })
+        .find({ ...colFilter, $text: { $search: input.query } })
         .sort({ timestamp: -1 } as any)
         .limit(limit)
         .toArray();
     } catch {
       // Fall back to regex on content field + title/name fields
-      const regexFilter: Record<string, unknown> = { ...baseFilter };
+      const regexFilter: Record<string, unknown> = { ...colFilter };
       // Build  across multiple searchable fields
       const orConditions: Record<string, unknown>[] = [
         { [contentField]: { $regex: safeRegex } },
@@ -1203,11 +1269,17 @@ async function handleVectorSearch(args: unknown): Promise<TextContent[]> {
   let results: any[] = [];
   let usedVector = false;
 
+  // Build facts filter with retraction exclusion
+  const factsFilter: Record<string, unknown> = { ...scopeFilter };
+  if (!input.include_retracted) {
+    factsFilter.status = { $ne: 'retracted' };
+  }
+
   try {
     const queryVec = await embeddingService.encode(input.query);
     if (queryVec) {
       const facts = await db.collection('semantic_facts')
-        .find({ ...scopeFilter, embedding: { $exists: true } })
+        .find({ ...factsFilter, embedding: { $exists: true } })
         .limit(50)
         .toArray();
       if (facts.length > 0) {
@@ -1230,13 +1302,13 @@ async function handleVectorSearch(args: unknown): Promise<TextContent[]> {
   if (results.length === 0) {
     try {
       results = await db.collection('semantic_facts')
-        .find({ ...scopeFilter, $text: { $search: input.query } })
+        .find({ ...factsFilter, $text: { $search: input.query } })
         .limit(input.limit)
         .toArray();
     } catch {
       const regex = new RegExp(input.query.split(/\s+/).join('|'), 'i');
       results = await db.collection('semantic_facts')
-        .find({ ...scopeFilter, content: { $regex: regex } })
+        .find({ ...factsFilter, content: { $regex: regex } })
         .limit(input.limit)
         .toArray();
     }
@@ -2380,6 +2452,7 @@ function registerHandlers(server: Server) {
       let result: TextContent[];
       switch (name) {
         case 'store_memory': result = await handleStoreMemory(args); break;
+        case 'retract_memory': result = await handleRetractMemory(args); break;
         case 'search_memories': result = await handleSearchMemories(args); break;
         case 'vector_search': result = await handleVectorSearch(args); break;
         case 'get_conversation_history': result = await handleGetHistory(args); break;
