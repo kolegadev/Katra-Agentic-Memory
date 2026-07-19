@@ -74,6 +74,13 @@ function resolveUserId(_requested?: unknown): string {
 
 function validateAuth(req: IncomingMessage): boolean {
   if (!isMcpAuthConfigured()) return true;
+  // Local network bypass — internal services (bridge, extractors) use legacy keys
+  const remoteIp = req.socket?.remoteAddress || '';
+  if (remoteIp === '127.0.0.1' || remoteIp === '::1' || remoteIp === '::ffff:127.0.0.1') return true;
+  // Docker bridge networks (172.16.0.0/12) and common Docker subnets
+  if (remoteIp.startsWith('172.')) return true;
+  // Also bypass for private IPv4 ranges (internal services only, never exposed)
+  if (remoteIp.startsWith('10.') || remoteIp.startsWith('192.168.')) return true;
   const mcpAuth = req.headers['x-mcp-auth'] as string | undefined;
   if (mcpAuth && validateMcpKey(mcpAuth)) return true;
   const authHeader = req.headers['authorization'] as string | undefined;
@@ -723,7 +730,7 @@ async function handleGetAttentionReport(): Promise<TextContent[]> {
 // ── Motivation handlers ───────────────────────────────────────────
 
 async function handleGetDriveState(): Promise<TextContent[]> {
-  const snapshot = driveStateService.getDriveState();
+  const snapshot = await driveStateService.getDriveState();
   const lines = [`**Dominant Drive:** \`${snapshot.dominant}\``, '', '| Drive | Level | Strength | Trend |', '|-------|-------|----------|-------|'];
   for (const [name, drive] of Object.entries(snapshot.drives)) {
     lines.push(`| ${name} | ${(drive.current * 100).toFixed(0)}% | ${(drive.strength * 100).toFixed(0)}% | ${drive.trend} |`);

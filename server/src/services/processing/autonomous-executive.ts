@@ -18,6 +18,7 @@ import { SelfModelService } from './self-model-service.js';
 import { DecisionActionService } from './decision-action-service.js';
 import { get_database } from '../../database/connection.js';
 import { DEFAULT_USER_ID } from '../memory/memory-scope-service.js';
+import { autonomousActionPipeline } from '../orchestration/autonomous-action-pipeline.js';
 
 // Adaptive cadence — like a biological heart:
 //   Survival threat (adrenaline):  2 min  — fastest, existential urgency
@@ -180,6 +181,15 @@ export class AutonomousExecutive {
         await this.actionPath(dominant, deficits);
       } else {
         await this.mindWanderPath();
+      }
+
+      // Evaluate all triggers post-tick — drive deficits, memory integrity, etc.
+      // Auto-starts corrective sessions for critical/urgent conditions.
+      try {
+        const entity = dominant || 'system';
+        await autonomousActionPipeline.evaluateAll(entity, '', 'kolega-agent');
+      } catch (evalErr) {
+        console.error('Pipeline evaluation failed:', evalErr);
       }
     } finally {
       this.ticking = false;

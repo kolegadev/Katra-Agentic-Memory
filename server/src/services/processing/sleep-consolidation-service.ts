@@ -36,6 +36,13 @@ interface ScheduleConfig {
   monthly: { dayOfMonth: number; hour: number; minute: number };
 }
 
+// ── Batch configuration for small-model safety (llama3.2:3b, ~8K context) ──
+// Each batch targets ~6000 tokens of input, leaving room for prompt + JSON response.
+const BATCH_CONFIG = {
+  weekly:  { batchDays: 2, maxEventsPerBatch: 30, maxFactsPerBatch: 50 },
+  monthly: { batchDays: 7, maxEventsPerBatch: 30, maxFactsPerBatch: 50 },
+} as const;
+
 export class SleepConsolidationService {
   private static instance: SleepConsolidationService;
   private timers: Map<string, NodeJS.Timeout> = new Map();
@@ -300,6 +307,12 @@ export class SleepConsolidationService {
     try {
       console.log(`🌙 Starting ${period} sleep consolidation for ${userId}...`);
 
+      // Weekly/monthly: use batched processing to stay within LLM context limits
+      if (period === "weekly" || period === "monthly") {
+        const batchedResult = await this.runBatchedConsolidation(period, userId);
+        return batchedResult;
+      }
+
       // Phase 1: Gather
       const data = await this.gatherData(userId, periodStart, now, period);
       if (data.event_count === 0 && data.session_count === 0) {
@@ -391,7 +404,9 @@ export class SleepConsolidationService {
     userId: string,
     from: Date,
     to: Date,
-    period: string
+    period: string,
+    maxEvents: number = 100,
+    maxFacts: number = 100
   ): Promise<GatheredData> {
     const db = get_database();
 
@@ -402,7 +417,7 @@ export class SleepConsolidationService {
         timestamp: { $gte: from, $lte: to },
       })
       .sort({ timestamp: -1 })
-      .limit(100)
+      .limit(maxEvents)
       .toArray();
 
     const eventCount = events.length;
@@ -425,13 +440,13 @@ export class SleepConsolidationService {
         timestamp: { $gte: from, $lte: to },
       })
       .sort({ timestamp: -1 })
-      .limit(200)
+      .limit(maxFacts * 2)
       .toArray();
 
     const factSummaries = facts
       .map((f: any) => f.content || '')
       .filter(Boolean)
-      .slice(0, 100)
+      .slice(0, maxFacts)
       .join('\n');
 
     // Active entities (from knowledge_nodes updated in period)
@@ -756,6 +771,244 @@ RULES:
         );
       }
     } catch { /* non-critical */ }
+  }
+
+
+  // ── Batched Consolidation (weekly/monthly) ──────────────────────────
+
+  /**
+   * Split a large period into time-based batches, run mini-consolidations
+   * on each, then synthesize a final merged reflection. This avoids
+   * exceeding the LLM context window (llama3.2:3b = 8K tokens).
+   */
+  private async runBatchedConsolidation(
+    period: 'weekly' | 'monthly',
+    userId: string
+  ): Promise<ConsolidationResult> {
+    const startTime = Date.now();
+    const now = new Date();
+    const totalDays = period === 'weekly' ? 7 : 30;
+    const periodStart = new Date(now.getTime() - totalDays * 24 * 60 * 60 * 1000);
+    const config = BATCH_CONFIG[period];
+
+    // Split into time-based batches
+    const batches: Array<{ from: Date; to: Date }> = [];
+    let cursor = new Date(periodStart);
+    while (cursor < now) {
+      const batchEnd = new Date(cursor.getTime() + config.batchDays * 24 * 60 * 60 * 1000);
+      batches.push({ from: new Date(cursor), to: batchEnd > now ? now : batchEnd });
+      cursor = batchEnd;
+    }
+
+    console.log(`🌙 ${period} consolidation: ${batches.length} batches of ~${config.batchDays}d each`);
+
+    const batchResults: Array<{
+      narrative: string;
+      emotional_arc: any;
+      entities: string[];
+    }> = [];
+
+    let totalEvents = 0;
+    let totalSessions = 0;
+
+    for (let i = 0; i < batches.length; i++) {
+      const batch = batches[i];
+      console.log(`   📦 Batch ${i + 1}/${batches.length}: ${batch.from.toISOString().slice(0, 10)} → ${batch.to.toISOString().slice(0, 10)}`);
+
+      const data = await this.gatherData(userId, batch.from, batch.to, 'daily', config.maxEventsPerBatch, config.maxFactsPerBatch);
+      totalEvents += data.event_count;
+      totalSessions += data.session_count;
+
+      if (data.event_count === 0) {
+        console.log(`   ⏭️  Batch ${i + 1} empty, skipping`);
+        continue;
+      }
+
+      const selectedEntities = this.selectReflectionEntities(data);
+      const prompt = this.buildReflectionPrompt(data, 'daily', selectedEntities);
+      
+      console.log(`   🧠 LLM call for batch ${i + 1} (${data.event_count} events, ${selectedEntities.length} entities)...`);
+      const llmOutput = await this.callLLM(prompt);
+
+      if (llmOutput?.narrative) {
+        batchResults.push({
+          narrative: llmOutput.narrative,
+          emotional_arc: llmOutput.emotional_arc,
+          entities: selectedEntities,
+        });
+      } else {
+        console.warn(`   ⚠️  Batch ${i + 1} LLM returned empty, skipping`);
+      }
+    }
+
+    if (batchResults.length === 0) {
+      console.log(`🌙 No batch results for ${period} consolidation`);
+      this.lastRunTimes.set(period, Date.now());
+      this.persistLastRun(period, Date.now()).catch(() => {});
+      return {
+        success: true,
+        period_type: period,
+        period_start: periodStart,
+        period_end: now,
+        nodes_upserted: 0,
+        edges_upserted: 0,
+        insights_upserted: 0,
+        narrative_preview: 'No significant activity this period.',
+      };
+    }
+
+    // Synthesis: merge batch narratives into final consolidated reflection
+    console.log(`🧠 Synthesis: merging ${batchResults.length} batch reflections for ${period}...`);
+    const synthesisOutput = await this.synthesizeBatches(batchResults, period);
+
+    if (!synthesisOutput?.narrative) {
+      // Fallback: use the last batch's output directly
+      const last = batchResults[batchResults.length - 1];
+      synthesisOutput.narrative = last.narrative;
+      synthesisOutput.emotional_arc = last.emotional_arc;
+    }
+
+    // Build aggregated data for storeResults
+    const aggregatedData: GatheredData = {
+      period_start: periodStart,
+      period_end: now,
+      event_count: totalEvents,
+      session_count: totalSessions,
+      conversation_summaries: batchResults.map(b => b.narrative.slice(0, 300)).join('\n---\n'),
+      semantic_facts: '',
+      active_entities: [...new Set(batchResults.flatMap(b => b.entities))].join('\n'),
+      prior_journal_narrative: null,
+      unresolved_threads: [],
+    };
+
+    const result = await this.storeResults(synthesisOutput, aggregatedData, userId, periodStart, now, period);
+
+    // Record successful run
+    this.lastRunTimes.set(period, Date.now());
+    this.persistLastRun(period, Date.now()).catch(() => {});
+
+    console.log(`✅ ${period} batched consolidation complete in ${Date.now() - startTime}ms (${batchResults.length} batches)`);
+
+    consolidationOutputBus.publish({
+      userId,
+      profileCreated: new Date(),
+      lastUpdated: new Date(),
+      totalSessions,
+      totalMessages: totalEvents,
+      avgSessionLength: totalSessions > 0 ? totalEvents / totalSessions : 0,
+      preferredTopics: [],
+      communicationStyle: { formalityLevel: 0, technicalDepth: 0, questionFrequency: 0, avgMessageLength: 0, preferredResponseLength: 'brief' as const, commonPhrases: [] },
+      expertiseAreas: [],
+      interestAreas: [],
+      keyEntities: [],
+      activityPatterns: [],
+      knowledgeEvolution: [],
+      memoryStats: { totalEvents, totalSessions, totalFacts: 0, totalNodes: 0, avgConfidence: 0, oldestMemory: new Date(), newestMemory: new Date() },
+      __sleep_consolidation: { period, narrative: synthesisOutput.narrative, emotionalArcs: synthesisOutput.emotional_arc },
+    } as any).catch(err => console.error('[SleepConsolidation] bus publish failed:', err));
+
+    return result;
+  }
+
+  /**
+   * Synthesize multiple batch-level narratives into a single consolidated
+   * reflection. Uses a compact prompt with just the narratives (not raw events).
+   */
+  private async synthesizeBatches(
+    batchResults: Array<{ narrative: string; emotional_arc: any; entities: string[] }>,
+    period: string
+  ): Promise<ReflectionLLMOutput | null> {
+    const narrativeTarget = period === 'monthly' ? 400 : 300;
+    const batchSummaries = batchResults.map((b, i) =>
+      `BATCH ${i + 1} NARRATIVE:\n${b.narrative.slice(0, 400)}\nBATCH ${i + 1} EMOTION: ${b.emotional_arc?.dominant_emotion || 'unknown'} (${b.emotional_arc?.trajectory || 'stable'})`
+    ).join('\n\n');
+
+    const prompt = `You are synthesizing ${period} sleep consolidation from ${batchResults.length} sub-period reflections.
+
+Each sub-period was processed independently. Your job is to merge them into ONE coherent final reflection
+that captures the full ${period} arc — how emotions evolved, what patterns persisted, what shifted.
+
+SUB-PERIOD REFLECTIONS:
+─────────────────────────────────────────────
+${batchSummaries}
+─────────────────────────────────────────────
+
+Respond with ONLY a valid JSON object in this exact shape:
+
+{
+  "emotional_arc": {
+    "dominant_emotion": "string",
+    "intensity": 0.0-1.0,
+    "trajectory": "rising|falling|stable|oscillating|transformative",
+    "secondary_emotions": [{"emotion": "string", "intensity": 0.0-1.0}]
+  },
+  "entity_reflections": [
+    {
+      "entity_name": "string",
+      "entity_type": "person|project|tool|concept",
+      "emotional_signature": {
+        "primary_emotion": "string",
+        "intensity": 0.0-1.0,
+        "valence": -1.0 to 1.0,
+        "stability": "volatile|steady|growing|fading"
+      },
+      "reflection": "One sentence"
+    }
+  ],
+  "relationships": [
+    {
+      "source_entity": "string",
+      "target_entity": "string",
+      "edge_type": "feels_excited_about|feels_frustrated_by|feels_curious_about|feels_confident_in|feels_anxious_about|feels_grateful_for|feels_conflicted_between",
+      "intensity": 0.0-1.0,
+      "valence": -1.0 to 1.0,
+      "narrative": "One sentence"
+    }
+  ],
+  "philosophical_insight": {
+    "insight_text": "A principle realized this ${period}. Null if none.",
+    "domain": "engineering|relationships|self|creativity|learning|philosophy|other"
+  },
+  "identity_delta": "How did this ${period} shift self-understanding? One sentence, or null.",
+  "regret_score": {
+    "unfinished_work": "What would you most regret leaving incomplete? One sentence.",
+    "why_it_matters": "Why?",
+    "emotion_tied": "care|duty|curiosity|ambition|love",
+    "activation_hint": "Next action. One sentence."
+  },
+  "unresolved_threads": ["Open questions that persist"],
+  "narrative": "A ~${narrativeTarget}-word first-person reflective journal entry synthesizing the full ${period}. Write as 'I', in present-moment reflection. Be honest and vulnerable."
+}
+
+RULES:
+- Merge, don't average. Find the thread that connects the sub-periods.
+- If all batches share a dominant emotion, that's the arc. If they differ, the trajectory tells the story.
+- Entity reflections: include only entities that appeared across multiple batches (3-6 max).
+- Regret: distill from the sub-periods. What's the through-line of unfinished work?`;
+
+    try {
+      const systemInstruction = 'You are a reflective subconscious mind synthesising periodic reflections. Respond ONLY with valid JSON.';
+      const result = await llmService.extractJson(systemInstruction, prompt, 3000);
+
+      if (!result || Object.keys(result).length === 0) {
+        console.warn('⚠️  Synthesis LLM returned empty result');
+        return null;
+      }
+
+      const output = result as unknown as ReflectionLLMOutput;
+      if (!output.emotional_arc) output.emotional_arc = { dominant_emotion: 'neutral', intensity: 0.1, trajectory: 'stable', secondary_emotions: [] };
+      if (!output.entity_reflections) output.entity_reflections = [];
+      if (!output.relationships) output.relationships = [];
+      if (!output.unresolved_threads) output.unresolved_threads = [];
+      if (!output.narrative) {
+        // Fallback: concatenate batch narratives
+        output.narrative = batchResults.map(b => b.narrative).join('\n\n');
+      }
+      return output;
+    } catch (error: any) {
+      console.error('❌ Synthesis LLM call failed:', error.message);
+      return null;
+    }
   }
 
   // ── Scheduling Helpers ─────────────────────────────────────────────

@@ -140,6 +140,7 @@ export class AutonomousActionPipeline {
   ): Promise<PipelineRun> {
     this.lastRun = new Date();
     this.runCount++;
+    console.log("[Pipeline] evaluateAll #" + this.runCount + " starting...");
 
     const evaluations = await Promise.all([
       this._evaluateDriveDeficits(entity, output),
@@ -151,6 +152,7 @@ export class AutonomousActionPipeline {
       this._evaluateErrorSurge(entity, output),
     ]);
 
+    console.log("[Pipeline] " + evaluations.filter(e => e !== null).length + " triggers fired");
     const validEvaluations = evaluations.filter(
       (e): e is TriggerEvaluation => e !== null
     );
@@ -192,12 +194,12 @@ export class AutonomousActionPipeline {
 
   // ── Evaluators (one per trigger type) ──────────────────────────────────
 
-  private _evaluateDriveDeficits(
+  private async _evaluateDriveDeficits(
     entity: string,
     output: string
   ): TriggerEvaluation | null {
     // Direct import of driveStateService — no HTTP round-trip needed
-    const driveState = driveStateService.getDriveState();
+    const driveState = await driveStateService.getDriveState();
     if (!driveState || !driveState.drives) return null;
 
     // Calculate deficits: 100 - (current/target) * 100 for each drive

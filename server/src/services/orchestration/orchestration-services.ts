@@ -166,9 +166,9 @@ export class DriveStateService {
   }
 
   /** Delegate to MotivationalEngine for current drive state. */
-  getDriveState(): DriveStateSnapshot {
+  async getDriveState(): Promise<DriveStateSnapshot> {
     // Lazy import to avoid circular dependency at module load time
-    const { MotivationalEngine } = require('../processing/motivational-engine.js');
+    const { MotivationalEngine } = await import('../processing/motivational-engine.js');
     const engine = MotivationalEngine.get_instance();
     const snapshot = engine.tick();
     const dominant = engine.getDominantDrive();
@@ -185,7 +185,7 @@ export class DriveStateService {
       const db = get_database();
       if (!db) return;
 
-      const { MotivationalEngine } = require('../processing/motivational-engine.js');
+      const { MotivationalEngine } = await import('../processing/motivational-engine.js');
       const engine = MotivationalEngine.get_instance();
 
       // Count recent events as a proxy for activity level

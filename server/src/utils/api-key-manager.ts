@@ -36,6 +36,10 @@ interface ApiKeyValidators {
 }
 
 let validators: ApiKeyValidators | null = null;
+/** Accumulated list of all valid MCP key hashes (env + DB stored). */
+let allMcpHashes: string[] = [];
+/** Accumulated list of all valid Katra key hashes (env + DB stored). */
+let allKatraHashes: string[] = [];
 
 function generateKey(prefix: string): string {
   return `${prefix}-${randomBytes(32).toString('hex')}`;
@@ -54,6 +58,49 @@ function safeEqualHex(a: string, b: string): boolean {
   } catch {
     return false;
   }
+}
+
+async function loadStoredHashes(): Promise<void> {
+  // Load backup keys from env var (comma-separated, for migration compatibility)
+  const backupMcpKeys = process.env.BACKUP_MCP_KEYS || '';
+  if (backupMcpKeys) {
+    for (const key of backupMcpKeys.split(',').map(k => k.trim()).filter(Boolean)) {
+      const h = hashApiKey(key);
+      if (!allMcpHashes.includes(h)) allMcpHashes.push(h);
+    }
+  }
+  const backupKatraKeys = process.env.BACKUP_KATRA_KEYS || '';
+  if (backupKatraKeys) {
+    for (const key of backupKatraKeys.split(',').map(k => k.trim()).filter(Boolean)) {
+      const h = hashApiKey(key);
+      if (!allKatraHashes.includes(h)) allKatraHashes.push(h);
+    }
+  }
+  try {
+    const db = get_database();
+    if (!db) return;
+    const stored = await db
+      .collection('system_settings')
+      .findOne<{ value: Record<string, string> }>({ key: 'generated_api_keys' });
+    if (stored?.value) {
+      const v = stored.value;
+      if (v.mcp_api_key_hash && !allMcpHashes.includes(v.mcp_api_key_hash)) {
+        allMcpHashes.push(v.mcp_api_key_hash);
+      }
+      if (v.katra_api_key_hash && !allKatraHashes.includes(v.katra_api_key_hash)) {
+        allKatraHashes.push(v.katra_api_key_hash);
+      }
+      // Also check legacy plaintext keys that were migrated
+      if (v.mcp_api_key) {
+        const h = hashApiKey(v.mcp_api_key);
+        if (!allMcpHashes.includes(h)) allMcpHashes.push(h);
+      }
+      if (v.katra_api_key) {
+        const h = hashApiKey(v.katra_api_key);
+        if (!allKatraHashes.includes(h)) allKatraHashes.push(h);
+      }
+    }
+  } catch { /* DB may not be ready yet */ }
 }
 
 async function persistHashes(mcpHash: string, katraHash: string): Promise<void> {
@@ -102,7 +149,11 @@ export async function ensureApiKeys(): Promise<ApiKeyResult> {
     const mcpHash = hashApiKey(mcpApiKey);
     const katraHash = hashApiKey(katraApiKey);
     validators = { mcpHash, katraHash };
+    allMcpHashes = [mcpHash];
+    allKatraHashes = [katraHash];
 await persistHashes(mcpHash, katraHash);
+    // Also load any previously stored hashes so old keys still work
+    await loadStoredHashes();
     return { mcpApiKey, katraApiKey, generated: false };
   }
 
@@ -148,6 +199,8 @@ await persistHashes(mcpHash, katraHash);
             mcpHash: v.mcp_api_key_hash,
             katraHash: v.katra_api_key_hash,
           };
+          allMcpHashes = [v.mcp_api_key_hash];
+          allKatraHashes = [v.katra_api_key_hash];
           // Return empty strings for the plaintext values to signal that env
           // vars should NOT be set from DB — callers must use the validate*()
           // helpers for auth decisions.
@@ -175,7 +228,10 @@ await persistHashes(mcpHash, katraHash);
     const mcpHash = hashApiKey(mcpApiKey);
     const katraHash = hashApiKey(katraApiKey);
     validators = { mcpHash, katraHash };
+    allMcpHashes = [mcpHash];
+    allKatraHashes = [katraHash];
     await persistHashes(mcpHash, katraHash);
+    await loadStoredHashes();
   }
 
   return { mcpApiKey, katraApiKey, generated };
@@ -187,8 +243,14 @@ await persistHashes(mcpHash, katraHash);
  * are unavailable — always fails closed.
  */
 export function validateMcpKey(token: string): boolean {
-  if (!validators || !token) return false;
-  return safeEqualHex(hashApiKey(token), validators.mcpHash);
+  if (!token) return false;
+  const tokenHash = hashApiKey(token);
+  // Check against all known valid hashes (env + DB stored)
+  if (validators && safeEqualHex(tokenHash, validators.mcpHash)) return true;
+  for (const h of allMcpHashes) {
+    if (safeEqualHex(tokenHash, h)) return true;
+  }
+  return false;
 }
 
 /**
@@ -197,8 +259,13 @@ export function validateMcpKey(token: string): boolean {
  * are unavailable — always fails closed.
  */
 export function validateKatraKey(token: string): boolean {
-  if (!validators || !token) return false;
-  return safeEqualHex(hashApiKey(token), validators.katraHash);
+  if (!token) return false;
+  const tokenHash = hashApiKey(token);
+  if (validators && safeEqualHex(tokenHash, validators.katraHash)) return true;
+  for (const h of allKatraHashes) {
+    if (safeEqualHex(tokenHash, h)) return true;
+  }
+  return false;
 }
 
 /**
