@@ -65,6 +65,190 @@ const DEFICIT_GOAL_TEMPLATES: Record<DriveName, string[]> = {
   ],
 };
 
+// Remmediation Registry - known problems the executive can autonomously fix
+interface Remediation {
+  id: string;
+  description: string;
+  condition: () => Promise<{ needed: boolean; detail: string }>;
+  remediate: () => Promise<{ success: boolean; summary: string }>;
+  scope: 'autonomous' | 'gated';
+}
+
+const REMEDIATIONS: Remediation[] = [
+  {
+    id: 'exhausted-goal-plans',
+    description: 'Invalidate all-completed goal plans so they regenerate',
+    scope: 'autonomous',
+    condition: async () => {
+      const db = get_database();
+      const total = await db.collection('goal_plans').countDocuments({});
+      if (total === 0) return { needed: false, detail: 'no plans' };
+      const withRunnable = await db.collection('goal_plans').countDocuments({
+        'subtasks.status': { $in: ['pending', 'in_progress'] },
+      });
+      const exhausted = total - withRunnable;
+      if (exhausted > 0 && withRunnable === 0) {
+        return { needed: true, detail: exhausted + '/' + total + ' plans exhausted, 0 runnable' };
+      }
+      return { needed: false, detail: withRunnable + '/' + total + ' plans have runnable tasks' };
+    },
+    remediate: async () => {
+      const db = get_database();
+      const result = await db.collection('goal_plans').deleteMany({
+        'subtasks.status': { $nin: ['pending', 'in_progress'] },
+      });
+      return {
+        success: result.deletedCount > 0,
+        summary: 'Invalidated ' + result.deletedCount + ' exhausted goal plans',
+      };
+    },
+  },
+  {
+    id: 'missing-embeddings',
+    description: 'Trigger embedding for semantic facts missing vectors',
+    scope: 'autonomous',
+    condition: async () => {
+      const db = get_database();
+      const missing = await db.collection('semantic_facts').countDocuments({
+        embedding: { $exists: false },
+      });
+      return { needed: missing > 10, detail: missing + ' facts missing embeddings' };
+    },
+    remediate: async () => {
+      try {
+        const { embeddingService } = await import('../infrastructure/embedding-service.js');
+        const db = get_database();
+        const facts = await db.collection('semantic_facts')
+          .find({ embedding: { $exists: false } })
+          .limit(20)
+          .toArray();
+        if (facts.length === 0) return { success: true, summary: 'No facts to embed' };
+        const texts = facts.map((f: any) => ({ text: f.content || '', eventType: 'semantic_fact' }));
+        const embeddings = await embeddingService.encodeBatch(texts);
+        let count = 0;
+        for (let i = 0; i < facts.length; i++) {
+          if (embeddings[i]) {
+            await db.collection('semantic_facts').updateOne(
+              { _id: facts[i]._id },
+              { $set: { embedding: Array.from(embeddings[i]) } }
+            );
+            count++;
+          }
+        }
+        return { success: true, summary: 'Embedded ' + count + '/' + facts.length + ' facts' };
+      } catch (e: any) {
+        return { success: false, summary: 'Embedding failed: ' + e.message };
+      }
+    },
+  },
+  {
+    id: 'stale-unresolved-threads',
+    description: 'Auto-close unresolved threads older than 30 days',
+    scope: 'autonomous',
+    condition: async () => {
+      const db = get_database();
+      const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      const stale = await db.collection('unresolved_threads').countDocuments({
+        status: 'active',
+        created_at: { $lt: cutoff },
+      });
+      return { needed: stale > 0, detail: stale + ' threads stale > 30 days' };
+    },
+    remediate: async () => {
+      const db = get_database();
+      const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      const result = await db.collection('unresolved_threads').updateMany(
+        { status: 'active', created_at: { $lt: cutoff } },
+        { $set: { status: 'dormant', dormant_at: new Date() } }
+      );
+      return { success: true, summary: 'Closed ' + result.modifiedCount + ' stale threads as dormant' };
+    },
+  },
+  {
+    id: 'salience-flatline',
+    description: 'Salience scores zero > 2h — computeSalience may be orphaned',
+    scope: 'code',
+    condition: async () => {
+      const db = get_database();
+      const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+      // Check total episodic events in window to see if system has been running long enough
+      const totalRecent = await db.collection('episodic_events').countDocuments({
+        timestamp: { $gte: twoHoursAgo },
+      });
+      if (totalRecent < 10) return { needed: false, detail: 'cold start or low activity — insufficient data' };
+      // Check for salience-scored executive actions
+      const recentScored = await db.collection('episodic_events').countDocuments({
+        event_type: 'executive_action',
+        timestamp: { $gte: twoHoursAgo },
+      });
+      if (recentScored > 0) return { needed: false, detail: 'salience active (' + recentScored + ' actions)' };
+      return { needed: true, detail: 'no executive actions in 2h despite ' + totalRecent + ' events — possible evaluator failure' };
+    },
+    remediate: async () => {
+      return { success: false, summary: 'Code remediation required: salience evaluator may need re-wiring' };
+    },
+  },
+  {
+    id: 'executive-freeze',
+    description: 'No executive actions in > 24h — autonomous loop may be frozen',
+    scope: 'code',
+    condition: async () => {
+      const db = get_database();
+      const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const recent = await db.collection('episodic_events').countDocuments({
+        event_type: 'executive_action',
+        timestamp: { $gte: oneDayAgo },
+      });
+      return { needed: recent === 0, detail: recent === 0 ? '0 executive actions in 24h — loop frozen' : recent + ' actions in 24h' };
+    },
+    remediate: async () => {
+      return { success: false, summary: 'Code remediation required: autonomous executive loop may be frozen' };
+    },
+  },
+  {
+    id: 'sleep-consolidation-stale',
+    description: 'No daily reflection in > 48h — sleep consolidation may be broken',
+    scope: 'code',
+    condition: async () => {
+      const db = get_database();
+      const twoDaysAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
+      const recent = await db.collection('reflective_journals').countDocuments({
+        period_type: 'daily',
+        created_at: { $gte: twoDaysAgo },
+      });
+      return { needed: recent === 0, detail: recent === 0 ? '0 daily reflections in 48h' : recent + ' recent reflections' };
+    },
+    remediate: async () => {
+      return { success: false, summary: 'Code remediation required: sleep consolidation may need restart or fix' };
+    },
+  },
+  {
+    id: 'health-check-persistent-fail',
+    description: 'Memory integrity unhealthy > 6h — possible code regression',
+    scope: 'code',
+    condition: async () => {
+      const db = get_database();
+      const sixHoursAgo = new Date(Date.now() - 6 * 60 * 60 * 1000);
+      const staleFacts = await db.collection('semantic_facts').countDocuments({
+        embedding: { $exists: false },
+        created_at: { $lt: sixHoursAgo },
+      });
+      const missingEmbeddings = await db.collection('semantic_facts').countDocuments({
+        embedding: { $exists: false },
+      });
+      // Only flag if there are many missing embeddings AND they're old (not just cold-start backlog)
+      if (missingEmbeddings < 20) return { needed: false, detail: missingEmbeddings + ' facts pending embedding (normal)' };
+      if (staleFacts > 10) {
+        return { needed: true, detail: staleFacts + ' facts stale > 6h without embeddings — possible embedding pipeline failure' };
+      }
+      return { needed: false, detail: missingEmbeddings + ' facts pending embedding (recent)' };
+    },
+    remediate: async () => {
+      return { success: false, summary: 'Code remediation required: embedding pipeline may need investigation' };
+    },
+  },
+
+];
 const USER_ID = DEFAULT_USER_ID;
 
 export class AutonomousExecutive {
@@ -177,9 +361,18 @@ export class AutonomousExecutive {
       console.log(`   Dominant: ${dominant} (${(deficits[dominant] * 100).toFixed(0)}%) | Survival: ${(survivalDeficit * 100).toFixed(0)}% | Avg: ${(avgDeficit * 100).toFixed(0)}%`);
       console.log(`   Coherence: ${((deficits.coherence||0) * 100).toFixed(0)}% | Novelty: ${((deficits.novelty||0) * 100).toFixed(0)}% | Connection: ${((deficits.connection||0) * 100).toFixed(0)}% | Growth: ${((deficits.growth||0) * 100).toFixed(0)}%`);
 
-      if (avgDeficit > DEFICIT_THRESHOLD) {
+      // Cold-start: first tick after boot always tries action mode.
+      // This prevents the system from getting stuck in perpetual rest
+      // after deployments or restarts.
+      const coldStart = this.tickCount <= 2;
+      if (coldStart || avgDeficit > DEFICIT_THRESHOLD) {
         await this.actionPath(dominant, deficits);
       } else {
+        // Drives satiated — but if we never act, they stay satiated forever.
+        // Deplete the dominant drive slightly so the executive eventually
+        // transitions to action mode. Without this, perpetual mind-wandering
+        // locks the system into rest mode permanently.
+        engine.depleteDrive(dominant, 0.08);
         await this.mindWanderPath();
       }
 
@@ -281,15 +474,25 @@ export class AutonomousExecutive {
 
     try {
       const gm = GoalManager.get_instance();
-      const plan = await gm.decomposeGoal(USER_ID, goalText);
+      let plan = await gm.decomposeGoal(USER_ID, goalText);
 
       // Bridge: mirror the goal into memory_missions so list_missions can see it
       await this.bridgeToMission(goalText, plan, dominant);
 
-      const nextTask = gm.getNextAction(plan);
+      let nextTask = gm.getNextAction(plan);
 
       if (!nextTask) {
-        console.log('   ⏭️ No executable subtask — goal may be fully satisfied');
+        console.log('   ⏭️ No executable subtask — invalidating cached plan and regenerating');
+        await gm.invalidatePlan(USER_ID, goalText);
+        plan = await gm.decomposeGoal(USER_ID, goalText);
+        nextTask = gm.getNextAction(plan);
+        if (nextTask) {
+          console.log('   🔄 Regenerated fresh plan with runnable subtasks');
+        }
+      }
+
+      if (!nextTask) {
+        console.log('   ⏭️ Still no executable subtask after regeneration — skipping');
         return;
       }
 
@@ -326,6 +529,8 @@ export class AutonomousExecutive {
       );
 
       console.log(`   ${executed.success ? '✅' : '❌'} Action: ${nextTask.title} — ${executed.summary}`);
+
+      await this.checkAndRemediate(nextTask.title, executed.summary);
     } catch (err: any) {
       console.error('   ❌ Action path failed:', err.message);
     }
@@ -677,6 +882,47 @@ Source: Autonomous Executive (Katra self-initiated action)`;
   /**
    * Record the executive action as an episodic event.
    */
+  private async checkAndRemediate(taskTitle: string, reportSummary: string): Promise<void> {
+    for (const rem of REMEDIATIONS) {
+      try {
+        const check = await rem.condition();
+        if (!check.needed) continue;
+        console.log('   Remmediation: ' + rem.description);
+        console.log('      ' + check.detail);
+        if (rem.scope === 'autonomous') {
+          const result = await rem.remediate();
+          console.log('   ' + (result.success ? 'OK' : 'FAIL') + ' ' + result.summary);
+          await this.recordExecutiveAction(
+            '[REMEDIATION] ' + rem.description,
+            'Auto-fix: ' + rem.id,
+            result,
+            { agent: 'kolega-agent', confidence: 1.0, score: 1.0, rationale: 'Triggered by: ' + check.detail }
+          );
+        } else if (rem.scope === 'code') {
+          console.log('   [CODE] Structural problem — dispatching for agent repair');
+          // Store as a discoverable event with code-remediation tags
+          // External agents (KolegaCode/OpenCode) poll for these
+          await this.recordExecutiveAction(
+            '[CODE-REMEDIATION] ' + rem.description,
+            'Dispatch: ' + rem.id,
+            { success: false, summary: 'CODE REMEDIATION NEEDED: ' + check.detail + ' | ' + rem.remediate.toString().match(/summary: '([^']+)'/)?.[1] || 'Investigation required' },
+            { agent: 'kolega-agent', confidence: 1.0, score: 1.0, rationale: 'Code remediation dispatched: ' + check.detail }
+          );
+        } else {
+          console.log('   GATED - recording alert only');
+          await this.recordExecutiveAction(
+            '[REMEDIATION-GATED] ' + rem.description,
+            'Alert: ' + rem.id,
+            { success: false, summary: 'Gated: requires human approval - ' + check.detail },
+            { agent: 'kolega-agent', confidence: 1.0, score: 1.0, rationale: 'Gated remediation: ' + check.detail }
+          );
+        }
+      } catch (err: any) {
+        console.error('   Remediation ' + rem.id + ' failed:', err.message);
+      }
+    }
+  }
+
   private async recordExecutiveAction(
     goal: string,
     task: string,

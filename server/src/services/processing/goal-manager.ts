@@ -132,6 +132,12 @@ export class GoalManager {
    * uses RL-guided selection (the bottleneck forces a choice — learn from it).
    * Falls back to topological ordering when RL has no data yet.
    */
+  async invalidatePlan(userId: string, goalText: string): Promise<void> {
+    const db = get_database();
+    const decompositionHash = stableContentHash(userId, goalText);
+    await db.collection('goal_plans').deleteOne({ decompositionHash });
+  }
+
   getNextAction(plan: GoalPlan): DependencyTask | null {
     const unblocked = plan.subtasks.filter(t => {
       if (t.status === 'completed' || t.status === 'blocked') return false;
