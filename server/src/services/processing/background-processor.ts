@@ -18,6 +18,7 @@ import { embeddingService } from '../infrastructure/embedding-service.js';
 import { entityResolver } from '../integration/entity-resolver.js';
 import { stableContentHash } from '../infrastructure/content-hash-utils.js';
 import { DecisionActionService } from './decision-action-service.js';
+import { SalienceService } from './salience-service.js';
 
 export class BackgroundProcessor {
   private static instance: BackgroundProcessor;
@@ -197,6 +198,7 @@ export class BackgroundProcessor {
       try {
         const { SalienceService } = await import('./salience-service.js');
         SalienceService.get_instance().adaptWeights();
+        DecisionActionService.get_instance().persistOutcomes();
       } catch { /* non-critical */ }
 
       // Auto-journal distillation: distill aged-out conversation turns into
@@ -451,6 +453,27 @@ export class BackgroundProcessor {
     } catch (rlErr: any) {
       // Non-critical — RL loop failure must not break processing
     }
+
+    // ── Salience Scoring ────────────────────────────────────────────────
+    // Compute attention salience so the attention gate can prioritize
+    // future retrieval. Fire-and-forget: never throw.
+    try {
+      const hoursSinceEvent = event.timestamp
+        ? (Date.now() - new Date(event.timestamp).getTime()) / (1000 * 60 * 60)
+        : 0;
+      const extractionYield = extractionResult.entities.length +
+        extractionResult.relationships.length +
+        extractionResult.semantic_facts.length;
+      SalienceService.get_instance().computeSalience({
+        hoursSinceEvent,
+        emotionalIntensity: event.metadata?.emotional_tags?.arousal ?? 0.5,
+        goalRelevance: 0,
+        novelty: extractionYield > 5 ? 0.8 : 0.4,
+        frequencyRarity: 0.5,
+        intensity: event.metadata?.emotional_tags?.valence ?? 0.5,
+        confidence: extractionResult.semantic_facts.length > 0 ? 0.8 : 0.3,
+      });
+    } catch { /* non-critical */ }
 
     // Update processing log to completed status — store summary only (not raw data)
     if (idempotencyKey) {

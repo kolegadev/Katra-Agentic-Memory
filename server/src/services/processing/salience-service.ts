@@ -271,6 +271,10 @@ export class SalienceService {
           current[weight] = parseFloat((current[weight] * 0.9 + targetVal * 0.1).toFixed(4));
         }
       }
+
+      if (targetState !== this.metaState) {
+        this.setMetaState(targetState);
+      }
     } catch {
       // ACC not available — keep current weights (non-critical)
     }

@@ -400,6 +400,53 @@ export class DecisionActionService {
     return filtered.slice(-maxLimit);
   }
 
+  async persistOutcomes(): Promise<void> {
+    if (!is_database_connected() || this.outcomeLog.length === 0) return;
+    const db = get_database();
+    const batch = this.outcomeLog.slice(-100).map(o => ({
+      state_key: o.stateKey,
+      action_id: o.actionId,
+      expected: o.expected,
+      actual: o.actual,
+      delta: o.delta,
+      timestamp: o.timestamp,
+    }));
+    try {
+      await db.collection('outcome_log').insertMany(batch, { ordered: false });
+    } catch { /* non-critical */ }
+  }
+
+  async restoreFromDB(): Promise<void> {
+    if (!is_database_connected()) return;
+    const db = get_database();
+    try {
+      const recent = await db.collection('outcome_log')
+        .find({})
+        .sort({ timestamp: -1 })
+        .limit(500)
+        .toArray();
+      for (const o of recent.reverse()) {
+        this.outcomeLog.push({
+          stateKey: o.state_key,
+          actionId: o.action_id,
+          expected: o.expected,
+          actual: o.actual,
+          delta: o.delta,
+          timestamp: new Date(o.timestamp),
+        });
+        const isConflict = o.delta > 0.3;
+        const isCorrect = o.delta < 0.15;
+        const isSurprise = o.delta > 0.5;
+        if (isConflict) this.conflictCount++;
+        if (isCorrect) this.correctCount++;
+        if (isSurprise) this.surpriseCount++;
+      }
+      if (recent.length > 0) {
+        console.log('Restored ' + str(recent.length) + ' outcomes from DB');
+      }
+    } catch { /* non-critical */ }
+  }
+
   async persistQTable(): Promise<void> {
     if (!is_database_connected()) return;
 

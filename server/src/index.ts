@@ -105,6 +105,11 @@ async function main() {
   if (process.env.KATRA_DISABLE_BACKGROUND_PROCESSOR === 'true') {
     console.log('⏸️ Background processor disabled via KATRA_DISABLE_BACKGROUND_PROCESSOR=true');
   } else {
+    // Restore ACC state from database before starting processing
+    try {
+      const { DecisionActionService } = await import('./services/processing/decision-action-service.js');
+      await DecisionActionService.get_instance().restoreFromDB();
+    } catch { /* non-critical */ }
     bgProcessor.start(30000); // 30 second interval
   }
 
