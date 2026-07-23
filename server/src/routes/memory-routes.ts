@@ -692,7 +692,7 @@ export const create_memory_routes = (): Hono => {
             }
 
             // Dynamic import to avoid circular deps
-            const { timeBlockSummarizer } = await import('../services/time-block-summarizer.js');
+            const { timeBlockSummarizer } = await import('../services/processing/time-block-summarizer.js');
             const result = await timeBlockSummarizer.summarizeTimeBlocks({
                 user_id,
                 block_type,
@@ -747,7 +747,7 @@ export const create_memory_routes = (): Hono => {
                 }, 400);
             }
 
-            const { timeBlockSummarizer } = await import('../services/time-block-summarizer.js');
+            const { timeBlockSummarizer } = await import('../services/processing/time-block-summarizer.js');
             const summaries = await timeBlockSummarizer.getTimeBlockSummaries(
                 user_id, from, to, { block_type, limit }
             );

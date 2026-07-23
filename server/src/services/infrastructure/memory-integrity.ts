@@ -14,7 +14,7 @@
 import { get_database } from '../../database/connection.js';
 
 const STALE_THRESHOLD_DAYS = 7;
-const MIN_CONTENT_LENGTH_FOR_EMBEDDING = 100;
+const MIN_CONTENT_LENGTH_FOR_EMBEDDING = 20;
 const ANOMALY_DROP_THRESHOLD = 0.2; // 20% drop in count vs last check
 
 interface IntegrityReport {
@@ -73,9 +73,12 @@ export class MemoryIntegrityService {
 
       const staleCount = await semanticCollection.countDocuments({
         $or: [
-          { embeddings: { $exists: false } },
-          { embeddings: { $size: 0 } },
+          { embedding: { $exists: false } },
+          { embedding: { $size: 0 } },
         ],
+        // Only count facts long enough to warrant embedding;
+        // short facts are intentionally not embedded per embedding policy.
+        $expr: { $gte: [{ $strLenCP: { $ifNull: ['$content', ''] } }, MIN_CONTENT_LENGTH_FOR_EMBEDDING] },
         $and: [
           {
             $or: [
@@ -151,7 +154,7 @@ export class MemoryIntegrityService {
 
   /** Get the most recent integrity report (or run a fresh one). */
   async getIntegrityReport(): Promise<IntegrityReport> {
-    return this.lastReport ?? (await this.runIntegrityCheck());
+    return await this.runIntegrityCheck();
   }
 
   /** Check for anomalous drops in collection counts. */

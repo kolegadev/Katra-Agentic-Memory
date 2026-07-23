@@ -101,7 +101,8 @@ export class MemoryDecayService {
     for (const { name, type } of collections) {
       try {
         const memories = await db.collection(name)
-          .find({ user_id: userId, retrieval_strength: { $exists: true } })
+          .find({ user_id: userId })
+          .sort({ timestamp: -1, created_at: -1 } as any)
           .limit(1000)
           .toArray();
 
@@ -118,10 +119,27 @@ export class MemoryDecayService {
           continue;
         }
 
-        const strengths = memories.map((m: any) => m.retrieval_strength || 0);
+        // Compute real-time decay strengths instead of reading stale cached values
+        const strengths: number[] = [];
+        let decayedCount = 0;
+        let reinforcedCount = 0;
+
+        for (const m of memories) {
+          const createdAt = m.created_at || m.timestamp || new Date();
+          const lastAccessedAt = m.last_accessed_at || m.last_accessed
+            || m.metadata?.last_accessed_at || null;
+          const accessCount = m.access_count || m.metadata?.access_count || 0;
+
+          const strength = this.computeRetrievalStrength(
+            type, createdAt, lastAccessedAt, accessCount
+          );
+          strengths.push(strength);
+
+          if (strength < 0.3) decayedCount++;
+          if (accessCount > 1) reinforcedCount++;
+        }
+
         const avg = strengths.reduce((a: number, b: number) => a + b, 0) / strengths.length;
-        const decayed = memories.filter((m: any) => (m.retrieval_strength || 0) < 0.3).length;
-        const reinforced = memories.filter((m: any) => (m.access_count || 0) > 1).length;
 
         stats.push({
           memoryType: type,
@@ -129,8 +147,8 @@ export class MemoryDecayService {
           averageStrength: parseFloat(avg.toFixed(4)),
           minStrength: parseFloat(Math.min(...strengths).toFixed(4)),
           maxStrength: parseFloat(Math.max(...strengths).toFixed(4)),
-          decayedCount: decayed,
-          reinforcedCount: reinforced,
+          decayedCount,
+          reinforcedCount,
         });
       } catch {
         stats.push({

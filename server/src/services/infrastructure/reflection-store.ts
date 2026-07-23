@@ -285,7 +285,32 @@ export class ReflectionStore {
         { user_id: userId },
         { sort: { period_start: -1 }, projection: { unresolved_threads: 1 } }
       ) as any;
-    return latest?.unresolved_threads || [];
+    const threads: string[] = latest?.unresolved_threads || [];
+    if (threads.length === 0) return [];
+
+    // Cross-reference with semantic facts to drop threads that have been
+    // explicitly resolved. Resolution facts use "RESOLVED THREAD" prefix.
+    try {
+      const resolvedFacts = await db.collection('semantic_facts')
+        .find({
+          user_id: userId,
+          content: { $regex: /^RESOLVED/i },
+        })
+        .project({ content: 1 })
+        .toArray() as any[];
+
+      if (resolvedFacts.length > 0) {
+        const resolvedPhrases = resolvedFacts
+          .map((f: any) => f.content?.toLowerCase() || '');
+        return threads.filter(t =>
+          !resolvedPhrases.some((r: string) => r.includes(t.toLowerCase().slice(0, 30)))
+        );
+      }
+    } catch {
+      // Non-critical: if cross-reference fails, return threads unfiltered
+    }
+
+    return threads;
   }
 
   async getReflectionArc(

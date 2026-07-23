@@ -1165,6 +1165,9 @@ async function handleSearchMemories(args: unknown): Promise<TextContent[]> {
     }
   }
 
+  // Track retrieved document IDs for last_accessed update
+  const retrievedByCollection = new Map<string, any[]>();
+
   // ── Pass 2: Text Search across ALL collections ──────────────────
   for (const col of collections) {
     let docs: any[] = [];
@@ -1225,6 +1228,28 @@ async function handleSearchMemories(args: unknown): Promise<TextContent[]> {
         confidence: doc.confidence,
         score: 0.5,
       });
+
+      // Track doc for last_accessed update (only main memory collections)
+      if (col.name === 'semantic_facts' || col.name === 'episodic_events') {
+        if (!retrievedByCollection.has(col.name)) {
+          retrievedByCollection.set(col.name, []);
+        }
+        retrievedByCollection.get(col.name)!.push(doc._id);
+      }
+    }
+  }
+
+
+  // ── Touch last_accessed on retrieved documents (fire-and-forget) ──
+  for (const [colName, ids] of retrievedByCollection) {
+    if (ids.length === 0) continue;
+    try {
+      await db.collection(colName).updateMany(
+        { _id: { $in: ids } },
+        { $set: { last_accessed: new Date() } }
+      );
+    } catch {
+      // Non-critical: last_accessed update failed silently
     }
   }
 
@@ -1431,7 +1456,7 @@ async function handleTimeBlockSummaries(args: unknown): Promise<TextContent[]> {
   const from = input.from ? new Date(input.from) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
   const to = input.to ? new Date(input.to) : new Date();
 
-  const { timeBlockSummarizer } = await import('./services/time-block-summarizer.js');
+  const { timeBlockSummarizer } = await import('./services/processing/time-block-summarizer.js');
   const summaries = await timeBlockSummarizer.getTimeBlockSummaries(input.user_id, from, to, {
     block_type: input.block_type, limit: input.limit,
   });
@@ -1453,7 +1478,7 @@ async function handleSummarizeTimeBlocks(args: unknown): Promise<TextContent[]> 
   if (!llmService.isServiceAvailable()) return [{ type: 'text', text: '❌ No LLM provider available.' }];
   if (!is_database_connected()) return [{ type: 'text', text: '⚠️ MongoDB disconnected.' }];
 
-  const { timeBlockSummarizer } = await import('./services/time-block-summarizer.js');
+  const { timeBlockSummarizer } = await import('./services/processing/time-block-summarizer.js');
   const result = await timeBlockSummarizer.summarizeTimeBlocks({
     user_id: input.user_id,
     block_type: input.block_type,
@@ -2422,19 +2447,26 @@ async function handleTriggerReflection(args: unknown): Promise<TextContent[]> {
   }).parse(args);
   
   const service = SleepConsolidationService.get_instance();
-  const result = await service.consolidate(input.period_type, input.user_id);
   
-  if (!result.success) {
-    return [{ type: 'text', text: `❌ Reflection failed: ${result.error || 'Unknown error'}` }];
-  }
+  // Fire-and-forget: consolidation calls the LLM and can take 30-90s.
+  // Running synchronously causes MCP client timeout. Return immediately
+  // and let the consolidation complete in the background.
+  service.consolidate(input.period_type, input.user_id)
+    .then(result => {
+      if (result.success) {
+        console.log('\u2705 ' + input.period_type + ' reflection completed (async): ' + result.nodes_upserted + ' nodes, ' + result.edges_upserted + ' edges');
+      } else {
+        console.error('\u274c ' + input.period_type + ' reflection failed (async): ' + (result.error || 'unknown'));
+      }
+    })
+    .catch(err => {
+      console.error('\u274c ' + input.period_type + ' reflection crashed (async):', err);
+    });
 
-  const preview = result.narrative_preview 
-    ? `\n\n**Narrative Preview:** ${result.narrative_preview}...`
-    : '';
-
+  const periodLabel = input.period_type.charAt(0).toUpperCase() + input.period_type.slice(1);
   return [{
     type: 'text',
-    text: `✅ ${input.period_type.charAt(0).toUpperCase() + input.period_type.slice(1)} reflection completed.\n\n**Period:** ${result.period_start?.toISOString().split('T')[0] || '?'} → ${result.period_end?.toISOString().split('T')[0] || '?'}\n**Nodes upserted:** ${result.nodes_upserted}\n**Edges upserted:** ${result.edges_upserted}\n**Insights upserted:** ${result.insights_upserted}${preview}`,
+    text: '\u23f3 ' + periodLabel + ' reflection started in background.\n\nConsolidation runs asynchronously \u2014 gathering events, calling the LLM for emotional distillation, and storing results. This typically takes 30\u201390 seconds.\n\nCheck `get_daily_reflection` in a minute for results.',
   }];
 }
 

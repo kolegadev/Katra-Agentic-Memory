@@ -460,6 +460,34 @@ export class AutonomousActionPipeline {
         status: 'initiated',
       });
 
+      // Bridge to mission so the heartbeat/agent-executor picks it up.
+      // Without this, triggered problems are detected and stored but never
+      // become executable tasks — the card sits in the queue with no consumer.
+      try {
+        const missionId = `auto_${eval_.category}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+        const goalText = this._goalFromTrigger(eval_);
+        const tasks = this._tasksFromTrigger(eval_);
+        await db.collection('memory_missions').insertOne({
+          _id: missionId,
+          user_id: agentId || 'kolega-agent',
+          status: 'ACTIVE',
+          meta_goal: goalText,
+          internal_monologue: `Auto-generated from ${eval_.category} trigger (severity: ${eval_.severity})`,
+          self_journal: [],
+          task_tree: tasks.map((t, i) => ({
+            id: `t${i + 1}`,
+            description: t,
+            status: i === 0 ? 'IN_PROGRESS' : 'PENDING',
+          })),
+          session_id: 'autonomous-executive',
+          created_at: new Date(),
+          updated_at: new Date(),
+        });
+        console.log(`   🌉 Bridged trigger ${eval_.category} → mission ${missionId} (${tasks.length} tasks)`);
+      } catch (missionErr: any) {
+        console.warn('   ⚠️ Mission bridge from trigger failed:', missionErr.message);
+      }
+
       return true;
     } catch {
       return false;
@@ -494,7 +522,33 @@ export class AutonomousActionPipeline {
 
   // ── Utilities ───────────────────────────────────────────────────────────
 
-  private async _fetchKatraTool(tool: string, args: Record<string, unknown>): Promise<string | null> {
+  private _goalFromTrigger(eval_: TriggerEvaluation): string {
+    const templates: Record<string, string> = {
+      drive_deficit: `Address homeostatic drive deficit: ${eval_.detail}`,
+      memory_integrity: `Fix memory integrity: ${eval_.detail}`,
+      unresolved_thread: `Resolve: ${eval_.detail}`,
+      reflection_regret: `Address recurring regret: ${eval_.detail}`,
+      embedding_backlog: `Backfill missing embeddings: ${eval_.detail}`,
+      anomaly_detected: `Investigate memory anomaly: ${eval_.detail}`,
+      error_surge: `Investigate error surge: ${eval_.detail}`,
+    };
+    return templates[eval_.category] || `Autonomous action: ${eval_.category} — ${eval_.detail}`;
+  }
+
+  private _tasksFromTrigger(eval_: TriggerEvaluation): string[] {
+    const taskSets: Record<string, string[]> = {
+      drive_deficit: ['Run full health sweep', 'Identify and fix the root cause', 'Verify fix and report'],
+      memory_integrity: ['Run memory integrity check', 'Identify stale/corrupt data', 'Apply fix or backfill', 'Verify health is green'],
+      unresolved_thread: ['Review the unresolved thread context', 'Determine if resolution is possible', 'Resolve or document'],
+      reflection_regret: ['Review the regret context', 'Identify actionable steps', 'Execute the fix'],
+      embedding_backlog: ['Run embedding backfill', 'Verify coverage is >98%'],
+      anomaly_detected: ['Review anomaly details', 'Quarantine if malicious, rehabilitate if false positive', 'Verify anomaly cleared'],
+      error_surge: ['Check error logs', 'Identify surge root cause', 'Apply fix', 'Verify error rate normalised'],
+    };
+    return taskSets[eval_.category] || ['Investigate', 'Fix', 'Verify'];
+  }
+
+    private async _fetchKatraTool(tool: string, args: Record<string, unknown>): Promise<string | null> {
     try {
       const token = process.env.MCP_API_KEY || '';
       const body = JSON.stringify({

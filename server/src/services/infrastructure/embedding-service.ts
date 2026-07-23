@@ -190,25 +190,35 @@ export class EmbeddingService {
     const modelReady = await this.ensureModel();
     if (!modelReady) return texts.map(() => null);
 
-    const results: (number[] | null)[] = [];
-    // Process sequentially to avoid memory pressure on Pi5
-    for (const item of texts) {
-      if (!this.shouldEmbed(item.text, item.eventType)) {
-        results.push(null);
-        continue;
-      }
-      try {
-        const output = await this.model(item.text, {
-          pooling: 'mean',
-          normalize: true,
-        });
-        results.push(Array.from(output.data));
-      } catch (error: any) {
-        console.warn('⚠️ Batch embedding item failed:', error.message);
-        results.push(null);
+    // Filter qualifying texts, tracking original positions
+    const qualified: Array<{ idx: number; text: string }> = [];
+    for (let i = 0; i < texts.length; i++) {
+      if (this.shouldEmbed(texts[i].text, texts[i].eventType)) {
+        qualified.push({ idx: i, text: texts[i].text });
       }
     }
-    return results;
+
+    if (qualified.length === 0) return texts.map(() => null);
+
+    try {
+      // Native batched inference — all texts processed in one GPU/CPU call.
+      // ~10-50x throughput vs sequential on thebrick (32GB RAM + GPU).
+      const output = await this.model(qualified.map(q => q.text), {
+        pooling: 'mean',
+        normalize: true,
+      });
+      const allVectors: number[][] = output.tolist();
+
+      // Map back to original positions, null for skipped items
+      const results: (number[] | null)[] = new Array(texts.length).fill(null);
+      for (let j = 0; j < qualified.length; j++) {
+        results[qualified[j].idx] = allVectors[j];
+      }
+      return results;
+    } catch (error: any) {
+      console.warn('⚠️ Batch embedding failed:', error.message);
+      return texts.map(() => null);
+    }
   }
 
   /**
