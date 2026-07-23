@@ -288,9 +288,25 @@ export class ReflectionStore {
     const threads: string[] = latest?.unresolved_threads || [];
     if (threads.length === 0) return [];
 
-    // Cross-reference with semantic facts to drop threads that have been
-    // explicitly resolved. Resolution facts use "RESOLVED THREAD" prefix.
+    // Cross-reference with semantic facts and resolved_threads collection
+    // to drop threads that have been explicitly resolved.
+    // Resolution facts use "RESOLVED" prefix. Uses token-overlap matching:
+    // a thread is resolved if any resolved fact shares >= 2 significant words
+    // with the thread text (bidirectional, stop-word filtered).
     try {
+      const STOP_WORDS = new Set([
+        'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+        'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'shall',
+        'should', 'may', 'might', 'must', 'can', 'could', 'of', 'in', 'to',
+        'for', 'with', 'on', 'at', 'by', 'from', 'as', 'into', 'through',
+        'during', 'before', 'after', 'above', 'below', 'between', 'and',
+        'but', 'or', 'nor', 'not', 'so', 'yet', 'both', 'either', 'neither',
+        'each', 'every', 'all', 'any', 'few', 'more', 'most', 'other', 'some',
+        'such', 'no', 'only', 'own', 'same', 'than', 'too', 'very', 'just',
+        'that', 'this', 'these', 'those', 'it', 'its', 'about', 'also',
+        'which', 'their', 'them', 'they',
+      ]);
+
       const resolvedFacts = await db.collection('semantic_facts')
         .find({
           user_id: userId,
@@ -299,18 +315,101 @@ export class ReflectionStore {
         .project({ content: 1 })
         .toArray() as any[];
 
-      if (resolvedFacts.length > 0) {
-        const resolvedPhrases = resolvedFacts
-          .map((f: any) => f.content?.toLowerCase() || '');
-        return threads.filter(t =>
-          !resolvedPhrases.some((r: string) => r.includes(t.toLowerCase().slice(0, 30)))
-        );
+      // Also check resolved_threads collection
+      const resolvedDocs = await db.collection('resolved_threads')
+        .find({ user_id: userId, status: 'resolved' })
+        .project({ thread_text: 1 })
+        .toArray() as any[];
+
+      const resolvedTexts: string[] = [
+        ...resolvedFacts.map((f: any) => f.content?.toLowerCase() || ''),
+        ...resolvedDocs.map((d: any) => d.thread_text?.toLowerCase() || ''),
+      ];
+
+      if (resolvedTexts.length > 0) {
+        return threads.filter(t => {
+          const threadLower = t.toLowerCase();
+          const threadTokens = new Set(
+            threadLower.split(/[^a-z0-9]+/).filter((w: string) => w.length > 2 && !STOP_WORDS.has(w))
+          );
+          if (threadTokens.size === 0) return true;
+
+          return !resolvedTexts.some((r: string) => {
+            const factTokens = new Set(
+              r.split(/[^a-z0-9]+/).filter((w: string) => w.length > 2 && !STOP_WORDS.has(w))
+            );
+            let overlap = 0;
+            for (const tok of threadTokens) {
+              if (factTokens.has(tok)) overlap++;
+            }
+            return overlap >= 2 || overlap >= threadTokens.size * 0.5;
+          });
+        });
       }
     } catch {
       // Non-critical: if cross-reference fails, return threads unfiltered
     }
 
     return threads;
+  }
+
+  async resolveThread(userId: string, threadText: string): Promise<{ resolved: boolean; alreadyResolved: boolean }> {
+    const db = get_database();
+    const now = new Date();
+
+    // 1. Check if already resolved
+    const existing = await db.collection('resolved_threads').findOne({
+      user_id: userId,
+      thread_text: threadText,
+    }) as any;
+
+    if (existing && existing.status === 'resolved') {
+      return { resolved: true, alreadyResolved: true };
+    }
+
+    // 2. Store in resolved_threads collection
+    await db.collection('resolved_threads').updateOne(
+      { user_id: userId, thread_text: threadText },
+      {
+        $set: {
+          status: 'resolved',
+          resolved_at: now,
+          thread_text: threadText,
+        },
+        $setOnInsert: { created_at: now },
+      },
+      { upsert: true }
+    );
+
+    // 3. Store a semantic fact for cross-reference (belt + suspenders)
+    await db.collection('semantic_facts').insertOne({
+      user_id: userId,
+      content: 'RESOLVED THREAD: ' + threadText,
+      category: 'fact',
+      source: 'resolve_thread_tool',
+      confidence: 1.0,
+      tags: ['resolved-thread', 'system-resolution'],
+      created_at: now,
+      updated_at: now,
+    });
+
+    // 4. Remove from the latest reflective journal's unresolved_threads array
+    const latest = await db.collection('reflective_journals').findOne(
+      { user_id: userId },
+      { sort: { period_start: -1 }, projection: { unresolved_threads: 1 } }
+    ) as any;
+
+    if (latest?.unresolved_threads) {
+      await db.collection('reflective_journals').updateOne(
+        { _id: latest._id },
+        {
+          $pull: { unresolved_threads: threadText } as any,
+          $set: { updated_at: now },
+        }
+      );
+    }
+
+    return { resolved: true, alreadyResolved: false };
   }
 
   async getReflectionArc(

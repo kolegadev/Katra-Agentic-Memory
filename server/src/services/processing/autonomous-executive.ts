@@ -472,6 +472,25 @@ export class AutonomousExecutive {
 
     console.log(`   🎯 Action path: "${goalText}"`);
 
+    // Deduplication: skip if the same goal was executed in the last 24 hours.
+    try {
+      const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const escapedGoal = goalText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const recentDuplicate = await get_database().collection('episodic_events').findOne({
+        user_id: USER_ID,
+        event_type: 'executive_action',
+        'content.message': { $regex: `Goal: ${escapedGoal}` },
+        timestamp: { $gte: oneDayAgo },
+      }) as any;
+      if (recentDuplicate) {
+        console.log(`   Skip duplicate goal (executed within 24h): ${goalText}`);
+        return;
+      }
+    } catch (dedupErr: any) {
+      console.warn('   Dedup check failed, proceeding:', dedupErr.message);
+    }
+
+
     try {
       const gm = GoalManager.get_instance();
       let plan = await gm.decomposeGoal(USER_ID, goalText);

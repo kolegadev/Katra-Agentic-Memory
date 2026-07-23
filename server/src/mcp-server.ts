@@ -563,6 +563,14 @@ const tools = [
     })) as Record<string, unknown>,
   },
   {
+    name: 'resolve_thread',
+    description: 'Resolve an unresolved thread by its exact text. Marks the thread as resolved so it no longer appears in get_unresolved_threads and stops being re-allocated by the heartbeat.',
+    inputSchema: zodToJsonSchema(z.object({
+      thread_text: z.string().describe('Exact text of the unresolved thread to resolve'),
+      user_id: z.string().optional(),
+    })) as Record<string, unknown>,
+  },
+  {
     name: 'get_reflection_arc',
     description: 'Trace the emotional trajectory for an entity over time — how feelings and attitudes have evolved across reflection periods. Returns a timeline of emotional signatures.',
     inputSchema: zodToJsonSchema(z.object({
@@ -2413,6 +2421,26 @@ async function handleGetUnresolvedThreads(args: unknown): Promise<TextContent[]>
   }];
 }
 
+async function handleResolveThread(args: unknown): Promise<TextContent[]> {
+  const input = z.object({
+    thread_text: z.string(),
+    user_id: z.string().optional(),
+  }).parse(args);
+
+  const store = ReflectionStore.get_instance();
+  const userId = input.user_id || DEFAULT_USER_ID;
+  const result = await store.resolveThread(userId, input.thread_text);
+
+  if (result.alreadyResolved) {
+    return [{ type: 'text', text: 'Thread was already resolved.' }];
+  }
+
+  return [{
+    type: 'text',
+    text: `Thread resolved: "${input.thread_text}"`,
+  }];
+}
+
 async function handleGetReflectionArc(args: unknown): Promise<TextContent[]> {
   const input = z.object({
     entity_name: z.string(),
@@ -2525,6 +2553,7 @@ function registerHandlers(server: Server) {
         case 'get_emotional_context': result = await handleGetEmotionalContext(args); break;
         case 'get_philosophical_insights': result = await handleGetPhilosophicalInsights(args); break;
         case 'get_unresolved_threads': result = await handleGetUnresolvedThreads(args); break;
+        case 'resolve_thread': result = await handleResolveThread(args); break;
         case 'get_reflection_arc': result = await handleGetReflectionArc(args); break;
         case 'trigger_reflection': result = await handleTriggerReflection(args); break;
         case 'get_memory_decay_stats': result = await handleGetMemoryDecayStats(args); break;
