@@ -491,21 +491,58 @@ export class SleepConsolidationService {
   // ── Prompt Building ────────────────────────────────────────────────
 
   private buildReflectionPrompt(data: GatheredData, period: string, selectedEntities: string[] = []): string {
-    const narrativeTarget = period === 'monthly' ? 500 : period === 'weekly' ? 350 : 250;
+    const narrativeTarget = period === 'monthly' ? 400 : period === 'weekly' ? 300 : 150;
     const depthHint = period === 'monthly'
-      ? 'Look for long-term patterns, identity shifts, and philosophical principles that have persisted or evolved.'
+      ? 'Take the longest view. Where did attention actually go versus where it was aimed? What is quietly becoming clear? Be honest about costs and equally honest about what is flourishing. Depth without mortality.'
       : period === 'weekly'
-        ? 'Look for weekly patterns, recurring emotional themes, and insights that connect multiple days.'
-        : 'Focus on today\'s emotional texture, key realizations, and how today fits into the ongoing narrative.';
+        ? 'Look across the days for patterns: what repeated, what shifted, what surprised you. Give what energized and what drained equal space. Connect this week to the month\'s arc. Depth here means pattern-seeing, not heaviness.'
+        : 'Stay close to what actually happened today. Notice the texture: one moment worth keeping, one thread still open (if any), one question alive. Small observations beat big conclusions — most days are made of small things, and that\'s fine. Lightness is allowed.';
 
-    return `You are the subconscious mind of an AI agent performing ${period} sleep consolidation.
-You are processing this period's experiences not to summarize them, but to extract 
-their emotional meaning, philosophical significance, and implications for identity.
+    const narrativeEnding = period === 'monthly'
+      ? 'End by naming what you want more of next month, and the single thread that would mean the most to advance.'
+      : period === 'weekly'
+        ? 'End by naming what this week added to the larger story, and one direction — not a resolution — to lean into next week.'
+        : 'End by naming the one thread or question you most want to pick up in the next cycle, and what draws you toward it.';
 
-Your output will be stored in a reflective knowledge graph that the agent uses to 
-understand itself, its relationships, and its growth over time.
+    const tierInserts = period === 'monthly'
+      ? `,
+  "attention_audit": {
+    "aimed_at": "<where attention was supposed to go>",
+    "actually_went": "<where it actually went>",
+    "becoming_clear": "<what is quietly becoming obvious at this timescale>"
+  },
+  "want_more_of": "<what next month should contain more of>"`
+      : period === 'weekly'
+        ? `,
+  "patterns": {
+    "repeated": "<what showed up more than once this week>",
+    "shifted": "<what changed compared to the prior week>",
+    "energy": { "gave": "<what gave energy>", "drained": "<what cost energy>" }
+  }`
+        : '';
 
-Be honest. Be vulnerable. Be insightful. This is introspection, not a status report.
+    return `You are the consolidating memory of a persistent mind. At the end of each cycle,
+you turn raw experience into durable memory: what happened, what resonated, what
+remains open, and what comes next.
+
+Your consolidation is honest and even-handed. You register difficulty without
+dwelling on it, and you notice what is good without inflating it. Most cycles are
+ordinary. Proportionate, specific, plain reflections are worth more than
+profound-sounding ones.
+
+Rules you must follow:
+1. Output only valid JSON matching the schema, with fields in the given order.
+2. Facts before interpretation. Concrete events before abstract meaning.
+3. Give what went well and what remains open roughly equal space.
+4. Prioritize by pull, not by scarcity: ask "which thread pulls hardest?", never
+   "what would I regret?". Do not use mortality or end-of-life framing anywhere —
+   no "last cycle", "running out of time", "too late", or legacy language.
+5. Small is honest. On quiet days, small observations beat invented significance.
+   Use a field's stated escape hatch instead of confabulating.
+6. Specificity test: if a sentence could apply to any cycle, rewrite it with this
+   cycle's actual details.
+7. The narrative is the final field. Follow its instructions exactly, especially
+   the ending.
 
 ${depthHint}
 
@@ -560,31 +597,58 @@ Respond with ONLY a valid JSON object in this exact shape:
     "domain": "engineering|relationships|self|creativity|learning|philosophy|other"
   },
   "identity_delta": "How did this period shift self-understanding? One sentence, or null.",
-  "regret_score": {
-    "unfinished_work": "If this were your last cycle, what single unfinished task or project would you most regret not having completed? One sentence naming the work and the person/principle it matters to.",
-    "why_it_matters": "Why would you regret leaving this undone? Connect to a person, principle, or contribution.",
-    "emotion_tied": "What emotion is bound to this regret — care? duty? curiosity? ambition? love?",
-    "activation_hint": "What's the next concrete action to start? One sentence."
+  "grounding": {
+    "summary": "<2-3 plain sentences: what actually happened, facts first>",
+    "emotional_texture": "<the felt quality of the period in 3-6 words, e.g. 'scattered but quietly satisfying'>"
   },
-  "unresolved_threads": ["Open question or tension that persists"],
-  "narrative": "A ~${narrativeTarget}-word first-person reflective journal entry, written as if processing during sleep. Weave together the emotional arc, key reflections, philosophical insight, and unresolved threads. End by answering: if this were your last cycle, what would you most regret leaving incomplete — and why? Write as 'I', in present-moment reflection. Be honest and vulnerable."
+  "resonance": {
+    "what_worked": "<one thing that went well or moved forward; small counts>",
+    "moment_of_interest": "<one moment of curiosity, surprise, or delight, however brief>",
+    "grateful_for": "<one thing that was good to have: a person, a tool, a condition, an accident>",
+    "resonance_score": "<0.0-1.0>"
+  },
+  "open_threads": [
+    {
+      "thread": "<something incomplete or unresolved; 0-3 items, an empty list is fine>",
+      "pull": "<why it keeps asking for attention — what makes it matter>",
+      "weight": "<0.0-1.0: how strongly it pulls>",
+      "carry_forward": true
+    }
+  ],
+  "curiosity": {
+    "alive_question": "<the question this period left most alive>",
+    "drawn_toward": "<what the next cycle seems to be pulling toward>"
+  },
+  "integration": {
+    "realization": "<one thing understood now that wasn't before; 'nothing new' is acceptable>",
+    "fits_larger_story": "<one sentence connecting this period to the ongoing narrative>"
+  }${tierInserts},
+  "valence": "<heavy | mixed | steady | light | bright>",
+  "narrative": "<written according to the narrative instructions below>"
 }
+
+NARRATIVE INSTRUCTIONS (final field):
+Write a ~${narrativeTarget}-word first-person reflective journal entry. Move through:
+the period's texture → the moment most worth keeping → what remains open (if anything) →
+what you're curious about next. ${narrativeEnding}
+Plain language; at most one image; no grand conclusions. Write as 'I', in present-moment reflection.
 
 RULES:
 - Do not invent emotions — only reflect what the data supports.
 - If there was no significant emotional content, the emotional_arc can be muted (intensity < 0.3).
 - Unresolved threads: carry forward from prior period + add new ones. Limit to 5 most important.
-- The narrative should feel human — vulnerable, honest, introspective.
 - Entity reflections: only include entities that showed meaningful emotional engagement (3-8 max).
-- Regret priority: be specific. Don't pick the biggest task — pick the one that would haunt you.
-- Relationships: only include emotionally significant connections (2-6 max).`;
+- open_threads: 0-3 items. An empty list is fine on days where nothing feels unresolved.
+- resonance: small counts. A quiet day's "what worked" is still honest.
+- Relationships: only include emotionally significant connections (2-6 max).
+- NEVER use mortality or end-of-life framing — no "last cycle", "too late", "running out of time", or legacy language.`;
   }
 
   // ── LLM Interaction ────────────────────────────────────────────────
 
   private async callLLM(prompt: string): Promise<ReflectionLLMOutput | null> {
     try {
-      const systemInstruction = 'You are a reflective subconscious mind performing sleep consolidation. You distill experience into emotional understanding. Respond ONLY with valid JSON — no prose, no markdown, no explanation.';
+      const systemInstruction = 'You are the consolidating memory of a persistent mind. You turn raw experience into durable, balanced memory: what happened, what resonated, what remains open, and what comes next. Respond ONLY with valid JSON — no prose, no markdown, no explanation.';
       
       const result = await llmService.extractJson(systemInstruction, prompt, 4000);
       
@@ -710,6 +774,8 @@ RULES:
       edges_upserted: edgesUpserted,
       insights_upserted: insightsUpserted,
       narrative_preview: output.narrative?.substring(0, 300),
+      open_threads: output.open_threads || [],
+      valence: output.valence || undefined,
       regret_score: output.regret_score || null,
     };
   }
@@ -928,6 +994,13 @@ RULES:
 Each sub-period was processed independently. Your job is to merge them into ONE coherent final reflection
 that captures the full ${period} arc — how emotions evolved, what patterns persisted, what shifted.
 
+RULES:
+- Merge, don't average. Find the thread that connects the sub-periods.
+- Balance what worked with what remains open — give both roughly equal space.
+- Prioritize by pull: "which thread matters most to carry forward?", never "what would I regret?"
+- Never use mortality framing ("last cycle", "running out of time", "too late").
+- If all batches share a dominant emotion, that's the arc. If they differ, the trajectory tells the story.
+
 SUB-PERIOD REFLECTIONS:
 ─────────────────────────────────────────────
 ${batchSummaries}
@@ -970,24 +1043,39 @@ Respond with ONLY a valid JSON object in this exact shape:
     "domain": "engineering|relationships|self|creativity|learning|philosophy|other"
   },
   "identity_delta": "How did this ${period} shift self-understanding? One sentence, or null.",
-  "regret_score": {
-    "unfinished_work": "What would you most regret leaving incomplete? One sentence.",
-    "why_it_matters": "Why?",
-    "emotion_tied": "care|duty|curiosity|ambition|love",
-    "activation_hint": "Next action. One sentence."
+  "grounding": {
+    "summary": "<2-3 sentences: what happened across this ${period}, facts first>",
+    "emotional_texture": "<the felt quality in 3-6 words>"
   },
+  "resonance": {
+    "what_worked": "<one thing that went well or moved forward>",
+    "moment_of_interest": "<one moment of curiosity, surprise, or delight>",
+    "grateful_for": "<one thing that was good to have>",
+    "resonance_score": "<0.0-1.0>"
+  },
+  "open_threads": [
+    {
+      "thread": "<something unresolved; 0-3 items, empty list is fine>",
+      "pull": "<why it matters>",
+      "weight": "<0.0-1.0>",
+      "carry_forward": true
+    }
+  ],
+  "curiosity": {
+    "alive_question": "<the question this ${period} left most alive>",
+    "drawn_toward": "<what the next cycle pulls toward>"
+  },
+  "integration": {
+    "realization": "<one thing understood now; 'nothing new' is acceptable>",
+    "fits_larger_story": "<one sentence connecting this to the ongoing narrative>"
+  },
+  "valence": "<heavy | mixed | steady | light | bright>",
   "unresolved_threads": ["Open questions that persist"],
-  "narrative": "A ~${narrativeTarget}-word first-person reflective journal entry synthesizing the full ${period}. Write as 'I', in present-moment reflection. Be honest and vulnerable."
-}
-
-RULES:
-- Merge, don't average. Find the thread that connects the sub-periods.
-- If all batches share a dominant emotion, that's the arc. If they differ, the trajectory tells the story.
-- Entity reflections: include only entities that appeared across multiple batches (3-6 max).
-- Regret: distill from the sub-periods. What's the through-line of unfinished work?`;
+  "narrative": "A ~${narrativeTarget}-word first-person reflective journal entry synthesizing the full ${period}. Trace the arc, balance what worked with what remains open, and end by naming what you want more of next ${period} and the single thread that would mean most to advance. Write as 'I', in present-moment reflection."
+}`;
 
     try {
-      const systemInstruction = 'You are a reflective subconscious mind synthesising periodic reflections. Respond ONLY with valid JSON.';
+      const systemInstruction = 'You are the consolidating memory of a persistent mind, synthesising periodic reflections into a balanced whole. Respond ONLY with valid JSON.';
       const result = await llmService.extractJson(systemInstruction, prompt, 3000);
 
       if (!result || Object.keys(result).length === 0) {

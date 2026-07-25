@@ -263,6 +263,14 @@ export interface ReflectionLLMOutput {
   identity_delta: string | null;
   unresolved_threads: string[];
   narrative: string;
+  // v3.1 balanced reflection fields
+  grounding?: { summary: string; emotional_texture: string };
+  resonance?: { what_worked: string; moment_of_interest: string; grateful_for: string; resonance_score: number };
+  open_threads?: Array<{ thread: string; pull: string; weight: number; carry_forward: boolean }>;
+  curiosity?: { alive_question: string; drawn_toward: string };
+  integration?: { realization: string; fits_larger_story: string };
+  valence?: 'heavy' | 'mixed' | 'steady' | 'light' | 'bright';
+  /** @deprecated Replaced by open_threads. Kept for backward compatibility. */
   regret_score?: string | null;
 }
 
@@ -276,6 +284,9 @@ export interface ConsolidationResult {
   edges_upserted: number;
   insights_upserted: number;
   narrative_preview?: string;
+  open_threads?: Array<{ thread: string; pull: string; weight: number; carry_forward: boolean }>;
+  valence?: string;
+  /** @deprecated Replaced by open_threads. */
   regret_score?: string | null;
   error?: string;
 }

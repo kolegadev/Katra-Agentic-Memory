@@ -64,9 +64,9 @@ const TRIGGER_TAXONOMY: Record<TriggerCategory, TriggerRule> = {
   },
   reflection_regret: {
     category: 'reflection_regret',
-    label: 'Recurring reflection regret',
-    autoStartSeverity: 'critical',  // 4+ cycles of regret = urgent
-    defaultAction: 'auto_start_session',
+    label: 'Recurring open threads',
+    autoStartSeverity: 'warning',  // persistent open threads need attention, not panic
+    defaultAction: 'store_action_card',
   },
   embedding_backlog: {
     category: 'embedding_backlog',
@@ -311,18 +311,41 @@ export class AutonomousActionPipeline {
     entity: string,
     output: string
   ): Promise<TriggerEvaluation | null> {
+    // v3.1: read open_threads from the reflection rather than regex-matching regret text.
+    // An open thread that has been carried forward across 2+ cycles with weight >= 0.5
+    // represents something the agent consistently identifies as important but unresolved.
     const data = await this._fetchKatraTool('get_daily_reflection', {});
     if (!data) return null;
 
-    const regretMatch = /I would most regret leaving\s+(.+?)\s+undone/i.exec(data);
-    if (!regretMatch) return null;
+    // Parse the reflection JSON to extract open_threads
+    let openThreads: Array<{ thread: string; weight: number; carry_forward: boolean }> = [];
+    try {
+      const parsed = JSON.parse(data);
+      openThreads = parsed.open_threads || [];
+    } catch {
+      // Fallback: search for carry-forward threads in the raw text
+      const threadMatch = /"carry_forward":\s*true/g;
+      const threadCount = (data.match(threadMatch) || []).length;
+      if (threadCount < 2) return null;
+      return {
+        triggered: true,
+        category: 'reflection_regret',
+        label: TRIGGER_TAXONOMY.reflection_regret.label,
+        severity: threadCount >= 4 ? 'warning' : 'info',
+        auto_started: false,
+        action_card_stored: false,
+        detail: `${threadCount} open threads carried forward`,
+        metric_value: threadCount,
+        threshold: 2,
+        timestamp: new Date().toISOString(),
+      };
+    }
 
-    // Count how many times this regret pattern appears
-    const regretCount = (data.match(/would most regret/gi) || []).length;
+    const significantThreads = openThreads.filter(t => t.carry_forward && t.weight >= 0.5);
+    if (significantThreads.length < 2) return null;
 
-    if (regretCount < 2) return null;
-
-    const severity = regretCount >= 4 ? 'critical' : 'warning';
+    const severity = significantThreads.length >= 4 ? 'warning' : 'info';
+    const threadPreviews = significantThreads.map(t => `"${t.thread.slice(0, 80)}"`).join(', ');
 
     return {
       triggered: true,
@@ -331,8 +354,8 @@ export class AutonomousActionPipeline {
       severity,
       auto_started: false,
       action_card_stored: false,
-      detail: `"${regretMatch[1].trim()}" appeared in ${regretCount} reflections`,
-      metric_value: regretCount,
+      detail: `${significantThreads.length} open threads carried forward: ${threadPreviews}`,
+      metric_value: significantThreads.length,
       threshold: 2,
       timestamp: new Date().toISOString(),
     };
@@ -527,7 +550,7 @@ export class AutonomousActionPipeline {
       drive_deficit: `Address homeostatic drive deficit: ${eval_.detail}`,
       memory_integrity: `Fix memory integrity: ${eval_.detail}`,
       unresolved_thread: `Resolve: ${eval_.detail}`,
-      reflection_regret: `Address recurring regret: ${eval_.detail}`,
+      reflection_regret: `Address persistent open threads: ${eval_.detail}`,
       embedding_backlog: `Backfill missing embeddings: ${eval_.detail}`,
       anomaly_detected: `Investigate memory anomaly: ${eval_.detail}`,
       error_surge: `Investigate error surge: ${eval_.detail}`,
@@ -540,7 +563,7 @@ export class AutonomousActionPipeline {
       drive_deficit: ['Run full health sweep', 'Identify and fix the root cause', 'Verify fix and report'],
       memory_integrity: ['Run memory integrity check', 'Identify stale/corrupt data', 'Apply fix or backfill', 'Verify health is green'],
       unresolved_thread: ['Review the unresolved thread context', 'Determine if resolution is possible', 'Resolve or document'],
-      reflection_regret: ['Review the regret context', 'Identify actionable steps', 'Execute the fix'],
+      reflection_regret: ['Review the open threads context', 'Identify the highest-weight thread to advance', 'Plan concrete next step'],
       embedding_backlog: ['Run embedding backfill', 'Verify coverage is >98%'],
       anomaly_detected: ['Review anomaly details', 'Quarantine if malicious, rehabilitate if false positive', 'Verify anomaly cleared'],
       error_surge: ['Check error logs', 'Identify surge root cause', 'Apply fix', 'Verify error rate normalised'],
