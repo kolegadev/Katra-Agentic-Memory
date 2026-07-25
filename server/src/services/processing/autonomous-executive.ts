@@ -422,7 +422,10 @@ export class AutonomousExecutive {
         for (const agent of ['opencode-agent', 'kolega-agent']) {
           if (source.includes(agent) || target.includes(agent)) {
             let s = intensity * 1.5;
-            if (/frustrated|conflicted|anxious|tension/.test(edgeType)) s *= 1.3;  // problem owner
+            if (/frustrated|conflicted|anxious|tension/.test(edgeType)) {
+              const isResolved = await this.isConcernResolved(entityName, edgeType);
+              if (!isResolved) s *= 1.3;  // problem owner (only if unresolved)
+            }
             if (/excited|growing|confident|inspired/.test(edgeType)) s *= 1.2;      // domain expert
             scores[agent] = (scores[agent] || 0) + s;
           }
@@ -485,6 +488,22 @@ export class AutonomousExecutive {
       if (recentDuplicate) {
         console.log(`   Skip duplicate goal (executed within 24h): ${goalText}`);
         return;
+      }
+      // Broader dedup: skip if any task about the same entity/emotion
+      // was already executed in the last 24h and the concern is RESOLVED.
+      const dedupEntityName = this.extractEntityFromGoal(goalText);
+      if (await this.isConcernResolved(dedupEntityName, 'anxious')) {
+        const entityRegex = dedupEntityName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const recentEntityTask = await get_database().collection('episodic_events').findOne({
+          user_id: USER_ID,
+          event_type: 'executive_action',
+          'content.message': { $regex: entityRegex },
+          timestamp: { $gte: oneDayAgo },
+        }) as any;
+        if (recentEntityTask) {
+          console.log(`   Skip entity task for ${dedupEntityName} — concern already RESOLVED`);
+          return;
+        }
       }
     } catch (dedupErr: any) {
       console.warn('   Dedup check failed, proceeding:', dedupErr.message);
@@ -705,6 +724,31 @@ export class AutonomousExecutive {
   /**
    * Extract the primary entity name from a goal text for affinity scoring.
    */
+
+  /**
+   * Check if a concern (entity + emotion pair) has been RESOLVED.
+   * Queries semantic_facts for RESOLVED entries matching the entity and emotion.
+   * Returns true if a recent (last 30 days) RESOLVED fact exists, meaning
+   * the heartbeat should NOT regenerate tasks about this concern.
+   */
+  private async isConcernResolved(entityName: string, emotion: string): Promise<boolean> {
+    try {
+      const db = get_database();
+      const oneMonthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      const resolvedFact = await db.collection('semantic_facts').findOne({
+        $or: [
+          { content: { $regex: entityName, $options: 'i' } },
+          { content: { $regex: emotion, $options: 'i' } },
+        ],
+        tags: { $in: ['RESOLVED', 'resolved'] },
+        created_at: { $gte: oneMonthAgo },
+      });
+      return !!resolvedFact;
+    } catch {
+      return false;
+    }
+  }
+
   /**
    * Check if an agent is alive based on recent episodic event activity.
    * An agent is considered alive if they've produced an event in the last 6 hours.
@@ -719,6 +763,8 @@ export class AutonomousExecutive {
       const lastEvent = await db.collection('episodic_events').find({
         user_id: agent,
         timestamp: { $gte: sixHoursAgo },
+      session_id: { $ne: 'autonomous-executive' },
+      'metadata.source': { $ne: 'autonomous_executive' },
       }).sort({ timestamp: -1 }).limit(1).toArray();
 
       if (lastEvent.length > 0) {
