@@ -33,11 +33,11 @@ A conversation turn enters through one of:
 | **B** — Session Ingestion Service | Reads `.jsonl` from `/sessions/` or `~/.katra/sessions/` | Per-message `createEvent()` |
 | **C** — REST API | `POST /api/v1/ingestion/ingest` | Direct message submission |
 
-**memory_watcher.py** (host-side Python daemon at `/opt/solomem/memory_watcher.py`):
+**memory_watcher.py** (host-side Python daemon at `~/.katra/katra_watcher.py`):
 - Watches session directories for OpenClaw, Claude Code, OpenCode, Codex, KiloClaw, KimiClaw, Hermes
 - Parses `.jsonl` files extracting user/assistant turns
 - Batches each session's turns into a single `store_memory` MCP call to `http://katra:3112/mcp`
-- State tracked in `~/.solomem/watcher-state.json` (file hashes for idempotency)
+- State tracked in `~/.katra/watcher-state.json` (file hashes for idempotency)
 
 ---
 

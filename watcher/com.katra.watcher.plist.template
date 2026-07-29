@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Katra Multi-Platform Memory Watcher — launchd agent for macOS.
+
+  This is a TEMPLATE: the __PLACEHOLDERS__ are filled in per machine by
+  install.sh. See docs/DEPLOYMENT.md for install, check and uninstall steps,
+  including how to render this file by hand.
+
+  Configuration lives in __KATRA_HOME__/watcher-config.json and is
+  authoritative; the MCP URL and API key belong in that file.
+
+  The watcher runs on the host, outside Docker, so it uses the host mapped
+  MCP port (3112 by default), not the container internal 3100.
+
+  (Note for editors: XML comments cannot contain a double hyphen, so command
+  line flags are described in DEPLOYMENT.md rather than quoted here.)
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.katra.watcher</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>__PYTHON__</string>
+        <string>__KATRA_HOME__/katra_watcher.py</string>
+        <string>--config</string>
+        <string>__KATRA_HOME__/watcher-config.json</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- launchd's equivalent of systemd Restart=always -->
+    <key>KeepAlive</key>
+    <true/>
+
+    <!-- Matches RestartSec=30 in the systemd unit -->
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>__KATRA_HOME__/watcher.log</string>
+    <key>StandardErrorPath</key>
+    <string>__KATRA_HOME__/watcher.log</string>
+
+    <key>WorkingDirectory</key>
+    <string>__KATRA_HOME__</string>
+</dict>
+</plist>

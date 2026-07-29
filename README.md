@@ -62,13 +62,36 @@ Contributions and comparisons from the community are very welcome!
 ## Quick Start (Install using one of the agentic applications, it will sort out any shortcomings)
 
 ```bash
+curl -fsSL https://raw.githubusercontent.com/kolegadev/Katra-Agentic-Memory/main/install.sh | bash
+```
+
+Docker is the only prerequisite. The installer clones the source to
+`~/.katra/src`, generates real credentials, builds and starts the stack, waits
+for it to report healthy, and prints the config snippet for your agent.
+
+Add `--with-watcher` to also ingest your existing agent session history, and
+`--with-systemd` to start Katra on boot:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/kolegadev/Katra-Agentic-Memory/main/install.sh \
+  | bash -s -- --with-watcher --with-systemd
+```
+
+<details>
+<summary>Manual install</summary>
+
+```bash
 git clone https://github.com/kolegadev/Katra-Agentic-Memory.git
 cd Katra-Agentic-Memory
 cp .env.example .env
-# Optional: edit .env to set custom API keys.
-# If left blank, Katra generates secure keys on first boot and prints them.
-docker-compose up -d --build
+# Required: MONGO_PASS, MINIO_USER, MINIO_PASS. Compose refuses to start
+# without them rather than using a known default. Note that MONGODB_URI
+# embeds MONGO_PASS inline, and the MINIO_* pair must match the AWS_* pair —
+# see docs/DEPLOYMENT.md → Credentials.
+docker compose up -d --build --wait
 ```
+
+</details>
 
 > **Note:** The original URL `https://github.com/kolegadev/katra.git` still works (GitHub redirects it).
 
@@ -326,17 +349,17 @@ included in this repo under `watcher/`:
 
 ```bash
 # The watchers live in the Katra repo
-mkdir -p ~/.solomem ~/.katra
-cp watcher/katra_watcher.py ~/.solomem/memory_watcher.py
-cp watcher/katra_opencode_extractor.py ~/.solomem/opencode_extractor.py
-cp watcher/claude_history_extractor.py ~/.solomem/claude_history_extractor.py
-cp watcher/kolega_code_extractor.py ~/.solomem/kolega_code_extractor.py
-cp watcher/watcher-config.example.json ~/.solomem/watcher-config.json
+mkdir -p ~/.katra
+cp watcher/katra_watcher.py ~/.katra/katra_watcher.py
+cp watcher/katra_opencode_extractor.py ~/.katra/katra_opencode_extractor.py
+cp watcher/claude_history_extractor.py ~/.katra/claude_history_extractor.py
+cp watcher/kolega_code_extractor.py ~/.katra/kolega_code_extractor.py
+cp watcher/watcher-config.example.json ~/.katra/watcher-config.json
 
-# Edit ~/.solomem/watcher-config.json with your MCP_API_KEY and platforms
+# Edit ~/.katra/watcher-config.json with your MCP_API_KEY and platforms
 
 # Backfill existing history
-python3 ~/.solomem/memory_watcher.py --once --config ~/.solomem/watcher-config.json
+python3 ~/.katra/katra_watcher.py --once --config ~/.katra/watcher-config.json
 
 # Install as a systemd service for continuous collection
 cp watcher/katra-watcher.service ~/.config/systemd/user/memory-watcher.service

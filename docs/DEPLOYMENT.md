@@ -1,13 +1,100 @@
 # Deployment Guide
 
-## Local Docker (Recommended)
+## Install script (Recommended)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/kolegadev/Katra-Agentic-Memory/main/install.sh | bash
+```
+
+That clones the source to `~/.katra/src`, generates a `.env` with real
+credentials, builds and starts the stack, waits for it to report healthy, and
+prints the config snippet for connecting your agent.
+
+Docker is the only prerequisite. The installer checks for it and tells you how
+to install it if missing; it will not install it for you.
+
+Useful flags:
+
+| Flag | Effect |
+|---|---|
+| `--with-watcher` | Also install the host-side session watcher (see below) |
+| `--with-systemd` | Install the boot unit so Katra starts on reboot (needs sudo) |
+| `--rebuild` | Rebuild and recreate just the server container, then verify |
+| `--no-start` | Write config but don't start containers |
+| `--dir PATH` | Where to clone/find the source (default `~/.katra/src`) |
+| `--ref REF` | Install a specific tag, branch or SHA (default `main`) |
+| `--uninstall` | Stop the stack, remove units, config and watcher |
+| `--purge` | With `--uninstall`, also delete the data directory (needs `--yes`) |
+
+Passing flags through a pipe needs `bash -s --`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/kolegadev/Katra-Agentic-Memory/main/install.sh \
+  | bash -s -- --with-watcher --with-systemd
+```
+
+The installer never prompts, so it behaves the same piped from `curl`, run in
+CI, or driven by an agent. Every flag has an environment equivalent
+(`KATRA_HOME`, `KATRA_REF`, `KATRA_WITH_WATCHER=1`, …).
+
+It is also idempotent: re-running it against an existing install keeps your
+`.env` untouched and never rotates credentials that are already in use.
+
+### Manual install
+
+If you'd rather do it by hand:
 
 ```bash
 git clone https://github.com/kolegadev/Katra-Agentic-Memory.git
 cd Katra-Agentic-Memory
 cp .env.example .env
-# Edit .env — set MCP_API_KEY, KATRA_API_KEY, and optional LLM keys
-docker compose up -d
+# Required: MONGO_PASS, MINIO_USER, MINIO_PASS — compose refuses to start
+# without them. See "Credentials" below for the two pairs that must match.
+docker compose up -d --build --wait
+```
+
+### Credentials
+
+Two values are duplicated in `.env` and must be kept in sync by hand. The
+installer does this for you; if you edit `.env` yourself, watch for them.
+
+| Must match | Why |
+|---|---|
+| `MONGO_PASS` and the password inside `MONGODB_URI` | The URI embeds the password inline. Changing only one breaks authentication. |
+| `MINIO_USER`/`MINIO_PASS` and `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` | MinIO is seeded with the `MINIO_*` pair; the server authenticates with the `AWS_*` pair. If they diverge, asset storage fails silently while everything else looks fine. |
+
+MinIO requires a user of 3+ characters and a password of 8+ characters.
+
+### Rotating credentials
+
+MongoDB and MinIO read their root credentials **only when the data volume is
+first initialised**. On an existing install, editing `.env` does not change
+them — it just locks the server out of its own database. This is why
+`install.sh` warns about `change-me` values instead of fixing them.
+
+To rotate MongoDB's password on a live install, change it inside MongoDB
+first, then update `.env` to match:
+
+```bash
+# 1. Change the password in the running database
+docker exec -it katra-mongo mongosh -u admin -p '<old-pass>' --authenticationDatabase admin \
+  --eval 'db.getSiblingDB("admin").changeUserPassword("admin", "<new-pass>")'
+
+# 2. Update BOTH places in .env: MONGO_PASS and the password inside MONGODB_URI
+
+# 3. Restart the server only — do not recreate the mongo container
+docker compose up -d --force-recreate --wait server
+```
+
+For MinIO, add a new user with `mc` and update the `AWS_*` pair, or — if you
+have no assets stored yet — stop the stack, delete `${DATA_DIR}/minio`, set
+all four values, and start again.
+
+Starting from scratch is the simplest option if the data is expendable:
+
+```bash
+./install.sh --uninstall --purge --yes   # deletes all memory data
+./install.sh                            # fresh install, fresh secrets
 ```
 
 Your agent connects to the **host-mapped ports**:
@@ -74,31 +161,99 @@ AWS_SECRET_ACCESS_KEY=...
 ## Watcher Deployment
 
 The watchers live in `watcher/` and run on the host (outside Docker) so they can
-read your agent session files.
+read your agent session files. Because they run on the host, they connect to the
+**host-mapped** MCP port (`3112` by default), not the container-internal `3100`.
+
+Everything below is done for you by:
 
 ```bash
-mkdir -p ~/.solomem ~/.katra
-cp watcher/katra_watcher.py ~/.solomem/memory_watcher.py
-cp watcher/katra_opencode_extractor.py ~/.solomem/opencode_extractor.py
-cp watcher/claude_history_extractor.py ~/.solomem/claude_history_extractor.py
-cp watcher/kolega_code_extractor.py ~/.solomem/kolega_code_extractor.py
-cp watcher/watcher-config.example.json ~/.solomem/watcher-config.json
-
-# Edit config with your API key and platform paths
-$EDITOR ~/.solomem/watcher-config.json
-
-# Backfill existing history
-python3 ~/.solomem/memory_watcher.py --once --config ~/.solomem/watcher-config.json
-
-# Install systemd service for continuous collection
-mkdir -p ~/.config/systemd/user
-cp watcher/katra-watcher.service ~/.config/systemd/user/memory-watcher.service
-systemctl --user daemon-reload
-systemctl --user enable --now memory-watcher
+./install.sh --with-watcher
 ```
 
-On macOS use `launchctl` with a `~/Library/LaunchAgents/com.katra.memory-watcher.plist`
-instead of systemd.
+That copies the extractors to `~/.katra`, writes a `watcher-config.json` with
+your MCP URL and API key filled in, runs a one-off backfill of existing history,
+and installs the scheduler for your platform (systemd user unit on Linux,
+launchd agent on macOS).
+
+### Manual watcher install
+
+All watcher files live in `~/.katra`.
+
+```bash
+mkdir -p ~/.katra
+cp watcher/katra_watcher.py ~/.katra/
+cp watcher/katra_opencode_extractor.py ~/.katra/
+cp watcher/claude_history_extractor.py ~/.katra/
+cp watcher/kolega_code_extractor.py ~/.katra/
+cp watcher/watcher-config.example.json ~/.katra/watcher-config.json
+
+# Set mcp_url (host port, e.g. http://localhost:3112/mcp), api_key and platform paths
+$EDITOR ~/.katra/watcher-config.json
+chmod 600 ~/.katra/watcher-config.json
+
+# Backfill existing history
+python3 ~/.katra/katra_watcher.py --once --config ~/.katra/watcher-config.json
+```
+
+Then install the scheduler. On **Linux**, render the unit template:
+
+```bash
+mkdir -p ~/.config/systemd/user
+sed -e "s|__PYTHON__|$(command -v python3)|g" \
+    -e "s|__KATRA_HOME__|$HOME/.katra|g" \
+    watcher/katra-watcher.service.template > ~/.config/systemd/user/katra-watcher.service
+systemctl --user daemon-reload
+systemctl --user enable --now katra-watcher
+```
+
+This is a *user* unit, so it stops when you log out. To keep collecting while
+logged out: `sudo loginctl enable-linger $USER`.
+
+On **macOS**, render the launchd agent:
+
+```bash
+mkdir -p ~/Library/LaunchAgents
+sed -e "s|__PYTHON__|$(command -v python3)|g" \
+    -e "s|__KATRA_HOME__|$HOME/.katra|g" \
+    watcher/com.katra.watcher.plist.template > ~/Library/LaunchAgents/com.katra.watcher.plist
+launchctl load -w ~/Library/LaunchAgents/com.katra.watcher.plist
+```
+
+Check it with `launchctl list | grep katra` and `tail -f ~/.katra/watcher.log`.
+
+Note that `watcher-config.json` is authoritative: values in it override any
+`Environment=` set in the systemd unit, so the MCP URL and API key belong in
+that file.
+
+## Rebuilding after a code change
+
+```bash
+./install.sh --rebuild        # or: scripts/shell/rebuild.sh
+```
+
+This rebuilds and recreates **only** the server container, waits for it to
+report healthy, and prints a health summary. MongoDB, Redis and MinIO keep
+running, so your memory data is untouched.
+
+## Starting on boot
+
+```bash
+./install.sh --with-systemd
+```
+
+`katra.service.template` is a template — the working directory and user are
+filled in per machine, so there is nothing to hand-edit. Do not copy the
+template to `/etc/systemd/system/` directly.
+
+Be aware of what the unit is: a **boot trigger, not a process supervisor**. It
+runs `docker compose up -d --wait` once, so `systemctl status katra` will read
+
+```
+Active: active (exited) since ...
+```
+
+which is normal, not an error. What keeps the containers alive after boot is
+`restart: unless-stopped` in `docker-compose.yml`.
 
 ## Nginx Reverse Proxy
 

@@ -1,0 +1,70 @@
+# Katra Cognitive Memory — Systemd Service (template)
+#
+# This is a TEMPLATE. The __PLACEHOLDERS__ below are filled in per machine —
+# do not copy this file to /etc/systemd/system/ as-is.
+#
+# Install it with:
+#   ./install.sh --with-systemd
+#
+# Or render it by hand:
+#   sed -e "s|__KATRA_DIR__|$PWD|g" \
+#       -e "s|__KATRA_USER__|$(id -un)|g" \
+#       -e "s|__DOCKER_BIN__|$(command -v docker)|g" \
+#       katra.service.template | sudo tee /etc/systemd/system/katra.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now katra.service
+#
+# Check:
+#   systemctl status katra
+#   docker logs katra-server --tail 30
+#
+# ── What this unit does, and does not, do ───────────────────────────
+# This is a BOOT TRIGGER, not a process supervisor. Type=oneshot means
+# systemd runs `docker compose up -d --wait` once and then treats the unit
+# as active-but-exited. That is why `systemctl status katra` reads
+#
+#     Active: active (exited) since ...
+#
+# which is normal and not an error. Keeping the containers alive after boot
+# is the job of `restart: unless-stopped` in docker-compose.yml, not of
+# systemd.
+#
+# `--wait` matters: without it, compose detaches and exits 0 before the
+# containers are healthy, so a broken stack still looks like a successful
+# boot and the Restart=on-failure below would almost never fire. With it,
+# compose blocks until healthchecks pass and exits non-zero when they do
+# not, so a genuinely failed boot gets retried.
+#
+# Katra's Autonomous Executive provides the adaptive heartbeat:
+#   survival deficit > 0.2 → adrenaline mode (2 min)
+#   avg deficit > 0.5     → stressed (5 min)
+#   avg deficit > 0.3     → normal (10 min)
+#   avg deficit > 0.1     → calm (30 min)
+#   avg deficit ≤ 0.1     → rest (60 min)
+
+[Unit]
+Description=Katra Cognitive Memory Service
+Documentation=https://github.com/kolegadev/Katra-Agentic-Memory/blob/main/docs/DEPLOYMENT.md
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=__KATRA_DIR__
+User=__KATRA_USER__
+
+ExecStart=__DOCKER_BIN__ compose up -d --wait
+ExecStop=__DOCKER_BIN__ compose down
+ExecReload=__DOCKER_BIN__ compose up -d --force-recreate --wait server
+
+# A first boot that has to pull or build images needs room.
+TimeoutStartSec=900
+
+# Only meaningful because ExecStart uses --wait (see the note above).
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target

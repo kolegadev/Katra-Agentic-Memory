@@ -120,7 +120,7 @@ Extractors push agent session logs into Katra. Add `--shared-id` so sessions flo
 
 ### KolegaCode Extractor (`~/Library/LaunchAgents/com.katra.kolega-code-extractor.plist`)
 ```xml
-<string>/Users/johnpellew/Projects/katra/watcher/kolega_code_extractor.py</string>
+<string>/Users/YOUR_USERNAME/.katra/kolega_code_extractor.py</string>
 <string>--api-key</string>
 <string>katra-mcp-key-2026</string>
 <string>--user-id</string>
@@ -131,7 +131,7 @@ Extractors push agent session logs into Katra. Add `--shared-id` so sessions flo
 
 ### OpenCode Extractor
 ```xml
-<string>/Users/johnpellew/.solomem/opencode_extractor.py</string>
+<string>/Users/YOUR_USERNAME/.katra/katra_opencode_extractor.py</string>
 <string>--mcp-url</string>
 <string>http://localhost:3112/mcp</string>
 <string>--api-key</string>

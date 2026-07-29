@@ -201,19 +201,19 @@ For passive background collection from conversation logs, use the watchers
 included in this repo under `watcher/`:
 
 ```bash
-mkdir -p ~/.solomem ~/.katra
-cp watcher/katra_watcher.py ~/.solomem/memory_watcher.py
-cp watcher/katra_opencode_extractor.py ~/.solomem/opencode_extractor.py
-cp watcher/claude_history_extractor.py ~/.solomem/claude_history_extractor.py
-cp watcher/kolega_code_extractor.py ~/.solomem/kolega_code_extractor.py
-cp watcher/watcher-config.example.json ~/.solomem/watcher-config.json
+mkdir -p ~/.katra
+cp watcher/katra_watcher.py ~/.katra/katra_watcher.py
+cp watcher/katra_opencode_extractor.py ~/.katra/katra_opencode_extractor.py
+cp watcher/claude_history_extractor.py ~/.katra/claude_history_extractor.py
+cp watcher/kolega_code_extractor.py ~/.katra/kolega_code_extractor.py
+cp watcher/watcher-config.example.json ~/.katra/watcher-config.json
 
-# Edit ~/.solomem/watcher-config.json with your api_key and platforms
+# Edit ~/.katra/watcher-config.json with your api_key and platforms
 # Default config already includes OpenClaw, Claude Code, OpenCode, Codex CLI,
 # KiloClaw, KimiClaw, and Hermes paths.
 
 # Backfill existing history
-python3 ~/.solomem/memory_watcher.py --once --config ~/.solomem/watcher-config.json
+python3 ~/.katra/katra_watcher.py --once --config ~/.katra/watcher-config.json
 
 # Install as a systemd service for continuous collection
 mkdir -p ~/.config/systemd/user
@@ -227,9 +227,9 @@ plain JSONL:
 
 | Platform | Command |
 |----------|---------|
-| **OpenCode** | `python3 ~/.solomem/opencode_extractor.py --once --api-key your-mcp-secret-key --user-id opencode-agent` |
-| **Claude Code** | `python3 ~/.solomem/claude_history_extractor.py --once --api-key your-mcp-secret-key --user-id claude-agent` |
-| **Kolega Code** | `python3 ~/.solomem/kolega_code_extractor.py --once --api-key your-mcp-secret-key --user-id kolega-agent` |
+| **OpenCode** | `python3 ~/.katra/katra_opencode_extractor.py --once --api-key your-mcp-secret-key --user-id opencode-agent` |
+| **Claude Code** | `python3 ~/.katra/claude_history_extractor.py --once --api-key your-mcp-secret-key --user-id claude-agent` |
+| **Kolega Code** | `python3 ~/.katra/kolega_code_extractor.py --once --api-key your-mcp-secret-key --user-id kolega-agent` |
 
 On macOS, use `launchctl` / `~/Library/LaunchAgents` instead of systemd (see
 `watcher/katra-watcher.service` for a template; adapt to a `.plist`).
