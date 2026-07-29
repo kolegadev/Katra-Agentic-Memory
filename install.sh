@@ -243,7 +243,8 @@ env_get() {
 # Set a key in .env, replacing an existing (even commented) definition.
 env_set() {
     local key="$1" value="$2" tmp
-    tmp="$(mktemp)"
+    # Explicit template: bare `mktemp` is not portable to BSD/macOS.
+    tmp="$(mktemp "${TMPDIR:-/tmp}/katra-env.XXXXXX")"
     if [ -f "$ENV_FILE" ] && grep -qE "^#?$key=" "$ENV_FILE"; then
         # Use awk so special characters in the value need no escaping.
         awk -v k="$key" -v v="$value" '
@@ -426,7 +427,7 @@ install_systemd() {
         info "this needs sudo to write /etc/systemd/system/katra.service"
     fi
 
-    local rendered; rendered="$(mktemp)"
+    local rendered; rendered="$(mktemp "${TMPDIR:-/tmp}/katra-unit.XXXXXX")"
     sed -e "s|__KATRA_DIR__|$SRC_DIR|g" \
         -e "s|__KATRA_USER__|$(id -un)|g" \
         -e "s|__DOCKER_BIN__|$(command -v docker)|g" \
