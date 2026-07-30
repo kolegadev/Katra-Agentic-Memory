@@ -380,7 +380,7 @@ katra/
 │   ├── claude_history_extractor.py
 │   ├── kolega_code_extractor.py
 │   ├── watcher-config.example.json
-│   └── katra-watcher.service
+│   └── katra-watcher.service.template
 │
 ├── docs/
 │   ├── ARCHITECTURE.md       # This file

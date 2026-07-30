@@ -348,24 +348,17 @@ For **passive background collection** from conversation logs, use the watchers
 included in this repo under `watcher/`:
 
 ```bash
-# The watchers live in the Katra repo
-mkdir -p ~/.katra
-cp watcher/katra_watcher.py ~/.katra/katra_watcher.py
-cp watcher/katra_opencode_extractor.py ~/.katra/katra_opencode_extractor.py
-cp watcher/claude_history_extractor.py ~/.katra/claude_history_extractor.py
-cp watcher/kolega_code_extractor.py ~/.katra/kolega_code_extractor.py
-cp watcher/watcher-config.example.json ~/.katra/watcher-config.json
-
-# Edit ~/.katra/watcher-config.json with your MCP_API_KEY and platforms
-
-# Backfill existing history
-python3 ~/.katra/katra_watcher.py --once --config ~/.katra/watcher-config.json
-
-# Install as a systemd service for continuous collection
-cp watcher/katra-watcher.service ~/.config/systemd/user/memory-watcher.service
-systemctl --user daemon-reload
-systemctl --user enable --now memory-watcher
+./install.sh --with-watcher
 ```
+
+That copies the extractors to `~/.katra`, writes `watcher-config.json` with your
+MCP URL and API key filled in, backfills existing history, and installs the
+scheduler — a systemd user unit on Linux, a launchd agent on macOS.
+
+For the manual equivalent, see
+[DEPLOYMENT.md → Watcher Deployment](docs/DEPLOYMENT.md#watcher-deployment).
+Note that the unit files ship as `.template` files with placeholders that must be
+substituted; copying them directly will install a broken unit.
 
 ### Dedicated extractors
 
@@ -386,8 +379,9 @@ python3 watcher/kolega_code_extractor.py --once \
   --user-id kolega-agent
 ```
 
-On macOS, use `launchctl` to keep extractors running (see `watcher/katra-watcher.service`
-for a systemd template; adapt to a `~/Library/LaunchAgents/com.katra...plist`).
+On macOS the scheduler is launchd rather than systemd. A ready-made agent ships at
+`watcher/com.katra.watcher.plist.template`, and `./install.sh --with-watcher`
+renders and loads it for you.
 
 Supported platforms: OpenClaw, Claude Code, Kolega Code, OpenCode, Codex CLI, Hermes, KiloClaw, KimiClaw.
 Each platform can have its own `user_id` for identity mode isolation.
@@ -592,18 +586,25 @@ To ensure Katra survives host reboots and container crashes, install the
 systemd service:
 
 ```bash
-sudo cp katra.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now katra
+./install.sh --with-systemd
 ```
+
+`katra.service.template` is a template: the working directory and user are filled
+in from your machine, so there is nothing to hand-edit and nothing to get wrong on
+a different host. Do not copy the template to `/etc/systemd/system/` directly.
 
 Verify:
 ```bash
 systemctl status katra
 ```
 
-Katra will now start on boot and restart automatically. This is your **personal
-fail-safe** — if Katra is down, run:
+Expect `Active: active (exited)` — that is normal, not an error. The unit is a
+**boot trigger, not a supervisor**: it runs `docker compose up -d --wait` once and
+exits. What keeps the containers alive is `restart: unless-stopped` in
+`docker-compose.yml`.
+
+Katra will now start on boot. This is your **personal fail-safe** — if Katra is
+down, run:
 ```bash
 cd ~/Katra-Agentic-Memory && docker compose up -d
 ```

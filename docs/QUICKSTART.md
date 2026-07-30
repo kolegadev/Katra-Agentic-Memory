@@ -4,51 +4,57 @@ Get Katra running in 5 minutes.
 
 ## Prerequisites
 
-- **Docker** and **Docker Compose** (v1 `docker-compose` or v2 `docker compose`)
+- **Docker** and **Docker Compose v2** (`docker compose`)
 - Any MCP-compatible agent (optional — you can test via curl)
 
-## 1. Clone and Configure
+## 1. Install
 
 ```bash
-git clone https://github.com/kolegadev/Katra-Agentic-Memory.git
-cd Katra-Agentic-Memory
-cp .env.example .env
+curl -fsSL https://raw.githubusercontent.com/kolegadev/Katra-Agentic-Memory/main/install.sh | bash
 ```
 
-Edit `.env` — set custom keys, or leave them blank to let Katra generate
-secure keys on first boot. Generated keys are persisted in MongoDB and printed
-in the server logs (`docker logs katra-server`).
+That is the whole thing. It clones the source to `~/.katra/src`, generates a
+`.env` with real credentials, builds and starts all four containers (MongoDB,
+Redis, MinIO and the Katra server), waits for them to report healthy, and prints
+the config snippet for connecting your agent — including the generated
+`MCP_API_KEY`.
+
+Add `--with-watcher` to ingest your existing agent session history, and
+`--with-systemd` to start Katra on boot:
 
 ```bash
-# Optional: set your own keys
-MCP_API_KEY=your-mcp-secret-key       # Your agent sends this
-KATRA_API_KEY=your-admin-secret-key   # For REST API + dashboard
+curl -fsSL https://raw.githubusercontent.com/kolegadev/Katra-Agentic-Memory/main/install.sh \
+  | bash -s -- --with-watcher --with-systemd
 ```
 
-## 2. Start the Server
+See [DEPLOYMENT.md](DEPLOYMENT.md) for every flag, and for the manual install if
+you would rather do it by hand. Note that `MONGO_PASS`, `MINIO_USER` and
+`MINIO_PASS` are **required** — compose refuses to start without them rather
+than falling back to a known default — so a manual install means setting those
+yourself. The installer generates them.
+
+## 2. Verify
 
 ```bash
-docker-compose up -d --build
-```
+# Admin API health (no auth required)
+curl http://localhost:9012/api/v1/health
 
-This starts 4 containers: MongoDB, Redis, MinIO, and the Katra server.
-
-## 3. Verify
-
-```bash
-# MCP health (no auth required)
+# MCP health
 curl http://localhost:3112/health
-
-# Admin API health
-curl -H "Authorization: Bearer your-admin-secret-key" \
-  http://localhost:9012/api/v1/health
 ```
 
 You should see `{"status":"ok",...}`.
 
+Your generated keys are in `.env` (`MCP_API_KEY` for your agent, `KATRA_API_KEY`
+for the admin API). To read one back:
+
+```bash
+grep '^MCP_API_KEY=' ~/.katra/src/.env
+```
+
 Open the dashboard: **http://localhost:9012/dashboard/**
 
-## 4. Store Your First Memory
+## 3. Store Your First Memory
 
 ```bash
 curl -X POST http://localhost:3112/mcp \
@@ -90,7 +96,7 @@ curl -X POST http://localhost:3112/mcp \
   }'
 ```
 
-## 5. Search Memories
+## 4. Search Memories
 
 ```bash
 curl -X POST http://localhost:3112/mcp \
@@ -112,7 +118,7 @@ curl -X POST http://localhost:3112/mcp \
   }'
 ```
 
-## 6. Connect Your Agent
+## 5. Connect Your Agent
 
 Add Katra to your agent's MCP config:
 
@@ -135,7 +141,7 @@ Add Katra to your agent's MCP config:
 
 Restart your agent. It now has 48 memory tools available.
 
-## 7. Run the Test Suite
+## 6. Run the Test Suite
 
 Katra includes a comprehensive test suite (87 tests, 9 files, 0 failures):
 
@@ -152,7 +158,7 @@ npm run test:coverage       # With coverage report
 
 Tests cover: API key hashing, memory scope filtering, prototype pollution prevention, user ID scoping, metadata sanitization, retry counter logic, route authentication, admin gating, and input validation.
 
-## 8. Configure the LLM Provider
+## 7. Configure the LLM Provider
 
 Katra needs an LLM provider for semantic extraction, auto-journaling, and summaries.
 Configure it via MCP tool, dashboard, or env vars.
@@ -172,12 +178,12 @@ configure_llm(
 **Via dashboard:** Open `http://localhost:9012/dashboard/` → Settings → LLM Configuration
 
 **Via .env:** Uncomment and fill in your provider's API key (e.g. `DEEPSEEK_API_KEY`),
-then `docker-compose restart server`
+then `docker compose restart server`
 
 > Configuring via MCP tool or dashboard stores the config in MongoDB and applies
 > live — no restart needed. Env vars are a fallback, read on startup only.
 
-## 9. Configure Memory Scope (Optional)
+## 8. Configure Memory Scope (Optional)
 
 By default, each agent's memories are isolated (personal mode). To enable shared
 or hybrid memory across multiple agents:
@@ -195,32 +201,24 @@ curl -X PUT http://localhost:9012/api/v1/admin/memory-scope \
   }'
 ```
 
-## 10. Deploy the Watcher (Optional)
+## 9. Deploy the Watcher (Optional)
 
 For passive background collection from conversation logs, use the watchers
-included in this repo under `watcher/`:
+included in this repo under `watcher/`. The installer does the whole thing —
+copying the extractors, writing the config with your MCP URL and API key filled
+in, backfilling existing history, and installing the scheduler (a systemd user
+unit on Linux, a launchd agent on macOS):
 
 ```bash
-mkdir -p ~/.katra
-cp watcher/katra_watcher.py ~/.katra/katra_watcher.py
-cp watcher/katra_opencode_extractor.py ~/.katra/katra_opencode_extractor.py
-cp watcher/claude_history_extractor.py ~/.katra/claude_history_extractor.py
-cp watcher/kolega_code_extractor.py ~/.katra/kolega_code_extractor.py
-cp watcher/watcher-config.example.json ~/.katra/watcher-config.json
-
-# Edit ~/.katra/watcher-config.json with your api_key and platforms
-# Default config already includes OpenClaw, Claude Code, OpenCode, Codex CLI,
-# KiloClaw, KimiClaw, and Hermes paths.
-
-# Backfill existing history
-python3 ~/.katra/katra_watcher.py --once --config ~/.katra/watcher-config.json
-
-# Install as a systemd service for continuous collection
-mkdir -p ~/.config/systemd/user
-cp watcher/katra-watcher.service ~/.config/systemd/user/memory-watcher.service
-systemctl --user daemon-reload
-systemctl --user enable --now memory-watcher
+~/.katra/src/install.sh --with-watcher
 ```
+
+The default config already covers OpenClaw, Claude Code, OpenCode, Codex CLI,
+KiloClaw, KimiClaw and Hermes paths.
+
+For the manual equivalent — including how to render the unit templates, which
+must have their placeholders substituted rather than being copied as-is — see
+[DEPLOYMENT.md → Watcher Deployment](DEPLOYMENT.md#watcher-deployment).
 
 Some platforms need a dedicated extractor because their session format is not
 plain JSONL:
@@ -231,8 +229,9 @@ plain JSONL:
 | **Claude Code** | `python3 ~/.katra/claude_history_extractor.py --once --api-key your-mcp-secret-key --user-id claude-agent` |
 | **Kolega Code** | `python3 ~/.katra/kolega_code_extractor.py --once --api-key your-mcp-secret-key --user-id kolega-agent` |
 
-On macOS, use `launchctl` / `~/Library/LaunchAgents` instead of systemd (see
-`watcher/katra-watcher.service` for a template; adapt to a `.plist`).
+On macOS the installer uses launchd instead of systemd. A ready-made agent
+template ships at `watcher/com.katra.watcher.plist.template` — there is no
+longer anything to hand-write.
 
 ## Next Steps
 

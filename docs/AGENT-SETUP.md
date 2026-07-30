@@ -190,10 +190,11 @@ Edit `~/.katra/watcher-config.json` with your `api_key` and platforms:
 **Linux (systemd):**
 
 ```bash
-cp watcher/katra-watcher.service ~/.config/systemd/user/memory-watcher.service
+sed -e "s|__PYTHON__|$(command -v python3)|g" \
+    -e "s|__KATRA_HOME__|$HOME/.katra|g" \
+    watcher/katra-watcher.service.template > ~/.config/systemd/user/katra-watcher.service
 systemctl --user daemon-reload
-systemctl --user enable memory-watcher
-systemctl --user start memory-watcher
+systemctl --user enable --now katra-watcher
 ```
 
 **macOS (launchd):**
