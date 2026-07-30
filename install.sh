@@ -117,10 +117,23 @@ preflight() {
         die "Docker Compose v2 not found. 'docker compose version' failed — you may have the old standalone docker-compose."
     fi
 
+    # Nothing in --no-start touches Docker, so a stopped daemon is not fatal
+    # there. This is what makes the script testable on machines (and CI
+    # runners) that have the client but no running daemon.
     if ! docker info >/dev/null 2>&1; then
-        die "the Docker daemon is not reachable. Start Docker, or add yourself to the 'docker' group: sudo usermod -aG docker \$USER (then log out and back in)."
+        local daemon_hint
+        case "$os" in
+            Darwin) daemon_hint="Start Docker Desktop and try again." ;;
+            *)      daemon_hint="Start it with: sudo systemctl start docker — or if it is running, add yourself to the 'docker' group: sudo usermod -aG docker \$USER (then log out and back in)." ;;
+        esac
+        if [ "$KATRA_START" = 1 ]; then
+            die "the Docker daemon is not reachable. $daemon_hint"
+        fi
+        warn "the Docker daemon is not reachable, but --no-start does not need it — continuing. $daemon_hint"
+        ok "docker client $(docker version --format '{{.Client.Version}}' 2>/dev/null || echo '?'), compose $(docker compose version --short 2>/dev/null || echo '?')"
+    else
+        ok "docker $(docker version --format '{{.Server.Version}}' 2>/dev/null || echo '?'), compose $(docker compose version --short 2>/dev/null || echo '?')"
     fi
-    ok "docker $(docker version --format '{{.Server.Version}}' 2>/dev/null || echo '?'), compose $(docker compose version --short 2>/dev/null || echo '?')"
 
     have git || die "git not found — install git and re-run"
     ok "git present"
