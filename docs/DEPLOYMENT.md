@@ -67,10 +67,19 @@ MinIO requires a user of 3+ characters and a password of 8+ characters.
 
 ### Rotating credentials
 
-MongoDB and MinIO read their root credentials **only when the data volume is
-first initialised**. On an existing install, editing `.env` does not change
-them — it just locks the server out of its own database. This is why
-`install.sh` warns about `change-me` values instead of fixing them.
+The two services behave differently, which matters if you are trying to get off
+the old `change-me` defaults.
+
+**MongoDB** stores its users inside the database itself.
+`MONGO_INITDB_ROOT_PASSWORD` is read **only when the data volume is first
+initialised**, so on an existing install editing `MONGO_PASS` in `.env` does not
+change the password — it only stops the server from being able to log in. The
+password must be changed inside MongoDB first. This is why `install.sh` warns
+about `change-me` rather than rewriting it.
+
+**MinIO** re-reads `MINIO_ROOT_USER` and `MINIO_ROOT_PASSWORD` from the
+environment on every start, so rotating that pair is just an `.env` edit plus a
+container recreate. Stored objects are unaffected.
 
 To rotate MongoDB's password on a live install, change it inside MongoDB
 first, then update `.env` to match:
@@ -86,9 +95,14 @@ docker exec -it katra-mongo mongosh -u admin -p '<old-pass>' --authenticationDat
 docker compose up -d --force-recreate --wait server
 ```
 
-For MinIO, add a new user with `mc` and update the `AWS_*` pair, or — if you
-have no assets stored yet — stop the stack, delete `${DATA_DIR}/minio`, set
-all four values, and start again.
+For MinIO, set all four values (`MINIO_USER`/`MINIO_PASS` and the matching
+`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`) in `.env`, then recreate both
+containers — MinIO picks up the new root credentials at start, and your objects
+are untouched:
+
+```bash
+docker compose up -d --force-recreate --wait minio server
+```
 
 Starting from scratch is the simplest option if the data is expendable:
 

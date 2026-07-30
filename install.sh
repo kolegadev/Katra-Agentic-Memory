@@ -339,10 +339,12 @@ audit_existing_secrets() {
     done
     if [ "$found" = 1 ]; then
         warn ""
-        warn "This installer will NOT rotate them, because MongoDB and MinIO bake"
-        warn "their root credentials into the data volume on first initialisation."
-        warn "Editing .env alone would lock the server out of its own database."
-        warn "To rotate safely, see: docs/DEPLOYMENT.md → 'Rotating credentials'"
+        warn "This installer will NOT rotate them. MongoDB stores its users inside"
+        warn "the database, so editing MONGO_PASS in .env does not change the"
+        warn "password — it just locks the server out. MinIO re-reads its root"
+        warn "credentials on every start, so that pair is safer to change."
+        warn "For the correct procedure for each, see:"
+        warn "  docs/DEPLOYMENT.md → 'Rotating credentials'"
     fi
 }
 
@@ -440,9 +442,14 @@ install_systemd() {
         info "this needs sudo to write /etc/systemd/system/katra.service"
     fi
 
+    # Prefer SUDO_USER: if someone runs the whole installer under sudo,
+    # `id -un` is root, and the unit would be written with User=root while
+    # the compose project and data directory belong to the real user.
+    local unit_user="${SUDO_USER:-$(id -un)}"
+
     local rendered; rendered="$(mktemp "${TMPDIR:-/tmp}/katra-unit.XXXXXX")"
     sed -e "s|__KATRA_DIR__|$SRC_DIR|g" \
-        -e "s|__KATRA_USER__|$(id -un)|g" \
+        -e "s|__KATRA_USER__|$unit_user|g" \
         -e "s|__DOCKER_BIN__|$(command -v docker)|g" \
         "$template" > "$rendered"
 
@@ -450,7 +457,7 @@ install_systemd() {
     rm -f "$rendered"
     $sudo_cmd systemctl daemon-reload
     $sudo_cmd systemctl enable katra.service >/dev/null 2>&1 || warn "could not enable katra.service"
-    ok "katra.service installed for user $(id -un) at $SRC_DIR"
+    ok "katra.service installed for user $unit_user at $SRC_DIR"
     info "it starts the stack at boot; the containers' own restart policy keeps them running"
 }
 
