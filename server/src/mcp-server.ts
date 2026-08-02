@@ -2828,6 +2828,19 @@ async function startHTTPServer(): Promise<void> {
       const mongoOk = is_database_connected();
       const redisOk = await is_redis_healthy();
       const llmStatus = llmService.getServiceStatus();
+
+      // Build the report here. This used to reference an `integrityReport`
+      // that only existed in another function's scope, so every request to
+      // this endpoint threw ReferenceError and killed the process.
+      // Guarded so a failing integrity check degrades the response instead
+      // of taking the server down.
+      let integrityReport: unknown = null;
+      try {
+        integrityReport = await MemoryIntegrityService.get_instance().getIntegrityReport();
+      } catch (error) {
+        console.error('Health check: integrity report failed:', error);
+      }
+
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         status: 'ok',

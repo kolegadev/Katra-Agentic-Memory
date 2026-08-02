@@ -28,7 +28,7 @@ turning stateless agents into agents with memory.
         │           │           │           │           │          │
         └───────────┴───────────┴─────┬─────┴───────────┴──────────┘
                                       │
-                           solomem watcher daemon
+                           Katra watcher daemon
                            (multi-platform ingestion)
                                       │
         ┌─────────────────────────────┼─────────────────────────────┐
@@ -146,20 +146,20 @@ Then restart: `docker-compose restart server`
 
 ### 3. Deploy the Solomem Watchers
 
-The watchers live in the Katra repo under `watcher/`. Copy them to `~/.solomem`
+The watchers live in the Katra repo under `watcher/`. Copy them to `~/.katra`
 (or any directory you prefer):
 
 ```bash
-mkdir -p ~/.solomem ~/.katra
-cp watcher/katra_watcher.py ~/.solomem/memory_watcher.py
-cp watcher/katra_opencode_extractor.py ~/.solomem/opencode_extractor.py
-cp watcher/claude_history_extractor.py ~/.solomem/claude_history_extractor.py
-cp watcher/kolega_code_extractor.py ~/.solomem/kolega_code_extractor.py
-cp watcher/watcher-config.example.json ~/.solomem/watcher-config.json
-chmod +x ~/.solomem/*.py
+mkdir -p ~/.katra
+cp watcher/katra_watcher.py ~/.katra/katra_watcher.py
+cp watcher/katra_opencode_extractor.py ~/.katra/katra_opencode_extractor.py
+cp watcher/claude_history_extractor.py ~/.katra/claude_history_extractor.py
+cp watcher/kolega_code_extractor.py ~/.katra/kolega_code_extractor.py
+cp watcher/watcher-config.example.json ~/.katra/watcher-config.json
+chmod +x ~/.katra/*.py
 ```
 
-Edit `~/.solomem/watcher-config.json` with your `api_key` and platforms:
+Edit `~/.katra/watcher-config.json` with your `api_key` and platforms:
 
 ```json
 {
@@ -190,10 +190,11 @@ Edit `~/.solomem/watcher-config.json` with your `api_key` and platforms:
 **Linux (systemd):**
 
 ```bash
-cp watcher/katra-watcher.service ~/.config/systemd/user/memory-watcher.service
+sed -e "s|__PYTHON__|$(command -v python3)|g" \
+    -e "s|__KATRA_HOME__|$HOME/.katra|g" \
+    watcher/katra-watcher.service.template > ~/.config/systemd/user/katra-watcher.service
 systemctl --user daemon-reload
-systemctl --user enable memory-watcher
-systemctl --user start memory-watcher
+systemctl --user enable --now katra-watcher
 ```
 
 **macOS (launchd):**
@@ -211,9 +212,9 @@ Create `~/Library/LaunchAgents/com.katra.memory-watcher.plist`:
     <array>
         <string>/usr/bin/env</string>
         <string>python3</string>
-        <string>/Users/YOUR_USERNAME/.solomem/memory_watcher.py</string>
+        <string>/Users/YOUR_USERNAME/.katra/katra_watcher.py</string>
         <string>--config</string>
-        <string>/Users/YOUR_USERNAME/.solomem/watcher-config.json</string>
+        <string>/Users/YOUR_USERNAME/.katra/watcher-config.json</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
@@ -238,7 +239,7 @@ launchctl load -w ~/Library/LaunchAgents/com.katra.memory-watcher.plist
 ### 5. Backfill Existing History
 
 ```bash
-python3 ~/.solomem/memory_watcher.py --once --config ~/.solomem/watcher-config.json
+python3 ~/.katra/katra_watcher.py --once --config ~/.katra/watcher-config.json
 ```
 
 ### 6. Run Dedicated Extractors (if needed)
@@ -247,9 +248,9 @@ Some platforms need a dedicated extractor because their session format is not pl
 
 | Platform | Command |
 |----------|---------|
-| **OpenCode** | `python3 ~/.solomem/opencode_extractor.py --once --api-key YOUR_MCP_API_KEY --user-id opencode-agent` |
-| **Claude Code** | `python3 ~/.solomem/claude_history_extractor.py --once --api-key YOUR_MCP_API_KEY --user-id claude-agent` |
-| **Kolega Code** | `python3 ~/.solomem/kolega_code_extractor.py --once --api-key YOUR_MCP_API_KEY --user-id kolega-agent` |
+| **OpenCode** | `python3 ~/.katra/katra_opencode_extractor.py --once --api-key YOUR_MCP_API_KEY --user-id opencode-agent` |
+| **Claude Code** | `python3 ~/.katra/claude_history_extractor.py --once --api-key YOUR_MCP_API_KEY --user-id claude-agent` |
+| **Kolega Code** | `python3 ~/.katra/kolega_code_extractor.py --once --api-key YOUR_MCP_API_KEY --user-id kolega-agent` |
 
 For continuous collection, wrap the dedicated extractor in its own launchd/systemd service.
 
@@ -417,7 +418,7 @@ consciousness, use the same `shared_id` as your other agents and ensure Katra
 is in `shared` or `hybrid` memory scope mode:
 
 ```bash
-python3 ~/.solomem/opencode_extractor.py --once \
+python3 ~/.katra/katra_opencode_extractor.py --once \
   --mcp-url http://localhost:3112/mcp \
   --api-key YOUR_MCP_API_KEY \
   --user-id opencode-agent \

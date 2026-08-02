@@ -62,13 +62,36 @@ Contributions and comparisons from the community are very welcome!
 ## Quick Start (Install using one of the agentic applications, it will sort out any shortcomings)
 
 ```bash
+curl -fsSL https://raw.githubusercontent.com/kolegadev/Katra-Agentic-Memory/main/install.sh | bash
+```
+
+Docker is the only prerequisite. The installer clones the source to
+`~/.katra/src`, generates real credentials, builds and starts the stack, waits
+for it to report healthy, and prints the config snippet for your agent.
+
+Add `--with-watcher` to also ingest your existing agent session history, and
+`--with-systemd` to start Katra on boot:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/kolegadev/Katra-Agentic-Memory/main/install.sh \
+  | bash -s -- --with-watcher --with-systemd
+```
+
+<details>
+<summary>Manual install</summary>
+
+```bash
 git clone https://github.com/kolegadev/Katra-Agentic-Memory.git
 cd Katra-Agentic-Memory
 cp .env.example .env
-# Optional: edit .env to set custom API keys.
-# If left blank, Katra generates secure keys on first boot and prints them.
-docker-compose up -d --build
+# Required: MONGO_PASS, MINIO_USER, MINIO_PASS. Compose refuses to start
+# without them rather than using a known default. Note that MONGODB_URI
+# embeds MONGO_PASS inline, and the MINIO_* pair must match the AWS_* pair —
+# see docs/DEPLOYMENT.md → Credentials.
+docker compose up -d --build --wait
 ```
+
+</details>
 
 > **Note:** The original URL `https://github.com/kolegadev/katra.git` still works (GitHub redirects it).
 
@@ -325,24 +348,17 @@ For **passive background collection** from conversation logs, use the watchers
 included in this repo under `watcher/`:
 
 ```bash
-# The watchers live in the Katra repo
-mkdir -p ~/.solomem ~/.katra
-cp watcher/katra_watcher.py ~/.solomem/memory_watcher.py
-cp watcher/katra_opencode_extractor.py ~/.solomem/opencode_extractor.py
-cp watcher/claude_history_extractor.py ~/.solomem/claude_history_extractor.py
-cp watcher/kolega_code_extractor.py ~/.solomem/kolega_code_extractor.py
-cp watcher/watcher-config.example.json ~/.solomem/watcher-config.json
-
-# Edit ~/.solomem/watcher-config.json with your MCP_API_KEY and platforms
-
-# Backfill existing history
-python3 ~/.solomem/memory_watcher.py --once --config ~/.solomem/watcher-config.json
-
-# Install as a systemd service for continuous collection
-cp watcher/katra-watcher.service ~/.config/systemd/user/memory-watcher.service
-systemctl --user daemon-reload
-systemctl --user enable --now memory-watcher
+./install.sh --with-watcher
 ```
+
+That copies the extractors to `~/.katra`, writes `watcher-config.json` with your
+MCP URL and API key filled in, backfills existing history, and installs the
+scheduler — a systemd user unit on Linux, a launchd agent on macOS.
+
+For the manual equivalent, see
+[DEPLOYMENT.md → Watcher Deployment](docs/DEPLOYMENT.md#watcher-deployment).
+Note that the unit files ship as `.template` files with placeholders that must be
+substituted; copying them directly will install a broken unit.
 
 ### Dedicated extractors
 
@@ -363,8 +379,9 @@ python3 watcher/kolega_code_extractor.py --once \
   --user-id kolega-agent
 ```
 
-On macOS, use `launchctl` to keep extractors running (see `watcher/katra-watcher.service`
-for a systemd template; adapt to a `~/Library/LaunchAgents/com.katra...plist`).
+On macOS the scheduler is launchd rather than systemd. A ready-made agent ships at
+`watcher/com.katra.watcher.plist.template`, and `./install.sh --with-watcher`
+renders and loads it for you.
 
 Supported platforms: OpenClaw, Claude Code, Kolega Code, OpenCode, Codex CLI, Hermes, KiloClaw, KimiClaw.
 Each platform can have its own `user_id` for identity mode isolation.
@@ -569,18 +586,25 @@ To ensure Katra survives host reboots and container crashes, install the
 systemd service:
 
 ```bash
-sudo cp katra.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now katra
+./install.sh --with-systemd
 ```
+
+`katra.service.template` is a template: the working directory and user are filled
+in from your machine, so there is nothing to hand-edit and nothing to get wrong on
+a different host. Do not copy the template to `/etc/systemd/system/` directly.
 
 Verify:
 ```bash
 systemctl status katra
 ```
 
-Katra will now start on boot and restart automatically. This is your **personal
-fail-safe** — if Katra is down, run:
+Expect `Active: active (exited)` — that is normal, not an error. The unit is a
+**boot trigger, not a supervisor**: it runs `docker compose up -d --wait` once and
+exits. What keeps the containers alive is `restart: unless-stopped` in
+`docker-compose.yml`.
+
+Katra will now start on boot. This is your **personal fail-safe** — if Katra is
+down, run:
 ```bash
 cd ~/Katra-Agentic-Memory && docker compose up -d
 ```

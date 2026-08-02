@@ -3,8 +3,12 @@
 #  docker-compose.yml
 #
 #  Quick start:
-#    1. Copy .env.example → .env, edit as needed
-#    2. docker-compose up -d --build
+#    ./install.sh          (generates .env with real secrets, then brings
+#                           the stack up and prints your agent config)
+#
+#  Manual equivalent:
+#    1. Copy .env.example → .env and set MONGO_PASS, MINIO_USER, MINIO_PASS
+#    2. docker compose up -d --build --wait
 #    3. Point your agent at http://localhost:3112/mcp
 #
 #  USB storage:
@@ -22,7 +26,11 @@ services:
       - ${DATA_DIR:-./data}/mongo:/data/db
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-admin}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASS:-change-me}
+      # No default: an unset password must fail loudly rather than silently
+      # initialising the database with a known credential. ./install.sh
+      # generates one. Note this is only read on FIRST initialisation of the
+      # data volume — see docs/DEPLOYMENT.md → "Rotating credentials".
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASS:?MONGO_PASS is not set — run ./install.sh, or set it in .env}
     command: ["--bind_ip_all", "--auth"]
     networks:
       - katra-net
@@ -60,8 +68,11 @@ services:
     volumes:
       - ${DATA_DIR:-./data}/minio:/data
     environment:
-      MINIO_ROOT_USER: ${MINIO_USER:-change-me}
-      MINIO_ROOT_PASSWORD: ${MINIO_PASS:-change-me}
+      # As with Mongo: no defaults, and only read on first initialisation.
+      # These must match AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY in .env,
+      # which is what the server actually authenticates with.
+      MINIO_ROOT_USER: ${MINIO_USER:?MINIO_USER is not set — run ./install.sh, or set it in .env}
+      MINIO_ROOT_PASSWORD: ${MINIO_PASS:?MINIO_PASS is not set — run ./install.sh, or set it in .env}
     command: server /data --console-address ":9001"
     networks:
       - katra-net
