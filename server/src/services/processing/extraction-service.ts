@@ -726,9 +726,8 @@ class ExtractionService {
       parts.push(`Current entities: ${context.current_entities.join(', ')}`);
     }
 
-    if (context.extraction_focus) {
-      parts.push(`Focus: ${context.extraction_focus}`);
-    }
+    // extraction_focus is an internal pipeline label, not user content —
+    // deliberately not included in the LLM prompt.
 
     return parts.join('\n');
   }

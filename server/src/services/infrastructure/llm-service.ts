@@ -226,7 +226,7 @@ export class LLMService {
 
     for (const cfg of providerConfigs) {
       try {
-        const client = new OpenAI({ apiKey: cfg.key, baseURL: cfg.baseUrl, timeout: 60000, maxRetries: 2 });
+        const client = new OpenAI({ apiKey: cfg.key, baseURL: cfg.baseUrl, timeout: 300000, maxRetries: 2 });
         this.providers.push({ name: cfg.name, model: cfg.model, available: false, client });
         console.log(`🔧 LLM Provider registered (env): ${cfg.name} (${cfg.model})`);
       } catch (error) {
@@ -280,7 +280,7 @@ export class LLMService {
       const client = new OpenAI({
         apiKey: config.api_key || 'ollama-no-key',
         baseURL: baseUrl,
-        timeout: 60000,
+        timeout: 300000,
         maxRetries: 2,
       });
       this.providers.push({ name: config.provider, model, available: false, client });
@@ -812,14 +812,14 @@ Always respond with valid JSON only, no prose. Return ONLY valid JSON in exactly
 {
   "knowledge": [
     {
-      "knowledge_type": "preference|skill|procedure|insight|constraint|goal|principle|opinion|fact",
+      "knowledge_type": "goal",  // pick EXACTLY ONE from: preference, skill, procedure, insight, constraint, goal, principle, opinion, fact
       "content": "one concise, self-contained sentence",
       "domain": "short subject area",
       "confidence": 0.0-1.0
     }
   ],
   "entities": [
-    { "name": "exact name", "type": "person|project|tool|concept|place|organization|other", "confidence": 0.0-1.0 }
+    { "name": "exact name", "type": "concept",  // pick EXACTLY ONE from: person, project, tool, concept, place, organization, other  "confidence": 0.0-1.0 }
   ],
   "relationships": [
     { "from_entity": "name", "to_entity": "name", "relationship_type": "built|uses|depends_on|manages|part_of|located_at|related_to", "confidence": 0.0-1.0 }
@@ -834,8 +834,16 @@ Rules:
 - No duplicate or near-duplicate facts.
 - No raw code blocks, no file dumps, no verbatim logs inside facts.
 
-Example input: "I'm building gh-hygiene, a CLI to manage my 120 GitHub repos. I want DeepSeek to decide what to archive. The dashboard keeps showing 'degraded' because Redis won't connect."
-Example output:
-{"knowledge":[{"knowledge_type":"goal","content":"User is building gh-hygiene, a CLI tool to manage ~120 GitHub repos (settings, permissions, cleanup, archiving).","domain":"devtools","confidence":0.95},{"knowledge_type":"preference","content":"User wants DeepSeek V4 Flash as the decision/LLM model for gh-hygiene.","domain":"devtools","confidence":0.9},{"knowledge_type":"problem","content":"Katra dashboard shows 'degraded' status due to Redis not connecting.","domain":"infra","confidence":0.85}],"entities":[{"name":"gh-hygiene","type":"project","confidence":0.95},{"name":"DeepSeek V4 Flash","type":"tool","confidence":0.9},{"name":"Katra","type":"project","confidence":0.85}],"relationships":[{"from_entity":"gh-hygiene","to_entity":"DeepSeek V4 Flash","relationship_type":"uses","confidence":0.9}],"activities":[{"activity_type":"goal","description":"Manage and clean up ~120 GitHub repos via gh-hygiene.","confidence":0.9}]}`;
+Rules:
+- Extract ONLY from the user-provided text. The JSON shape below is a format reference only — never copy its content, never invent topics that are not in the text.
+- If the text has little durable content, output empty arrays. Do not pad.
+
+JSON shape (format only, never copy content):
+{
+  "knowledge": [ { "knowledge_type": "goal", "content": "...", "domain": "...", "confidence": 0.0 } ],
+  "entities": [ { "name": "...", "type": "concept", "confidence": 0.0 } ],
+  "relationships": [ { "from_entity": "...", "to_entity": "...", "relationship_type": "related_to", "confidence": 0.0 } ],
+  "activities": [ { "activity_type": "decision", "description": "...", "confidence": 0.0 } ]
+}`;
 
 export const llmService = new LLMService();
