@@ -344,9 +344,48 @@ export class LLMService {
     return this.providers.find((p) => p.available) || null;
   }
 
+  /**
+   * All providers in registration order (primary first). Available providers
+   * come first; if none are marked available yet (validation still running or
+   * everything failed), all registered providers are returned so callers can
+   * still attempt them.
+   */
+  private getProvidersInPriorityOrder(): LLMProvider[] {
+    const available = this.providers.filter((p) => p.available);
+    return available.length > 0 ? available : this.providers;
+  }
+
+  /**
+   * Run fn against each provider in priority order until one succeeds.
+   * Auth errors (401/403) permanently mark the provider unavailable; other
+   * errors (timeout, 429, 5xx, network) just move on to the fallback provider.
+   * Re-throws the last error if every provider fails.
+   */
+  private async withProviderFallback<T>(fn: (provider: LLMProvider) => Promise<T>): Promise<T> {
+    const providers = this.getProvidersInPriorityOrder();
+    if (providers.length === 0) throw new Error('No LLM provider available.');
+    let lastError: unknown = null;
+    for (const provider of providers) {
+      try {
+        return await fn(provider);
+      } catch (error: any) {
+        lastError = error;
+        if (error?.status === 401 || error?.status === 403) {
+          provider.available = false;
+          this.available = this.providers.some((p) => p.available);
+          console.warn(`⚠️ ${provider.name} auth failed (${error.status}) — marked unavailable, trying fallback provider`);
+        } else {
+          console.warn(`⚠️ ${provider.name} (${provider.model}) call failed: ${error?.message || error} — trying fallback provider`);
+        }
+      }
+    }
+    throw lastError instanceof Error ? lastError : new Error(String(lastError));
+  }
+
   public async extractStructuredData(inputText: string, context?: string): Promise<any> {
-    const provider = this.getActiveProvider();
-    if (!provider) throw new Error('No LLM provider available. Configure via dashboard, MCP configure_llm tool, or env vars.');
+    if (this.providers.length === 0) {
+      throw new Error('No LLM provider available. Configure via dashboard, MCP configure_llm tool, or env vars.');
+    }
 
     // Chunk large inputs (e.g. full conversation transcripts) so the model can
     // actually distill them instead of truncating. Each chunk is extracted
@@ -365,7 +404,8 @@ export class LLMService {
     const merged: any = { knowledge: [], entities: [], relationships: [], activities: [] };
 
     for (const chunk of chunks) {
-      const parsed = await this.extractSingleChunk(provider, chunk, context);
+      // Primary provider (DeepSeek) with automatic fallback (Ollama) per chunk.
+      const parsed = await this.withProviderFallback((provider) => this.extractSingleChunk(provider, chunk, context));
       if (!parsed) continue;
       for (const key of ['knowledge', 'entities', 'relationships', 'activities']) {
         if (Array.isArray(parsed[key])) merged[key].push(...parsed[key]);
@@ -536,55 +576,52 @@ CRITICAL RULES:
     userPrompt: string,
     maxTokens: number = 1000
   ): Promise<Record<string, unknown>> {
-    const provider = this.getActiveProvider() || this.providers[0] || null;
-    if (!provider) throw new Error('No LLM provider available for structured extraction');
+    if (this.providers.length === 0) throw new Error('No LLM provider available for structured extraction');
 
     try {
-      const client = provider.client as OpenAI;
-      const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ];
+      return await this.withProviderFallback(async (provider) => {
+        const client = provider.client as OpenAI;
+        const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ];
 
-      const params: Record<string, unknown> = {
-        model: provider.model,
-        messages,
-        temperature: 0.1,
-        max_tokens: maxTokens,
-      };
+        const params: Record<string, unknown> = {
+          model: provider.model,
+          messages,
+          temperature: 0.1,
+          max_tokens: maxTokens,
+        };
 
-      try {
-        params.response_format = { type: 'json_object' };
-        const response = await client.chat.completions.create(
-          params as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming
-        );
-        this._trackCacheStats(response);
-        const msg = response.choices[0]?.message as any;
-        const content = msg?.content || msg?.reasoning_content || '{}';
-        return JSON.parse(content);
-      } catch (formatError: any) {
-        if (formatError?.status === 400 || formatError?.message?.includes('response_format')) {
-          delete params.response_format;
+        try {
+          params.response_format = { type: 'json_object' };
           const response = await client.chat.completions.create(
             params as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming
           );
           this._trackCacheStats(response);
           const msg = response.choices[0]?.message as any;
           const content = msg?.content || msg?.reasoning_content || '{}';
-          const jsonMatch = content.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/) || content.match(/(\{[\s\S]*\})/);
-          const rawJson = jsonMatch ? (jsonMatch[1] || jsonMatch[0]) : content;
-          const firstBrace = rawJson.indexOf('{');
-          const lastBrace = rawJson.lastIndexOf('}');
-          const extracted = firstBrace >= 0 && lastBrace > firstBrace ? rawJson.slice(firstBrace, lastBrace + 1) : rawJson;
-          return JSON.parse(extracted);
+          return JSON.parse(content);
+        } catch (formatError: any) {
+          if (formatError?.status === 400 || formatError?.message?.includes('response_format')) {
+            delete params.response_format;
+            const response = await client.chat.completions.create(
+              params as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming
+            );
+            this._trackCacheStats(response);
+            const msg = response.choices[0]?.message as any;
+            const content = msg?.content || msg?.reasoning_content || '{}';
+            const jsonMatch = content.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/) || content.match(/(\{[\s\S]*\})/);
+            const rawJson = jsonMatch ? (jsonMatch[1] || jsonMatch[0]) : content;
+            const firstBrace = rawJson.indexOf('{');
+            const lastBrace = rawJson.lastIndexOf('}');
+            const extracted = firstBrace >= 0 && lastBrace > firstBrace ? rawJson.slice(firstBrace, lastBrace + 1) : rawJson;
+            return JSON.parse(extracted);
+          }
+          throw formatError;
         }
-        throw formatError;
-      }
+      });
     } catch (error: any) {
-      if (error?.status === 401 || error?.status === 403) {
-        provider.available = false;
-        this.available = this.providers.some((p) => p.available);
-      }
       console.error('❌ Structured LLM extraction failed:', error?.message || error);
       return {};
     }
@@ -595,65 +632,58 @@ CRITICAL RULES:
     userContent: string,
     maxTokens: number = 1000
   ): Promise<Record<string, unknown>> {
-    const provider = this.getActiveProvider() || this.providers[0] || null;
-    if (!provider) {
+    if (this.providers.length === 0) {
       console.warn('⚠️ No LLM provider available for JSON extraction');
       return {};
     }
 
-    const client = provider.client as OpenAI;
-    const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
-      { role: 'system', content: systemInstruction },
-      { role: 'user', content: userContent },
-    ];
-
     try {
-      const response = await client.chat.completions.create({
-        model: provider.model,
-        messages,
-        temperature: 0.0,
-        max_tokens: maxTokens,
-        response_format: { type: 'json_object' },
-      });
-      this._trackCacheStats(response);
-      const msg = response.choices[0]?.message as any;
-      const content = msg?.content || '{}';
-      return JSON.parse(content);
-    } catch (error: any) {
-      if (error?.status !== 400 && error?.status !== 404 && !error?.message?.includes('response_format')) {
-        if (error?.status === 401 || error?.status === 403) {
-          provider.available = false;
-          this.available = this.providers.some((p) => p.available);
+      return await this.withProviderFallback(async (provider) => {
+        const client = provider.client as OpenAI;
+        const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
+          { role: 'system', content: systemInstruction },
+          { role: 'user', content: userContent },
+        ];
+
+        try {
+          const response = await client.chat.completions.create({
+            model: provider.model,
+            messages,
+            temperature: 0.0,
+            max_tokens: maxTokens,
+            response_format: { type: 'json_object' },
+          });
+          this._trackCacheStats(response);
+          const msg = response.choices[0]?.message as any;
+          const content = msg?.content || '{}';
+          return JSON.parse(content);
+        } catch (error: any) {
+          if (error?.status !== 400 && error?.status !== 404 && !error?.message?.includes('response_format')) {
+            throw error;
+          }
         }
-        throw error;
-      }
-    }
 
-    try {
-      const response = await client.chat.completions.create({
-        model: provider.model,
-        messages: [
-          { role: 'system', content: systemInstruction + '\n\nCRITICAL: Your ENTIRE response must be a single valid JSON object. Start with {. End with }. No markdown, no prose, no explanation. JUST JSON.' },
-          { role: 'user', content: userContent + '\n\nRespond with ONLY a JSON object. No other text.' },
-        ],
-        temperature: 0.0,
-        max_tokens: maxTokens,
+        const response = await client.chat.completions.create({
+          model: provider.model,
+          messages: [
+            { role: 'system', content: systemInstruction + '\n\nCRITICAL: Your ENTIRE response must be a single valid JSON object. Start with {. End with }. No markdown, no prose, no explanation. JUST JSON.' },
+            { role: 'user', content: userContent + '\n\nRespond with ONLY a JSON object. No other text.' },
+          ],
+          temperature: 0.0,
+          max_tokens: maxTokens,
+        });
+        this._trackCacheStats(response);
+        const msg = response.choices[0]?.message as any;
+        let content = msg?.content || '{}';
+        content = content.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
+        const firstBrace = content.indexOf('{');
+        const lastBrace = content.lastIndexOf('}');
+        if (firstBrace >= 0 && lastBrace > firstBrace) {
+          content = content.slice(firstBrace, lastBrace + 1);
+        }
+        return JSON.parse(content);
       });
-      this._trackCacheStats(response);
-      const msg = response.choices[0]?.message as any;
-      let content = msg?.content || '{}';
-      content = content.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
-      const firstBrace = content.indexOf('{');
-      const lastBrace = content.lastIndexOf('}');
-      if (firstBrace >= 0 && lastBrace > firstBrace) {
-        content = content.slice(firstBrace, lastBrace + 1);
-      }
-      return JSON.parse(content);
     } catch (error: any) {
-      if (error?.status === 401 || error?.status === 403) {
-        provider.available = false;
-        this.available = this.providers.some((p) => p.available);
-      }
       console.error('❌ JSON extraction failed:', error?.message || error);
       return {};
     }
