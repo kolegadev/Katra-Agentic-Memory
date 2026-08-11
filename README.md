@@ -750,4 +750,25 @@ git push origin main
 
 ## License
 
-Apache 2.0 — see [LICENSE](LICENSE).
+<!-- Replace the badge at the top of the README with this: -->
+
+[Show Image](https://mariadb.com/bsl11/)
+
+<!-- Replace the "## License" section at the bottom of the README with this: -->
+License
+
+Katra is source-available under the Business Source License 1.1 (BSL 1.1).
+
+What this means in practice:
+
+Free for almost everyone. You can use, modify, and redistribute Katra, including in production — running Katra to power your own agents, inside your company, or in your own products is free.
+One restriction: you may not offer Katra to third parties as a paid hosted service (e.g., memory-as-a-service) or embed it in a paid product that competes with kolegadev's paid version(s) of Katra. If you want to do that, contact us for a commercial license.
+It becomes fully open source over time. On the Change Date (2030-08-11 for this version), this version of Katra automatically converts to the GNU AGPL v3.0 or later.
+
+The BSL is not an OSI-approved open source license during the restricted period, which is why we describe Katra as source-available. The full source is public, contributions are welcome, and non-competing production use is unrestricted.
+
+See the LICENSE file for the exact terms, including the full Additional Use Grant defining what counts as a competitive offering.
+
+Contributing and licensing
+
+By submitting a contribution to this repository, you agree that your contribution is licensed to kolegadev under the Business Source License 1.1 and may be relicensed under the Change License as described in the LICENSE file.
