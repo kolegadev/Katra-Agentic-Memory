@@ -1,6 +1,6 @@
 # Katra — Cognitive Memory for AI Agents
 
-[![License: BSL 1.1]https://mariadb.com/bsl11/
+[![License: BSL 1.1]https://mariadb.com/bsl11/]
 
 Give your AI agent **persistent memory**. Katra is a self-contained memory appliance —
 drop it on any machine with Docker, point your agent at it via MCP, and get
