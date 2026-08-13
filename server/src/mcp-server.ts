@@ -58,8 +58,17 @@ import { MotivationalEngine } from './services/processing/motivational-engine.js
 import { DecisionActionService } from './services/processing/decision-action-service.js';
 import { SelfModelService } from './services/processing/self-model-service.js';
 import { GoalManager } from './services/processing/goal-manager.js';
+import { SkillLoaderService } from './services/memory/skill-loader-service.js';
+import { OperationalDistillationService } from './services/processing/operational-distillation-service.js';
+import { SkillSynthesisService } from './services/processing/skill-synthesis-service.js';
+import { SkillRefinementService } from './services/processing/skill-refinement-service.js';
 
 dotenv.config();
+
+const skillLoaderService = SkillLoaderService.get_instance();
+const operationalDistillationService = OperationalDistillationService.get_instance();
+const skillSynthesisService = SkillSynthesisService.get_instance();
+const skillRefinementService = SkillRefinementService.get_instance();
 
 // ── Tenant identity ────────────────────────────────────────────────
 // The MCP server uses a single shared API key — there is no per-user
@@ -670,6 +679,94 @@ const tools = [
       state_key: z.string().describe('The state to query the policy for'),
     })) as Record<string, unknown>,
   },
+  // ── Katra Internal Skill Library ──────────────────────────────
+  {
+    name: 'search_katra_skills',
+    description: 'Search the Katra internal skill library for relevant procedural skills. Skills are operational and decision distillations that have been converted to executable procedures. Returns ranked results with relevance scores.',
+    inputSchema: zodToJsonSchema(z.object({
+      query: z.string().describe('What kind of skill or procedure do you need?'),
+      top_k: z.number().int().min(1).max(20).optional().default(10),
+      category: z.enum(['operational', 'decision', 'troubleshooting']).optional(),
+    })) as Record<string, unknown>,
+  },
+  {
+    name: 'load_katra_skill',
+    description: 'Load the full SKILL.md content for a specific Katra skill by name. Returns the complete procedural instructions with frontmatter metadata.',
+    inputSchema: zodToJsonSchema(z.object({
+      name: z.string().describe('The skill name to load (e.g., "deploy-remote-service")'),
+    })) as Record<string, unknown>,
+  },
+  {
+    name: 'list_katra_skills',
+    description: 'List all available Katra internal skills, optionally filtered by category or lifecycle status.',
+    inputSchema: zodToJsonSchema(z.object({
+      category: z.enum(['operational', 'decision', 'troubleshooting']).optional(),
+      status: z.enum(['observed', 'candidate', 'stable', 'challenged']).optional(),
+    })) as Record<string, unknown>,
+  },
+  {
+    name: 'request_skill',
+    description: 'Request synthesis of a new skill from Katra\'s operational memory. Queues the request for the operational distillation pipeline (Phase 2). The skill will be auto-generated when enough patterns are observed.',
+    inputSchema: zodToJsonSchema(z.object({
+      description: z.string().describe('Description of the skill or procedure to synthesize'),
+      category: z.enum(['operational', 'decision', 'troubleshooting']).optional().default('operational'),
+    })) as Record<string, unknown>,
+  },
+  {
+    name: 'get_skill_feedback',
+    description: 'Get the feedback history for a specific Katra skill — how many times it was used, success/failure breakdown, and recent outcome notes.',
+    inputSchema: zodToJsonSchema(z.object({
+      skill_name: z.string().describe('The skill name to get feedback for'),
+    })) as Record<string, unknown>,
+  },
+  {
+    name: 'get_skill_activation_context',
+    description: 'Given a task description, return relevant Katra skills ranked by relevance. Implements Path A (context pre-seeding) activation. Paths B and C are stubbed for Phase 3. Use this before complex tasks to discover applicable procedural skills.',
+    inputSchema: zodToJsonSchema(z.object({
+      task_description: z.string().describe('Describe the task you are about to perform'),
+      max_skills: z.number().int().min(1).max(20).optional().default(5),
+    })) as Record<string, unknown>,
+  },
+  // ── Operational Distillation ────────────────────────────────
+  {
+    name: 'run_operational_distillation',
+    description: 'Run the operational distillation pipeline — scan episodic memory for repeatable tool-call patterns, identify candidate skills, and optionally auto-synthesize SKILL.md files. This converts Katra\'s observed procedural patterns into executable skills.',
+    inputSchema: zodToJsonSchema(z.object({
+      min_observations: z.number().int().min(2).max(20).optional().default(3),
+      auto_synthesize: z.boolean().optional().default(true),
+    })) as Record<string, unknown>,
+  },
+  {
+    name: 'list_skill_candidates',
+    description: 'List candidate skills identified by the operational distillation pipeline — patterns observed but not yet promoted to stable skills.',
+    inputSchema: zodToJsonSchema(z.object({})) as Record<string, unknown>,
+  },
+  {
+    name: 'record_skill_outcome',
+    description: 'Record the outcome of using a Katra skill. Call this after completing a task where you used a loaded skill. Tracks success/failure, persists to MongoDB, and updates the skill\'s confidence score. The feedback loop enables automatic skill refinement.',
+    inputSchema: zodToJsonSchema(z.object({
+      skill_name: z.string().describe('The skill name (e.g., "deploy-remote-service")'),
+      outcome: z.enum(['success', 'partial', 'failure']).describe('Was the skill helpful?'),
+      notes: z.string().optional().describe('What worked or what went wrong'),
+      task_description: z.string().optional().describe('What task were you performing when you used this skill?'),
+    })) as Record<string, unknown>,
+  },
+  {
+    name: 'list_skill_feedback',
+    description: 'List detailed feedback records from MongoDB for a specific skill — each record includes session, outcome, confidence delta, notes, and timestamp. Supports pagination.',
+    inputSchema: zodToJsonSchema(z.object({
+      skill_name: z.string().describe('The skill name to get feedback for'),
+      limit: z.number().int().min(1).max(100).optional().default(20),
+      offset: z.number().int().min(0).optional().default(0),
+    })) as Record<string, unknown>,
+  },
+  {
+    name: 'refine_skill',
+    description: 'Refine a challenged or degraded skill using LLM analysis of its feedback history. Generates an improved SKILL.md incorporating lessons from failures. The old version is backed up as SKILL.md.bak.',
+    inputSchema: zodToJsonSchema(z.object({
+      skill_name: z.string().describe('The skill name to refine'),
+    })) as Record<string, unknown>,
+  },
 ];
 
 // ── Memory Decay handlers ────────────────────────────────────────
@@ -880,6 +977,316 @@ async function handleGetProceduralTemplates(_args: unknown): Promise<TextContent
   }
 
   return [{ type: 'text', text: lines.join('\n') }];
+}
+
+// ── Katra Skill Library handlers ────────────────────────────────
+
+async function handleSearchKatraSkills(args: unknown): Promise<TextContent[]> {
+  const input = z.object({
+    query: z.string(),
+    top_k: z.number().int().min(1).max(20).optional().default(10),
+    category: z.enum(['operational', 'decision', 'troubleshooting']).optional(),
+  }).parse(args);
+  const results = skillLoaderService.search(input.query, input.top_k, input.category);
+  if (results.length === 0) return [{ type: 'text', text: `No Katra skills found matching "${input.query}".` }];
+  const lines = [`## Katra Skill Search: "${input.query}"`, '', `Found ${results.length} results:`, ''];
+  for (const r of results) {
+    lines.push(`- **${r.title}** (\`${r.name}\`) — _${r.category}_ — score: ${r.score.toFixed(3)}`);
+    lines.push(`  ${r.description}`);
+    lines.push(`  Status: ${r.status} | Confidence: ${(r.confidence * 100).toFixed(0)}% | Triggers: ${r.triggers.join(', ')}`);
+    lines.push('');
+  }
+  return [{ type: 'text', text: lines.join('\n') }];
+}
+
+async function handleLoadKatraSkill(args: unknown): Promise<TextContent[]> {
+  const input = z.object({ name: z.string() }).parse(args);
+  const result = skillLoaderService.load(input.name);
+  if (!result) return [{ type: 'text', text: `Skill "${input.name}" not found. Use search_katra_skills to discover available skills.` }];
+  const { metadata, content } = result;
+  return [{ type: 'text', text: `## ${metadata.title}
+
+**Name:** \`${metadata.name}\`
+**Category:** ${metadata.category}
+**Status:** ${metadata.status}
+**Confidence:** ${(metadata.confidence * 100).toFixed(0)}%
+**Triggers:** ${metadata.triggers.join(', ')}
+
+${content}` }];
+}
+
+async function handleListKatraSkills(args: unknown): Promise<TextContent[]> {
+  const input = z.object({
+    category: z.enum(['operational', 'decision', 'troubleshooting']).optional(),
+    status: z.enum(['observed', 'candidate', 'stable', 'challenged']).optional(),
+  }).parse(args);
+  const skills = skillLoaderService.list(input.category, input.status);
+  if (skills.length === 0) return [{ type: 'text', text: 'No Katra skills found.' }];
+  const lines = [`## Katra Skills (${skills.length})`, ''];
+  let currentCat = '';
+  for (const s of skills) {
+    if (s.category !== currentCat) {
+      currentCat = s.category;
+      lines.push(`### ${currentCat}`);
+    }
+    lines.push(`- **${s.title}** (\`${s.name}\`) — ${s.status} — ${(s.confidence * 100).toFixed(0)}% confidence`);
+    lines.push(`  ${s.description}`);
+  }
+  return [{ type: 'text', text: lines.join('\n') }];
+}
+
+async function handleRequestSkill(args: unknown): Promise<TextContent[]> {
+  const input = z.object({
+    description: z.string(),
+    category: z.enum(['operational', 'decision', 'troubleshooting']).optional().default('operational'),
+  }).parse(args);
+  
+  const result = await skillSynthesisService.synthesizeFromDescription(input.description, input.category);
+  
+  if (result.success) {
+    return [{ type: 'text', text: `✅ Skill synthesized successfully!
+
+**Path:** \`${result.skillPath}\`
+**Category:** ${input.category}
+
+Use \`load_katra_skill\` to view the full content.` }];
+  } else {
+    return [{ type: 'text', text: `❌ Skill synthesis failed: ${result.error}` }];
+  }
+}
+
+async function handleGetSkillFeedback(args: unknown): Promise<TextContent[]> {
+  const input = z.object({ skill_name: z.string() }).parse(args);
+  const skill = skillLoaderService.load(input.skill_name);
+  if (!skill) return [{ type: 'text', text: `Skill "${input.skill_name}" not found.` }];
+  const { metadata } = skill;
+  
+  // Get recent feedback from MongoDB
+  let recentFeedback = '';
+  try {
+    const records = await skillRefinementService.getFeedbackHistory(input.skill_name, 5, 0);
+    if (records.length > 0) {
+      recentFeedback = '\n### Recent Feedback\n\n';
+      for (const r of records) {
+        const ts = r.timestamp ? new Date(r.timestamp).toISOString().slice(0, 10) : '?';
+        recentFeedback += `- **${r.outcome}** (${ts}): ${r.notes || 'no notes'}\n`;
+      }
+    }
+  } catch {
+    recentFeedback = '\n*Feedback history unavailable.*\n';
+  }
+  
+  const lines = [
+    `## Skill Feedback: ${metadata.title}`,
+    '',
+    `**Total Uses:** ${metadata.observation_count}`,
+    `**Successes:** ${metadata.success_count}`,
+    `**Failures:** ${metadata.failure_count}`,
+    `**Confidence:** ${(metadata.confidence * 100).toFixed(0)}%`,
+    `**Status:** ${metadata.status}`,
+    recentFeedback,
+  ];
+  return [{ type: 'text', text: lines.join('\n') }];
+}
+
+async function handleGetSkillActivationContext(args: unknown): Promise<TextContent[]> {
+  const input = z.object({
+    task_description: z.string(),
+    max_skills: z.number().int().min(1).max(20).optional().default(5),
+  }).parse(args);
+  const ctx = await skillLoaderService.getActivationContext(input.task_description, input.max_skills);
+  const lines = [
+    `## Skill Activation Context`,
+    '',
+    `**Task:** "${input.task_description}"`,
+    '',
+  ];
+  if (ctx.skills.length === 0) {
+    lines.push('*No relevant Katra skills found for this task.*');
+  } else {
+    lines.push(`### Unified Ranking (${ctx.skills.length} skills)`, '');
+    for (const s of ctx.skills) {
+      lines.push(`- **${s.title}** (\`${s.name}\`) — score: ${s.score.toFixed(3)} [${s.category}]`);
+    }
+    lines.push('');
+  }
+  // Path A
+  lines.push(`### Path A — Context Pre-seed (${ctx.activation_paths.context_pre_seed.length} skills)`, '');
+  if (ctx.activation_paths.context_pre_seed.length === 0) {
+    lines.push('*No matches*', '');
+  } else {
+    for (const s of ctx.activation_paths.context_pre_seed) {
+      lines.push(`- **${s.title}** (\`${s.name}\`) — score: ${s.score.toFixed(3)}`);
+      lines.push(`  ${s.description}`);
+    }
+    lines.push('');
+  }
+  // Path B
+  lines.push(`### Path B — Trigger Match (${ctx.activation_paths.trigger_match.length} skills)`, '');
+  if (ctx.activation_paths.trigger_match.length === 0) {
+    lines.push('*No trigger matches*', '');
+  } else {
+    for (const s of ctx.activation_paths.trigger_match) {
+      lines.push(`- **${s.title}** (\`${s.name}\`) — score: ${s.score.toFixed(3)}`);
+    }
+    lines.push('');
+  }
+  // Path C
+  lines.push(`### Path C — Embedding Match (${ctx.activation_paths.embedding_match.length} skills)`, '');
+  if (ctx.activation_paths.embedding_match.length === 0) {
+    lines.push('*No embedding matches*', '');
+  } else {
+    for (const s of ctx.activation_paths.embedding_match) {
+      lines.push(`- **${s.title}** (\`${s.name}\`) — score: ${s.score.toFixed(3)}`);
+    }
+    lines.push('');
+  }
+  return [{ type: 'text', text: lines.join('\n') }];
+}
+
+// ── Operational Distillation handlers ──────────────────────────
+
+async function handleRunOperationalDistillation(args: unknown): Promise<TextContent[]> {
+  const input = z.object({
+    min_observations: z.number().int().min(2).max(20).optional().default(3),
+    auto_synthesize: z.boolean().optional().default(true),
+  }).parse(args);
+  
+  const result = await operationalDistillationService.runDistillation({
+    minObservations: input.min_observations,
+    autoSynthesize: input.auto_synthesize,
+  });
+  
+  const lines = [
+    '## Operational Distillation Results',
+    '',
+    `**Candidates Found:** ${result.candidates_found}`,
+    `**Skills Synthesized:** ${result.skills_synthesized}`,
+    `**Skills Promoted:** ${result.skills_promoted}`,
+    '',
+  ];
+  
+  if (result.candidates.length > 0) {
+    lines.push('### Candidates', '');
+    for (const c of result.candidates) {
+      lines.push(`- **${c.title}** (\`${c.name}\`) — ${c.observation_count} observations, ${c.observed_sequence.length}-step sequence`);
+      lines.push(`  Sequence: ${c.observed_sequence.join(' → ')}`);
+      lines.push(`  Success rate: ${c.observation_count > 0 ? (c.success_count / c.observation_count * 100).toFixed(0) : 0}%`);
+      lines.push(`  Auto-promote: ${c.auto_promote ? '✅ yes' : '❌ no'}`);
+      lines.push('');
+    }
+  }
+  
+  if (result.errors.length > 0) {
+    lines.push('### Errors', '');
+    for (const e of result.errors) {
+      lines.push(`- ${e}`);
+    }
+  }
+  
+  return [{ type: 'text', text: lines.join('\n') }];
+}
+
+async function handleListSkillCandidates(_args: unknown): Promise<TextContent[]> {
+  const candidates = operationalDistillationService.getCandidates();
+  
+  if (candidates.length === 0) {
+    return [{ type: 'text', text: 'No candidate skills found. Run `run_operational_distillation` to scan for patterns.' }];
+  }
+  
+  const lines = [`## Skill Candidates (${candidates.length})`, ''];
+  for (const c of candidates) {
+    lines.push(`- **${c.title}** (\`${c.name}\`) — ${c.observation_count} obs — ${c.observed_sequence.join(' → ')}`);
+    lines.push(`  Category: ${c.category} | Auto-promote: ${c.auto_promote}`);
+  }
+  
+  return [{ type: 'text', text: lines.join('\n') }];
+}
+
+// ── Skill Feedback handlers ─────────────────────────────────────
+
+async function handleRecordSkillOutcome(args: unknown): Promise<TextContent[]> {
+  const input = z.object({
+    skill_name: z.string(),
+    outcome: z.enum(['success', 'partial', 'failure']),
+    notes: z.string().optional(),
+    task_description: z.string().optional(),
+  }).parse(args);
+  
+  // Generate a session ID for this call
+  const sessionId = `mcp:${Date.now()}`;
+  
+  skillLoaderService.recordFeedback(
+    input.skill_name,
+    sessionId,
+    input.outcome,
+    input.notes,
+    input.task_description,
+  );
+  
+  const skill = skillLoaderService.load(input.skill_name);
+  const confPct = skill ? (skill.metadata.confidence * 100).toFixed(0) : '?';
+  
+  return [{ type: 'text', text: `✅ Outcome recorded for \`${input.skill_name}\`: **${input.outcome}**
+
+**New confidence:** ${confPct}%
+
+Feedback is persisted to MongoDB and will inform future skill refinement.` }];
+}
+
+async function handleListSkillFeedback(args: unknown): Promise<TextContent[]> {
+  const input = z.object({
+    skill_name: z.string(),
+    limit: z.number().int().min(1).max(100).optional().default(20),
+    offset: z.number().int().min(0).optional().default(0),
+  }).parse(args);
+  
+  const records = await skillRefinementService.getFeedbackHistory(
+    input.skill_name,
+    input.limit,
+    input.offset,
+  );
+  
+  if (records.length === 0) {
+    return [{ type: 'text', text: `No feedback records found for "${input.skill_name}".` }];
+  }
+  
+  const lines = [
+    `## Skill Feedback: ${input.skill_name}`,
+    '',
+    `Showing ${records.length} records (offset: ${input.offset}):`,
+    '',
+    '| Timestamp | Outcome | Confidence Δ | Notes |',
+    '|-----------|---------|-------------|-------|',
+  ];
+  
+  for (const r of records) {
+    const ts = r.timestamp ? new Date(r.timestamp).toISOString().slice(0, 19).replace('T', ' ') : '?';
+    const delta = r.confidence_after !== undefined && r.confidence_before !== undefined
+      ? `${(r.confidence_before * 100).toFixed(0)}% → ${(r.confidence_after * 100).toFixed(0)}%`
+      : '?';
+    lines.push(`| ${ts} | ${r.outcome} | ${delta} | ${r.notes || '-'} |`);
+  }
+  
+  return [{ type: 'text', text: lines.join('\n') }];
+}
+
+async function handleRefineSkill(args: unknown): Promise<TextContent[]> {
+  const input = z.object({ skill_name: z.string() }).parse(args);
+  
+  const result = await skillRefinementService.refineSkill(input.skill_name);
+  
+  if (result.success) {
+    return [{ type: 'text', text: `✅ Skill \`${input.skill_name}\` refined successfully!
+
+**New path:** \`${result.newPath}\`
+**Changes:** ${result.changes || 'See refined SKILL.md for details'}
+**Backup:** Original saved as SKILL.md.bak
+
+Use \`load_katra_skill\` to view the refined content.` }];
+  } else {
+    return [{ type: 'text', text: `❌ Refinement failed: ${result.error}` }];
+  }
 }
 
 // ── Tool handlers ──────────────────────────────────────────────────
@@ -2569,6 +2976,17 @@ function registerHandlers(server: Server) {
         case 'get_mind_wander': result = await handleGetMindWander(args); break;
         case 'get_agent_beliefs': result = await handleGetAgentBeliefs(args); break;
         case 'get_procedural_templates': result = await handleGetProceduralTemplates(args); break;
+        case 'search_katra_skills': result = await handleSearchKatraSkills(args); break;
+        case 'load_katra_skill': result = await handleLoadKatraSkill(args); break;
+        case 'list_katra_skills': result = await handleListKatraSkills(args); break;
+        case 'request_skill': result = await handleRequestSkill(args); break;
+        case 'get_skill_feedback': result = await handleGetSkillFeedback(args); break;
+        case 'get_skill_activation_context': result = await handleGetSkillActivationContext(args); break;
+        case 'run_operational_distillation': result = await handleRunOperationalDistillation(args); break;
+        case 'list_skill_candidates': result = await handleListSkillCandidates(args); break;
+        case 'record_skill_outcome': result = await handleRecordSkillOutcome(args); break;
+        case 'list_skill_feedback': result = await handleListSkillFeedback(args); break;
+        case 'refine_skill': result = await handleRefineSkill(args); break;
         default: throw new Error(`Unknown tool: ${name}`);
       }
       // ── Cerebellum: procedural pattern observation ──────────

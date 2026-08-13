@@ -136,8 +136,8 @@ Text: "I use Python and love React"
   {"source":"User","sourceType":"Person","relationship":"LOVES","target":"React","targetType":"Tech"}
 ]}
 
-Entity types allowed: Person, Concept, Tech, Preference, Project, Topic, Tool, Language, Asset, Platform
-Relationship format: UPPER_SNAKE_CASE verb (USES, PREFERS, RUNS_ON, BUILT, DISCUSSED, WANTS_TO_LEARN)
+Entity types allowed: Person, Concept, Tech, Preference, Project, Topic, Tool, Language, Asset, Platform, File, Module, Function, Class, API, Config
+Relationship format: UPPER_SNAKE_CASE verb (USES, PREFERS, RUNS_ON, BUILT, DISCUSSED, WANTS_TO_LEARN, IMPORTS, CALLS, IMPLEMENTS, EXTENDS, CONFIGURES, OWNS, EXPOSES)
 
 CRITICAL: Output ONLY a single JSON object. No markdown, no explanation, no prose.
 Start with { and end with }. Nothing before or after.`;

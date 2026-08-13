@@ -357,3 +357,83 @@ export interface AnomalyReport {
     classification: AnomalyClassification;
   }>;
 }
+
+// ── Katra Internal Skill Library Types ─────────────────────────
+
+export type SkillStatus = 'observed' | 'candidate' | 'stable' | 'challenged';
+export type SkillCategory = 'operational' | 'decision' | 'troubleshooting';
+
+export interface KatraSkill {
+  name: string;
+  title: string;
+  category: SkillCategory;
+  description: string;
+  status: SkillStatus;
+  observation_count: number;
+  success_count: number;
+  failure_count: number;
+  confidence: number;
+  triggers: string[];
+  created_at: Date;
+  last_used_at?: Date;
+  last_refined_at?: Date;
+  source: 'auto-distilled' | 'manual-request';
+}
+
+export interface SkillFeedbackRecord {
+  skill_name: string;
+  session_id: string;
+  outcome: 'success' | 'partial' | 'failure';
+  notes?: string;
+  task_description?: string;
+  confidence_before?: number;
+  confidence_after?: number;
+  timestamp: Date;
+}
+
+export interface SkillSearchResult {
+  name: string;
+  title: string;
+  category: SkillCategory;
+  description: string;
+  status: SkillStatus;
+  confidence: number;
+  triggers: string[];
+  score: number;
+}
+
+export interface SkillActivationContext {
+  task_description: string;
+  skills: SkillSearchResult[];
+  activation_paths: {
+    context_pre_seed: SkillSearchResult[];   // Path A
+    trigger_match: SkillSearchResult[];       // Path B (stub for Phase 3)
+    embedding_match: SkillSearchResult[];     // Path C (stub for Phase 3)
+  };
+}
+
+// ── Operational Distillation Types ─────────────────────────────
+
+export interface CandidateSkillSpec {
+  name: string;
+  title: string;
+  category: SkillCategory;
+  description: string;
+  trigger_conditions: string[];
+  observed_sequence: string[];
+  observation_count: number;
+  success_count: number;
+  failure_count: number;
+  source_session_ids: string[];
+  first_observed: Date;
+  last_observed: Date;
+  auto_promote: boolean;
+}
+
+export interface DistillationResult {
+  candidates_found: number;
+  skills_synthesized: number;
+  skills_promoted: number;
+  candidates: CandidateSkillSpec[];
+  errors: string[];
+}
