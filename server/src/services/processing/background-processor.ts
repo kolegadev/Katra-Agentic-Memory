@@ -161,6 +161,13 @@ export class BackgroundProcessor {
               event.id || (event as any)._id?.toString(),
               error instanceof Error ? error.message : 'Unknown error'
             );
+            // Mark the log entry failed too — otherwise a stale "processing"
+            // entry blocks this event forever on the next cycle
+            if (event.idempotency_key) {
+              await this.updateProcessingLogEntry(event.idempotency_key, 'failed', {
+                error: error instanceof Error ? error.message : 'Unknown error'
+              });
+            }
             failedCount++;
           }
         }
@@ -315,14 +322,38 @@ export class BackgroundProcessor {
         console.warn('⚠️ Could not check current event status, proceeding with processing');
       }
 
-      // Check idempotency - prevent reprocessing of same content
+      // Check idempotency - prevent reprocessing of same content.
+      // A hit means one of two things:
+      //  (a) the event was already fully processed by an earlier run — mark it
+      //      processed so it leaves the queue (mirrors the hard-dedup path in
+      //      isEventRecentlyProcessed);
+      //  (b) a stale "processing" entry left by a crashed/abandoned run — clear
+      //      it and retry (we hold the processing lock, so nothing else is
+      //      actively extracting this event).
+      // Without this, a single abandoned entry parks its event at the head of
+      // the queue forever and the whole backlog stalls.
       if (idempotencyKey) {
-        const existingProcessingLog = await this.checkIdempotency(idempotencyKey);
+        const existingProcessingLog = await this.getProcessingLogEntry(idempotencyKey);
         if (existingProcessingLog) {
-          console.log(`🔄 Event ${eventId} already processed (idempotency key: ${idempotencyKey.substring(0, 8)}...)`);
-          return;
+          if (existingProcessingLog.status === 'completed') {
+            console.log(`🔄 Event ${eventId} already processed (idempotency key: ${idempotencyKey.substring(0, 8)}...)`);
+            await this.memoryManager.mark_event_processed(eventId, {
+              processed_at: new Date(),
+              extraction_result: {
+                entities_count: 0,
+                relationships_count: 0,
+                facts_count: 0,
+                reason: 'idempotency_dedup'
+              }
+            }).catch(() => {});
+            return;
+          }
+          if (existingProcessingLog.status === 'processing') {
+            console.log(`♻️ Event ${eventId} has stale processing entry, clearing and retrying`);
+            await this.clearStaleProcessingEntries(idempotencyKey);
+          }
         }
-        
+
         // Create processing log entry
         await this.createProcessingLogEntry(idempotencyKey, eventId, sessionId);
       }
@@ -380,6 +411,14 @@ export class BackgroundProcessor {
           reason: 'no_meaningful_information'
         }
       });
+      // Close out the processing log entry so it doesn't linger as "processing"
+      if (idempotencyKey) {
+        await this.updateProcessingLogEntry(idempotencyKey, 'completed', {
+          processed_at: new Date(),
+          extraction_summary: { entity_count: 0, relationship_count: 0, event_count: 0, fact_count: 0 },
+          dispatch_summary: { operations_completed: 0, operations_failed: 0 }
+        });
+      }
       return;
     }
 
@@ -807,23 +846,44 @@ export class BackgroundProcessor {
   }
 
   /**
-   * Check idempotency for processing operations
+   * Fetch the processing log entry for a key, preferring "completed" over
+   * "processing" when both exist (e.g. after a retry).
    */
-  private async checkIdempotency(idempotencyKey: string): Promise<boolean> {
+  private async getProcessingLogEntry(idempotencyKey: string): Promise<any | null> {
     try {
       const { get_database } = await import('../../database/connection.js');
       const db = get_database();
       const processingLogCollection = db.collection('processing_log');
-      
-      const existingEntry = await processingLogCollection.findOne({
-        idempotency_key: idempotencyKey,
-        status: { $in: ['processing', 'completed'] }
-      });
 
-      return existingEntry !== null;
+      return await processingLogCollection.findOne(
+        {
+          idempotency_key: idempotencyKey,
+          status: { $in: ['completed', 'processing'] }
+        },
+        { sort: { status: 1 } }
+      );
     } catch (error) {
-      console.error('❌ Idempotency check failed:', error);
-      return false; // Err on the side of processing if check fails
+      console.error('❌ Idempotency lookup failed:', error);
+      return null; // Err on the side of processing if check fails
+    }
+  }
+
+  /**
+   * Remove stale "processing" log entries left by crashed/abandoned runs so
+   * the event can be retried. Never removes "completed"/"failed" entries.
+   */
+  private async clearStaleProcessingEntries(idempotencyKey: string): Promise<void> {
+    try {
+      const { get_database } = await import('../../database/connection.js');
+      const db = get_database();
+      const processingLogCollection = db.collection('processing_log');
+
+      await processingLogCollection.deleteMany({
+        idempotency_key: idempotencyKey,
+        status: 'processing'
+      });
+    } catch (error) {
+      console.warn('⚠️ Failed to clear stale processing entries:', error);
     }
   }
 
@@ -872,8 +932,10 @@ export class BackgroundProcessor {
         updateData.error = results;
       }
 
-      await processingLogCollection.updateOne(
-        { idempotency_key: idempotencyKey },
+      // Target the live "processing" entry only: when a key has older
+      // completed/failed entries (from retries), we must not overwrite them.
+      await processingLogCollection.updateMany(
+        { idempotency_key: idempotencyKey, status: 'processing' },
         { $set: updateData }
       );
     } catch (error) {
