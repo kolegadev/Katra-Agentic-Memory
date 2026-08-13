@@ -149,10 +149,13 @@ print(JSON.stringify(counts));
     
     # Signal 1: Reflection edges
     for edge in edge_data.get("entity_edges", []) + edge_data.get("all_edges", []):
-        source = str(edge.get("source_entity", "")).lower()
-        target = str(edge.get("target_entity", "")).lower()
-        edge_type = edge.get("edge_type", "")
-        intensity = edge.get("intensity", 0)
+        source = str(edge.get("source_entity") or "").lower()
+        target = str(edge.get("target_entity") or "").lower()
+        edge_type = str(edge.get("edge_type") or "").lower()
+        try:
+            intensity = float(edge.get("intensity") or 0)
+        except (TypeError, ValueError):
+            intensity = 0.0
         
         for agent in ["opencode-agent", "kolega-agent"]:
             if agent in source or agent in target:

@@ -39,6 +39,7 @@ import os
 import sys
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 
@@ -57,6 +58,39 @@ EMBED_COVERAGE_WARN = 0.80      # fraction of semantic_facts with embeddings
 OK, WARN, FAIL = "ok", "warn", "fail"
 
 
+# ── Admin key self-heal ─────────────────────────────────────────────
+# Deployments bake KATRA_ADMIN_KEY into the systemd unit at install time.
+# When the server rotates keys, the baked key 401s forever and every
+# authed probe FAILs. On the first 401/403, reload the current key from
+# the Katra .env beside this repo (KATRA_ADMIN_KEY or KATRA_API_KEY) and
+# retry the request once.
+_KEY_RELOAD_ATTEMPTED = False
+
+
+def _reload_admin_key() -> bool:
+    global ADMIN_KEY, _KEY_RELOAD_ATTEMPTED
+    if _KEY_RELOAD_ATTEMPTED:
+        return False
+    _KEY_RELOAD_ATTEMPTED = True
+    env_file = Path(os.environ.get(
+        "KATRA_ENV_FILE",
+        Path(__file__).resolve().parents[2] / ".env"))
+    found: dict[str, str] = {}
+    try:
+        for line in env_file.read_text().splitlines():
+            name, _, value = line.partition("=")
+            name = name.strip()
+            if name in ("KATRA_ADMIN_KEY", "KATRA_API_KEY") and value.strip():
+                found[name] = value.strip().strip('"').strip("'")
+    except OSError:
+        return False
+    candidate = found.get("KATRA_ADMIN_KEY") or found.get("KATRA_API_KEY") or ""
+    if candidate and candidate != ADMIN_KEY:
+        ADMIN_KEY = candidate
+        return True
+    return False
+
+
 # ── HTTP helpers ────────────────────────────────────────────────────
 def _get(path: str, auth: bool = False) -> tuple[int, dict | None]:
     url = f"{REST_URL}{path}"
@@ -68,6 +102,8 @@ def _get(path: str, auth: bool = False) -> tuple[int, dict | None]:
         with urlopen(req, timeout=HTTP_TIMEOUT) as resp:
             return resp.status, json.loads(resp.read().decode())
     except HTTPError as e:
+        if auth and e.code in (401, 403) and _reload_admin_key():
+            return _get(path, auth=auth)
         try:
             body = json.loads(e.read().decode())
         except Exception:
@@ -88,6 +124,8 @@ def _post(path: str, payload: dict | None = None, auth: bool = True) -> tuple[in
         with urlopen(req, timeout=HTTP_TIMEOUT) as resp:
             return resp.status, json.loads(resp.read().decode())
     except HTTPError as e:
+        if auth and e.code in (401, 403) and _reload_admin_key():
+            return _post(path, payload, auth=auth)
         try:
             body = json.loads(e.read().decode())
         except Exception:
