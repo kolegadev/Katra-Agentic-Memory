@@ -293,7 +293,7 @@ def run_pulse(dry_run=False):
         return {"status": "HEARTBEAT_OK", "interval": interval, "brain": brain}
     
     top = ranked[0]
-    ahash = hashlib.sha256(f"{top['entity']}:{brain['timestamp']}".encode()).hexdigest()[:12]
+    ahash = hashlib.sha256(f"{top['entity']}:{brain['timestamp'][:10]}".encode()).hexdigest()[:12]
     
     executed = _load_executed()
     if ahash in executed.get("hashes", []):
@@ -372,7 +372,7 @@ var r = db.episodic_events.insertOne({{
   event_type: "heartbeat_action",
   content: {{ role: "assistant", message: {json.dumps(content)} }},
   shared_id: "neural-link",
-  metadata: {{ processed: false, source: "adaptive-heartbeat", salience_score: {top['score']}, assigned_agent: "{assigned}", confidence: {affinity['confidence']}, interval: {interval}, created_at: new Date() }},
+  metadata: {{ processed: false, source: "adaptive-heartbeat", salience_score: {top['score']}, assigned_agent: "{assigned}", status: "{result['status']}", confidence: {affinity['confidence']}, interval: {interval}, created_at: new Date() }},
   timestamp: new Date()
 }});
 print(r.insertedId);
