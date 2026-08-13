@@ -92,6 +92,9 @@ services:
       - .env
     environment:
       - KATRA_DISABLE_BACKGROUND_PROCESSOR=${KATRA_DISABLE_BACKGROUND_PROCESSOR:-false}
+      - KATRA_SKILLS_DIR=/app/skills
+    volumes:
+      - ./server/src/skills:/app/skills
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
