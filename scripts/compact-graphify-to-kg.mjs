@@ -42,7 +42,7 @@ async function main() {
               properties: {
                 name: node.name,
                 source_path: node.source_path || null,
-                language: node.language || null,
+                code_language: node.language || null,
                 community: node.community || null,
                 community_name: node.community_name || null,
                 summary: `Graphify-seeded ${node.type || 'file'}: ${node.name}`,
