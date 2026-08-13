@@ -469,7 +469,8 @@ export class LLMService {
           { role: 'user', content: userPrompt },
         ],
         temperature: 0.1,
-        max_tokens: 1500,
+        max_tokens: 4000,
+        response_format: { type: 'json_object' },
       });
       const msg = response.choices[0]?.message as any;
       content = msg?.content || msg?.reasoning_content || null;
@@ -849,10 +850,10 @@ Always respond with valid JSON only, no prose. Return ONLY valid JSON in exactly
     }
   ],
   "entities": [
-    { "name": "exact name", "type": "concept",  // pick EXACTLY ONE from: person, project, tool, concept, place, organization, other  "confidence": 0.0-1.0 }
+    { "name": "exact name", "type": "concept",  // pick EXACTLY ONE from: person, project, tool, concept, place, organization, file, module, function, class, api_endpoint, config_key, other  "confidence": 0.0-1.0 }
   ],
   "relationships": [
-    { "from_entity": "name", "to_entity": "name", "relationship_type": "built|uses|depends_on|manages|part_of|located_at|related_to", "confidence": 0.0-1.0 }
+    { "from_entity": "name", "to_entity": "name", "relationship_type": "built|uses|depends_on|manages|part_of|located_at|related_to|imports|calls|implements|extends|configures|owns|exposes|decided_against", "confidence": 0.0-1.0 }
   ],
   "activities": [
     { "activity_type": "goal|decision|problem|solution|plan", "description": "one concise sentence", "confidence": 0.0-1.0 }
