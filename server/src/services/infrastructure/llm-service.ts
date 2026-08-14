@@ -361,13 +361,22 @@ export class LLMService {
    * errors (timeout, 429, 5xx, network) just move on to the fallback provider.
    * Re-throws the last error if every provider fails.
    */
-  private async withProviderFallback<T>(fn: (provider: LLMProvider) => Promise<T>): Promise<T> {
+  private async withProviderFallback<T>(
+    fn: (provider: LLMProvider) => Promise<T>,
+    modelOverride?: string,
+  ): Promise<T> {
     const providers = this.getProvidersInPriorityOrder();
     if (providers.length === 0) throw new Error('No LLM provider available.');
     let lastError: unknown = null;
     for (const provider of providers) {
+      // Per-call model override (e.g. reflection on a stronger model while
+      // live processing keeps the configured default). Only the model id
+      // changes — auth/base URL stay with the provider.
+      const effective: LLMProvider = modelOverride
+        ? { ...provider, model: modelOverride }
+        : provider;
       try {
-        return await fn(provider);
+        return await fn(effective);
       } catch (error: any) {
         lastError = error;
         if (error?.status === 401 || error?.status === 403) {
@@ -375,7 +384,7 @@ export class LLMService {
           this.available = this.providers.some((p) => p.available);
           console.warn(`⚠️ ${provider.name} auth failed (${error.status}) — marked unavailable, trying fallback provider`);
         } else {
-          console.warn(`⚠️ ${provider.name} (${provider.model}) call failed: ${error?.message || error} — trying fallback provider`);
+          console.warn(`⚠️ ${provider.name} (${effective.model}) call failed: ${error?.message || error} — trying fallback provider`);
         }
       }
     }
@@ -631,7 +640,8 @@ CRITICAL RULES:
   public async extractJson(
     systemInstruction: string,
     userContent: string,
-    maxTokens: number = 1000
+    maxTokens: number = 1000,
+    modelOverride?: string,
   ): Promise<Record<string, unknown>> {
     if (this.providers.length === 0) {
       console.warn('⚠️ No LLM provider available for JSON extraction');
@@ -683,7 +693,7 @@ CRITICAL RULES:
           content = content.slice(firstBrace, lastBrace + 1);
         }
         return JSON.parse(content);
-      });
+      }, modelOverride);
     } catch (error: any) {
       console.error('❌ JSON extraction failed:', error?.message || error);
       return {};

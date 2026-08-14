@@ -650,7 +650,19 @@ RULES:
     try {
       const systemInstruction = 'You are the consolidating memory of a persistent mind. You turn raw experience into durable, balanced memory: what happened, what resonated, what remains open, and what comes next. Respond ONLY with valid JSON — no prose, no markdown, no explanation.';
       
-      const result = await llmService.extractJson(systemInstruction, prompt, 4000);
+      // Reflection can run on a stronger model than live processing
+      // (KATRA_REFLECTION_MODEL) — per-call override only, so background
+      // extraction keeps the configured default.
+      const reflectionModel = process.env.KATRA_REFLECTION_MODEL || undefined;
+      if (reflectionModel) {
+        console.log(`[sleep-consolidation] reflection model override: ${reflectionModel}`);
+      }
+      const result = await llmService.extractJson(
+        systemInstruction,
+        prompt,
+        4000,
+        reflectionModel,
+      );
       
       if (!result || Object.keys(result).length === 0) {
         console.warn('⚠️ LLM reflection returned empty result');
@@ -1076,7 +1088,12 @@ Respond with ONLY a valid JSON object in this exact shape:
 
     try {
       const systemInstruction = 'You are the consolidating memory of a persistent mind, synthesising periodic reflections into a balanced whole. Respond ONLY with valid JSON.';
-      const result = await llmService.extractJson(systemInstruction, prompt, 3000);
+      const result = await llmService.extractJson(
+        systemInstruction,
+        prompt,
+        3000,
+        process.env.KATRA_REFLECTION_MODEL || undefined,
+      );
 
       if (!result || Object.keys(result).length === 0) {
         console.warn('⚠️  Synthesis LLM returned empty result');
