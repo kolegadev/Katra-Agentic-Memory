@@ -49,7 +49,47 @@ What it does:
 - Redis distributed locks + `processing_log` idempotency make it **safe to run alongside the live server**
 - **Embeddings are intentionally NOT written** — run `scripts/backfill-embeddings.mjs` and `scripts/backfill-episodic-embeddings.mjs` afterwards
 
-Env vars: `CONCURRENCY=4` (parallel workers, default 4), `MAX=0` (cap for smoke runs, 0 = all), `BATCH=1000` (events per fetch), `TRIAGE_SYSTEM=1` (system-event pass).
+Env vars: `CONCURRENCY=4` (parallel workers, default 4), `MAX=0` (cap for smoke runs, 0 = all), `BATCH=1000` (events per fetch), `TRIAGE_SYSTEM=1` (system-event pass), `SHARDS=1` / `SHARD=0` (sharded mode, see below).
+
+## Sharded Mode (parallel workers)
+
+`SHARDS=N SHARD=i` splits the backlog into N disjoint slices on the first hex chars of `content_hash` (uniform for sha256-style hashes), so N drain workers never contend for the same events. Events missing `content_hash` belong to shard 0. Example — 3 workers:
+
+```bash
+docker exec -d -e CONCURRENCY=8 -e BATCH=500 -e SHARDS=3 -e SHARD=0 katra-server sh -c 'node /app/scripts/drain-backlog.mjs > /tmp/katra-drain-shard0.log 2>&1'
+docker exec -d -e CONCURRENCY=8 -e BATCH=500 -e SHARDS=3 -e SHARD=1 katra-server sh -c 'node /app/scripts/drain-backlog.mjs > /tmp/katra-drain-shard1.log 2>&1'
+docker exec -d -e CONCURRENCY=8 -e BATCH=500 -e SHARDS=3 -e SHARD=2 katra-server sh -c 'node /app/scripts/drain-backlog.mjs > /tmp/katra-drain-shard2.log 2>&1'
+```
+
+Each worker exits when its own slice is empty. Redis locks + `processing_log` idempotency remain the safety net regardless of sharding.
+
+### Splitting the load across LLM providers
+
+The extraction LLM call resolves per **process env** (env vars only — the DB `llm_config` override is not applied on the drain code path). To pin a worker to a specific provider, launch it with `LLM_PROVIDERS=<name>` plus `LLM_PROVIDER_<NAME>_{API_KEY,BASE_URL,MODEL}` and blank out the other provider keys so nothing else registers:
+
+```bash
+# Grok worker (shard 1) — OpenAI-compatible endpoint; reasoning models get
+# LLM_REASONING_EFFORT=low so extraction stays fast/cheap (sent only when set)
+docker exec -d -e CONCURRENCY=8 -e BATCH=500 -e SHARDS=3 -e SHARD=1 \
+  -e LLM_REASONING_EFFORT=low \
+  -e LLM_PROVIDERS=grok \
+  -e LLM_PROVIDER_GROK_API_KEY=xai-... \
+  -e LLM_PROVIDER_GROK_BASE_URL=https://api.x.ai/v1 \
+  -e LLM_PROVIDER_GROK_MODEL=<exact model id> \
+  -e DEEPSEEK_API_KEY= -e OPENAI_API_KEY= -e MOONSHOT_API_KEY= -e OLLAMA_API_KEY= \
+  katra-server sh -c 'node /app/scripts/drain-backlog.mjs > /tmp/katra-drain-shard1.log 2>&1'
+
+# Gemini worker (shard 2) — OpenAI-compatible endpoint
+docker exec -d -e CONCURRENCY=8 -e BATCH=500 -e SHARDS=3 -e SHARD=2 \
+  -e LLM_PROVIDERS=gemini \
+  -e LLM_PROVIDER_GEMINI_API_KEY=AIza... \
+  -e LLM_PROVIDER_GEMINI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/ \
+  -e LLM_PROVIDER_GEMINI_MODEL=<exact model id> \
+  -e DEEPSEEK_API_KEY= -e OPENAI_API_KEY= -e MOONSHOT_API_KEY= -e OLLAMA_API_KEY= \
+  katra-server sh -c 'node /app/scripts/drain-backlog.mjs > /tmp/katra-drain-shard2.log 2>&1'
+```
+
+Confirm each worker's log shows `✅ LLM Provider validated: <name>` (a failed validation means bad key/model and the worker will fail every extraction — stop it, fix, relaunch). Since each provider has its own rate limits, per-provider throughput multiplies; extraction quality can vary slightly by model, which is acceptable for backlog clearing.
 
 ## Run Procedure
 

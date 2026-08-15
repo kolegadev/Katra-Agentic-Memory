@@ -471,7 +471,7 @@ export class LLMService {
 
     try {
       const client = provider.client as OpenAI;
-      const response = await client.chat.completions.create({
+      const params: any = {
         model: provider.model,
         messages: [
           { role: 'system', content: EXTRACTION_SYSTEM_PROMPT },
@@ -480,7 +480,14 @@ export class LLMService {
         temperature: 0.1,
         max_tokens: 4000,
         response_format: { type: 'json_object' },
-      });
+      };
+      // Optional per-process reasoning-effort hint (e.g. LLM_REASONING_EFFORT=low
+      // for a drain worker pinned to a reasoning model like grok-4.6). Only sent
+      // when set, so providers that reject the field are unaffected.
+      if (process.env.LLM_REASONING_EFFORT) {
+        params.reasoning_effort = process.env.LLM_REASONING_EFFORT;
+      }
+      const response = await client.chat.completions.create(params);
       const msg = response.choices[0]?.message as any;
       content = msg?.content || msg?.reasoning_content || null;
 

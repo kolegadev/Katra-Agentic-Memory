@@ -21,6 +21,9 @@
  *   MAX=0              cap for a smoke run (0 = all)
  *   BATCH=200          events fetched per loop iteration
  *   TRIAGE_SYSTEM=1    triage system events (heartbeat etc.) without LLM
+ *   SHARDS=1           total number of parallel drain workers
+ *   SHARD=0            this worker's index (0-based); partitions the backlog
+ *                      on content_hash hex prefixes so workers never contend
  */
 import { MemoryManager } from '/app/build/services/memory/memory-manager.js';
 import { extraction_service } from '/app/build/services/processing/extraction-service.js';
@@ -34,6 +37,28 @@ const CONCURRENCY = Math.max(1, parseInt(process.env.CONCURRENCY || '4', 10));
 const MAX = parseInt(process.env.MAX || '0', 10);
 const BATCH = Math.max(50, parseInt(process.env.BATCH || '1000', 10));
 const TRIAGE_SYSTEM = process.env.TRIAGE_SYSTEM !== '0';
+// Sharding: run N workers (SHARDS=N) each owning a disjoint slice of the
+// backlog (SHARD=i, 0-based). Partitions on the first hex chars of
+// content_hash — uniform for sha256-style hashes — so parallel workers never
+// contend for the same events (Redis locks + idempotency remain the backstop).
+// Events without a content_hash are assigned to shard 0 so none are stranded.
+const SHARDS = Math.max(1, parseInt(process.env.SHARDS || '1', 10));
+const SHARD = Math.min(SHARDS - 1, Math.max(0, parseInt(process.env.SHARD || '0', 10)));
+const HEX_CHARS = '0123456789abcdef';
+// Explicit regex override for ad-hoc rebalancing (e.g. relaunch a fast worker
+// on half of another worker's bucket mid-drain).
+const SHARD_REGEX = process.env.SHARD_REGEX || '';
+function shardMatch() {
+  if (SHARD_REGEX) return { content_hash: { $regex: new RegExp(SHARD_REGEX, 'i') } };
+  if (SHARDS === 1) return {};
+  const start = Math.round((SHARD * 16) / SHARDS);
+  const end = Math.round(((SHARD + 1) * 16) / SHARDS);
+  const regex = new RegExp(`^[${HEX_CHARS.slice(start, end)}]`, 'i');
+  if (SHARD === 0) {
+    return { $or: [{ content_hash: { $exists: false } }, { content_hash: regex }] };
+  }
+  return { content_hash: regex };
+}
 
 const SYSTEM_EVENT_TYPES = new Set([
   'heartbeat_action',
@@ -340,6 +365,21 @@ async function main() {
   await connect_to_mongodb(); // initializes the shared singleton used by all services
   const db = await getDb();
 
+  /** Shard-aware fetch of the oldest unprocessed events (see shardMatch()). */
+  async function fetchUnprocessed(limit) {
+    return db.collection('episodic_events').find({
+      'metadata.processed': { $ne: true },
+      'metadata.terminal_failure': { $ne: true },
+      id: { $exists: true, $ne: null },
+      user_id: { $exists: true, $ne: null },
+      session_id: { $exists: true, $ne: null },
+      ...shardMatch(),
+    })
+    .sort({ timestamp: 1 })
+    .limit(limit)
+    .toArray();
+  }
+
   /**
    * Clear idempotency entries stuck in 'processing' (e.g. from crashed/killed
    * drain instances or server restarts). Extraction takes seconds; anything
@@ -393,8 +433,9 @@ async function main() {
     id: { $exists: true, $ne: null },
     user_id: { $exists: true, $ne: null },
     session_id: { $exists: true, $ne: null },
+    ...shardMatch(),
   });
-  console.log(`[drain] backlog: ${total} unprocessed events (concurrency=${CONCURRENCY}, max=${MAX || 'all'})`);
+  console.log(`[drain] shard ${SHARD}/${SHARDS}: ${total} unprocessed events (concurrency=${CONCURRENCY}, max=${MAX || 'all'})`);
 
   // Clear any dispatched records and stale idempotency entries already sitting in the queue from prior runs.
   try { await shortCircuitDispatched(); } catch (e) { console.warn('[drain] initial short-circuit sweep failed:', e.message); }
@@ -403,7 +444,7 @@ async function main() {
   // ── Pass 1: triage system events at full speed ──
   if (TRIAGE_SYSTEM) {
     while (true) {
-      const events = await memoryManager.get_unprocessed_events(BATCH);
+      const events = await fetchUnprocessed(BATCH);
       const sysEvents = events.filter((e) => SYSTEM_EVENT_TYPES.has(e.event_type));
       if (sysEvents.length === 0) break;
       for (const ev of sysEvents) {
@@ -432,8 +473,11 @@ async function main() {
       // events are being skipped (e.g. stale idempotency entries, locks held
       // by another instance). Avoids a hot spin loop on a stuck window.
       if (progressSinceFetch === 0 && nextIdx > 0) await sleep(3000);
-      const events = await memoryManager.get_unprocessed_events(BATCH);
-      const conv = events.filter((e) => !SYSTEM_EVENT_TYPES.has(e.event_type));
+      const events = await fetchUnprocessed(BATCH);
+      // Keep system events too: with sharding, a shard's system events may sit
+      // behind conversation events and pass 1 breaks on the first system-free
+      // window. They are triaged (no LLM) inside the worker loop instead.
+      const conv = events;
       if (conv.length === 0) {
         done = true;
         return;
@@ -464,13 +508,14 @@ async function main() {
       const contentHash = event.content_hash || (await ensureContentHash(event));
       if (await isHardDeduped(event, contentHash)) { skipped++; continue; }
 
+      const isSystemEvent = SYSTEM_EVENT_TYPES.has(event.event_type);
       let result = 'skipped';
       try {
-        result = await processEvent(event);
+        result = isSystemEvent ? await triageEvent(event) : await processEvent(event);
       } finally {
         inFlight.delete(event.id);
       }
-      if (result === 'processed') { processed++; progressSinceFetch++; }
+      if (result === 'processed') { if (isSystemEvent) triaged++; else processed++; progressSinceFetch++; }
       else if (result === 'failed') { failed++; progressSinceFetch++; }
       else skipped++;
 
@@ -494,10 +539,13 @@ async function main() {
   await Promise.all(workers);
 
   const secs = ((Date.now() - started) / 1000).toFixed(0);
-  console.log(`[drain] DONE: ${processed} processed, ${failed} failed, ${skipped} skipped, ${triaged} triaged in ${secs}s`);
+  console.log(`[drain] DONE (shard ${SHARD}/${SHARDS}): ${processed} processed, ${failed} failed, ${skipped} skipped, ${triaged} triaged in ${secs}s`);
   try { await shortCircuitDispatched(); } catch { /* non-critical */ }
-  const remaining = await db.collection('episodic_events').countDocuments({ 'metadata.processed': { $ne: true } });
-  console.log(`[drain] remaining unprocessed: ${remaining}`);
+  const remaining = await db.collection('episodic_events').countDocuments({
+    'metadata.processed': { $ne: true },
+    ...shardMatch(),
+  });
+  console.log(`[drain] remaining unprocessed (shard ${SHARD}/${SHARDS}): ${remaining}`);
   process.exit(0); // resumable — failures are logged and retryable
 }
 
