@@ -66,6 +66,7 @@ import { SkillRefinementService } from './services/processing/skill-refinement-s
 import { scanCodebase, classifyChanges } from './services/code-graph/codebase-scanner.js';
 import { extractFile } from './services/code-graph/codebase-extractor.js';
 import { CodeGraphSync } from './services/code-graph/code-graph-sync.js';
+import { resolveCrossFileCalls } from './services/code-graph/cross-file-resolver.js';
 import { ManifestStore } from './services/code-graph/manifest-store.js';
 import { ScanCodebaseInput, SyncCodeGraphInput, CodeGraphStatusInput } from './services/code-graph/tool-schemas.js';
 import type { FileExtraction, FileState } from './services/code-graph/types.js';
@@ -2991,6 +2992,7 @@ export async function handleSyncCodeGraph(args: unknown): Promise<TextContent[]>
     }
 
     const syncEngine = new CodeGraphSync(db);
+    const crossFile = await resolveCrossFileCalls(db, input.root, extractions);
     const result = await syncEngine.sync(input.root, changes, extractions);
 
     const state: Record<string, FileState> = {};
@@ -3009,6 +3011,7 @@ export async function handleSyncCodeGraph(args: unknown): Promise<TextContent[]>
       `**Files extracted:** ${result.extracted}`,
       `**Nodes upserted:** ${result.nodesUpserted} | **Edges upserted:** ${result.edgesUpserted}`,
       `**Nodes retracted:** ${result.nodesRetracted} | **Edges retracted:** ${result.edgesRetracted}`,
+      `**Cross-file calls:** ${crossFile.resolved} resolved | ${crossFile.skippedAmbiguous} ambiguous skipped | ${crossFile.danglingDropped} dangling dropped`,
       `**Failed:** ${failed.length}`,
     ];
     if (failed.length > 0) {

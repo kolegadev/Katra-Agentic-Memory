@@ -3,12 +3,16 @@
  * fixture tree under tests/fixtures/code-graph: scanCodebase (F1) →
  * extractFile (F2) → sync into test-prefixed KG collections, then a
  * fabricated deletion with re-sync asserting full physical retraction.
+ * Also covers the F6 dangling-edge cleanup: a cross-file `calls` edge into a
+ * file is physically removed when that file's nodes are retracted.
  * When no MongoDB is reachable, the suite is skipped so the integration run
  * stays green.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MongoClient } from 'mongodb';
 import {
@@ -20,6 +24,7 @@ import {
 import { scanCodebase } from '../../../src/services/code-graph/codebase-scanner.js';
 import { extractFile } from '../../../src/services/code-graph/codebase-extractor.js';
 import { CodeGraphSync } from '../../../src/services/code-graph/code-graph-sync.js';
+import { resolveCrossFileCalls } from '../../../src/services/code-graph/cross-file-resolver.js';
 import type { ChangeSet, FileExtraction } from '../../../src/services/code-graph/types.js';
 
 const MONGO_URI =
@@ -237,5 +242,83 @@ describe.skipIf(!mongoAvailable)('CodeGraphSync (integration)', () => {
       }),
     ).toBeGreaterThan(0);
     expect(await nodes.findOne({ id: `graphify:${rootKey}:sample_main` })).not.toBeNull();
+  });
+
+  it('resolves a cross-file call and removes the dangling edge when the callee file is deleted (F6)', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'katra-f6-dangling-'));
+    try {
+      await mkdir(join(root, 'src'));
+      await writeFile(
+        join(root, 'src', 'lib.ts'),
+        'export function helper(): number { return 1; }\n',
+      );
+      await writeFile(
+        join(root, 'src', 'main.ts'),
+        'import { helper } from "./lib.js";\nexport function run(): number { return helper(); }\n',
+      );
+
+      const rootKeyOf = (r: string) =>
+        createHash('sha256').update(r).digest('hex').slice(0, 12);
+      const mainRunId = `graphify:${rootKeyOf(root)}:src_main_run`;
+      const libHelperId = `graphify:${rootKeyOf(root)}:src_lib_helper`;
+      const callEdgeId = `graphify:edge:${rootKeyOf(root)}:${mainRunId}:calls:${libHelperId}`;
+
+      // 1. Sync both files with the resolver involved: A calls B cross-file.
+      const changes: ChangeSet = {
+        added: ['src/lib.ts', 'src/main.ts'],
+        modified: [],
+        deleted: [],
+        unchanged: [],
+        total: 2,
+      };
+      const extractions = new Map<string, FileExtraction>();
+      for (const relPath of changes.added) {
+        extractions.set(
+          relPath,
+          await extractFile(root, relPath, await readFile(join(root, relPath))),
+        );
+      }
+      const cross = await resolveCrossFileCalls(db, root, extractions);
+      expect(cross).toEqual({ resolved: 1, skippedAmbiguous: 0, danglingDropped: 0 });
+      await sync.sync(root, changes, extractions);
+
+      const nodes = db.collection(collections.nodes);
+      const relationships = db.collection(collections.relationships);
+      expect(await relationships.findOne({ id: callEdgeId })).not.toBeNull();
+
+      // 2. Delete B: its nodes AND the A→B edge are physically gone.
+      const deletion: ChangeSet = {
+        added: [],
+        modified: [],
+        deleted: ['src/lib.ts'],
+        unchanged: ['src/main.ts'],
+        total: 1,
+      };
+      const deletionResult = await sync.sync(root, deletion, new Map());
+      expect(deletionResult.nodesRetracted).toBe(2); // file + helper
+      // lib's own contains edge + main's dangling imports_from AND calls
+      // edges (both reference retracted lib node ids).
+      expect(deletionResult.edgesRetracted).toBe(3);
+
+      expect(
+        await nodes.countDocuments({
+          id: { $regex: '^graphify:' },
+          'properties.code_root': root,
+          'properties.source_file': 'src/lib.ts',
+        }),
+      ).toBe(0);
+      expect(await relationships.findOne({ id: callEdgeId })).toBeNull();
+
+      // A's own fragment survives intact (the calls edge into B is gone).
+      expect(await nodes.findOne({ id: mainRunId })).not.toBeNull();
+      expect(
+        await relationships.countDocuments({
+          'properties.code_root': root,
+          'properties.source_file': 'src/main.ts',
+        }),
+      ).toBe(1); // file→run contains remains; run→helper calls was retracted
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });
