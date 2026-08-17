@@ -7,6 +7,7 @@
  * stays green.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { MongoClient } from 'mongodb';
@@ -43,6 +44,12 @@ try {
 const fixturesRoot = fileURLToPath(
   new URL('../../fixtures/code-graph', import.meta.url),
 );
+
+/** Root-scoped key per CONTRACT: first 12 hex chars of sha256(resolve(root)). */
+const rootKey = createHash('sha256')
+  .update(fixturesRoot)
+  .digest('hex')
+  .slice(0, 12);
 
 /** Distinct collection names so the unit sync suite can run in parallel. */
 const collections = {
@@ -141,13 +148,16 @@ describe.skipIf(!mongoAvailable)('CodeGraphSync (integration)', () => {
     expect(nodeCount).toBe(uniqueNodeIds);
     expect(edgeCount).toBe(uniqueEdgeKeys);
 
-    // Ids carry the graphify: prefix; documents are tagged katra-code.
+    // Ids carry the graphify: prefix AND the rootKey (root-scoped, so two
+    // codebases with identical relPaths never collide); documents are
+    // tagged katra-code.
     const sampleNode = await nodes.findOne({
       id: { $regex: '^graphify:' },
       'properties.source_file': 'sample.ts',
     });
     expect(sampleNode).not.toBeNull();
-    expect(sampleNode!.id).toMatch(/^graphify:/);
+    expect(sampleNode!.id).toMatch(/^graphify:[0-9a-f]{12}:/);
+    expect(sampleNode!.id.startsWith(`graphify:${rootKey}:`)).toBe(true);
     expect(sampleNode!.source).toBe('katra-code');
     expect(sampleNode!.properties.code_root).toBe(fixturesRoot);
     expect(sampleNode!.properties.code_language).toBe('typescript');
@@ -157,9 +167,24 @@ describe.skipIf(!mongoAvailable)('CodeGraphSync (integration)', () => {
       'properties.source_file': 'sample.ts',
     });
     expect(sampleEdge).not.toBeNull();
-    expect(sampleEdge!.id).toMatch(/^graphify:edge:/);
+    expect(sampleEdge!.id).toMatch(/^graphify:edge:[0-9a-f]{12}:/);
+    expect(sampleEdge!.id.startsWith(`graphify:edge:${rootKey}:`)).toBe(true);
     expect(sampleEdge!.source).toBe('katra-code');
     expect(sampleEdge!.properties.code_root).toBe(fixturesRoot);
+
+    // EVERY stored node/edge owned by this root is root-scoped.
+    const allNodes = await nodes
+      .find({ 'properties.code_root': fixturesRoot })
+      .toArray();
+    for (const d of allNodes) {
+      expect(d.id.startsWith(`graphify:${rootKey}:`)).toBe(true);
+    }
+    const allEdges = await relationships
+      .find({ 'properties.code_root': fixturesRoot })
+      .toArray();
+    for (const d of allEdges) {
+      expect(d.id.startsWith(`graphify:edge:${rootKey}:`)).toBe(true);
+    }
 
     // status() agrees with the stored fragment counts.
     const status = await sync.status(fixturesRoot);
@@ -211,6 +236,6 @@ describe.skipIf(!mongoAvailable)('CodeGraphSync (integration)', () => {
         'properties.source_file': 'widget.ts',
       }),
     ).toBeGreaterThan(0);
-    expect(await nodes.findOne({ id: 'graphify:sample_main' })).not.toBeNull();
+    expect(await nodes.findOne({ id: `graphify:${rootKey}:sample_main` })).not.toBeNull();
   });
 });

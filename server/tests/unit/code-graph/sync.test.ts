@@ -3,12 +3,15 @@
  *
  * Covers the sync engine against the shared Mongo test helpers (test_-
  * prefixed collections, cleanup in afterAll): exact node/edge document
- * shapes incl. code_root, replacement on re-sync of a modified file (no
- * accumulation), full retraction on deletion, untouched fragments for
- * unchanged files, the shrink guard for failed extractions, legacy-node and
- * other-root retraction safety, edge id format, status(), recordSync(), and
- * bulkWrite chunking > 500 ops. When no MongoDB is reachable (default URI or
- * MONGODB_URI env), the suite is skipped so the unit run stays green.
+ * shapes incl. code_root and ROOT-SCOPED ids (`graphify:<rootKey>:<stem>`,
+ * `graphify:edge:<rootKey>:<fromId>:<rel>:<toId>`), replacement on re-sync
+ * of a modified file (no accumulation), full retraction on deletion,
+ * untouched fragments for unchanged files, the shrink guard for failed
+ * extractions, legacy-node and other-root retraction safety, cross-root
+ * isolation for two roots with IDENTICAL relative paths (the F3 verifier
+ * collision), edge id format, status(), recordSync(), and bulkWrite chunking
+ * > 500 ops. When no MongoDB is reachable (default URI or MONGODB_URI env),
+ * the suite is skipped so the unit run stays green.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { MongoClient } from 'mongodb';
@@ -48,6 +51,19 @@ try {
 /** Sync root for most tests; the status test uses its own root for isolation. */
 const ROOT = resolve('/tmp/katra-f3-sync-unit-root');
 const STATUS_ROOT = resolve('/tmp/katra-f3-sync-status-root');
+
+/** Root-scoped key per CONTRACT: first 12 hex chars of sha256(resolve(root)). */
+function rootKeyFor(root: string): string {
+  return createHash('sha256').update(resolve(root)).digest('hex').slice(0, 12);
+}
+
+/** Root-scoped stored node id for the main ROOT: `graphify:<rootKey>:<stem>`. */
+const nid = (extractorId: string) =>
+  `graphify:${rootKeyFor(ROOT)}:${extractorId}`;
+
+/** Root-scoped stored edge id for the main ROOT. */
+const eid = (from: string, relation: string, to: string) =>
+  `graphify:edge:${rootKeyFor(ROOT)}:${nid(from)}:${relation}:${nid(to)}`;
 
 /** Unique test collection names (unit vs integration suites run in parallel). */
 const collections = {
@@ -122,7 +138,7 @@ describe.skipIf(!mongoAvailable)('CodeGraphSync', () => {
     await closeTestDB();
   });
 
-  it('upserts nodes with the exact document shape, incl. code_root', async () => {
+  it('upserts nodes with the exact document shape, incl. code_root and root-scoped id', async () => {
     const result = await sync.sync(
       ROOT,
       cs({ added: ['src/one.ts'], total: 1 }),
@@ -144,8 +160,10 @@ describe.skipIf(!mongoAvailable)('CodeGraphSync', () => {
       edgesRetracted: 0,
     });
 
-    const doc = await nodes().findOne({ id: 'graphify:src_one' });
+    const doc = await nodes().findOne({ id: nid('src_one') });
     expect(doc).not.toBeNull();
+    expect(doc!.id).toBe(nid('src_one'));
+    expect(doc!.id).toMatch(/^graphify:[0-9a-f]{12}:src_one$/);
     expect(Object.keys(doc!.properties).sort()).toEqual([
       'code_language',
       'code_root',
@@ -155,7 +173,7 @@ describe.skipIf(!mongoAvailable)('CodeGraphSync', () => {
       'summary',
     ]);
     expect(doc).toMatchObject({
-      id: 'graphify:src_one',
+      id: nid('src_one'),
       type: 'file',
       name: 'one.ts',
       properties: {
@@ -173,7 +191,7 @@ describe.skipIf(!mongoAvailable)('CodeGraphSync', () => {
     expect(doc!.updated_at).toBeInstanceOf(Date);
   });
 
-  it('upserts edges with the exact id/shape: graphify:edge:from:relation:to', async () => {
+  it('upserts edges with the exact id/shape: graphify:edge:<rootKey>:<fromId>:<rel>:<toId>', async () => {
     const result = await sync.sync(
       ROOT,
       cs({ added: ['src/one-e.ts'], total: 1 }),
@@ -181,15 +199,17 @@ describe.skipIf(!mongoAvailable)('CodeGraphSync', () => {
     );
     expect(result.edgesUpserted).toBe(1);
 
-    const doc = await relationships().findOne({
-      id: 'graphify:edge:graphify:src_one_e:contains:graphify:src_one_e_foo',
-    });
+    const expectedId = eid('src_one_e', 'contains', 'src_one_e_foo');
+    const doc = await relationships().findOne({ id: expectedId });
     expect(doc).not.toBeNull();
+    expect(doc!.id).toMatch(
+      /^graphify:edge:[0-9a-f]{12}:graphify:[0-9a-f]{12}:src_one_e:contains:graphify:[0-9a-f]{12}:src_one_e_foo$/,
+    );
     expect(doc).toMatchObject({
-      id: 'graphify:edge:graphify:src_one_e:contains:graphify:src_one_e_foo',
+      id: expectedId,
       relationship_type: 'contains',
-      from_id: 'graphify:src_one_e',
-      to_id: 'graphify:src_one_e_foo',
+      from_id: nid('src_one_e'),
+      to_id: nid('src_one_e_foo'),
       strength: 1,
       properties: {
         weight: 1,
@@ -223,7 +243,7 @@ describe.skipIf(!mongoAvailable)('CodeGraphSync', () => {
     expect(result.edgesUpserted).toBe(2); // contains → foo + contains → baz
 
     // Old symbol gone, new symbol present, no accumulation.
-    expect(await nodes().findOne({ id: 'graphify:src_two_bar' })).toBeNull();
+    expect(await nodes().findOne({ id: nid('src_two_bar') })).toBeNull();
     const ids = await nodes()
       .find({
         'properties.code_root': ROOT,
@@ -232,9 +252,9 @@ describe.skipIf(!mongoAvailable)('CodeGraphSync', () => {
       .map((d) => d.id)
       .toArray();
     expect(ids.sort()).toEqual([
-      'graphify:src_two',
-      'graphify:src_two_baz',
-      'graphify:src_two_foo',
+      nid('src_two'),
+      nid('src_two_baz'),
+      nid('src_two_foo'),
     ]);
     const edges = await relationships()
       .find({
@@ -244,8 +264,8 @@ describe.skipIf(!mongoAvailable)('CodeGraphSync', () => {
       .map((d) => d.id)
       .toArray();
     expect(edges.sort()).toEqual([
-      'graphify:edge:graphify:src_two:contains:graphify:src_two_baz',
-      'graphify:edge:graphify:src_two:contains:graphify:src_two_foo',
+      eid('src_two', 'contains', 'src_two_baz'),
+      eid('src_two', 'contains', 'src_two_foo'),
     ]);
   });
 
@@ -289,7 +309,7 @@ describe.skipIf(!mongoAvailable)('CodeGraphSync', () => {
       cs({ added: ['src/four.ts'], total: 1 }),
       new Map([['src/four.ts', fileExtraction('src/four.ts', ['foo'])]]),
     );
-    const before = await nodes().findOne({ id: 'graphify:src_four_foo' });
+    const before = await nodes().findOne({ id: nid('src_four_foo') });
 
     const result = await sync.sync(
       ROOT,
@@ -298,8 +318,8 @@ describe.skipIf(!mongoAvailable)('CodeGraphSync', () => {
     );
 
     expect(result.nodesRetracted).toBe(0); // four-b had no prior fragment
-    expect(await nodes().findOne({ id: 'graphify:src_four_b_qux' })).not.toBeNull();
-    const after = await nodes().findOne({ id: 'graphify:src_four_foo' });
+    expect(await nodes().findOne({ id: nid('src_four_b_qux') })).not.toBeNull();
+    const after = await nodes().findOne({ id: nid('src_four_foo') });
     expect(after).not.toBeNull();
     expect(after!.updated_at).toEqual(before!.updated_at);
   });
@@ -321,7 +341,7 @@ describe.skipIf(!mongoAvailable)('CodeGraphSync', () => {
     expect(result.nodesRetracted).toBe(0);
     expect(result.edgesRetracted).toBe(0);
     expect(result.nodesUpserted).toBe(0);
-    expect(await nodes().findOne({ id: 'graphify:src_five_bar' })).not.toBeNull();
+    expect(await nodes().findOne({ id: nid('src_five_bar') })).not.toBeNull();
     expect(
       await nodes().countDocuments({
         'properties.code_root': ROOT,
@@ -347,7 +367,7 @@ describe.skipIf(!mongoAvailable)('CodeGraphSync', () => {
 
     expect(result.failed).toEqual(['src/five-e.ts']);
     expect(result.nodesRetracted).toBe(0);
-    expect(await nodes().findOne({ id: 'graphify:src_five_e_foo' })).not.toBeNull();
+    expect(await nodes().findOne({ id: nid('src_five_e_foo') })).not.toBeNull();
   });
 
   it('merges partial progress (errors but non-zero nodes) normally', async () => {
@@ -386,17 +406,17 @@ describe.skipIf(!mongoAvailable)('CodeGraphSync', () => {
 
     expect(result.failed).toEqual([]);
     expect(result.nodesRetracted).toBe(2); // old fragment pruned, then replaced
-    expect(await nodes().findOne({ id: 'graphify:src_five_p_ok' })).not.toBeNull();
-    expect(await nodes().findOne({ id: 'graphify:src_five_p_foo' })).toBeNull();
+    expect(await nodes().findOne({ id: nid('src_five_p_ok') })).not.toBeNull();
+    expect(await nodes().findOne({ id: nid('src_five_p_foo') })).toBeNull();
   });
 
-  it('never retracts a legacy node with the same id but NO code_root', async () => {
+  it('never retracts a legacy node with the same source_file but NO code_root', async () => {
     await sync.sync(
       ROOT,
       cs({ added: ['src/six.ts'], total: 1 }),
       new Map([['src/six.ts', fileExtraction('src/six.ts', ['foo'])]]),
     );
-    // Legacy graphify-seed node: same id as the native function node,
+    // Legacy graphify-seed node: UNNAMESPACED id (pre-namespacing seed era),
     // same source_file, but no code_root (Graphify pipeline owns it).
     await nodes().insertOne({
       id: 'graphify:src_six_foo',
@@ -423,7 +443,7 @@ describe.skipIf(!mongoAvailable)('CodeGraphSync', () => {
     expect(result.nodesRetracted).toBe(2); // file + native foo only
 
     expect(
-      await nodes().findOne({ id: 'graphify:src_six_foo', source: 'katra-code' }),
+      await nodes().findOne({ id: nid('src_six_foo'), source: 'katra-code' }),
     ).toBeNull();
     expect(
       await nodes().findOne({ id: 'graphify:src_six_foo', source: 'graphify-seed' }),
@@ -442,8 +462,9 @@ describe.skipIf(!mongoAvailable)('CodeGraphSync', () => {
       cs({ added: ['src/seven.ts'], total: 1 }),
       new Map([['src/seven.ts', fileExtraction('src/seven.ts', ['foo'])]]),
     );
+    const otherRoot = resolve('/tmp/katra-f3-other-root');
     await nodes().insertOne({
-      id: 'graphify:other_root_foo',
+      id: `graphify:${rootKeyFor(otherRoot)}:src_seven_foo`,
       type: 'function',
       name: 'foo()',
       properties: {
@@ -452,7 +473,7 @@ describe.skipIf(!mongoAvailable)('CodeGraphSync', () => {
         source_file: 'src/seven.ts',
         code_language: 'typescript',
         summary: 'Katra-code function: foo()',
-        code_root: '/tmp/katra-f3-other-root',
+        code_root: otherRoot,
       },
       source: 'katra-code',
       user_id: 'kolega-agent',
@@ -462,8 +483,134 @@ describe.skipIf(!mongoAvailable)('CodeGraphSync', () => {
 
     await sync.sync(ROOT, cs({ deleted: ['src/seven.ts'], total: 0 }), new Map());
 
-    expect(await nodes().findOne({ id: 'graphify:other_root_foo' })).not.toBeNull();
-    expect(await nodes().findOne({ id: 'graphify:src_seven_foo' })).toBeNull();
+    expect(
+      await nodes().findOne({ id: `graphify:${rootKeyFor(otherRoot)}:src_seven_foo` }),
+    ).not.toBeNull();
+    expect(await nodes().findOne({ id: nid('src_seven_foo') })).toBeNull();
+  });
+
+  it('ISOLATES two roots with IDENTICAL relative paths in the shared graph (F3 verifier regression)', async () => {
+    const rootA = resolve('/tmp/katra-f3-sync-root-a');
+    const rootB = resolve('/tmp/katra-f3-sync-root-b');
+    const keyA = rootKeyFor(rootA);
+    const keyB = rootKeyFor(rootB);
+    expect(keyA).toMatch(/^[0-9a-f]{12}$/);
+    expect(keyA).not.toBe(keyB);
+
+    // RankPilot and Katra both contain server/src/index.ts: identical
+    // relPath AND identical extractor ids in both roots.
+    const relPath = 'server/src/index.ts';
+    const fragment = fileExtraction(relPath, ['handler']);
+
+    const idA = (stem: string) => `graphify:${keyA}:${stem}`;
+    const idB = (stem: string) => `graphify:${keyB}:${stem}`;
+    const edgeA = `graphify:edge:${keyA}:${idA('server_src_index')}:contains:${idA('server_src_index_handler')}`;
+    const edgeB = `graphify:edge:${keyB}:${idB('server_src_index')}:contains:${idB('server_src_index_handler')}`;
+
+    // Sync root A, then root B: both fragments must coexist with distinct
+    // root-scoped ids and their own code_root — no cross-root overwrite.
+    await sync.sync(
+      rootA,
+      cs({ added: [relPath], total: 1 }),
+      new Map([[relPath, fragment]]),
+    );
+    await sync.sync(
+      rootB,
+      cs({ added: [relPath], total: 1 }),
+      new Map([[relPath, fragment]]),
+    );
+
+    const aNodeIds = await nodes()
+      .find({
+        'properties.code_root': rootA,
+        'properties.source_file': relPath,
+      })
+      .map((d) => d.id)
+      .toArray();
+    const bNodeIds = await nodes()
+      .find({
+        'properties.code_root': rootB,
+        'properties.source_file': relPath,
+      })
+      .map((d) => d.id)
+      .toArray();
+    expect(aNodeIds.sort()).toEqual(
+      [idA('server_src_index'), idA('server_src_index_handler')].sort(),
+    );
+    expect(bNodeIds.sort()).toEqual(
+      [idB('server_src_index'), idB('server_src_index_handler')].sort(),
+    );
+    for (const d of await nodes()
+      .find({
+        'properties.code_root': { $in: [rootA, rootB] },
+        'properties.source_file': relPath,
+      })
+      .toArray()) {
+      expect(d.id).toMatch(/^graphify:[0-9a-f]{12}:/);
+    }
+    expect(await relationships().findOne({ id: edgeA })).not.toBeNull();
+    expect(await relationships().findOne({ id: edgeB })).not.toBeNull();
+
+    // Retract the file from root B only (deleted): root B's fragment
+    // disappears, root A's must be COMPLETELY intact.
+    const deletion = await sync.sync(
+      rootB,
+      cs({ deleted: [relPath], total: 0 }),
+      new Map(),
+    );
+    expect(deletion.nodesRetracted).toBe(2); // file + handler
+    expect(deletion.edgesRetracted).toBe(1); // contains → handler
+
+    expect(
+      await nodes().countDocuments({
+        'properties.code_root': rootB,
+        'properties.source_file': relPath,
+      }),
+    ).toBe(0);
+    expect(
+      await relationships().countDocuments({
+        'properties.code_root': rootB,
+        'properties.source_file': relPath,
+      }),
+    ).toBe(0);
+
+    // Root A: correct counts, correct code_root, correct stored ids.
+    const aAfter = await nodes()
+      .find({
+        'properties.code_root': rootA,
+        'properties.source_file': relPath,
+      })
+      .toArray();
+    expect(aAfter.map((d) => d.id).sort()).toEqual(
+      [idA('server_src_index'), idA('server_src_index_handler')].sort(),
+    );
+    for (const d of aAfter) {
+      expect(d.properties.code_root).toBe(rootA);
+      expect(d.properties.source_file).toBe(relPath);
+      expect(d.properties.source_path).toBe(relPath);
+      expect(d.source).toBe('katra-code');
+    }
+    expect(
+      await relationships().countDocuments({
+        'properties.code_root': rootA,
+        'properties.source_file': relPath,
+      }),
+    ).toBe(1);
+    const aEdge = await relationships().findOne({
+      'properties.code_root': rootA,
+      'properties.source_file': relPath,
+    });
+    expect(aEdge).not.toBeNull();
+    expect(aEdge!.id).toBe(edgeA);
+    expect(aEdge!.from_id).toBe(idA('server_src_index'));
+    expect(aEdge!.to_id).toBe(idA('server_src_index_handler'));
+    expect(aEdge!.properties.code_root).toBe(rootA);
+
+    // status() agrees per root.
+    expect((await sync.status(rootA)).nodeCount).toBe(2);
+    expect((await sync.status(rootA)).edgeCount).toBe(1);
+    expect((await sync.status(rootB)).nodeCount).toBe(0);
+    expect((await sync.status(rootB)).edgeCount).toBe(0);
   });
 
   it('status() reports root-owned counts and the manifest lastSyncAt', async () => {

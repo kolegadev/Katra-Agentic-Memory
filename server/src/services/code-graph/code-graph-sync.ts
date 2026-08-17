@@ -9,6 +9,13 @@
  * modified file whose extraction failed is shrink-guarded: its old fragment
  * stays intact and no upsert happens.
  *
+ * Stored node/edge IDs are ROOT-SCOPED (Graphify's `repo_tag::` solution for
+ * global graphs): node `id = graphify:<rootKey>:<node.id>` and edge
+ * `id = graphify:edge:<rootKey>:<fromId>:<relation>:<toId>` where
+ * `rootKey = sha256(resolve(root)).slice(0, 12)` and fromId/toId are the
+ * stored (root-scoped) node IDs. Two codebases with identical relative paths
+ * therefore never collide in the shared knowledge graph.
+ *
  * @see CONTRACT.md §F3, §Goal, §Boundaries
  */
 
@@ -28,8 +35,13 @@ import type {
 /** Node ids in the KG keep the `graphify:` prefix (shared with seeded nodes). */
 const KG_NODE_PREFIX = 'graphify:';
 
-/** Edge id shape, Graphify-compatible: `graphify:edge:<fromId>:<rel>:<toId>`. */
+/** Edge id prefix, Graphify-compatible: `graphify:edge:`. */
 const KG_EDGE_PREFIX = 'graphify:edge:';
+
+/** Root-scoped key: first 12 hex chars of sha256(resolve(root)). */
+function rootKeyFor(root: string): string {
+  return createHash('sha256').update(resolve(root)).digest('hex').slice(0, 12);
+}
 
 /** Max bulkWrite ops per batch (determinism guard, CONTRACT §F3). */
 const BULK_CHUNK_SIZE = 500;
@@ -65,14 +77,22 @@ function languageFor(relPath: string): string | null {
   return LANGUAGE_BY_SUFFIX[relPath.slice(dot + 1).toLowerCase()] ?? null;
 }
 
-/** KG node id for an extraction id (prefix kept for seed-identity sharing). */
-function kgNodeId(nodeId: string): string {
-  return `${KG_NODE_PREFIX}${nodeId}`;
+/** KG node id for an extraction id: `graphify:<rootKey>:<extractorId>`. */
+function kgNodeId(rootKey: string, nodeId: string): string {
+  return `${KG_NODE_PREFIX}${rootKey}:${nodeId}`;
 }
 
-/** KG edge id: `graphify:edge:<storedFromId>:<relation>:<storedToId>`. */
-function kgEdgeId(from: string, relation: string, to: string): string {
-  return `${KG_EDGE_PREFIX}${kgNodeId(from)}:${relation}:${kgNodeId(to)}`;
+/**
+ * KG edge id: `graphify:edge:<rootKey>:<storedFromId>:<relation>:<storedToId>`
+ * where from/to are already root-scoped stored node ids.
+ */
+function kgEdgeId(
+  rootKey: string,
+  from: string,
+  relation: string,
+  to: string,
+): string {
+  return `${KG_EDGE_PREFIX}${rootKey}:${from}:${relation}:${to}`;
 }
 
 /** Split ops into batches of ≤ `size` (bulkWrite determinism guard). */
@@ -143,6 +163,7 @@ export class CodeGraphSync {
     extractions: Map<string, FileExtraction>,
   ): Promise<SyncResult> {
     const resolvedRoot = resolve(root);
+    const rootKey = rootKeyFor(resolvedRoot);
     const affected = [
       ...new Set([...changes.modified, ...changes.deleted]),
     ].sort();
@@ -211,7 +232,7 @@ export class CodeGraphSync {
     for (const relPath of upsertPaths) {
       const extraction = extractions.get(relPath)!;
       for (const node of extraction.nodes) {
-        const id = kgNodeId(node.id);
+        const id = kgNodeId(rootKey, node.id);
         nodeOps.push({
           updateOne: {
             filter: { id },
@@ -241,9 +262,9 @@ export class CodeGraphSync {
         });
       }
       for (const edge of extraction.edges) {
-        const fromId = kgNodeId(edge.from);
-        const toId = kgNodeId(edge.to);
-        const edgeId = `${KG_EDGE_PREFIX}${fromId}:${edge.relation}:${toId}`;
+        const fromId = kgNodeId(rootKey, edge.from);
+        const toId = kgNodeId(rootKey, edge.to);
+        const edgeId = kgEdgeId(rootKey, fromId, edge.relation, toId);
         edgeOps.push({
           updateOne: {
             filter: { id: edgeId },
