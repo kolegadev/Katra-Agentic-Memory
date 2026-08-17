@@ -184,6 +184,39 @@ describe('extractFile — python fixture (code-graph/sample.py)', () => {
   });
 });
 
+describe('extractFile — TS-style specifier resolution (code-graph/resolver.ts)', () => {
+  let result: FileExtraction;
+  beforeAll(async () => {
+    result = await extract('code-graph/resolver.ts');
+  });
+
+  it('emits file + function nodes with exact IDs', () => {
+    expect(result.errors).toEqual([]);
+    expect(nodeLines(result.nodes)).toEqual([
+      'code_graph_resolver | resolver.ts | file | L1',
+      'code_graph_resolver_useping | usePing() | function | L5',
+    ]);
+  });
+
+  it("resolves '.js'-suffixed specifiers to their real '.ts' sources", () => {
+    expect(edgeLines(result.edges)).toEqual([
+      'code_graph_resolver contains code_graph_resolver_useping',
+      'code_graph_resolver imports_from code_graph_target',
+      'code_graph_resolver imports_from code_graph_nested_index',
+    ]);
+  });
+
+  it('marks the import edges EXTRACTED/1.0 with the source file', () => {
+    const importEdges = result.edges.filter((e) => e.relation === 'imports_from');
+    expect(importEdges.length).toBe(2);
+    for (const edge of importEdges) {
+      expect(edge.confidence).toBe('EXTRACTED');
+      expect(edge.weight).toBe(1);
+      expect(edge.sourceFile).toBe('code-graph/resolver.ts');
+    }
+  });
+});
+
 describe('extractFile — file-node-only fallbacks and unknown suffixes', () => {
   it('extracts markdown as a single file node', async () => {
     const result = await extract('code-graph/notes.md');

@@ -162,15 +162,30 @@ function firstExistingFile(root: string, candidates: string[]): string | null {
 
 const JS_RESOLVE_EXTENSIONS = ['.ts', '.tsx', '.js', '.mts', '.cts', '.jsx'];
 const JS_INDEX_FILES = ['index', ...JS_RESOLVE_EXTENSIONS.map((ext) => `index${ext}`)];
+const JS_SPECIFIER_EXTENSION = /\.(js|jsx|mjs|cjs|ts|tsx|mts|cts)$/;
 
 /** Resolve a relative JS/TS specifier to a real file relPath under `root`. */
 function resolveJsSpecifier(root: string, relPath: string, specifier: string): string | null {
   const base = join(root, posixDirname(relPath), specifier);
-  return firstExistingFile(root, [
+  const candidates = [
     base,
     ...JS_RESOLVE_EXTENSIONS.map((ext) => `${base}${ext}`),
     ...JS_INDEX_FILES.map((name) => join(base, name)),
-  ]);
+  ];
+  // TS-style resolution (Graphify `_resolve_js_import_path`): specifiers carrying a
+  // known JS/TS extension usually target source files that do not exist under that
+  // exact name (`./connection.js` → `connection.ts`). Probe the stem with all known
+  // extensions after the literal path, preserving exact-match precedence.
+  const extMatch = specifier.match(JS_SPECIFIER_EXTENSION);
+  if (extMatch) {
+    const stemBase = base.slice(0, base.length - extMatch[0].length);
+    candidates.push(
+      stemBase,
+      ...JS_RESOLVE_EXTENSIONS.map((ext) => `${stemBase}${ext}`),
+      ...JS_INDEX_FILES.map((name) => join(stemBase, name)),
+    );
+  }
+  return firstExistingFile(root, candidates);
 }
 
 /** Resolve a dotted Python module path to a real `.py` (or `__init__.py`) under `root`. */

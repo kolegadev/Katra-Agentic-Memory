@@ -209,6 +209,8 @@ scripts/README-code-graph.md (usage, 20 lines max)
 - Cross-file call resolution, fuzzy entity dedup (MinHash/LSH), community detection, and
   watch mode are future features. Same-file calls + file-level import edges are the v1 map.
 - Renames are delete+add (no identity preservation) — matches Graphify.
+- RESOLVED 2026-08-17: TS-style specifier resolution — `./x.js` now probes `x.ts`/`x.tsx`/…
+  and index variants (Graphify `_resolve_js_import_path` semantics).
 
 ## Verification loop rules
 
