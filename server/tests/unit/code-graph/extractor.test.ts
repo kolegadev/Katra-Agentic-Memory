@@ -137,11 +137,11 @@ describe('extractFile — python fixture (code-graph/sample.py)', () => {
     expect(result.errors).toEqual([]);
     expect(nodeLines(result.nodes)).toEqual([
       'code_graph_sample | sample.py | file | L1',
-      'code_graph_sample_greeter | Greeter | class | L7',
-      'code_graph_sample_greeter_init | .__init__() | method | L10',
-      'code_graph_sample_greeter_hello | .hello() | method | L13',
-      'code_graph_sample_build_greeter | build_greeter() | function | L17',
-      'code_graph_sample_main | main() | function | L21',
+      'code_graph_sample_greeter | Greeter | class | L6',
+      'code_graph_sample_greeter_init | .__init__() | method | L9',
+      'code_graph_sample_greeter_hello | .hello() | method | L12',
+      'code_graph_sample_build_greeter | build_greeter() | function | L16',
+      'code_graph_sample_main | main() | function | L20',
     ]);
   });
 
@@ -152,10 +152,21 @@ describe('extractFile — python fixture (code-graph/sample.py)', () => {
       'code_graph_sample_greeter method code_graph_sample_greeter_hello',
       'code_graph_sample contains code_graph_sample_build_greeter',
       'code_graph_sample contains code_graph_sample_main',
-      'code_graph_sample imports helper',
-      'code_graph_sample imports_from helper',
+      'code_graph_sample imports_from code_graph_helper',
       'code_graph_sample_main calls code_graph_sample_build_greeter',
       'code_graph_sample_main calls code_graph_sample_greeter_hello',
+    ]);
+  });
+
+  it('extracts the imported helper module with the imports_from target id', async () => {
+    const helper = await extract('code-graph/helper.py');
+    expect(helper.errors).toEqual([]);
+    expect(nodeLines(helper.nodes)).toEqual([
+      'code_graph_helper | helper.py | file | L1',
+      'code_graph_helper_greet | greet() | function | L4',
+    ]);
+    expect(edgeLines(helper.edges)).toEqual([
+      'code_graph_helper contains code_graph_helper_greet',
     ]);
   });
 

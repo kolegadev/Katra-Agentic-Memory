@@ -1,7 +1,6 @@
 """Fixture: structural extraction sample for the F2 extractor tests."""
 import os
-import helper
-from helper import greet
+from .helper import greet
 
 
 class Greeter:
