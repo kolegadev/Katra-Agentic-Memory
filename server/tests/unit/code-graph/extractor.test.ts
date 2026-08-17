@@ -700,6 +700,50 @@ describe('extractFile — member-call receiver facts (F7)', () => {
     ]);
   });
 
+  it('attributes shadowed receivers per call site (innermost scope wins)', async () => {
+    const result = await extract('code-graph/memb-shadow.ts');
+    // `s` is `Store` at the outer call site and shadowed to `Other` inside
+    // `inner` — each rawCall carries ITS OWN call site's receiver type.
+    expect(result.rawCalls).toEqual([
+      {
+        caller: 'code_graph_memb_shadow_shadow',
+        callee: 'm',
+        kind: 'method',
+        sourceLocation: 'L6',
+        receiver: { name: 's', typeName: 'Store', typeSource: 'annotation' },
+      },
+      {
+        caller: 'code_graph_memb_shadow_shadow',
+        callee: 'm',
+        kind: 'method',
+        sourceLocation: 'L9',
+        receiver: { name: 's', typeName: 'Other', typeSource: 'annotation' },
+      },
+    ]);
+  });
+
+  it('reduces qualified and generic annotations to the last bare type segment', async () => {
+    const result = await extract('code-graph/memb-qualified.ts');
+    // `ns.Store<number>[]` → `Store` (last segment, generics + array suffix
+    // stripped); `Map<string, number>` → `Map` (generics stripped).
+    expect(result.rawCalls).toEqual([
+      {
+        caller: 'code_graph_memb_qualified_qualified',
+        callee: 'count',
+        kind: 'method',
+        sourceLocation: 'L5',
+        receiver: { name: 'a', typeName: 'Store', typeSource: 'annotation' },
+      },
+      {
+        caller: 'code_graph_memb_qualified_qualified',
+        callee: 'get',
+        kind: 'method',
+        sourceLocation: 'L7',
+        receiver: { name: 'm', typeName: 'Map', typeSource: 'annotation' },
+      },
+    ]);
+  });
+
   it('emits no rawCalls for a member-call-free library file', async () => {
     const result = await extract('code-graph/memb-lib.ts');
     expect(result.errors).toEqual([]);

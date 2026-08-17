@@ -241,6 +241,7 @@ const MEMB_FILES = [
   'code-graph/memb-ambig-class-a.ts',
   'code-graph/memb-ambig-class-b.ts',
   'code-graph/memb-ambig-use.ts',
+  'code-graph/memb-ambig-bound.ts',
 ];
 
 /** Extract every memb fixture into a fresh extraction map. */
@@ -298,7 +299,7 @@ describe('resolveCrossFileCalls — typed member calls (F7)', () => {
   it('resolves every typed receiver to the existing method node (never touching the DB)', async () => {
     const extractions = await extractMembAll();
     const result = await resolveCrossFileCalls(throwingDb, fixturesRoot, extractions);
-    expect(result).toEqual({ resolved: 8, skippedAmbiguous: 2, danglingDropped: 0 });
+    expect(result).toEqual({ resolved: 9, skippedAmbiguous: 2, danglingDropped: 0 });
 
     // annotation receiver → EXTRACTED calls to memb_lib_store_count; the
     // `new Store()` constructor also resolves via import evidence (F6).
@@ -337,6 +338,30 @@ describe('resolveCrossFileCalls — typed member calls (F7)', () => {
 
     // ambiguous type name with no import binding → skipped.
     expect(callsEdges(extractions, 'code-graph/memb-ambig-use.ts')).toEqual([]);
+
+    // ambiguous type name IMPORT-BOUND to memb-ambig-class-a.ts → resolves
+    // to the imported file's class method (F7 import-evidence branch).
+    expect(callsEdges(extractions, 'code-graph/memb-ambig-bound.ts')).toEqual([
+      'code_graph_memb_ambig_bound_boundcall calls code_graph_memb_ambig_class_a_dup_ping EXTRACTED 1 code-graph/memb-ambig-bound.ts L5',
+    ]);
+  });
+
+  it('resolves a globally-ambiguous type name only when the caller imports the class (import-bound)', async () => {
+    const extractions = await extractMembAll();
+    await resolveCrossFileCalls(throwingDb, fixturesRoot, extractions);
+    // `Dup` exists in TWO files. Without an import binding the typed call is
+    // skipped (god-node guard); with `import { Dup } from
+    // './memb-ambig-class-a.js'` it resolves to exactly the imported file's
+    // class method — never to the other same-named class.
+    expect(callsEdges(extractions, 'code-graph/memb-ambig-use.ts')).toEqual([]);
+    expect(callsEdges(extractions, 'code-graph/memb-ambig-bound.ts')).toEqual([
+      'code_graph_memb_ambig_bound_boundcall calls code_graph_memb_ambig_class_a_dup_ping EXTRACTED 1 code-graph/memb-ambig-bound.ts L5',
+    ]);
+    expect(
+      callsEdges(extractions, 'code-graph/memb-ambig-bound.ts')[0].includes(
+        'code_graph_memb_ambig_class_b',
+      ),
+    ).toBe(false);
   });
 
   it('never invents a method node (typed class exists, method does not)', async () => {
