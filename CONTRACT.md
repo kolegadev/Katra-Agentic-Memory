@@ -204,6 +204,101 @@ scripts/README-code-graph.md (usage, 20 lines max)
 - Does NOT modify the two graphify scripts. Dogfood run (by the Loop Director, not the
   Generator): `node scripts/code-graph.mjs /home/johnpellew/Katra-Agentic-Memory`.
 
+## F6 — Cross-file call resolution (loop-director, 2026-08-17)
+
+### Goal
+
+Resolve call edges across files: `caller()` in `a.ts` calling `target()` defined in `b.ts`
+becomes a `calls` edge between the two node IDs, with honest confidence marking
+(`EXTRACTED` 1.0 when backed by import evidence, `INFERRED` 0.8 otherwise). Ambiguous calls
+are SKIPPED — the graph never guesses.
+
+### Reference (Graphify 0.9.6 semantics — read these files before implementing)
+
+- `graphify/symbol_resolution.py`: `resolve_cross_file_raw_calls` (~L288), `build_label_index`
+  (~L59), `node_is_resolvable_symbol` (~L37), `normalise_callable_label` (~L31)
+- `graphify/paths.py`: `disambiguate_ambiguous_candidates` (~L153), `_path_proximity_winner`
+  (~L95), `_is_test_path` (~L60)
+- Installed at `/home/johnpellew/.local/share/uv/tools/graphifyy/lib/python3.12/site-packages/graphify/`
+
+### Interfaces
+
+```ts
+// types.ts — additions
+export interface RawCall {
+  caller: string;          // node id of the calling function/method (file id when top-level)
+  callee: string;          // bare callee name (no (), no .)
+  kind: 'function' | 'method' | 'constructor';
+  sourceLocation?: string; // L{n} of the call site
+}
+// FileExtraction gains: rawCalls?: RawCall[]
+```
+
+- `cross-file-resolver.ts` exports:
+  - `buildLabelIndex(nodes: CodeNode[]): Map<string, { id: string; file: string }[]>` —
+    function labels `name()`, method labels `.name()`, class names (for constructors).
+  - `resolveCrossFileCalls(db: Db, root: string, extractions: Map<string, FileExtraction>):
+    Promise<{ resolved: number; skippedAmbiguous: number; danglingDropped: number }>` —
+    (1) builds the global index from the fresh extractions PLUS existing `knowledge_nodes`
+    with `source:'katra-code'` and `properties.code_root === resolvedRoot` whose
+    `properties.source_file` is NOT being replaced by this sync (DB nodes stand in for
+    unchanged files); (2) for every rawCall in every extraction, in deterministic order
+    (files sorted, rawCalls in emission order), resolves per the algorithm below and
+    appends `calls` edges to the caller's extraction; (3) drops rawCalls whose resolved
+    target is not in the final node set (dangling).
+- Resolution algorithm (in order of evidence):
+  1. Candidate list from index; empty → skip (danglingDropped if target node absent).
+  2. Import evidence: if the caller's file has `imports_from` edges to file node F and
+     exactly one candidate lives in F → `calls`, EXTRACTED, 1.0.
+  3. Unique global candidate → `calls`, INFERRED, 0.8.
+  4. Multiple candidates → path proximity tiebreak (same dir, else longest common path
+     prefix with the caller's file; resolve only if a STRICT unique winner) → INFERRED 0.8.
+  5. Otherwise skip (skippedAmbiguous) — god-node guard; never connect `log()`/`count()`
+     to a random candidate. Method calls (kind 'method') resolve only via uniqueness or
+     import evidence; receiver typing is F7.
+- Extractor: unresolved in-file calls are now EMITTED as rawCalls (was: dropped). In-file
+  resolution behavior and all existing edges unchanged.
+- Sync: after node retraction, also delete `knowledge_relationships` whose `to_id` or
+  `from_id` is a retracted node id (dangling-edge cleanup so deleting a file removes edges
+  INTO it from callers in other files).
+- Orchestrators (`mcp-server.ts` sync handler, `scripts/code-graph.mjs`): call
+  `resolveCrossFileCalls(db, root, extractions)` after extraction, before `syncCodeGraph`.
+
+### Files F6 owns
+
+```
+server/src/services/code-graph/cross-file-resolver.ts        (NEW)
+server/src/services/code-graph/codebase-extractor.ts         (MODIFIED — rawCalls)
+server/src/services/code-graph/types.ts                      (MODIFIED — RawCall, rawCalls)
+server/src/services/code-graph/code-graph-sync.ts            (MODIFIED — dangling-edge cleanup)
+server/src/mcp-server.ts                                     (MODIFIED — resolver call in sync handler)
+scripts/code-graph.mjs                                       (MODIFIED — resolver call)
+server/tests/unit/code-graph/extractor.test.ts               (MODIFIED — rawCalls assertions)
+server/tests/unit/code-graph/cross-file-resolver.test.ts     (NEW)
+server/tests/integration/code-graph/sync.integration.test.ts (MODIFIED — dangling-edge test)
+server/tests/fixtures/code-graph/cross-*.ts                  (NEW fixtures)
+```
+
+### Success criteria
+
+1. `npm run test:unit` fully green (existing suites unchanged in behavior; extractor edges
+   byte-identical to today).
+2. New unit tests cover: unique → INFERRED 0.8; import-evidence → EXTRACTED 1.0; ambiguous
+   skip; path-proximity strict-winner; member-call conservative skip; constructor `new X()`
+   → class node; rawCalls emitted with caller/callee/sourceLocation.
+3. Integration: A calls B cross-file → edge appears; delete B → sync retracts B's nodes AND
+   the A→B edge (no dangling).
+4. Live dogfood: forced re-sync of the Katra repo raises `calls` from ~1,132 to ≥1,800,
+   zero dangling edges (`to_id`/`from_id` not in node set).
+
+### Boundaries
+
+- Do NOT change `syncCodeGraph`'s upsert/retraction predicates beyond the dangling-edge
+  cleanup described above; do NOT change scanner/manifest/status/CLI flag behavior.
+- Do NOT touch `scripts/backfill-embeddings.mjs`, the Graphify interop scripts, or auth.
+- Resolver must never invent nodes; INFERRED weight stays 1.0 with confidence INFERRED
+  (existing edges carry weight 1.0; confidence distinguishes provenance).
+
 ## Known limitations (explicit, not defects)
 
 - Cross-file call resolution, fuzzy entity dedup (MinHash/LSH), community detection, and
