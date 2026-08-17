@@ -114,6 +114,28 @@ describe('extractFile — typescript fixture (code-graph/sample.ts)', () => {
     expect(result.edges.some((e) => e.to.includes('lodash'))).toBe(false);
   });
 
+  it('emits rawCalls for previously-dropped unresolved calls (F6)', () => {
+    // `this.widgets.push(w)` and `new WidgetBox()` resolve nowhere in-file
+    // (no `.push()`/`push()` in the label index, constructors are never
+    // in-file resolved) — they used to be silently dropped. `box.count()`
+    // inside describeBox is NOT here: it resolves in-file to the
+    // WidgetBox.count method (asserted in the edge list above).
+    expect(result.rawCalls).toEqual([
+      {
+        caller: 'code_graph_sample_widgetbox_add',
+        callee: 'push',
+        kind: 'method',
+        sourceLocation: 'L19',
+      },
+      {
+        caller: 'code_graph_sample_createbox',
+        callee: 'WidgetBox',
+        kind: 'constructor',
+        sourceLocation: 'L29',
+      },
+    ]);
+  });
+
   it('does not emit method nodes for interface method signatures', () => {
     expect(
       result.nodes.filter((n) => n.kind === 'method').map((n) => n.label),
@@ -499,6 +521,71 @@ describe('extractFile — robustness (never throws)', () => {
     expect(nodeLines(fromBuffer.nodes)).toEqual([
       'code_graph_only | only.ts | file | L1',
       'code_graph_only_only | Only | class | L1',
+    ]);
+  });
+});
+
+describe('extractFile — rawCalls (F6)', () => {
+  it('emits a rawCall for a member call on a local variable that resolves nowhere in-file', async () => {
+    const result = await extractFile(
+      fixturesRoot,
+      'code-graph/rawcall-local.ts',
+      'export function f(box: any): number {\n  const total = box.count();\n  return total;\n}\n',
+    );
+    expect(result.rawCalls).toEqual([
+      {
+        caller: 'code_graph_rawcall_local_f',
+        callee: 'count',
+        kind: 'method',
+        sourceLocation: 'L2',
+      },
+    ]);
+    expect(result.edges.filter((e) => e.relation === 'calls')).toEqual([]);
+  });
+
+  it('attributes top-level unresolved calls to the file node', async () => {
+    const result = await extractFile(
+      fixturesRoot,
+      'code-graph/rawcall-top.ts',
+      "console.log('boot');\n",
+    );
+    expect(result.rawCalls).toEqual([
+      {
+        caller: 'code_graph_rawcall_top',
+        callee: 'log',
+        kind: 'method',
+        sourceLocation: 'L1',
+      },
+    ]);
+  });
+
+  it('omits rawCalls entirely when every call resolves in-file', async () => {
+    const result = await extractFile(
+      fixturesRoot,
+      'code-graph/rawcall-none.ts',
+      'function inner(): number { return 1; }\nexport function outer(): number { return inner(); }\n',
+    );
+    expect(result.rawCalls).toBeUndefined();
+    expect(edgeLines(result.edges)).toEqual([
+      'code_graph_rawcall_none contains code_graph_rawcall_none_inner',
+      'code_graph_rawcall_none contains code_graph_rawcall_none_outer',
+      'code_graph_rawcall_none_outer calls code_graph_rawcall_none_inner',
+    ]);
+  });
+
+  it('emits constructor rawCalls for new-expressions with the class name', async () => {
+    const result = await extractFile(
+      fixturesRoot,
+      'code-graph/rawcall-new.ts',
+      'class Box {}\nexport function make(): Box { return new Box(); }\n',
+    );
+    expect(result.rawCalls).toEqual([
+      {
+        caller: 'code_graph_rawcall_new_make',
+        callee: 'Box',
+        kind: 'constructor',
+        sourceLocation: 'L2',
+      },
     ]);
   });
 });

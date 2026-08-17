@@ -22,6 +22,7 @@ import type {
   CodeNode,
   CodeRelation,
   FileExtraction,
+  RawCall,
 } from './types.js';
 
 /* ── per-language configuration ────────────────────────────────────────── */
@@ -37,6 +38,8 @@ interface LanguageConfig {
   methodTypes: ReadonlySet<string>;
   /** Node types representing calls (call resolution pass). */
   callTypes: ReadonlySet<string>;
+  /** Node types representing constructor calls (`new X(...)`, JS/TS only). */
+  constructorTypes: ReadonlySet<string>;
   /** Declaration containers whose variable_declarator children may hold function values. */
   variableContainers: ReadonlySet<string>;
   /** Base-class names for an emitted class node (inherits pass). */
@@ -334,6 +337,8 @@ interface ExtractionState {
   classLabels: Map<string, string[]>;
   /** Function/method bodies to scan for calls, in definition order. */
   callQueue: { callerId: string; body: Node }[];
+  /** Unresolved in-file calls (F6), in emission order. */
+  rawCalls: RawCall[];
   /** Pending base-class references, in definition order. */
   inheritsQueue: { classId: string; baseName: string }[];
 }
@@ -471,19 +476,93 @@ function emitInherits(state: ExtractionState): void {
   }
 }
 
-/** Pass 4: same-file `calls` edges via the per-file label index (unique hits only). */
-function emitCalls(cfg: LanguageConfig, state: ExtractionState): void {
+/** Bare callee name + kind of a call node, or null when unresolvable (F6). */
+function rawCallFacts(
+  cfg: LanguageConfig,
+  call: Node,
+): { callee: string; kind: RawCall['kind'] } | null {
+  if (cfg.constructorTypes.has(call.type)) {
+    const ctor = call.childForFieldName('constructor');
+    if (!ctor) return null;
+    return { callee: ctor.text, kind: 'constructor' };
+  }
+  const callee = cfg.calleeName(call);
+  if (!callee) return null;
+  const fn = call.childForFieldName('function');
+  const kind =
+    fn && (fn.type === 'member_expression' || fn.type === 'attribute')
+      ? 'method'
+      : 'function';
+  return { callee, kind };
+}
+
+/** Append an unresolved call as a RawCall (F6: never invent a stub node). */
+function pushRawCall(
+  state: ExtractionState,
+  callerId: string,
+  call: Node,
+  cfg: LanguageConfig,
+): void {
+  const facts = rawCallFacts(cfg, call);
+  if (!facts) return;
+  state.rawCalls.push({
+    caller: callerId,
+    callee: facts.callee,
+    kind: facts.kind,
+    sourceLocation: sourceLocation(call),
+  });
+}
+
+/** In-file resolved targets of a call callee (union of `f()` / `.f()` hits). */
+function inFileTargets(state: ExtractionState, callee: string): Set<string> {
+  const targets = new Set<string>();
+  for (const id of state.labelIndex.get(`${callee}()`) ?? []) targets.add(id);
+  for (const id of state.labelIndex.get(`.${callee}()`) ?? []) targets.add(id);
+  return targets;
+}
+
+/**
+ * Pass 4: same-file `calls` edges via the per-file label index (unique hits
+ * only). Calls that do not resolve in-file become RawCalls (F6) instead of
+ * being dropped — including constructor calls, which in-file resolution never
+ * handles, and top-level calls, whose caller is the file node.
+ */
+function emitCalls(
+  cfg: LanguageConfig,
+  state: ExtractionState,
+  rootNode: Node,
+): void {
+  const bodyCallIds = new Set<number>();
   for (const { callerId, body } of state.callQueue) {
     for (const call of findNodes(body, cfg.callTypes)) {
+      bodyCallIds.add(call.id);
       const callee = cfg.calleeName(call);
       if (!callee) continue;
-      const targets = new Set<string>();
-      for (const id of state.labelIndex.get(`${callee}()`) ?? []) targets.add(id);
-      for (const id of state.labelIndex.get(`.${callee}()`) ?? []) targets.add(id);
+      const targets = inFileTargets(state, callee);
       if (targets.size === 1) {
         pushEdge(state, callerId, [...targets][0], 'calls');
+      } else {
+        pushRawCall(state, callerId, call, cfg);
       }
     }
+    for (const call of findNodes(body, cfg.constructorTypes)) {
+      bodyCallIds.add(call.id);
+      pushRawCall(state, callerId, call, cfg);
+    }
+  }
+  // Top-level call sites (outside any emitted function/method body): the
+  // file node is the caller. Resolved-in-file top-level calls keep today's
+  // behavior (no edge), unresolved ones become RawCalls.
+  for (const call of findNodes(rootNode, cfg.callTypes)) {
+    if (bodyCallIds.has(call.id)) continue;
+    const callee = cfg.calleeName(call);
+    if (!callee) continue;
+    const targets = inFileTargets(state, callee);
+    if (targets.size !== 1) pushRawCall(state, state.fileId, call, cfg);
+  }
+  for (const call of findNodes(rootNode, cfg.constructorTypes)) {
+    if (bodyCallIds.has(call.id)) continue;
+    pushRawCall(state, state.fileId, call, cfg);
   }
 }
 
@@ -515,6 +594,7 @@ const TS_CONFIG: LanguageConfig = {
   functionTypes: new Set(['function_declaration', 'generator_function_declaration']),
   methodTypes: new Set(['method_definition']),
   callTypes: new Set(['call_expression']),
+  constructorTypes: new Set(['new_expression']),
   variableContainers: new Set(['variable_declaration', 'lexical_declaration']),
   baseNames: baseNamesTS,
   calleeName: calleeNameJS,
@@ -533,6 +613,7 @@ const PY_CONFIG: LanguageConfig = {
   functionTypes: new Set(['function_definition']),
   methodTypes: new Set(), // Python methods are `function_definition` inside a class body
   callTypes: new Set(['call']),
+  constructorTypes: new Set(), // Python has no `new`; class instantiation stays a plain call
   variableContainers: new Set(),
   baseNames: baseNamesPY,
   calleeName: calleeNamePY,
@@ -601,6 +682,7 @@ export async function extractFile(
     labelIndex: new Map(),
     classLabels: new Map(),
     callQueue: [],
+    rawCalls: [],
     inheritsQueue: [],
   };
   try {
@@ -615,17 +697,21 @@ export async function extractFile(
       emitDefinitions(tree.rootNode, entry.config, state);
       entry.config.emitImports(tree.rootNode, state);
       emitInherits(state);
-      emitCalls(entry.config, state);
+      emitCalls(entry.config, state, tree.rootNode);
     } finally {
       tree?.delete();
       parser.delete();
     }
-    return { nodes, edges: dedupeEdges(edges), errors: [] };
+    const extraction: FileExtraction = { nodes, edges: dedupeEdges(edges), errors: [] };
+    if (state.rawCalls.length > 0) extraction.rawCalls = state.rawCalls;
+    return extraction;
   } catch (err) {
-    return {
+    const extraction: FileExtraction = {
       nodes,
       edges: dedupeEdges(edges),
       errors: [err instanceof Error ? err.message : String(err)],
     };
+    if (state.rawCalls.length > 0) extraction.rawCalls = state.rawCalls;
+    return extraction;
   }
 }

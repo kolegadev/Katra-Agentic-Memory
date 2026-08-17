@@ -78,17 +78,19 @@ async function ensureBuildOutput() {
 
 /** Load the esbuild-built F1–F3 modules (per-file ESM output). */
 async function loadModules() {
-  const [scanner, extractor, sync, manifestStore] = await Promise.all([
+  const [scanner, extractor, sync, manifestStore, resolver] = await Promise.all([
     import(pathToFileURL(path.join(BUILD_DIR, 'codebase-scanner.js')).href),
     import(pathToFileURL(path.join(BUILD_DIR, 'codebase-extractor.js')).href),
     import(pathToFileURL(path.join(BUILD_DIR, 'code-graph-sync.js')).href),
     import(pathToFileURL(path.join(BUILD_DIR, 'manifest-store.js')).href),
+    import(pathToFileURL(path.join(BUILD_DIR, 'cross-file-resolver.js')).href),
   ]);
   return {
     ...scanner,
     ...extractor,
     ...sync,
     ...manifestStore,
+    ...resolver,
   };
 }
 
@@ -133,6 +135,7 @@ function printSyncSummary(result) {
   console.log(`  edges upserted:   ${result.edgesUpserted}`);
   console.log(`  nodes retracted:  ${result.nodesRetracted}`);
   console.log(`  edges retracted:  ${result.edgesRetracted}`);
+  console.log(`  edges dropped:    ${result.edgesDropped}`);
 }
 
 function manifestFiles(scan) {
@@ -152,6 +155,7 @@ async function main() {
     extractFile,
     CodeGraphSync,
     ManifestStore,
+    resolveCrossFileCalls,
   } = await loadModules();
 
   // The mongodb driver lives under server/node_modules; anchor resolution at
@@ -206,6 +210,11 @@ async function main() {
         console.error(`  ${failure}`);
       }
     }
+
+    const crossFile = await resolveCrossFileCalls(db, root, extractions);
+    console.log(
+      `\nCross-file calls: ${crossFile.resolved} resolved, ${crossFile.skippedAmbiguous} ambiguous skipped, ${crossFile.danglingDropped} dangling dropped`,
+    );
 
     const sync = new CodeGraphSync(db);
     const result = await sync.sync(root, changes, extractions);

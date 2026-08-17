@@ -76,10 +76,25 @@ export interface CodeEdge {
   sourceLocation?: string;
 }
 
+/**
+ * An unresolved in-file call (F6): emitted instead of being dropped so the
+ * cross-file resolver can attempt a conservative global resolution. Callee is
+ * the bare name (no `()`, no leading `.`); caller is the enclosing
+ * function/method node id, or the file node id for top-level call sites.
+ */
+export interface RawCall {
+  caller: string;
+  callee: string;
+  kind: 'function' | 'method' | 'constructor';
+  sourceLocation?: string;
+}
+
 export interface FileExtraction {
   nodes: CodeNode[];
   edges: CodeEdge[];
   errors: string[];
+  /** Unresolved in-file calls (F6); omitted when there are none. */
+  rawCalls?: RawCall[];
 }
 
 export interface SyncResult {
@@ -95,4 +110,6 @@ export interface SyncResult {
   edgesUpserted: number;
   nodesRetracted: number;
   edgesRetracted: number;
+  /** Edges dropped at sync time because a stored endpoint id has no node. */
+  edgesDropped: number;
 }

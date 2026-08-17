@@ -39,7 +39,7 @@ const KG_NODE_PREFIX = 'graphify:';
 const KG_EDGE_PREFIX = 'graphify:edge:';
 
 /** Root-scoped key: first 12 hex chars of sha256(resolve(root)). */
-function rootKeyFor(root: string): string {
+export function rootKeyFor(root: string): string {
   return createHash('sha256').update(resolve(root)).digest('hex').slice(0, 12);
 }
 
@@ -200,19 +200,31 @@ export class CodeGraphSync {
       edgesUpserted: 0,
       nodesRetracted: 0,
       edgesRetracted: 0,
+      edgesDropped: 0,
     };
 
     // Physical retraction before insert. The `graphify:` id prefix plus the
     // code_root match keeps legacy seed documents (no code_root) and other
     // roots' fragments out of reach.
     if (retractPaths.length > 0) {
+      const retractionQuery = {
+        id: { $regex: '^graphify:' },
+        'properties.code_root': resolvedRoot,
+        'properties.source_file': { $in: retractPaths },
+      };
+      // Collect the stored node ids BEFORE deleting the nodes (F6 dangling-edge
+      // cleanup): edges into/out of a retracted node from OTHER files must go
+      // too, or deleting a file leaves callers pointing at a ghost.
+      const retractedNodeIds = (
+        await this.db
+          .collection(this.nodesCollection)
+          .find(retractionQuery)
+          .project({ id: 1 })
+          .toArray()
+      ).map((doc) => doc.id as string);
       const nodesDeleted = await this.db
         .collection(this.nodesCollection)
-        .deleteMany({
-          id: { $regex: '^graphify:' },
-          'properties.code_root': resolvedRoot,
-          'properties.source_file': { $in: retractPaths },
-        });
+        .deleteMany(retractionQuery);
       const edgesDeleted = await this.db
         .collection(this.relationshipsCollection)
         .deleteMany({
@@ -222,6 +234,22 @@ export class CodeGraphSync {
         });
       result.nodesRetracted = nodesDeleted.deletedCount;
       result.edgesRetracted = edgesDeleted.deletedCount;
+
+      // Dangling-edge cleanup: drop native edges referencing any retracted
+      // node (root-scoped ids are globally unique, so the id set alone is
+      // exact; the code_root/prefix guards keep legacy seed edges intact).
+      let danglingDeleted = 0;
+      for (const idChunk of chunked(retractedNodeIds, BULK_CHUNK_SIZE)) {
+        const res = await this.db
+          .collection(this.relationshipsCollection)
+          .deleteMany({
+            id: { $regex: '^graphify:edge:' },
+            'properties.code_root': resolvedRoot,
+            $or: [{ from_id: { $in: idChunk } }, { to_id: { $in: idChunk } }],
+          });
+        danglingDeleted += res.deletedCount;
+      }
+      result.edgesRetracted += danglingDeleted;
     }
 
     // Bulk upsert of the new fragments (ordered:false, chunked ≤ 500 ops).
@@ -229,10 +257,15 @@ export class CodeGraphSync {
     const edgeOps: AnyBulkWriteOperation<Document>[] = [];
     const now = new Date();
 
+    // Stored (root-scoped) ids of every node this run upserts — they seed the
+    // endpoint-validity set used to filter edges before the edge upserts.
+    const upsertedNodeIds = new Set<string>();
+
     for (const relPath of upsertPaths) {
       const extraction = extractions.get(relPath)!;
       for (const node of extraction.nodes) {
         const id = kgNodeId(rootKey, node.id);
+        upsertedNodeIds.add(id);
         nodeOps.push({
           updateOne: {
             filter: { id },
@@ -261,9 +294,37 @@ export class CodeGraphSync {
           },
         });
       }
+    }
+
+    // FINAL node-id set for this root: the nodes being upserted in this run
+    // plus every stored node of this root whose file is NOT being retracted
+    // (unchanged files, shrink-guarded failed files). An edge whose stored
+    // endpoint id is outside this set is dangling (e.g. an extractor-emitted
+    // imports_from edge into a file the scanner skips — `build/` exists on
+    // disk but has no node) and must not be stored.
+    const finalNodeIds = new Set(upsertedNodeIds);
+    const existingNodeDocs = await this.db
+      .collection(this.nodesCollection)
+      .find({
+        source: 'katra-code',
+        'properties.code_root': resolvedRoot,
+        'properties.source_file': { $nin: retractPaths },
+      })
+      .project({ id: 1 })
+      .toArray();
+    for (const doc of existingNodeDocs) {
+      if (typeof doc.id === 'string') finalNodeIds.add(doc.id);
+    }
+
+    for (const relPath of upsertPaths) {
+      const extraction = extractions.get(relPath)!;
       for (const edge of extraction.edges) {
         const fromId = kgNodeId(rootKey, edge.from);
         const toId = kgNodeId(rootKey, edge.to);
+        if (!finalNodeIds.has(fromId) || !finalNodeIds.has(toId)) {
+          result.edgesDropped++;
+          continue;
+        }
         const edgeId = kgEdgeId(rootKey, fromId, edge.relation, toId);
         edgeOps.push({
           updateOne: {
@@ -276,6 +337,7 @@ export class CodeGraphSync {
                 strength: edge.weight,
                 properties: {
                   weight: edge.weight,
+                  confidence: edge.confidence,
                   source_file: relPath,
                   code_root: resolvedRoot,
                 },
