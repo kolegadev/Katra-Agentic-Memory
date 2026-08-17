@@ -16,6 +16,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -62,6 +63,12 @@ import { SkillLoaderService } from './services/memory/skill-loader-service.js';
 import { OperationalDistillationService } from './services/processing/operational-distillation-service.js';
 import { SkillSynthesisService } from './services/processing/skill-synthesis-service.js';
 import { SkillRefinementService } from './services/processing/skill-refinement-service.js';
+import { scanCodebase, classifyChanges } from './services/code-graph/codebase-scanner.js';
+import { extractFile } from './services/code-graph/codebase-extractor.js';
+import { CodeGraphSync } from './services/code-graph/code-graph-sync.js';
+import { ManifestStore } from './services/code-graph/manifest-store.js';
+import { ScanCodebaseInput, SyncCodeGraphInput, CodeGraphStatusInput } from './services/code-graph/tool-schemas.js';
+import type { FileExtraction, FileState } from './services/code-graph/types.js';
 
 dotenv.config();
 
@@ -766,6 +773,22 @@ const tools = [
     inputSchema: zodToJsonSchema(z.object({
       skill_name: z.string().describe('The skill name to refine'),
     })) as Record<string, unknown>,
+  },
+  // ── Native Code Graph ────────────────────────────────────────
+  {
+    name: 'scan_codebase',
+    description: 'Scan a local codebase directory (file discovery with .gitignore/.katraignore rules) and report what changed vs the last scan (added/modified/deleted/unchanged). Does NOT write to the knowledge graph. Use before sync_code_graph to preview changes, or to expand Katra\'s view of a codebase it is working on.',
+    inputSchema: zodToJsonSchema(ScanCodebaseInput) as Record<string, unknown>,
+  },
+  {
+    name: 'sync_code_graph',
+    description: 'Scan a codebase, extract structure (classes, functions, methods, imports, calls) with tree-sitter, and merge it into the Katra knowledge graph. Deleted files are retracted. Returns counts of nodes/edges upserted and retracted.',
+    inputSchema: zodToJsonSchema(SyncCodeGraphInput) as Record<string, unknown>,
+  },
+  {
+    name: 'code_graph_status',
+    description: 'Report the current state of a codebase in the Katra knowledge graph: node/edge counts and last sync time for the given root.',
+    inputSchema: zodToJsonSchema(CodeGraphStatusInput) as Record<string, unknown>,
   },
 ];
 
@@ -2905,6 +2928,115 @@ async function handleTriggerReflection(args: unknown): Promise<TextContent[]> {
   }];
 }
 
+// ── Native Code Graph handlers ────────────────────────────────────
+
+export async function handleScanCodebase(args: unknown): Promise<TextContent[]> {
+  const input = ScanCodebaseInput.parse(args);
+  if (!is_database_connected()) return [{ type: 'text', text: '⚠️ MongoDB disconnected.' }];
+  const db = get_database();
+
+  const files = await scanCodebase(input.root, { followSymlinks: input.followSymlinks });
+  const prev = await new ManifestStore(db).loadManifest(input.root);
+  const changes = classifyChanges(prev, files);
+
+  const lines: string[] = [
+    `## Codebase Scan: ${input.root}`,
+    '',
+    `**Total files:** ${changes.total}`,
+    `**Added:** ${changes.added.length}`,
+    `**Modified:** ${changes.modified.length}`,
+    `**Deleted:** ${changes.deleted.length}`,
+    `**Unchanged:** ${changes.unchanged.length}`,
+  ];
+  if (changes.added.length > 0) {
+    lines.push('', '### Added', ...changes.added.slice(0, 200).map((p) => `- ${p}`));
+    if (changes.added.length > 200) lines.push(`... and ${changes.added.length - 200} more`);
+  }
+  if (changes.deleted.length > 0) {
+    lines.push('', '### Deleted', ...changes.deleted.slice(0, 200).map((p) => `- ${p}`));
+    if (changes.deleted.length > 200) lines.push(`... and ${changes.deleted.length - 200} more`);
+  }
+  lines.push('', 'Preview only — no knowledge graph writes and no manifest updates were performed.');
+  return [{ type: 'text', text: lines.join('\n') }];
+}
+
+export async function handleSyncCodeGraph(args: unknown): Promise<TextContent[]> {
+  const input = SyncCodeGraphInput.parse(args);
+  try {
+    if (!is_database_connected()) return [{ type: 'text', text: '⚠️ MongoDB disconnected.' }];
+    const db = get_database();
+
+    const files = await scanCodebase(input.root);
+    const store = new ManifestStore(db);
+    const prev = await store.loadManifest(input.root);
+    const changes = classifyChanges(prev, files);
+
+    // Extract every added/modified file; one bad file must never abort the
+    // whole sync — collect it in `failures` and keep going.
+    const byPath = new Map(files.map((f) => [f.relPath, f]));
+    const extractions = new Map<string, FileExtraction>();
+    const failures: string[] = [];
+    for (const relPath of [...changes.added, ...changes.modified].sort()) {
+      const scanned = byPath.get(relPath);
+      if (!scanned) {
+        failures.push(relPath);
+        continue;
+      }
+      try {
+        const source = await readFile(scanned.absPath, 'utf8');
+        extractions.set(relPath, await extractFile(input.root, relPath, source));
+      } catch {
+        failures.push(relPath);
+      }
+    }
+
+    const syncEngine = new CodeGraphSync(db);
+    const result = await syncEngine.sync(input.root, changes, extractions);
+
+    const state: Record<string, FileState> = {};
+    for (const f of files) {
+      state[f.relPath] = { mtimeMs: f.mtimeMs, size: f.size, hash: f.hash };
+    }
+    await store.saveManifest(input.root, state);
+    await syncEngine.recordSync(result);
+
+    const failed = [...new Set([...result.failed, ...failures])].sort();
+    const lines: string[] = [
+      `## Code Graph Sync: ${result.root}`,
+      '',
+      `**Scanned:** ${result.scanned}`,
+      `**Added:** ${result.added} | **Modified:** ${result.modified} | **Deleted:** ${result.deleted} | **Unchanged:** ${result.unchanged}`,
+      `**Files extracted:** ${result.extracted}`,
+      `**Nodes upserted:** ${result.nodesUpserted} | **Edges upserted:** ${result.edgesUpserted}`,
+      `**Nodes retracted:** ${result.nodesRetracted} | **Edges retracted:** ${result.edgesRetracted}`,
+      `**Failed:** ${failed.length}`,
+    ];
+    if (failed.length > 0) {
+      lines.push(...failed.map((p) => `- ${p}`));
+    }
+    lines.push('', 'Manifest saved with the fresh scan state.');
+    return [{ type: 'text', text: lines.join('\n') }];
+  } catch (error) {
+    return [{
+      type: 'text',
+      text: `❌ Code graph sync failed: ${error instanceof Error ? error.message : String(error)}`,
+    }];
+  }
+}
+
+export async function handleCodeGraphStatus(args: unknown): Promise<TextContent[]> {
+  const input = CodeGraphStatusInput.parse(args);
+  if (!is_database_connected()) return [{ type: 'text', text: '⚠️ MongoDB disconnected.' }];
+  const status = await new CodeGraphSync(get_database()).status(input.root);
+  const lines = [
+    `## Code Graph Status: ${input.root}`,
+    `**Nodes:** ${status.nodeCount}`,
+    `**Edges:** ${status.edgeCount}`,
+    `**Last sync:** ${status.lastSyncAt ? new Date(status.lastSyncAt).toISOString() : 'never synced'}`,
+  ];
+  return [{ type: 'text', text: lines.join('\n') }];
+}
+
 function createMCPServer() {
   return new Server(
     { name: 'cognitive-memory', version: '3.0.0' },
@@ -2987,6 +3119,9 @@ function registerHandlers(server: Server) {
         case 'record_skill_outcome': result = await handleRecordSkillOutcome(args); break;
         case 'list_skill_feedback': result = await handleListSkillFeedback(args); break;
         case 'refine_skill': result = await handleRefineSkill(args); break;
+        case 'scan_codebase': result = await handleScanCodebase(args); break;
+        case 'sync_code_graph': result = await handleSyncCodeGraph(args); break;
+        case 'code_graph_status': result = await handleCodeGraphStatus(args); break;
         default: throw new Error(`Unknown tool: ${name}`);
       }
       // ── Cerebellum: procedural pattern observation ──────────
