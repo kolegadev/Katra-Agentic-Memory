@@ -299,6 +299,86 @@ server/tests/fixtures/code-graph/cross-*.ts                  (NEW fixtures)
 - Resolver must never invent nodes; INFERRED weight stays 1.0 with confidence INFERRED
   (existing edges carry weight 1.0; confidence distinguishes provenance).
 
+## F7 — Typed member-call resolution, TS/JS (loop-director, 2026-08-17)
+
+### Goal
+
+Resolve cross-file member calls (`obj.method()`) when the receiver's type is statically known:
+`const db: Db = ...; db.collection(...)` resolves to the `Db.collection()` method node even when
+`Db` lives in another file. Confidence: EXTRACTED for explicit annotations / `new T()` receivers,
+INFERRED for same-file return-type flow. Unknown receivers stay skipped (god-node guard).
+
+### Reference (Graphify 0.9.6)
+
+- `graphify/extract.py` `_resolve_typescript_member_calls` (~L11710) and `_resolve_python_member_calls`
+  (~L11621) — receiver-typed member-call resolvers; `_js_extra_walk`/`_ts_extra_walk` (~L2587/L2721)
+  show how receiver-type facts are collected during the walk.
+
+### Interfaces (delta on F6)
+
+```ts
+// types.ts — RawCall gains optional receiver facts:
+export interface RawCall {
+  caller: string; callee: string;
+  kind: 'function' | 'method' | 'constructor';
+  sourceLocation?: string;
+  receiver?: { name: string; typeName?: string; typeSource: 'annotation' | 'new' | 'parameter' | 'return_flow' | 'this' };
+}
+```
+
+- Extractor (TS/TSX/JS via typescript/tsx/javascript grammars; Python method calls keep the F6
+  behavior — receiver typing is TS/JS-only in F7):
+  * For a member call `x.m()`, emit `receiver: { name: 'x', typeName?, typeSource }` where the
+    extractor can resolve x's type WITHIN THE FILE:
+    - variable_declaration with type_annotation → typeName (last segment of a qualified type),
+      typeSource 'annotation'
+    - variable_declaration initialized with `new T(...)` → typeName T, typeSource 'new'
+    - function/method parameter with type_annotation → 'parameter'
+    - `this.m()` → receiver {name:'this'}, typeSource 'this' (enclosing class)
+    - same-file return-type flow: `const w = makeW(); w.m()` where `makeW` is declared in the SAME
+      file with a return type annotation → typeName = that return type, typeSource 'return_flow'
+    - anything else → receiver omitted (F6 skip behavior preserved)
+- Resolver (cross-file-resolver.ts): for kind 'method' rawCalls:
+  1. No receiver or no typeName → skip (unchanged).
+  2. Class lookup for typeName via a global class-name index (class nodes keyed by label, built
+     alongside the label index). Ambiguity: if the caller file's imports bind the type name to a
+     file (imports_from edge target file id), prefer the class node whose id starts with that file
+     id; else unique global; else skip.
+  3. Method node: id `${classNodeId}_${callee}` — must exist in the node index (never invent).
+     Emit `calls` edge caller→method node. Confidence EXTRACTED for annotation/new/parameter/this
+     receivers; INFERRED for return_flow.
+  4. `this` receivers resolve to the enclosing class only when the method is missing from the
+     calling class (in-file resolution already covers same-class methods); resolution is against
+     the class node of the caller's enclosing class.
+  5. God-node guard: everything skipped stays skipped; determinism preserved (sorted iteration).
+- Sync, MCP handler, CLI: unchanged — resolver output is more edges.
+
+### Files F7 owns
+
+```
+server/src/services/code-graph/codebase-extractor.ts   (MODIFIED — receiver facts)
+server/src/services/code-graph/types.ts                (MODIFIED — RawCall.receiver)
+server/src/services/code-graph/cross-file-resolver.ts  (MODIFIED — typed method resolution)
+server/tests/unit/code-graph/extractor.test.ts         (MODIFIED — receiver fact assertions)
+server/tests/unit/code-graph/cross-file-resolver.test.ts (MODIFIED — typed member cases)
+server/tests/fixtures/code-graph/memb-*.ts             (NEW fixtures)
+```
+
+### Success criteria
+
+1. `npm run test:unit` + `npm run test:integration` green; existing F6 assertions unchanged in
+   behavior (only additive).
+2. Unit: annotation receiver → EXTRACTED; `new T()` receiver → EXTRACTED; parameter-typed receiver
+   → EXTRACTED; same-file return_flow → INFERRED; unknown receiver skipped; ambiguous type name
+   skipped unless import-bound; method node never invented; determinism.
+3. Live dogfood: forced re-sync of the Katra repo raises `calls` above the F6 baseline (2,431),
+   dangling stays 0, EXTRACTED grows.
+
+### Boundaries
+
+- Python member-call typing, cross-file return-type propagation, and interface/union types are
+  future features (F8+). Do NOT touch sync predicates, scanner, auth, or the graphify scripts.
+
 ## Known limitations (explicit, not defects)
 
 - Cross-file call resolution, fuzzy entity dedup (MinHash/LSH), community detection, and

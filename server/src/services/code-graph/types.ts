@@ -81,12 +81,24 @@ export interface CodeEdge {
  * cross-file resolver can attempt a conservative global resolution. Callee is
  * the bare name (no `()`, no leading `.`); caller is the enclosing
  * function/method node id, or the file node id for top-level call sites.
+ *
+ * F7: TS/JS member calls additionally carry receiver facts when the receiver
+ * object's type is statically resolvable WITHIN the file (`s.count()` where
+ * `const s: Store = ...`, `new Store()`, a typed parameter, same-file
+ * return-type flow, or a bare `this`). `name` is the full object-expression
+ * text (used for reporting); resolution keys on `typeName`. A receiver is
+ * omitted entirely when the type is unknown — the F6 skip behavior applies.
  */
 export interface RawCall {
   caller: string;
   callee: string;
   kind: 'function' | 'method' | 'constructor';
   sourceLocation?: string;
+  receiver?: {
+    name: string;
+    typeName?: string;
+    typeSource: 'annotation' | 'new' | 'parameter' | 'return_flow' | 'this';
+  };
 }
 
 export interface FileExtraction {
