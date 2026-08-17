@@ -90,13 +90,13 @@ function resolveUserId(_requested?: unknown): string {
 
 function validateAuth(req: IncomingMessage): boolean {
   if (!isMcpAuthConfigured()) return true;
-  // Local network bypass — internal services (bridge, extractors) use legacy keys
+  // Loopback-only bypass — host-side tools (bridge hook, CLI scripts) are trusted.
+  // NOTE: private-range bypasses were removed deliberately (2026-08-17): Docker
+  // port publishing masquerades ALL external callers (LAN included) behind the
+  // bridge gateway IP, so an IP-range bypass defeats key auth on the published
+  // port. Containerized consumers must authenticate with MCP_API_KEY.
   const remoteIp = req.socket?.remoteAddress || '';
   if (remoteIp === '127.0.0.1' || remoteIp === '::1' || remoteIp === '::ffff:127.0.0.1') return true;
-  // Docker bridge networks (172.16.0.0/12) and common Docker subnets
-  if (remoteIp.startsWith('172.')) return true;
-  // Also bypass for private IPv4 ranges (internal services only, never exposed)
-  if (remoteIp.startsWith('10.') || remoteIp.startsWith('192.168.')) return true;
   const mcpAuth = req.headers['x-mcp-auth'] as string | undefined;
   if (mcpAuth && validateMcpKey(mcpAuth)) return true;
   const authHeader = req.headers['authorization'] as string | undefined;
