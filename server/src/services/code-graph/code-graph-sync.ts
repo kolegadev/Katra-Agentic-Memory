@@ -200,6 +200,7 @@ export class CodeGraphSync {
       edgesUpserted: 0,
       nodesRetracted: 0,
       edgesRetracted: 0,
+      edgesDropped: 0,
     };
 
     // Physical retraction before insert. The `graphify:` id prefix plus the
@@ -256,10 +257,15 @@ export class CodeGraphSync {
     const edgeOps: AnyBulkWriteOperation<Document>[] = [];
     const now = new Date();
 
+    // Stored (root-scoped) ids of every node this run upserts — they seed the
+    // endpoint-validity set used to filter edges before the edge upserts.
+    const upsertedNodeIds = new Set<string>();
+
     for (const relPath of upsertPaths) {
       const extraction = extractions.get(relPath)!;
       for (const node of extraction.nodes) {
         const id = kgNodeId(rootKey, node.id);
+        upsertedNodeIds.add(id);
         nodeOps.push({
           updateOne: {
             filter: { id },
@@ -288,9 +294,37 @@ export class CodeGraphSync {
           },
         });
       }
+    }
+
+    // FINAL node-id set for this root: the nodes being upserted in this run
+    // plus every stored node of this root whose file is NOT being retracted
+    // (unchanged files, shrink-guarded failed files). An edge whose stored
+    // endpoint id is outside this set is dangling (e.g. an extractor-emitted
+    // imports_from edge into a file the scanner skips — `build/` exists on
+    // disk but has no node) and must not be stored.
+    const finalNodeIds = new Set(upsertedNodeIds);
+    const existingNodeDocs = await this.db
+      .collection(this.nodesCollection)
+      .find({
+        source: 'katra-code',
+        'properties.code_root': resolvedRoot,
+        'properties.source_file': { $nin: retractPaths },
+      })
+      .project({ id: 1 })
+      .toArray();
+    for (const doc of existingNodeDocs) {
+      if (typeof doc.id === 'string') finalNodeIds.add(doc.id);
+    }
+
+    for (const relPath of upsertPaths) {
+      const extraction = extractions.get(relPath)!;
       for (const edge of extraction.edges) {
         const fromId = kgNodeId(rootKey, edge.from);
         const toId = kgNodeId(rootKey, edge.to);
+        if (!finalNodeIds.has(fromId) || !finalNodeIds.has(toId)) {
+          result.edgesDropped++;
+          continue;
+        }
         const edgeId = kgEdgeId(rootKey, fromId, edge.relation, toId);
         edgeOps.push({
           updateOne: {
@@ -303,6 +337,7 @@ export class CodeGraphSync {
                 strength: edge.weight,
                 properties: {
                   weight: edge.weight,
+                  confidence: edge.confidence,
                   source_file: relPath,
                   code_root: resolvedRoot,
                 },

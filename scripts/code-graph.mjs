@@ -135,6 +135,7 @@ function printSyncSummary(result) {
   console.log(`  edges upserted:   ${result.edgesUpserted}`);
   console.log(`  nodes retracted:  ${result.nodesRetracted}`);
   console.log(`  edges retracted:  ${result.edgesRetracted}`);
+  console.log(`  edges dropped:    ${result.edgesDropped}`);
 }
 
 function manifestFiles(scan) {

@@ -110,4 +110,6 @@ export interface SyncResult {
   edgesUpserted: number;
   nodesRetracted: number;
   edgesRetracted: number;
+  /** Edges dropped at sync time because a stored endpoint id has no node. */
+  edgesDropped: number;
 }

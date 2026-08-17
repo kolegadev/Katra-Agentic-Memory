@@ -213,6 +213,7 @@ describe.skipIf(!mongoAvailable)('CodeGraphSync', () => {
       strength: 1,
       properties: {
         weight: 1,
+        confidence: 'EXTRACTED',
         source_file: 'src/one-e.ts',
         code_root: ROOT,
       },
@@ -221,6 +222,236 @@ describe.skipIf(!mongoAvailable)('CodeGraphSync', () => {
     });
     expect(doc!.created_at).toBeInstanceOf(Date);
     expect(doc!.updated_at).toBeInstanceOf(Date);
+  });
+
+  it('persists edge confidence as emitted (EXTRACTED and INFERRED)', async () => {
+    const extraction: FileExtraction = {
+      nodes: [
+        {
+          id: 'src_conf',
+          label: 'conf.ts',
+          kind: 'file',
+          sourceFile: 'src/conf.ts',
+          sourceLocation: 'L1',
+        },
+        {
+          id: 'src_conf_go',
+          label: 'go()',
+          kind: 'function',
+          sourceFile: 'src/conf.ts',
+          sourceLocation: 'L2',
+        },
+        {
+          id: 'src_conf_run',
+          label: 'run()',
+          kind: 'function',
+          sourceFile: 'src/conf.ts',
+          sourceLocation: 'L3',
+        },
+      ],
+      edges: [
+        {
+          from: 'src_conf',
+          to: 'src_conf_go',
+          relation: 'contains',
+          confidence: 'EXTRACTED',
+          weight: 1,
+          sourceFile: 'src/conf.ts',
+        },
+        {
+          from: 'src_conf',
+          to: 'src_conf_run',
+          relation: 'calls',
+          confidence: 'INFERRED',
+          weight: 1,
+          sourceFile: 'src/conf.ts',
+        },
+      ],
+      errors: [],
+    };
+
+    const result = await sync.sync(
+      ROOT,
+      cs({ added: ['src/conf.ts'], total: 1 }),
+      new Map([['src/conf.ts', extraction]]),
+    );
+    expect(result.edgesUpserted).toBe(2);
+    expect(result.edgesDropped).toBe(0);
+
+    const extracted = await relationships().findOne({
+      id: eid('src_conf', 'contains', 'src_conf_go'),
+    });
+    const inferred = await relationships().findOne({
+      id: eid('src_conf', 'calls', 'src_conf_run'),
+    });
+    expect(extracted?.properties.confidence).toBe('EXTRACTED');
+    expect(inferred?.properties.confidence).toBe('INFERRED');
+  });
+
+  it('drops an edge whose endpoint matches no node, counts it in edgesDropped, and keeps the valid sibling', async () => {
+    const extraction: FileExtraction = {
+      nodes: [
+        {
+          id: 'src_dng',
+          label: 'dng.ts',
+          kind: 'file',
+          sourceFile: 'src/dng.ts',
+          sourceLocation: 'L1',
+        },
+        {
+          id: 'src_dng_real',
+          label: 'real()',
+          kind: 'function',
+          sourceFile: 'src/dng.ts',
+          sourceLocation: 'L2',
+        },
+      ],
+      edges: [
+        {
+          from: 'src_dng',
+          to: 'src_dng_real',
+          relation: 'contains',
+          confidence: 'EXTRACTED',
+          weight: 1,
+          sourceFile: 'src/dng.ts',
+        },
+        {
+          from: 'src_dng',
+          to: 'src_ghost_never',
+          relation: 'calls',
+          confidence: 'INFERRED',
+          weight: 1,
+          sourceFile: 'src/dng.ts',
+        },
+      ],
+      errors: [],
+    };
+
+    const result = await sync.sync(
+      ROOT,
+      cs({ added: ['src/dng.ts'], total: 1 }),
+      new Map([['src/dng.ts', extraction]]),
+    );
+    expect(result.edgesDropped).toBe(1);
+    expect(result.edgesUpserted).toBe(1);
+    expect(
+      await relationships().findOne({
+        id: eid('src_dng', 'contains', 'src_dng_real'),
+      }),
+    ).not.toBeNull();
+    expect(
+      await relationships().findOne({
+        id: eid('src_dng', 'calls', 'src_ghost_never'),
+      }),
+    ).toBeNull();
+  });
+
+  it('keeps an edge into a node of an UNCHANGED file already in the DB', async () => {
+    await sync.sync(
+      ROOT,
+      cs({ added: ['src/un.ts'], total: 1 }),
+      new Map([['src/un.ts', fileExtraction('src/un.ts', ['foo'])]]),
+    );
+
+    const newFile: FileExtraction = {
+      nodes: [
+        {
+          id: 'src_newer',
+          label: 'newer.ts',
+          kind: 'file',
+          sourceFile: 'src/newer.ts',
+          sourceLocation: 'L1',
+        },
+        {
+          id: 'src_newer_main',
+          label: 'main()',
+          kind: 'function',
+          sourceFile: 'src/newer.ts',
+          sourceLocation: 'L2',
+        },
+      ],
+      edges: [
+        {
+          from: 'src_newer_main',
+          to: 'src_un_foo',
+          relation: 'calls',
+          confidence: 'INFERRED',
+          weight: 1,
+          sourceFile: 'src/newer.ts',
+        },
+      ],
+      errors: [],
+    };
+
+    const result = await sync.sync(
+      ROOT,
+      cs({ added: ['src/newer.ts'], unchanged: ['src/un.ts'], total: 2 }),
+      new Map([['src/newer.ts', newFile]]),
+    );
+    expect(result.edgesDropped).toBe(0);
+    expect(result.edgesUpserted).toBe(1);
+    expect(
+      await relationships().findOne({
+        id: eid('src_newer_main', 'calls', 'src_un_foo'),
+      }),
+    ).not.toBeNull();
+  });
+
+  it('drops an edge into a node RETRACTED in the same run', async () => {
+    await sync.sync(
+      ROOT,
+      cs({ added: ['src/ret.ts'], total: 1 }),
+      new Map([['src/ret.ts', fileExtraction('src/ret.ts', ['oldfn'])]]),
+    );
+
+    const linkFile: FileExtraction = {
+      nodes: [
+        {
+          id: 'src_link',
+          label: 'link.ts',
+          kind: 'file',
+          sourceFile: 'src/link.ts',
+          sourceLocation: 'L1',
+        },
+        {
+          id: 'src_link_main',
+          label: 'main()',
+          kind: 'function',
+          sourceFile: 'src/link.ts',
+          sourceLocation: 'L2',
+        },
+      ],
+      edges: [
+        {
+          from: 'src_link_main',
+          to: 'src_ret_oldfn',
+          relation: 'calls',
+          confidence: 'INFERRED',
+          weight: 1,
+          sourceFile: 'src/link.ts',
+        },
+      ],
+      errors: [],
+    };
+
+    // src/ret.ts is modified and its new fragment no longer defines oldfn:
+    // oldfn is retracted in the same run, so the link edge into it must be
+    // dropped rather than stored against a node that is gone.
+    const result = await sync.sync(
+      ROOT,
+      cs({ modified: ['src/ret.ts'], added: ['src/link.ts'], total: 2 }),
+      new Map([
+        ['src/ret.ts', fileExtraction('src/ret.ts', ['newfn'])],
+        ['src/link.ts', linkFile],
+      ]),
+    );
+    expect(result.edgesDropped).toBe(1);
+    expect(result.nodesRetracted).toBe(2); // file + oldfn (fragment replaced)
+    expect(
+      await relationships().findOne({
+        id: eid('src_link_main', 'calls', 'src_ret_oldfn'),
+      }),
+    ).toBeNull();
   });
 
   it('re-sync of a MODIFIED file replaces its fragment (no accumulation)', async () => {

@@ -3011,6 +3011,7 @@ export async function handleSyncCodeGraph(args: unknown): Promise<TextContent[]>
       `**Files extracted:** ${result.extracted}`,
       `**Nodes upserted:** ${result.nodesUpserted} | **Edges upserted:** ${result.edgesUpserted}`,
       `**Nodes retracted:** ${result.nodesRetracted} | **Edges retracted:** ${result.edgesRetracted}`,
+      `**Edges dropped:** ${result.edgesDropped}`,
       `**Cross-file calls:** ${crossFile.resolved} resolved | ${crossFile.skippedAmbiguous} ambiguous skipped | ${crossFile.danglingDropped} dangling dropped`,
       `**Failed:** ${failed.length}`,
     ];
