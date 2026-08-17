@@ -7,7 +7,7 @@
  * mongo on the docker network.
  *
  * - Only touches facts with no `embedding` field (idempotent / resumable).
- * - Threshold: content length >= MIN_LEN (default 100, matching new policy).
+ * - Threshold: content length >= MIN_LEN (default 20, matching embedding-service policy).
  * - Batched with a short pause to avoid pegging CPU.
  *
  * Env:
@@ -20,7 +20,7 @@ import { MongoClient } from 'mongodb';
 import { embeddingService } from '/app/build/services/infrastructure/embedding-service.js';
 
 const URI = process.env.MONGODB_URI;
-const MIN_LEN = parseInt(process.env.MIN_LEN || '100', 10);
+const MIN_LEN = parseInt(process.env.MIN_LEN || '20', 10);
 const BATCH = parseInt(process.env.BATCH || '200', 10);
 const USER_ID = process.env.USER_ID || '';
 const MAX = parseInt(process.env.MAX || '0', 10);
