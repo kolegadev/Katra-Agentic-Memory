@@ -95,6 +95,11 @@ services:
       - KATRA_SKILLS_DIR=/app/skills
     volumes:
       - ./server/src/skills:/app/skills
+      # Read-only codebase mounts for the Katra-native code graph. The
+      # scanner resolves roots on the container filesystem, so host repos
+      # must be mounted; use the container paths (/repos/...) as scan roots.
+      - ./server:/repos/katra-server:ro
+      - ../RankPilot:/repos/rankpilot:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
