@@ -12,16 +12,22 @@
  */
 import { describe, expect, it } from 'vitest';
 import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Db } from 'mongodb';
 import { extractFile } from '../../../src/services/code-graph/codebase-extractor.js';
 import {
   buildClassIndex,
   buildLabelIndex,
+  buildReturnTypeIndex,
   resolveCrossFileCalls,
 } from '../../../src/services/code-graph/cross-file-resolver.js';
-import type { CodeEdge, FileExtraction } from '../../../src/services/code-graph/types.js';
+import { rootKeyFor } from '../../../src/services/code-graph/code-graph-sync.js';
+import type {
+  CodeEdge,
+  CodeNode,
+  FileExtraction,
+} from '../../../src/services/code-graph/types.js';
 
 /** fixtures root: tests/fixtures → relPaths below are `code-graph/...`. */
 const fixturesRoot = fileURLToPath(new URL('../../fixtures', import.meta.url));
@@ -406,6 +412,249 @@ describe('resolveCrossFileCalls — typed member calls (F7)', () => {
     const resultB = await resolveCrossFileCalls(throwingDb, fixturesRoot, second);
     expect(resultA).toEqual(resultB);
     for (const relPath of MEMB_FILES) {
+      expect(callsEdges(first, relPath)).toEqual(callsEdges(second, relPath));
+    }
+  });
+});
+
+/* ── F8: cross-file return-type propagation ────────────────────────────── */
+
+/** Every ret-* fixture participates as a FRESH file (DB never needed). */
+const RET_FILES = [
+  'code-graph/ret-lib.ts',
+  'code-graph/ret-use-a.ts',
+  'code-graph/ret-use-b.ts',
+  'code-graph/ret-ambig-1.ts',
+  'code-graph/ret-ambig-2.ts',
+  'code-graph/ret-ambig-use.ts',
+  'code-graph/ret-importbound.ts',
+  'code-graph/ret-noretype.ts',
+];
+
+/** Extract every ret fixture into a fresh extraction map. */
+async function extractRetAll(): Promise<Map<string, FileExtraction>> {
+  const extractions = new Map<string, FileExtraction>();
+  for (const relPath of RET_FILES) {
+    extractions.set(
+      relPath,
+      await extractFile(
+        fixturesRoot,
+        relPath,
+        await readFile(join(fixturesRoot, relPath)),
+      ),
+    );
+  }
+  return extractions;
+}
+
+/** Fake Db returning canned `knowledge_nodes` docs from find().toArray(). */
+function fakeDb(docs: unknown[]): Db {
+  return {
+    collection() {
+      return {
+        find: () => ({ toArray: async () => docs }),
+      };
+    },
+  } as unknown as Db;
+}
+
+describe('buildReturnTypeIndex', () => {
+  it('keys annotated functions by label with their declared return type', async () => {
+    const lib = await extractFile(
+      fixturesRoot,
+      'code-graph/ret-lib.ts',
+      await readFile(join(fixturesRoot, 'code-graph/ret-lib.ts')),
+    );
+    const index = buildReturnTypeIndex(lib.nodes);
+    expect(index.get('makeEngine()')).toEqual([
+      { typeName: 'Engine', file: 'code-graph/ret-lib.ts' },
+    ]);
+    // Methods, classes, and unannotated functions never enter the index.
+    expect(index.get('.start()')).toBeUndefined();
+    expect(index.get('Engine')).toBeUndefined();
+  });
+
+  it('includes stored return types reconstructed from properties.return_type', async () => {
+    const stored: CodeNode[] = [
+      {
+        id: 'code_graph_ret_lib_makeengine',
+        label: 'makeEngine()',
+        kind: 'function',
+        sourceFile: 'code-graph/ret-lib.ts',
+        returnType: 'Engine',
+      },
+    ];
+    const index = buildReturnTypeIndex(stored);
+    expect(index.get('makeEngine()')).toEqual([
+      { typeName: 'Engine', file: 'code-graph/ret-lib.ts' },
+    ]);
+  });
+});
+
+describe('resolveCrossFileCalls — cross-file return-type propagation (F8)', () => {
+  it('resolves initializer receivers to the return type\'s method (INFERRED), import-bound and unique', async () => {
+    const extractions = await extractRetAll();
+    const result = await resolveCrossFileCalls(throwingDb, fixturesRoot, extractions);
+    expect(result).toEqual({ resolved: 10, skippedAmbiguous: 3, danglingDropped: 0 });
+
+    // ret-use-a: makeEngine() import-bound → Engine.start() INFERRED.
+    expect(callsEdges(extractions, 'code-graph/ret-use-a.ts')).toEqual([
+      'code_graph_ret_use_a_boot calls code_graph_ret_lib_makeengine EXTRACTED 1 code-graph/ret-use-a.ts L7',
+      'code_graph_ret_use_a_boot calls code_graph_ret_lib_engine_start INFERRED 1 code-graph/ret-use-a.ts L8',
+    ]);
+
+    // ret-use-b (F7 control): annotation receiver → EXTRACTED, unchanged
+    // (the member rawCall precedes the constructor rawCall in emission order).
+    expect(callsEdges(extractions, 'code-graph/ret-use-b.ts')).toEqual([
+      'code_graph_ret_use_b_typed calls code_graph_ret_lib_engine_stop EXTRACTED 1 code-graph/ret-use-b.ts L7',
+      'code_graph_ret_use_b_typed calls code_graph_ret_lib_engine EXTRACTED 1 code-graph/ret-use-b.ts L6',
+    ]);
+
+    // Ambiguous initializer without import evidence → skipped.
+    expect(callsEdges(extractions, 'code-graph/ret-ambig-use.ts')).toEqual([]);
+
+    // Import-bound initializer disambiguation: EngineA's method, not EngineB's.
+    expect(callsEdges(extractions, 'code-graph/ret-importbound.ts')).toEqual([
+      'code_graph_ret_importbound_bound calls code_graph_ret_ambig_1_makeit EXTRACTED 1 code-graph/ret-importbound.ts L7',
+      'code_graph_ret_importbound_bound calls code_graph_ret_ambig_1_enginea_goa INFERRED 1 code-graph/ret-importbound.ts L8',
+    ]);
+
+    // No-annotation initializer → one-hop guard keeps the member call skipped.
+    expect(callsEdges(extractions, 'code-graph/ret-noretype.ts')).toEqual([
+      'code_graph_ret_noretype_usesnotype calls code_graph_ret_noretype_notypefn EXTRACTED 1 code-graph/ret-noretype.ts ',
+      'code_graph_ret_noretype_notypefn calls code_graph_ret_lib_engine EXTRACTED 1 code-graph/ret-noretype.ts L7',
+    ]);
+  });
+
+  it('skips when the initializer return type has no matching class/method anywhere', async () => {
+    const extractions = await extractRetAll();
+    const missing: FileExtraction = {
+      nodes: [
+        {
+          id: 'code_graph_ret_missing',
+          label: 'ret-missing.ts',
+          kind: 'file',
+          sourceFile: 'code-graph/ret-missing.ts',
+          sourceLocation: 'L1',
+        },
+        {
+          id: 'code_graph_ret_missing_makething',
+          label: 'makeThing()',
+          kind: 'function',
+          sourceFile: 'code-graph/ret-missing.ts',
+          sourceLocation: 'L2',
+          returnType: 'NoSuchClass',
+        },
+        {
+          id: 'code_graph_ret_missing_use',
+          label: 'use()',
+          kind: 'function',
+          sourceFile: 'code-graph/ret-missing.ts',
+          sourceLocation: 'L3',
+        },
+      ],
+      edges: [],
+      errors: [],
+      rawCalls: [
+        {
+          caller: 'code_graph_ret_missing_use',
+          callee: 'ping',
+          kind: 'method',
+          sourceLocation: 'L3',
+          receiver: {
+            name: 't',
+            typeSource: 'return_flow',
+            initializerCall: 'makeThing',
+          },
+        },
+      ],
+    };
+    extractions.set('code-graph/ret-missing.ts', missing);
+
+    const result = await resolveCrossFileCalls(throwingDb, fixturesRoot, extractions);
+    // 3 fixture skips (2 ambiguous + 1 no-annotation) + the missing-class skip.
+    expect(result.skippedAmbiguous).toBe(4);
+    expect(result.resolved).toBe(10);
+    expect(callsEdges(extractions, 'code-graph/ret-missing.ts')).toEqual([]);
+    // No class or method node was invented anywhere.
+    const nodes = [...extractions.values()].flatMap((e) => e.nodes);
+    expect(nodes.some((n) => n.id.includes('nosuchclass'))).toBe(false);
+  });
+
+  it('reconstructs unchanged files\' return types from stored properties.return_type', async () => {
+    // Only ret-use-a.ts is FRESH; ret-lib.ts is unchanged and stands in via
+    // the DB — its makeEngine()'s return type must come from
+    // properties.return_type (root-scoped stored ids, katra-code shape).
+    const rootKey = rootKeyFor(resolve(fixturesRoot));
+    const storedDoc = (
+      bareId: string,
+      name: string,
+      type: string,
+      sourceFile: string,
+      extra?: Record<string, unknown>,
+    ): Record<string, unknown> => ({
+      id: `graphify:${rootKey}:${bareId}`,
+      name,
+      type,
+      properties: {
+        name,
+        source_path: sourceFile,
+        source_file: sourceFile,
+        code_root: resolve(fixturesRoot),
+        ...extra,
+      },
+      source: 'katra-code',
+    });
+
+    const extractions = new Map<string, FileExtraction>();
+    extractions.set(
+      'code-graph/ret-use-a.ts',
+      await extractFile(
+        fixturesRoot,
+        'code-graph/ret-use-a.ts',
+        await readFile(join(fixturesRoot, 'code-graph/ret-use-a.ts')),
+      ),
+    );
+
+    const db = fakeDb([
+      storedDoc('code_graph_ret_lib', 'ret-lib.ts', 'file', 'code-graph/ret-lib.ts'),
+      storedDoc('code_graph_ret_lib_engine', 'Engine', 'class', 'code-graph/ret-lib.ts'),
+      storedDoc(
+        'code_graph_ret_lib_engine_start',
+        '.start()',
+        'method',
+        'code-graph/ret-lib.ts',
+      ),
+      storedDoc(
+        'code_graph_ret_lib_engine_stop',
+        '.stop()',
+        'method',
+        'code-graph/ret-lib.ts',
+      ),
+      storedDoc(
+        'code_graph_ret_lib_makeengine',
+        'makeEngine()',
+        'function',
+        'code-graph/ret-lib.ts',
+        { return_type: 'Engine' },
+      ),
+    ]);
+
+    const result = await resolveCrossFileCalls(db, fixturesRoot, extractions);
+    expect(result).toEqual({ resolved: 2, skippedAmbiguous: 0, danglingDropped: 0 });
+    expect(callsEdges(extractions, 'code-graph/ret-use-a.ts')).toEqual([
+      'code_graph_ret_use_a_boot calls code_graph_ret_lib_makeengine EXTRACTED 1 code-graph/ret-use-a.ts L7',
+      'code_graph_ret_use_a_boot calls code_graph_ret_lib_engine_start INFERRED 1 code-graph/ret-use-a.ts L8',
+    ]);
+  });
+
+  it('is deterministic — two independent runs produce identical F8 edges', async () => {
+    const first = await extractRetAll();
+    const second = await extractRetAll();
+    const resultA = await resolveCrossFileCalls(throwingDb, fixturesRoot, first);
+    const resultB = await resolveCrossFileCalls(throwingDb, fixturesRoot, second);
+    expect(resultA).toEqual(resultB);
+    for (const relPath of RET_FILES) {
       expect(callsEdges(first, relPath)).toEqual(callsEdges(second, relPath));
     }
   });

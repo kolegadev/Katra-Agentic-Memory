@@ -44,6 +44,12 @@ export interface LabelIndexEntry {
   file: string;
 }
 
+/** F8: one declared return type for a function label, with its source file. */
+export interface ReturnTypeIndexEntry {
+  typeName: string;
+  file: string;
+}
+
 /** relPath minus its final extension (`a/b.ts` → `a/b`). */
 function fileStem(relPath: string): string {
   return relPath.replace(/\.[^./]+$/, '');
@@ -98,6 +104,29 @@ export function buildClassIndex(
     const existing = index.get(label);
     if (existing) existing.push(entry);
     else index.set(label, [entry]);
+  }
+  return index;
+}
+
+/**
+ * Return-type index (F8): function nodes that declare a `returnType`, keyed
+ * by their exact label (`name()`). Built from the same node set as the label
+ * index (fresh extractions + stored nodes of unchanged files) — the basis
+ * for cross-file return-type propagation of call-initializer receivers.
+ * Method nodes never enter this index (their labels are `.name()`).
+ */
+export function buildReturnTypeIndex(
+  nodes: CodeNode[],
+): Map<string, ReturnTypeIndexEntry[]> {
+  const index = new Map<string, ReturnTypeIndexEntry[]>();
+  for (const node of nodes) {
+    if (node.kind !== 'function' || !node.returnType) continue;
+    const key = node.label;
+    if (!key) continue;
+    const entry: ReturnTypeIndexEntry = { typeName: node.returnType, file: node.sourceFile };
+    const existing = index.get(key);
+    if (existing) existing.push(entry);
+    else index.set(key, [entry]);
   }
   return index;
 }
@@ -224,6 +253,7 @@ export async function resolveCrossFileCalls(
     dbNodes = docs.flatMap((doc): CodeNode[] => {
       const storedId = doc.id;
       const sourceFile = doc.properties?.source_file;
+      const returnType = doc.properties?.return_type;
       if (
         typeof storedId !== 'string' ||
         !storedId.startsWith(prefix) ||
@@ -231,14 +261,18 @@ export async function resolveCrossFileCalls(
       ) {
         return [];
       }
-      return [
-        {
-          id: storedId.slice(prefix.length),
-          label: String(doc.name ?? ''),
-          kind: doc.type as CodeNode['kind'],
-          sourceFile,
-        },
-      ];
+      const node: CodeNode = {
+        id: storedId.slice(prefix.length),
+        label: String(doc.name ?? ''),
+        kind: doc.type as CodeNode['kind'],
+        sourceFile,
+      };
+      // F8: unchanged files' declared return types are reconstructed from
+      // their stored `properties.return_type` (only when present).
+      if (typeof returnType === 'string' && returnType !== '') {
+        node.returnType = returnType;
+      }
+      return [node];
     });
   } catch {
     dbNodes = []; // best-effort: DB unavailable → fresh nodes only
@@ -247,6 +281,7 @@ export async function resolveCrossFileCalls(
   const allNodes = [...freshNodes, ...dbNodes];
   const index = buildLabelIndex(allNodes);
   const classIndex = buildClassIndex(allNodes);
+  const returnTypeIndex = buildReturnTypeIndex(allNodes);
   // Method node ids actually present (`.name()` entries) — a typed member
   // call only ever targets an EXISTING method node (never invented).
   const methodIds = new Set(
@@ -318,6 +353,77 @@ export async function resolveCrossFileCalls(
           rawCall,
           { id: methodId, file: chosen.file },
           confidence,
+          relPath,
+        );
+        resolved++;
+        continue;
+      }
+
+      // F8: a member call whose receiver is initialized by a call to a
+      // function typed ELSEWHERE (`const svc = getService(); svc.start()`)
+      // resolves through the global return-type index — ONE propagation hop
+      // only (an initializer whose function declares no returnType is
+      // already absent from the index). The receiver fact carries the bare
+      // initializer callee and no in-file typeName; every lookup failure
+      // skips (god-node guard, never falls through to the name ladder).
+      if (rawCall.kind === 'method' && rawCall.receiver?.initializerCall) {
+        const initializer = rawCall.receiver.initializerCall.trim();
+        const seenReturnTypes = new Set<string>();
+        const retCandidates = (returnTypeIndex.get(`${initializer}()`) ?? []).filter(
+          (entry) => {
+            const key = `${entry.typeName}\u0000${entry.file}`;
+            if (seenReturnTypes.has(key)) return false;
+            seenReturnTypes.add(key);
+            return true;
+          },
+        );
+        const returnTypeMatchesImport = (
+          candidate: ReturnTypeIndexEntry,
+        ): boolean => {
+          const fileId = makeId(fileStem(candidate.file));
+          for (const imported of importedFileIds) {
+            if (fileId === imported) return true;
+          }
+          return false;
+        };
+        // 1. initializerCall lookup: import evidence, else unique global.
+        let chosen: ReturnTypeIndexEntry | null = null;
+        if (retCandidates.length > 0) {
+          const importMatches = retCandidates.filter(returnTypeMatchesImport);
+          if (importMatches.length === 1) chosen = importMatches[0];
+          else if (retCandidates.length === 1) chosen = retCandidates[0];
+        }
+        if (chosen === null) {
+          skippedAmbiguous++;
+          continue;
+        }
+        // 2. Return type → class candidates: EXACTLY the F7 class-name index
+        //    path (import-bound preference, else unique global, else skip).
+        const typeCandidates = dedupeCandidates(
+          classIndex.get(chosen.typeName) ?? [],
+        );
+        let chosenClass: LabelIndexEntry | null = null;
+        if (typeCandidates.length > 0) {
+          const importMatches = typeCandidates.filter(candidateMatchesImport);
+          if (importMatches.length === 1) chosenClass = importMatches[0];
+          else if (typeCandidates.length === 1) chosenClass = typeCandidates[0];
+        }
+        if (chosenClass === null) {
+          skippedAmbiguous++;
+          continue;
+        }
+        // 3. The method node must EXIST (god-node guard: never invent).
+        const retMethodId = makeId(chosenClass.id, callee);
+        if (!methodIds.has(retMethodId)) {
+          skippedAmbiguous++;
+          continue;
+        }
+        // Return-flow provenance → INFERRED (F7 confidence rule).
+        pushResolvedEdge(
+          extraction,
+          rawCall,
+          { id: retMethodId, file: chosenClass.file },
+          'INFERRED',
           relPath,
         );
         resolved++;

@@ -55,6 +55,12 @@ export interface CodeNode {
   kind: CodeNodeKind;
   sourceFile: string;
   sourceLocation?: string;
+  /**
+   * F8: declared return type of a TS/TSX/JS function or method, reduced to
+   * the last segment of the annotation with generics stripped (same rules
+   * as the F7 receiver facts). Absent for builtins/unions and Python.
+   */
+  returnType?: string;
 }
 
 export type CodeRelation =
@@ -98,6 +104,13 @@ export interface RawCall {
     name: string;
     typeName?: string;
     typeSource: 'annotation' | 'new' | 'parameter' | 'return_flow' | 'this';
+    /**
+     * F8: bare callee name of a call initializer (`const x = f()` → `f`)
+     * when the extractor cannot resolve f's return type within the file.
+     * Present only when `typeName` is absent; resolved cross-file by the
+     * return-type index (one propagation hop, never persisted).
+     */
+    initializerCall?: string;
   };
 }
 

@@ -413,13 +413,18 @@ function emitMethod(
   const name = node.childForFieldName('name')?.text;
   if (!name) return;
   const id = makeId(classId, name);
-  state.nodes.push({
+  const methodNode: CodeNode = {
     id,
     label: `.${name}()`,
     kind: 'method',
     sourceFile: state.relPath,
     sourceLocation: sourceLocation(node),
-  });
+  };
+  if (cfg.receiverTyping) {
+    const returnType = annotatedTypeName(node.childForFieldName('return_type'));
+    if (returnType) methodNode.returnType = returnType;
+  }
+  state.nodes.push(methodNode);
   pushEdge(state, classId, id, 'method');
   pushIndex(state.labelIndex, `.${name}()`, id);
   const body = node.childForFieldName('body');
@@ -435,13 +440,18 @@ function emitFunction(
   const name = nameOverride ?? node.childForFieldName('name')?.text;
   if (!name) return;
   const id = makeId(state.stem, name);
-  state.nodes.push({
+  const functionNode: CodeNode = {
     id,
     label: `${name}()`,
     kind: 'function',
     sourceFile: state.relPath,
     sourceLocation: sourceLocation(node),
-  });
+  };
+  if (cfg.receiverTyping) {
+    const returnType = annotatedTypeName(node.childForFieldName('return_type'));
+    if (returnType) functionNode.returnType = returnType;
+  }
+  state.nodes.push(functionNode);
   pushEdge(state, state.fileId, id, 'contains');
   pushIndex(state.labelIndex, `${name}()`, id);
   const body = node.childForFieldName('body');
@@ -606,8 +616,16 @@ const TS_BUILTIN_TYPES = new Set([
 
 /** A resolved name → type binding within one scope (F7). */
 interface ReceiverTypeFact {
-  typeName: string;
+  typeName?: string;
   typeSource: 'annotation' | 'new' | 'parameter' | 'return_flow';
+  /**
+   * F8: bare callee name of a call-initializer whose return type is NOT
+   * resolvable within this file (`const x = makeEngine(); x.start()` where
+   * `makeEngine` is undeclared here or lacks a return annotation). Present
+   * only when `typeName` is absent; the cross-file resolver looks the
+   * callee up in the global return-type index (one hop, never persisted).
+   */
+  initializerCall?: string;
 }
 
 /** Call-site snapshot: visible bindings + innermost enclosing class name. */
@@ -769,6 +787,14 @@ function collectReceiverCallInfo(rootNode: Node): Map<number, ReceiverCallInfo> 
               const typeName = returnTypes.get(fn.text);
               if (typeName) {
                 current().set(nameNode.text, { typeName, typeSource: 'return_flow' });
+              } else {
+                // F8: the initializer's return type is not resolvable same-file
+                // (undeclared here, or declared without a return annotation) —
+                // record the bare callee for cross-file return-type propagation.
+                current().set(nameNode.text, {
+                  typeSource: 'return_flow',
+                  initializerCall: fn.text,
+                });
               }
             }
           }
@@ -816,7 +842,18 @@ function receiverForCall(
   }
   const fact = snapshot.bindings.get(object.text);
   if (!fact) return undefined;
-  return { name: object.text, typeName: fact.typeName, typeSource: fact.typeSource };
+  if (fact.typeName) {
+    return { name: object.text, typeName: fact.typeName, typeSource: fact.typeSource };
+  }
+  if (fact.initializerCall) {
+    // F8: cross-file return-type propagation fact — no in-file typeName.
+    return {
+      name: object.text,
+      typeSource: 'return_flow',
+      initializerCall: fact.initializerCall,
+    };
+  }
+  return undefined;
 }
 
 /** Dedupe edges by from|relation|to, preserving first-occurrence order. */

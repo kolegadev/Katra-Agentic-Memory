@@ -750,3 +750,108 @@ describe('extractFile — member-call receiver facts (F7)', () => {
     expect(result.rawCalls).toBeUndefined();
   });
 });
+
+describe('extractFile — F8 return types and initializer receivers', () => {
+  it('captures node.returnType on annotated functions/methods (qualified/generic stripped)', async () => {
+    const result = await extractFile(
+      fixturesRoot,
+      'code-graph/ret-qualified.ts',
+      [
+        'class Widget { clone(): Widget { return this; } }',
+        'export function makeA(): ns.Widget { return null as any; }',
+        'export function makeB(): Array<Widget> { return []; }',
+        'export function makeC(): Promise<Widget[]> { return Promise.resolve([]); }',
+        'export function noType() { return null; }',
+        'export function voidRet(): void {}',
+      ].join('\n'),
+    );
+    expect(result.errors).toEqual([]);
+    const byLabel = new Map(result.nodes.map((n) => [n.label, n]));
+    // `ns.Widget` → `Widget` (last qualified segment); `Array<Widget>` →
+    // `Array`, `Promise<Widget[]>` → `Promise` (generics stripped).
+    expect(byLabel.get('makeA()')!.returnType).toBe('Widget');
+    expect(byLabel.get('makeB()')!.returnType).toBe('Array');
+    expect(byLabel.get('makeC()')!.returnType).toBe('Promise');
+    // Method annotations count too.
+    expect(byLabel.get('.clone()')!.returnType).toBe('Widget');
+    // Unannotated and builtin (`void`) returns carry NO returnType.
+    expect(byLabel.get('noType()')!.returnType).toBeUndefined();
+    expect(byLabel.get('voidRet()')!.returnType).toBeUndefined();
+  });
+
+  it('emits initializerCall receiver facts on ret-use-a.ts (no typeName)', async () => {
+    const result = await extract('code-graph/ret-use-a.ts');
+    expect(result.errors).toEqual([]);
+    expect(nodeLines(result.nodes)).toEqual([
+      'code_graph_ret_use_a | ret-use-a.ts | file | L1',
+      'code_graph_ret_use_a_boot | boot() | function | L6',
+    ]);
+    expect(result.rawCalls).toEqual([
+      {
+        caller: 'code_graph_ret_use_a_boot',
+        callee: 'makeEngine',
+        kind: 'function',
+        sourceLocation: 'L7',
+      },
+      {
+        caller: 'code_graph_ret_use_a_boot',
+        callee: 'start',
+        kind: 'method',
+        sourceLocation: 'L8',
+        receiver: {
+          name: 'e',
+          typeSource: 'return_flow',
+          initializerCall: 'makeEngine',
+        },
+      },
+    ]);
+  });
+
+  it('keeps the F7 same-file return-flow behavior (typeName set, no initializerCall)', async () => {
+    const result = await extract('code-graph/memb-use-d.ts');
+    expect(result.rawCalls).toEqual([
+      {
+        caller: 'code_graph_memb_use_d_makestore',
+        callee: 'Store',
+        kind: 'constructor',
+        sourceLocation: 'L3',
+      },
+      {
+        caller: 'code_graph_memb_use_d_flow',
+        callee: 'count',
+        kind: 'method',
+        sourceLocation: 'L4',
+        receiver: { name: 's', typeName: 'Store', typeSource: 'return_flow' },
+      },
+    ]);
+  });
+
+  it('records returnType only for TS/JS configurations, never Python', async () => {
+    const py = await extractFile(
+      fixturesRoot,
+      'code-graph/retpy.py',
+      'class A:\n    pass\n\ndef make() -> "A":\n    return A()\n',
+    );
+    expect(py.errors).toEqual([]);
+    for (const node of py.nodes) {
+      expect(node.returnType).toBeUndefined();
+    }
+  });
+
+  it('captures returnType on arrow functions carrying their own return annotation', async () => {
+    const result = await extractFile(
+      fixturesRoot,
+      'code-graph/ret-var.ts',
+      [
+        'export const makeW = (): Widget => null as any;',
+        // Annotation on the VARIABLE (a function type), not on the arrow
+        // itself → the arrow has no return_type field → no returnType.
+        'export const makeV: () => Widget = () => null as any;',
+      ].join('\n'),
+    );
+    expect(result.errors).toEqual([]);
+    const byLabel = new Map(result.nodes.map((n) => [n.label, n]));
+    expect(byLabel.get('makeW()')!.returnType).toBe('Widget');
+    expect(byLabel.get('makeV()')!.returnType).toBeUndefined();
+  });
+});

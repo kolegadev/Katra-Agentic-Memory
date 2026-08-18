@@ -892,6 +892,85 @@ describe.skipIf(!mongoAvailable)('CodeGraphSync', () => {
     });
   });
 
+  it('persists properties.return_type only for nodes that declare one (F8)', async () => {
+    const extraction: FileExtraction = {
+      nodes: [
+        {
+          id: 'src_rt',
+          label: 'rt.ts',
+          kind: 'file',
+          sourceFile: 'src/rt.ts',
+          sourceLocation: 'L1',
+        },
+        {
+          id: 'src_rt_make',
+          label: 'make()',
+          kind: 'function',
+          sourceFile: 'src/rt.ts',
+          sourceLocation: 'L2',
+          returnType: 'Engine',
+        },
+        {
+          id: 'src_rt_plain',
+          label: 'plain()',
+          kind: 'function',
+          sourceFile: 'src/rt.ts',
+          sourceLocation: 'L3',
+        },
+      ],
+      edges: [
+        {
+          from: 'src_rt',
+          to: 'src_rt_make',
+          relation: 'contains',
+          confidence: 'EXTRACTED',
+          weight: 1,
+          sourceFile: 'src/rt.ts',
+        },
+        {
+          from: 'src_rt',
+          to: 'src_rt_plain',
+          relation: 'contains',
+          confidence: 'EXTRACTED',
+          weight: 1,
+          sourceFile: 'src/rt.ts',
+        },
+      ],
+      errors: [],
+    };
+
+    const result = await sync.sync(
+      ROOT,
+      cs({ added: ['src/rt.ts'], total: 1 }),
+      new Map([['src/rt.ts', extraction]]),
+    );
+    expect(result.nodesUpserted).toBe(3);
+    expect(result.edgesUpserted).toBe(2);
+
+    const withType = await nodes().findOne({ id: nid('src_rt_make') });
+    expect(withType).not.toBeNull();
+    expect(withType!.properties.return_type).toBe('Engine');
+    expect(Object.keys(withType!.properties).sort()).toEqual([
+      'code_language',
+      'code_root',
+      'name',
+      'return_type',
+      'source_file',
+      'source_path',
+      'summary',
+    ]);
+
+    // Nodes WITHOUT a return type never gain the key.
+    const withoutType = await nodes().findOne({ id: nid('src_rt_plain') });
+    expect(withoutType).not.toBeNull();
+    expect(withoutType!.properties.return_type).toBeUndefined();
+    expect('return_type' in withoutType!.properties).toBe(false);
+
+    const fileNode = await nodes().findOne({ id: nid('src_rt') });
+    expect(fileNode).not.toBeNull();
+    expect('return_type' in fileNode!.properties).toBe(false);
+  });
+
   it('splits bulk upserts into chunks of ≤ 500 ops', async () => {
     const fnNames = Array.from({ length: 1200 }, (_, i) => `fn${i}`);
     const result = await sync.sync(
