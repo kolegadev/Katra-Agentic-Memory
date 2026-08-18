@@ -25,6 +25,13 @@
  * method node exists (never invented). Confidence is EXTRACTED for
  * annotation/new/parameter/this receivers and INFERRED for return_flow.
  *
+ * F8 extends F7 to cross-file return-type propagation: a receiver whose
+ * initializer call has no in-file type (`const svc = getService(); …`) is
+ * looked up in a global return-type index and resolved through the same
+ * class-name path. A successful F8 resolution consumes the call; an F8
+ * lookup failure FALLS THROUGH to the name-based ladder, whose uniqueness
+ * requirement keeps the god-node guard intact.
+ *
  * The resolver NEVER adds nodes and NEVER guesses: ambiguous calls are
  * skipped, dangling calls are counted and dropped. All ids on emitted edges
  * are BARE extraction ids (the sync layer re-applies the root scope).
@@ -457,10 +464,14 @@ export async function resolveCrossFileCalls(
       // F8: a member call whose receiver is initialized by a call to a
       // function typed ELSEWHERE (`const svc = getService(); svc.start()`)
       // resolves through the global return-type index — ONE propagation hop
-      // only (an initializer whose function declares no returnType is
-      // already absent from the index). The receiver fact carries the bare
-      // initializer callee and no in-file typeName; every lookup failure
-      // skips (god-node guard, never falls through to the name ladder).
+      // only. The receiver fact carries the bare initializer callee and no
+      // in-file typeName. On SUCCESS the edge is emitted and the ladder is
+      // NOT consulted again (no double-emit). On ANY lookup failure (unknown
+      // initializer, ambiguous initializer, unknown class, missing method
+      // node) the branch FALLS THROUGH to the generic F6 ladder below, which
+      // may still resolve the rawCall as a receiver-less-style unique
+      // `.name()` lookup (INFERRED) — the ladder's uniqueness requirement is
+      // the god-node guard, so falling through can never invent anything.
       if (rawCall.kind === 'method' && rawCall.receiver?.initializerCall) {
         const initializer = rawCall.receiver.initializerCall.trim();
         const seenReturnTypes = new Set<string>();
@@ -483,7 +494,8 @@ export async function resolveCrossFileCalls(
         };
         // 1. initializerCall lookup: import evidence first (unaffected by
         //    test/non-test), else non-test preference before the
-        //    unique-global fallback (Graphify disambiguate stage 1).
+        //    unique-global fallback (Graphify disambiguate stage 1). A
+        //    failed lookup does NOT skip — the F6 ladder gets its chance.
         let chosen: ReturnTypeIndexEntry | null = null;
         if (retCandidates.length > 0) {
           const importMatches = retCandidates.filter(returnTypeMatchesImport);
@@ -493,41 +505,39 @@ export async function resolveCrossFileCalls(
             if (preferred.length === 1) chosen = preferred[0];
           }
         }
-        if (chosen === null) {
-          skippedAmbiguous++;
-          continue;
+        let f8Resolved = false;
+        if (chosen !== null) {
+          // 2. Return type → class candidates: EXACTLY the F7 class-name index
+          //    path (import-bound preference, non-test preference, else unique
+          //    global, else skip). Failure falls through to the F6 ladder.
+          const typeCandidates = dedupeCandidates(
+            classIndex.get(chosen.typeName) ?? [],
+          );
+          const chosenClass = chooseClassCandidate(
+            typeCandidates,
+            relPath,
+            candidateMatchesImport,
+          );
+          if (chosenClass !== null) {
+            // 3. The method node must EXIST (god-node guard: never invent).
+            //    Missing method → fall through to the F6 ladder.
+            const retMethodId = makeId(chosenClass.id, callee);
+            if (methodIds.has(retMethodId)) {
+              // Return-flow provenance → INFERRED (F7 confidence rule).
+              pushResolvedEdge(
+                extraction,
+                rawCall,
+                { id: retMethodId, file: chosenClass.file },
+                'INFERRED',
+                relPath,
+              );
+              resolved++;
+              f8Resolved = true;
+            }
+          }
         }
-        // 2. Return type → class candidates: EXACTLY the F7 class-name index
-        //    path (import-bound preference, non-test preference, else unique
-        //    global, else skip).
-        const typeCandidates = dedupeCandidates(
-          classIndex.get(chosen.typeName) ?? [],
-        );
-        const chosenClass = chooseClassCandidate(
-          typeCandidates,
-          relPath,
-          candidateMatchesImport,
-        );
-        if (chosenClass === null) {
-          skippedAmbiguous++;
-          continue;
-        }
-        // 3. The method node must EXIST (god-node guard: never invent).
-        const retMethodId = makeId(chosenClass.id, callee);
-        if (!methodIds.has(retMethodId)) {
-          skippedAmbiguous++;
-          continue;
-        }
-        // Return-flow provenance → INFERRED (F7 confidence rule).
-        pushResolvedEdge(
-          extraction,
-          rawCall,
-          { id: retMethodId, file: chosenClass.file },
-          'INFERRED',
-          relPath,
-        );
-        resolved++;
-        continue;
+        if (f8Resolved) continue;
+        // Fall through: the generic F6 ladder below gets its chance.
       }
 
       const key = INDEX_KEY_FOR_KIND[rawCall.kind](callee);

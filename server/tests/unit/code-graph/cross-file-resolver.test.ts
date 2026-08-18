@@ -497,7 +497,7 @@ describe('resolveCrossFileCalls — cross-file return-type propagation (F8)', ()
   it('resolves initializer receivers to the return type\'s method (INFERRED), import-bound and unique', async () => {
     const extractions = await extractRetAll();
     const result = await resolveCrossFileCalls(throwingDb, fixturesRoot, extractions);
-    expect(result).toEqual({ resolved: 10, skippedAmbiguous: 3, danglingDropped: 0 });
+    expect(result).toEqual({ resolved: 11, skippedAmbiguous: 2, danglingDropped: 0 });
 
     // ret-use-a: makeEngine() import-bound → Engine.start() INFERRED.
     expect(callsEdges(extractions, 'code-graph/ret-use-a.ts')).toEqual([
@@ -512,8 +512,11 @@ describe('resolveCrossFileCalls — cross-file return-type propagation (F8)', ()
       'code_graph_ret_use_b_typed calls code_graph_ret_lib_engine EXTRACTED 1 code-graph/ret-use-b.ts L6',
     ]);
 
-    // Ambiguous initializer without import evidence → skipped.
-    expect(callsEdges(extractions, 'code-graph/ret-ambig-use.ts')).toEqual([]);
+    // Ambiguous initializer without import evidence → the F8 lookup fails →
+    // falls through to the F6 ladder: `.goA()` is globally unique → INFERRED.
+    expect(callsEdges(extractions, 'code-graph/ret-ambig-use.ts')).toEqual([
+      'code_graph_ret_ambig_use_useambiguous calls code_graph_ret_ambig_1_enginea_goa INFERRED 1 code-graph/ret-ambig-use.ts L6',
+    ]);
 
     // Import-bound initializer disambiguation: EngineA's method, not EngineB's.
     expect(callsEdges(extractions, 'code-graph/ret-importbound.ts')).toEqual([
@@ -521,14 +524,31 @@ describe('resolveCrossFileCalls — cross-file return-type propagation (F8)', ()
       'code_graph_ret_importbound_bound calls code_graph_ret_ambig_1_enginea_goa INFERRED 1 code-graph/ret-importbound.ts L8',
     ]);
 
-    // No-annotation initializer → one-hop guard keeps the member call skipped.
+    // No-annotation initializer → the F8 lookup fails → falls through to the
+    // F6 ladder: `.stop()` is globally unique → INFERRED; `.halt()` is
+    // ambiguous (HalterA/HalterB) → still skipped (god-node guard).
     expect(callsEdges(extractions, 'code-graph/ret-noretype.ts')).toEqual([
       'code_graph_ret_noretype_usesnotype calls code_graph_ret_noretype_notypefn EXTRACTED 1 code-graph/ret-noretype.ts ',
-      'code_graph_ret_noretype_notypefn calls code_graph_ret_lib_engine EXTRACTED 1 code-graph/ret-noretype.ts L7',
+      'code_graph_ret_noretype_usesambig calls code_graph_ret_noretype_notypefn EXTRACTED 1 code-graph/ret-noretype.ts ',
+      'code_graph_ret_noretype_usesnotype calls code_graph_ret_lib_engine_stop INFERRED 1 code-graph/ret-noretype.ts L20',
     ]);
   });
 
-  it('skips when the initializer return type has no matching class/method anywhere', async () => {
+  it('a successful F8 resolution emits exactly ONE INFERRED edge (the ladder never double-emits)', async () => {
+    const extractions = await extractRetAll();
+    await resolveCrossFileCalls(throwingDb, fixturesRoot, extractions);
+    // ret-use-a's `e.start()` resolves through F8 (makeEngine → Engine); the
+    // `continue` after success must prevent the F6 ladder from appending a
+    // second edge to the same method node.
+    const startEdges = callsEdges(extractions, 'code-graph/ret-use-a.ts').filter(
+      (edge) => edge.includes('code_graph_ret_lib_engine_start'),
+    );
+    expect(startEdges).toEqual([
+      'code_graph_ret_use_a_boot calls code_graph_ret_lib_engine_start INFERRED 1 code-graph/ret-use-a.ts L8',
+    ]);
+  });
+
+  it('falls through when the initializer return type matches no class — the label is dangling-dropped (never invents nodes)', async () => {
     const extractions = await extractRetAll();
     const missing: FileExtraction = {
       nodes: [
@@ -574,9 +594,9 @@ describe('resolveCrossFileCalls — cross-file return-type propagation (F8)', ()
     extractions.set('code-graph/ret-missing.ts', missing);
 
     const result = await resolveCrossFileCalls(throwingDb, fixturesRoot, extractions);
-    // 3 fixture skips (2 ambiguous + 1 no-annotation) + the missing-class skip.
-    expect(result.skippedAmbiguous).toBe(4);
-    expect(result.resolved).toBe(10);
+    // Unknown class → F8 fails → falls through → `.ping()` exists nowhere →
+    // danglingDropped (not skippedAmbiguous): 2 fixture skips + 1 drop.
+    expect(result).toEqual({ resolved: 11, skippedAmbiguous: 2, danglingDropped: 1 });
     expect(callsEdges(extractions, 'code-graph/ret-missing.ts')).toEqual([]);
     // No class or method node was invented anywhere.
     const nodes = [...extractions.values()].flatMap((e) => e.nodes);
@@ -814,9 +834,9 @@ describe('resolveCrossFileCalls — Graphify test-path preference (F8 gate regre
       startCaller('code-graph/real-svc.ts', 'code_graph_real_svc_run', 'code_graph_real_svc'),
     );
     const result = await resolveCrossFileCalls(throwingDb, fixturesRoot, extractions);
-    // F8 baseline (10 resolved / 3 ambiguous) + the one preference-narrowed
+    // F8 baseline (11 resolved / 2 ambiguous) + the one preference-narrowed
     // resolution: the skipped-ambiguous count DECREASES for this shape.
-    expect(result).toEqual({ resolved: 11, skippedAmbiguous: 3, danglingDropped: 0 });
+    expect(result).toEqual({ resolved: 12, skippedAmbiguous: 2, danglingDropped: 0 });
     expect(callsEdges(extractions, 'code-graph/real-svc.ts')).toEqual([
       'code_graph_real_svc_run calls code_graph_ret_lib_engine_start INFERRED 1 code-graph/real-svc.ts L2',
     ]);
@@ -829,7 +849,7 @@ describe('resolveCrossFileCalls — Graphify test-path preference (F8 gate regre
       startCaller('code-graph/real-svc.ts', 'code_graph_real_svc_run', 'code_graph_real_svc'),
     );
     const result = await resolveCrossFileCalls(throwingDb, fixturesRoot, extractions);
-    expect(result).toEqual({ resolved: 11, skippedAmbiguous: 3, danglingDropped: 0 });
+    expect(result).toEqual({ resolved: 12, skippedAmbiguous: 2, danglingDropped: 0 });
     expect(callsEdges(extractions, 'code-graph/real-svc.ts')).toEqual([
       'code_graph_real_svc_run calls code_graph_ret_lib_engine_start INFERRED 1 code-graph/real-svc.ts L2',
     ]);
@@ -856,7 +876,7 @@ describe('resolveCrossFileCalls — Graphify test-path preference (F8 gate regre
       startCaller('code-graph/plain.test.ts', 'code_graph_plain_test_check', 'code_graph_plain_test'),
     );
     const result = await resolveCrossFileCalls(throwingDb, fixturesRoot, extractions);
-    expect(result).toEqual({ resolved: 11, skippedAmbiguous: 4, danglingDropped: 0 });
+    expect(result).toEqual({ resolved: 12, skippedAmbiguous: 3, danglingDropped: 0 });
     expect(callsEdges(extractions, 'code-graph/use-shutdown.test.ts')).toEqual([
       'code_graph_use_shutdown_test_toggle calls code_graph_start_test_shutdown_start EXTRACTED 1 code-graph/use-shutdown.test.ts L2',
     ]);
@@ -896,7 +916,7 @@ describe('resolveCrossFileCalls — Graphify test-path preference (F8 gate regre
       ],
     });
     const result = await resolveCrossFileCalls(throwingDb, fixturesRoot, extractions);
-    expect(result).toEqual({ resolved: 11, skippedAmbiguous: 3, danglingDropped: 0 });
+    expect(result).toEqual({ resolved: 12, skippedAmbiguous: 2, danglingDropped: 0 });
     expect(callsEdges(extractions, 'code-graph/typed-svc.ts')).toEqual([
       'code_graph_typed_svc_run calls code_graph_ret_lib_engine_start EXTRACTED 1 code-graph/typed-svc.ts L2',
     ]);
@@ -935,9 +955,41 @@ describe('resolveCrossFileCalls — Graphify test-path preference (F8 gate regre
       ],
     });
     const result = await resolveCrossFileCalls(throwingDb, fixturesRoot, extractions);
-    expect(result).toEqual({ resolved: 11, skippedAmbiguous: 3, danglingDropped: 0 });
+    expect(result).toEqual({ resolved: 12, skippedAmbiguous: 2, danglingDropped: 0 });
     expect(callsEdges(extractions, 'code-graph/svc-factory.ts')).toEqual([
       'code_graph_svc_factory_run calls code_graph_ret_lib_engine_start INFERRED 1 code-graph/svc-factory.ts L2',
     ]);
+  });
+
+  it('F8 lookup failure falls through to the F6 ladder with test-path preference (live gate shape)', async () => {
+    // Live shape: `const e = makeX(); e.start()` in a NON-test file where
+    // makeX() has NO returnType anywhere → the F8 initializer lookup fails →
+    // falls through. `.start()` has candidates in a test file (start.test.ts)
+    // AND a non-test file (ret-lib.ts) → the F6 ladder's test-path preference
+    // narrows to the NON-test method (INFERRED).
+    const extractions = await extractRetAll();
+    extractions.set(START_TEST_FIXTURE, await extractStartTestFixture());
+    extractions.set(
+      'code-graph/ret-fallback.ts',
+      await extractFile(
+        fixturesRoot,
+        'code-graph/ret-fallback.ts',
+        await readFile(join(fixturesRoot, 'code-graph/ret-fallback.ts')),
+      ),
+    );
+    const result = await resolveCrossFileCalls(throwingDb, fixturesRoot, extractions);
+    // F8 baseline (11/2) + the one fall-through resolution.
+    expect(result).toEqual({ resolved: 12, skippedAmbiguous: 2, danglingDropped: 0 });
+    // The in-file makeX() call keeps its extraction-time edge; `e.start()`
+    // resolves to the NON-test Engine.start() (never the test mock).
+    expect(callsEdges(extractions, 'code-graph/ret-fallback.ts')).toEqual([
+      'code_graph_ret_fallback_usefallback calls code_graph_ret_fallback_makex EXTRACTED 1 code-graph/ret-fallback.ts ',
+      'code_graph_ret_fallback_usefallback calls code_graph_ret_lib_engine_start INFERRED 1 code-graph/ret-fallback.ts L12',
+    ]);
+    expect(
+      callsEdges(extractions, 'code-graph/ret-fallback.ts').some((edge) =>
+        edge.includes('code_graph_start_test'),
+      ),
+    ).toBe(false);
   });
 });
