@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 import type { Db } from 'mongodb';
 import { extractFile } from '../../../src/services/code-graph/codebase-extractor.js';
 import {
+  buildClassIndex,
   buildLabelIndex,
   resolveCrossFileCalls,
 } from '../../../src/services/code-graph/cross-file-resolver.js';
@@ -221,6 +222,190 @@ describe('resolveCrossFileCalls', () => {
     const resultB = await resolveCrossFileCalls(throwingDb, fixturesRoot, second);
     expect(resultA).toEqual(resultB);
     for (const relPath of CROSS_FILES) {
+      expect(callsEdges(first, relPath)).toEqual(callsEdges(second, relPath));
+    }
+  });
+});
+
+/* ── F7: typed member-call resolution ───────────────────────────────────── */
+
+/** Every memb-* fixture participates as a FRESH file (DB never needed). */
+const MEMB_FILES = [
+  'code-graph/memb-lib.ts',
+  'code-graph/memb-use-a.ts',
+  'code-graph/memb-use-b.ts',
+  'code-graph/memb-use-c.ts',
+  'code-graph/memb-use-d.ts',
+  'code-graph/memb-use-e.ts',
+  'code-graph/memb-this.ts',
+  'code-graph/memb-ambig-class-a.ts',
+  'code-graph/memb-ambig-class-b.ts',
+  'code-graph/memb-ambig-use.ts',
+  'code-graph/memb-ambig-bound.ts',
+];
+
+/** Extract every memb fixture into a fresh extraction map. */
+async function extractMembAll(): Promise<Map<string, FileExtraction>> {
+  const extractions = new Map<string, FileExtraction>();
+  for (const relPath of MEMB_FILES) {
+    extractions.set(
+      relPath,
+      await extractFile(
+        fixturesRoot,
+        relPath,
+        await readFile(join(fixturesRoot, relPath)),
+      ),
+    );
+  }
+  return extractions;
+}
+
+describe('buildClassIndex', () => {
+  it('keys class nodes by their bare class label', async () => {
+    const lib = await extractFile(
+      fixturesRoot,
+      'code-graph/memb-lib.ts',
+      await readFile(join(fixturesRoot, 'code-graph/memb-lib.ts')),
+    );
+    const index = buildClassIndex(lib.nodes);
+    expect(index.get('Store')).toEqual([
+      { id: 'code_graph_memb_lib_store', file: 'code-graph/memb-lib.ts' },
+    ]);
+    // Method and file nodes are not class-name candidates.
+    expect(index.get('.count()')).toBeUndefined();
+    expect(index.get('memb-lib.ts')).toBeUndefined();
+  });
+
+  it('lists every same-named class (ambiguity is resolved later)', async () => {
+    const a = await extractFile(
+      fixturesRoot,
+      'code-graph/memb-ambig-class-a.ts',
+      await readFile(join(fixturesRoot, 'code-graph/memb-ambig-class-a.ts')),
+    );
+    const b = await extractFile(
+      fixturesRoot,
+      'code-graph/memb-ambig-class-b.ts',
+      await readFile(join(fixturesRoot, 'code-graph/memb-ambig-class-b.ts')),
+    );
+    const index = buildClassIndex([...a.nodes, ...b.nodes]);
+    expect(index.get('Dup')).toEqual([
+      { id: 'code_graph_memb_ambig_class_a_dup', file: 'code-graph/memb-ambig-class-a.ts' },
+      { id: 'code_graph_memb_ambig_class_b_dup', file: 'code-graph/memb-ambig-class-b.ts' },
+    ]);
+  });
+});
+
+describe('resolveCrossFileCalls — typed member calls (F7)', () => {
+  it('resolves every typed receiver to the existing method node (never touching the DB)', async () => {
+    const extractions = await extractMembAll();
+    const result = await resolveCrossFileCalls(throwingDb, fixturesRoot, extractions);
+    expect(result).toEqual({ resolved: 9, skippedAmbiguous: 2, danglingDropped: 0 });
+
+    // annotation receiver → EXTRACTED calls to memb_lib_store_count; the
+    // `new Store()` constructor also resolves via import evidence (F6).
+    expect(callsEdges(extractions, 'code-graph/memb-use-a.ts')).toEqual([
+      'code_graph_memb_use_a_annot calls code_graph_memb_lib_store_count EXTRACTED 1 code-graph/memb-use-a.ts L3',
+      'code_graph_memb_use_a_annot calls code_graph_memb_lib_store EXTRACTED 1 code-graph/memb-use-a.ts L3',
+    ]);
+
+    // `new Store()` receiver → EXTRACTED calls to memb_lib_store_push.
+    expect(callsEdges(extractions, 'code-graph/memb-use-b.ts')).toEqual([
+      'code_graph_memb_use_b_cons calls code_graph_memb_lib_store_push EXTRACTED 1 code-graph/memb-use-b.ts L3',
+      'code_graph_memb_use_b_cons calls code_graph_memb_lib_store EXTRACTED 1 code-graph/memb-use-b.ts L3',
+    ]);
+
+    // parameter receiver → EXTRACTED.
+    expect(callsEdges(extractions, 'code-graph/memb-use-c.ts')).toEqual([
+      'code_graph_memb_use_c_param calls code_graph_memb_lib_store_count EXTRACTED 1 code-graph/memb-use-c.ts L3',
+    ]);
+
+    // same-file return flow → INFERRED; the `makeStore()` call itself
+    // resolves in-file (EXTRACTED, extraction-time edge without a location).
+    expect(callsEdges(extractions, 'code-graph/memb-use-d.ts')).toEqual([
+      'code_graph_memb_use_d_flow calls code_graph_memb_use_d_makestore EXTRACTED 1 code-graph/memb-use-d.ts ',
+      'code_graph_memb_use_d_makestore calls code_graph_memb_lib_store EXTRACTED 1 code-graph/memb-use-d.ts L3',
+      'code_graph_memb_use_d_flow calls code_graph_memb_lib_store_count INFERRED 1 code-graph/memb-use-d.ts L4',
+    ]);
+
+    // bare `this` receiver → enclosing class (EXTRACTED).
+    expect(callsEdges(extractions, 'code-graph/memb-this.ts')).toEqual([
+      'code_graph_memb_this_derived_go calls code_graph_memb_this_derived_step EXTRACTED 1 code-graph/memb-this.ts L10',
+    ]);
+
+    // untyped receiver: F6 ladder over `.whatever()` finds two candidates →
+    // skipped (god-node guard).
+    expect(callsEdges(extractions, 'code-graph/memb-use-e.ts')).toEqual([]);
+
+    // ambiguous type name with no import binding → skipped.
+    expect(callsEdges(extractions, 'code-graph/memb-ambig-use.ts')).toEqual([]);
+
+    // ambiguous type name IMPORT-BOUND to memb-ambig-class-a.ts → resolves
+    // to the imported file's class method (F7 import-evidence branch).
+    expect(callsEdges(extractions, 'code-graph/memb-ambig-bound.ts')).toEqual([
+      'code_graph_memb_ambig_bound_boundcall calls code_graph_memb_ambig_class_a_dup_ping EXTRACTED 1 code-graph/memb-ambig-bound.ts L5',
+    ]);
+  });
+
+  it('resolves a globally-ambiguous type name only when the caller imports the class (import-bound)', async () => {
+    const extractions = await extractMembAll();
+    await resolveCrossFileCalls(throwingDb, fixturesRoot, extractions);
+    // `Dup` exists in TWO files. Without an import binding the typed call is
+    // skipped (god-node guard); with `import { Dup } from
+    // './memb-ambig-class-a.js'` it resolves to exactly the imported file's
+    // class method — never to the other same-named class.
+    expect(callsEdges(extractions, 'code-graph/memb-ambig-use.ts')).toEqual([]);
+    expect(callsEdges(extractions, 'code-graph/memb-ambig-bound.ts')).toEqual([
+      'code_graph_memb_ambig_bound_boundcall calls code_graph_memb_ambig_class_a_dup_ping EXTRACTED 1 code-graph/memb-ambig-bound.ts L5',
+    ]);
+    expect(
+      callsEdges(extractions, 'code-graph/memb-ambig-bound.ts')[0].includes(
+        'code_graph_memb_ambig_class_b',
+      ),
+    ).toBe(false);
+  });
+
+  it('never invents a method node (typed class exists, method does not)', async () => {
+    const extractions = await extractMembAll();
+    const ghost: FileExtraction = {
+      nodes: [
+        {
+          id: 'code_graph_memb_ghost',
+          label: 'memb-ghost.ts',
+          kind: 'file',
+          sourceFile: 'code-graph/memb-ghost.ts',
+          sourceLocation: 'L1',
+        },
+      ],
+      edges: [],
+      errors: [],
+      rawCalls: [
+        {
+          caller: 'code_graph_memb_ghost',
+          callee: 'noSuchMethod',
+          kind: 'method',
+          sourceLocation: 'L1',
+          receiver: { name: 's', typeName: 'Store', typeSource: 'new' },
+        },
+      ],
+    };
+    extractions.set('code-graph/memb-ghost.ts', ghost);
+
+    const result = await resolveCrossFileCalls(throwingDb, fixturesRoot, extractions);
+    // The two fixture skips (whatever/ping) plus the ghost typed call.
+    expect(result.skippedAmbiguous).toBe(3);
+    expect(callsEdges(extractions, 'code-graph/memb-ghost.ts')).toEqual([]);
+    // No node was invented anywhere.
+    const nodes = [...extractions.values()].flatMap((e) => e.nodes);
+    expect(nodes.some((n) => n.id === 'code_graph_memb_lib_store_nosuchmethod')).toBe(false);
+  });
+
+  it('is deterministic — two independent runs produce identical typed edges', async () => {
+    const first = await extractMembAll();
+    const second = await extractMembAll();
+    const resultA = await resolveCrossFileCalls(throwingDb, fixturesRoot, first);
+    const resultB = await resolveCrossFileCalls(throwingDb, fixturesRoot, second);
+    expect(resultA).toEqual(resultB);
+    for (const relPath of MEMB_FILES) {
       expect(callsEdges(first, relPath)).toEqual(callsEdges(second, relPath));
     }
   });

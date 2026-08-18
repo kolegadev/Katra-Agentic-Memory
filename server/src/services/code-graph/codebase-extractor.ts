@@ -48,6 +48,8 @@ interface LanguageConfig {
   calleeName(node: Node): string | null;
   /** Emit file-level import edges found anywhere in the tree. */
   emitImports(rootNode: Node, state: ExtractionState): void;
+  /** Capture receiver-type facts for member calls (F7; TS/JS only). */
+  receiverTyping: boolean;
 }
 
 /** JS/TS call: `identifier` callee or the property segment of a `member_expression`. */
@@ -339,6 +341,8 @@ interface ExtractionState {
   callQueue: { callerId: string; body: Node }[];
   /** Unresolved in-file calls (F6), in emission order. */
   rawCalls: RawCall[];
+  /** Call-site receiver-type snapshots (F7); null when not collected. */
+  receiverCallInfo: Map<number, ReceiverCallInfo> | null;
   /** Pending base-class references, in definition order. */
   inheritsQueue: { classId: string; baseName: string }[];
 }
@@ -496,7 +500,12 @@ function rawCallFacts(
   return { callee, kind };
 }
 
-/** Append an unresolved call as a RawCall (F6: never invent a stub node). */
+/**
+ * Append an unresolved call as a RawCall (F6: never invent a stub node).
+ * F7: TS/JS member calls additionally carry receiver facts when the receiver
+ * object's type is statically resolvable within the file (see
+ * {@link receiverForCall}); everything else keeps the bare F6 shape.
+ */
 function pushRawCall(
   state: ExtractionState,
   callerId: string,
@@ -505,12 +514,17 @@ function pushRawCall(
 ): void {
   const facts = rawCallFacts(cfg, call);
   if (!facts) return;
-  state.rawCalls.push({
+  const rawCall: RawCall = {
     caller: callerId,
     callee: facts.callee,
     kind: facts.kind,
     sourceLocation: sourceLocation(call),
-  });
+  };
+  if (facts.kind === 'method') {
+    const receiver = receiverForCall(cfg, call, state.receiverCallInfo);
+    if (receiver) rawCall.receiver = receiver;
+  }
+  state.rawCalls.push(rawCall);
 }
 
 /** In-file resolved targets of a call callee (union of `f()` / `.f()` hits). */
@@ -566,6 +580,245 @@ function emitCalls(
   }
 }
 
+/* ── F7 receiver-type facts (TS/JS member calls) ────────────────────────── */
+
+/**
+ * TS/JS predefined (builtin) type names. A receiver annotated with one of
+ * these carries no class information, so no receiver fact is recorded —
+ * matching Graphify's "predefined type is skipped" rule in
+ * `_ts_receiver_type_table` (precision over recall).
+ */
+const TS_BUILTIN_TYPES = new Set([
+  'any',
+  'unknown',
+  'never',
+  'void',
+  'string',
+  'number',
+  'boolean',
+  'object',
+  'symbol',
+  'bigint',
+  'undefined',
+  'null',
+  'this',
+]);
+
+/** A resolved name → type binding within one scope (F7). */
+interface ReceiverTypeFact {
+  typeName: string;
+  typeSource: 'annotation' | 'new' | 'parameter' | 'return_flow';
+}
+
+/** Call-site snapshot: visible bindings + innermost enclosing class name. */
+interface ReceiverCallInfo {
+  /** Visible name → type bindings, innermost scope first (shadowing). */
+  bindings: Map<string, ReceiverTypeFact>;
+  /** Name of the innermost enclosing class, for `this` receivers. */
+  enclosingClass: string | null;
+}
+
+/**
+ * Reduce a type node's text to a bare type name: strip generic arguments
+ * (`Map<string, X>` → `Map`), keep only the last segment of a qualified type
+ * (`ns.Store` → `Store`), strip array suffixes (`Widget[]` → `Widget`), and
+ * reject non-identifier text (unions, literals, function types) and builtins.
+ */
+function usableTypeName(node: Node): string | null {
+  let text = node.text;
+  const lt = text.indexOf('<');
+  if (lt >= 0) text = text.slice(0, lt);
+  const bare = (text.split('.').pop() ?? '').trim().replace(/(\[\])+$/, '');
+  if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(bare)) return null;
+  if (TS_BUILTIN_TYPES.has(bare.toLowerCase())) return null;
+  return bare;
+}
+
+/** Usable type name of a `type_annotation` (its first named child's type). */
+function annotatedTypeName(annotation: Node | null): string | null {
+  if (!annotation) return null;
+  const inner = annotation.namedChildren[0];
+  return inner ? usableTypeName(inner) : null;
+}
+
+/**
+ * Pass A: return types of named functions/methods (incl. arrow/function
+ * expressions bound to a variable), keyed by declaration name — the basis for
+ * same-file `return_flow` receiver typing. Same-named declarations: the last
+ * one visited wins (deterministic).
+ */
+function collectReturnTypes(rootNode: Node): Map<string, string> {
+  const returnTypes = new Map<string, string>();
+  const visit = (node: Node): void => {
+    if (
+      node.type === 'function_declaration' ||
+      node.type === 'generator_function_declaration' ||
+      node.type === 'method_definition' ||
+      node.type === 'function_expression'
+    ) {
+      const name = node.childForFieldName('name')?.text;
+      const returnType = annotatedTypeName(node.childForFieldName('return_type'));
+      if (name && returnType) returnTypes.set(name, returnType);
+    } else if (node.type === 'variable_declarator') {
+      const nameNode = node.childForFieldName('name');
+      const value = node.childForFieldName('value');
+      if (
+        nameNode?.type === 'identifier' &&
+        value !== null &&
+        (value.type === 'arrow_function' || value.type === 'function_expression')
+      ) {
+        const returnType = annotatedTypeName(value.childForFieldName('return_type'));
+        if (returnType) returnTypes.set(nameNode.text, returnType);
+      }
+    }
+    for (const child of node.namedChildren) visit(child);
+  };
+  visit(rootNode);
+  return returnTypes;
+}
+
+/**
+ * Pass B: ordered walk collecting (a) per-scope name → type bindings from
+ * annotated declarations, `new T(...)` initializers, typed parameters, and
+ * same-file return-type flow; (b) a per-call-site snapshot of the visible
+ * bindings (reverse scope scan — the innermost declaration wins) and the
+ * innermost enclosing class name. Scopes are pushed per function/method,
+ * block, loop header, catch clause, and class body; shadowing = latest
+ * declaration in the innermost scope wins.
+ */
+function collectReceiverCallInfo(rootNode: Node): Map<number, ReceiverCallInfo> {
+  const returnTypes = collectReturnTypes(rootNode);
+  const callInfo = new Map<number, ReceiverCallInfo>();
+  const scopes: Array<Map<string, ReceiverTypeFact>> = [new Map()];
+  const classStack: Array<string | null> = [];
+
+  const current = (): Map<string, ReceiverTypeFact> =>
+    scopes[scopes.length - 1];
+
+  const mergeVisible = (): Map<string, ReceiverTypeFact> => {
+    const merged = new Map<string, ReceiverTypeFact>();
+    for (let i = scopes.length - 1; i >= 0; i--) {
+      for (const [name, fact] of scopes[i]) {
+        if (!merged.has(name)) merged.set(name, fact);
+      }
+    }
+    return merged;
+  };
+
+  const withScope = (fn: () => void): void => {
+    scopes.push(new Map());
+    fn();
+    scopes.pop();
+  };
+
+  const walk = (node: Node): void => {
+    switch (node.type) {
+      case 'class_declaration':
+      case 'abstract_class_declaration': {
+        const name = node.childForFieldName('name')?.text ?? null;
+        classStack.push(name);
+        withScope(() => {
+          for (const child of node.namedChildren) walk(child);
+        });
+        classStack.pop();
+        return;
+      }
+      case 'function_declaration':
+      case 'generator_function_declaration':
+      case 'method_definition':
+      case 'function_expression':
+      case 'arrow_function':
+        withScope(() => {
+          for (const child of node.namedChildren) walk(child);
+        });
+        return;
+      case 'statement_block':
+      case 'for_statement':
+      case 'for_in_statement':
+      case 'catch_clause':
+        withScope(() => {
+          for (const child of node.namedChildren) walk(child);
+        });
+        return;
+      case 'required_parameter':
+      case 'optional_parameter': {
+        const pattern = node.childForFieldName('pattern');
+        const typeName = annotatedTypeName(node.childForFieldName('type'));
+        if (pattern?.type === 'identifier' && typeName) {
+          current().set(pattern.text, { typeName, typeSource: 'parameter' });
+        }
+        for (const child of node.namedChildren) walk(child);
+        return;
+      }
+      case 'variable_declarator': {
+        const nameNode = node.childForFieldName('name');
+        const value = node.childForFieldName('value');
+        if (nameNode?.type === 'identifier') {
+          const annotated = annotatedTypeName(node.childForFieldName('type'));
+          if (annotated) {
+            current().set(nameNode.text, { typeName: annotated, typeSource: 'annotation' });
+          } else if (value?.type === 'new_expression') {
+            const ctor = value.childForFieldName('constructor');
+            const typeName = ctor ? usableTypeName(ctor) : null;
+            if (typeName) {
+              current().set(nameNode.text, { typeName, typeSource: 'new' });
+            }
+          } else if (value?.type === 'call_expression') {
+            const fn = value.childForFieldName('function');
+            if (fn?.type === 'identifier') {
+              const typeName = returnTypes.get(fn.text);
+              if (typeName) {
+                current().set(nameNode.text, { typeName, typeSource: 'return_flow' });
+              }
+            }
+          }
+        }
+        for (const child of node.namedChildren) walk(child);
+        return;
+      }
+      case 'call_expression':
+        callInfo.set(node.id, {
+          bindings: mergeVisible(),
+          enclosingClass:
+            classStack.length > 0 ? classStack[classStack.length - 1] : null,
+        });
+        for (const child of node.namedChildren) walk(child);
+        return;
+      default:
+        for (const child of node.namedChildren) walk(child);
+    }
+  };
+  walk(rootNode);
+  return callInfo;
+}
+
+/**
+ * F7 receiver facts for a TS/JS member call, or undefined when the receiver's
+ * type cannot be established within the file (receiver omitted → F6 skip
+ * behavior). `name` is the full object-expression text; `this` receivers use
+ * the enclosing class name as `typeName` with typeSource `this`.
+ */
+function receiverForCall(
+  cfg: LanguageConfig,
+  call: Node,
+  callInfo: Map<number, ReceiverCallInfo> | null,
+): RawCall['receiver'] {
+  if (!cfg.receiverTyping || !callInfo) return undefined;
+  const fn = call.childForFieldName('function');
+  if (!fn || fn.type !== 'member_expression') return undefined;
+  const object = fn.childForFieldName('object');
+  if (!object) return undefined;
+  const snapshot = callInfo.get(call.id);
+  if (!snapshot) return undefined;
+  if (object.type === 'this') {
+    if (!snapshot.enclosingClass) return undefined;
+    return { name: 'this', typeName: snapshot.enclosingClass, typeSource: 'this' };
+  }
+  const fact = snapshot.bindings.get(object.text);
+  if (!fact) return undefined;
+  return { name: object.text, typeName: fact.typeName, typeSource: fact.typeSource };
+}
+
 /** Dedupe edges by from|relation|to, preserving first-occurrence order. */
 function dedupeEdges(edges: CodeEdge[]): CodeEdge[] {
   const seen = new Set<string>();
@@ -599,6 +852,7 @@ const TS_CONFIG: LanguageConfig = {
   baseNames: baseNamesTS,
   calleeName: calleeNameJS,
   emitImports: emitImportsJS,
+  receiverTyping: true,
 };
 
 const JS_CONFIG: LanguageConfig = {
@@ -618,6 +872,7 @@ const PY_CONFIG: LanguageConfig = {
   baseNames: baseNamesPY,
   calleeName: calleeNamePY,
   emitImports: emitImportsPY,
+  receiverTyping: false, // F7 receiver typing is TS/JS only
 };
 
 interface LanguageEntry {
@@ -683,6 +938,7 @@ export async function extractFile(
     classLabels: new Map(),
     callQueue: [],
     rawCalls: [],
+    receiverCallInfo: null,
     inheritsQueue: [],
   };
   try {
@@ -697,6 +953,9 @@ export async function extractFile(
       emitDefinitions(tree.rootNode, entry.config, state);
       entry.config.emitImports(tree.rootNode, state);
       emitInherits(state);
+      if (entry.config.receiverTyping) {
+        state.receiverCallInfo = collectReceiverCallInfo(tree.rootNode);
+      }
       emitCalls(entry.config, state, tree.rootNode);
     } finally {
       tree?.delete();

@@ -589,3 +589,164 @@ describe('extractFile — rawCalls (F6)', () => {
     ]);
   });
 });
+
+describe('extractFile — member-call receiver facts (F7)', () => {
+  it('records annotation receivers with the declared type', async () => {
+    const result = await extract('code-graph/memb-use-a.ts');
+    expect(result.rawCalls).toEqual([
+      {
+        caller: 'code_graph_memb_use_a_annot',
+        callee: 'count',
+        kind: 'method',
+        sourceLocation: 'L3',
+        receiver: { name: 's', typeName: 'Store', typeSource: 'annotation' },
+      },
+      {
+        caller: 'code_graph_memb_use_a_annot',
+        callee: 'Store',
+        kind: 'constructor',
+        sourceLocation: 'L3',
+      },
+    ]);
+  });
+
+  it('records `new T()` receivers with the constructed type', async () => {
+    const result = await extract('code-graph/memb-use-b.ts');
+    expect(result.rawCalls).toEqual([
+      {
+        caller: 'code_graph_memb_use_b_cons',
+        callee: 'push',
+        kind: 'method',
+        sourceLocation: 'L3',
+        receiver: { name: 's', typeName: 'Store', typeSource: 'new' },
+      },
+      {
+        caller: 'code_graph_memb_use_b_cons',
+        callee: 'Store',
+        kind: 'constructor',
+        sourceLocation: 'L3',
+      },
+    ]);
+  });
+
+  it('records parameter-typed receivers', async () => {
+    const result = await extract('code-graph/memb-use-c.ts');
+    expect(result.rawCalls).toEqual([
+      {
+        caller: 'code_graph_memb_use_c_param',
+        callee: 'count',
+        kind: 'method',
+        sourceLocation: 'L3',
+        receiver: { name: 's', typeName: 'Store', typeSource: 'parameter' },
+      },
+    ]);
+  });
+
+  it('records same-file return-type flow as return_flow', async () => {
+    const result = await extract('code-graph/memb-use-d.ts');
+    expect(result.rawCalls).toEqual([
+      {
+        caller: 'code_graph_memb_use_d_makestore',
+        callee: 'Store',
+        kind: 'constructor',
+        sourceLocation: 'L3',
+      },
+      {
+        caller: 'code_graph_memb_use_d_flow',
+        callee: 'count',
+        kind: 'method',
+        sourceLocation: 'L4',
+        receiver: { name: 's', typeName: 'Store', typeSource: 'return_flow' },
+      },
+    ]);
+  });
+
+  it('records bare `this` receivers with the enclosing class name', async () => {
+    const result = await extract('code-graph/memb-this.ts');
+    expect(result.rawCalls).toEqual([
+      {
+        caller: 'code_graph_memb_this_derived_go',
+        callee: 'step',
+        kind: 'method',
+        sourceLocation: 'L10',
+        receiver: { name: 'this', typeName: 'Derived', typeSource: 'this' },
+      },
+    ]);
+  });
+
+  it('omits receiver facts for untyped receivers (any/unknown are predefined)', async () => {
+    const result = await extract('code-graph/memb-use-e.ts');
+    expect(result.rawCalls).toEqual([
+      {
+        caller: 'code_graph_memb_use_e_anyrecv',
+        callee: 'whatever',
+        kind: 'method',
+        sourceLocation: 'L3',
+      },
+    ]);
+    expect(result.rawCalls![0].receiver).toBeUndefined();
+  });
+
+  it('records receiver facts even when the type name is ambiguous (resolver skips)', async () => {
+    const result = await extract('code-graph/memb-ambig-use.ts');
+    expect(result.rawCalls).toEqual([
+      {
+        caller: 'code_graph_memb_ambig_use_dupcall',
+        callee: 'ping',
+        kind: 'method',
+        sourceLocation: 'L3',
+        receiver: { name: 'd', typeName: 'Dup', typeSource: 'parameter' },
+      },
+    ]);
+  });
+
+  it('attributes shadowed receivers per call site (innermost scope wins)', async () => {
+    const result = await extract('code-graph/memb-shadow.ts');
+    // `s` is `Store` at the outer call site and shadowed to `Other` inside
+    // `inner` — each rawCall carries ITS OWN call site's receiver type.
+    expect(result.rawCalls).toEqual([
+      {
+        caller: 'code_graph_memb_shadow_shadow',
+        callee: 'm',
+        kind: 'method',
+        sourceLocation: 'L6',
+        receiver: { name: 's', typeName: 'Store', typeSource: 'annotation' },
+      },
+      {
+        caller: 'code_graph_memb_shadow_shadow',
+        callee: 'm',
+        kind: 'method',
+        sourceLocation: 'L9',
+        receiver: { name: 's', typeName: 'Other', typeSource: 'annotation' },
+      },
+    ]);
+  });
+
+  it('reduces qualified and generic annotations to the last bare type segment', async () => {
+    const result = await extract('code-graph/memb-qualified.ts');
+    // `ns.Store<number>[]` → `Store` (last segment, generics + array suffix
+    // stripped); `Map<string, number>` → `Map` (generics stripped).
+    expect(result.rawCalls).toEqual([
+      {
+        caller: 'code_graph_memb_qualified_qualified',
+        callee: 'count',
+        kind: 'method',
+        sourceLocation: 'L5',
+        receiver: { name: 'a', typeName: 'Store', typeSource: 'annotation' },
+      },
+      {
+        caller: 'code_graph_memb_qualified_qualified',
+        callee: 'get',
+        kind: 'method',
+        sourceLocation: 'L7',
+        receiver: { name: 'm', typeName: 'Map', typeSource: 'annotation' },
+      },
+    ]);
+  });
+
+  it('emits no rawCalls for a member-call-free library file', async () => {
+    const result = await extract('code-graph/memb-lib.ts');
+    expect(result.errors).toEqual([]);
+    expect(result.rawCalls).toBeUndefined();
+  });
+});

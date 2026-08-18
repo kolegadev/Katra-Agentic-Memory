@@ -1,6 +1,6 @@
 /**
- * Cross-file call resolution (F6) — deterministic, conservative resolution of
- * the RawCalls emitted by the extractor against a GLOBAL label index built
+ * Cross-file call resolution (F6+F7) — deterministic, conservative resolution
+ * of the RawCalls emitted by the extractor against a GLOBAL label index built
  * from (a) the fresh extractions of this sync and (b) the stored nodes of
  * files this sync is NOT replacing (unchanged files, read from
  * `knowledge_nodes`). Faithful to Graphify's
@@ -13,12 +13,18 @@
  *   4. otherwise SKIPPED (ambiguous, the god-node guard).
  *
  * Member calls (kind 'method') resolve ONLY via import evidence or global
- * uniqueness — never path proximity (receiver typing is a future feature).
+ * uniqueness — never path proximity — EXCEPT F7 typed member calls: a member
+ * call whose rawCall carries receiver facts with a `typeName` resolves via a
+ * global class-name index (import-bound preference, else unique global class),
+ * emitting `calls` to the `${classId}_${callee}` method node ONLY when that
+ * method node exists (never invented). Confidence is EXTRACTED for
+ * annotation/new/parameter/this receivers and INFERRED for return_flow.
+ *
  * The resolver NEVER adds nodes and NEVER guesses: ambiguous calls are
  * skipped, dangling calls are counted and dropped. All ids on emitted edges
  * are BARE extraction ids (the sync layer re-applies the root scope).
  *
- * @see CONTRACT.md §F6
+ * @see CONTRACT.md §F6, §F7
  */
 
 import { resolve } from 'node:path';
@@ -71,6 +77,27 @@ export function buildLabelIndex(
     const existing = index.get(key);
     if (existing) existing.push(entry);
     else index.set(key, [entry]);
+  }
+  return index;
+}
+
+/**
+ * Class-name index (F7): class-kind nodes keyed by their bare class label —
+ * the lookup target for receiver `typeName`s. Built alongside
+ * {@link buildLabelIndex} from the same node set (fresh + stored).
+ */
+export function buildClassIndex(
+  nodes: CodeNode[],
+): Map<string, LabelIndexEntry[]> {
+  const index = new Map<string, LabelIndexEntry[]>();
+  for (const node of nodes) {
+    if (node.kind !== 'class') continue;
+    const label = node.label;
+    if (!label) continue;
+    const entry: LabelIndexEntry = { id: node.id, file: node.sourceFile };
+    const existing = index.get(label);
+    if (existing) existing.push(entry);
+    else index.set(label, [entry]);
   }
   return index;
 }
@@ -217,7 +244,14 @@ export async function resolveCrossFileCalls(
     dbNodes = []; // best-effort: DB unavailable → fresh nodes only
   }
 
-  const index = buildLabelIndex([...freshNodes, ...dbNodes]);
+  const allNodes = [...freshNodes, ...dbNodes];
+  const index = buildLabelIndex(allNodes);
+  const classIndex = buildClassIndex(allNodes);
+  // Method node ids actually present (`.name()` entries) — a typed member
+  // call only ever targets an EXISTING method node (never invented).
+  const methodIds = new Set(
+    allNodes.filter((node) => node.kind === 'method').map((node) => node.id),
+  );
 
   let resolved = 0;
   let skippedAmbiguous = 0;
@@ -249,6 +283,47 @@ export async function resolveCrossFileCalls(
 
     for (const rawCall of extraction.rawCalls ?? []) {
       const callee = rawCall.callee.trim();
+
+      // F7: a typed member call resolves by the receiver's DECLARED TYPE
+      // before the name-based ladder applies — the type is authoritative and
+      // the ladder never guesses on its behalf. Type → class candidates:
+      // import-bound preference (exactly one candidate in an imported file),
+      // else a globally unique class, else skip.
+      if (rawCall.kind === 'method' && rawCall.receiver?.typeName) {
+        const typeCandidates = dedupeCandidates(
+          classIndex.get(rawCall.receiver.typeName) ?? [],
+        );
+        let chosen: LabelIndexEntry | null = null;
+        if (typeCandidates.length > 0) {
+          const importMatches = typeCandidates.filter(candidateMatchesImport);
+          if (importMatches.length === 1) chosen = importMatches[0];
+          else if (typeCandidates.length === 1) chosen = typeCandidates[0];
+        }
+        if (chosen === null) {
+          skippedAmbiguous++;
+          continue;
+        }
+        // The method node must EXIST (god-node guard: never invent a method).
+        const methodId = makeId(chosen.id, callee);
+        if (!methodIds.has(methodId)) {
+          skippedAmbiguous++;
+          continue;
+        }
+        const confidence: 'EXTRACTED' | 'INFERRED' =
+          rawCall.receiver.typeSource === 'return_flow'
+            ? 'INFERRED'
+            : 'EXTRACTED';
+        pushResolvedEdge(
+          extraction,
+          rawCall,
+          { id: methodId, file: chosen.file },
+          confidence,
+          relPath,
+        );
+        resolved++;
+        continue;
+      }
+
       const key = INDEX_KEY_FOR_KIND[rawCall.kind](callee);
       const candidates = dedupeCandidates(index.get(key) ?? []);
       if (candidates.length === 0) {
