@@ -51,8 +51,14 @@ export const connect_to_mongodb = async (): Promise<Db | null> => {
 
   try {
     client = new MongoClient(mongodb_uri || fallback_uri!, {
-      serverSelectionTimeoutMS: 8000,    // Shorter timeout for faster failures
-      socketTimeoutMS: 10000,
+      serverSelectionTimeoutMS: 15000,   // Fast-fail only when the server is truly unreachable
+      socketTimeoutMS: 0,                // NEVER kill idle or long-running sockets.
+      // socketTimeoutMS was 10000, which reaped every socket between the
+      // 30s background cycles (2.4M connection creations, constant SCRAM
+      // churn) and killed any operation running >10s — including the
+      // multi-minute code-graph sync, which died with
+      // "connection N to <mongo> timed out" mid-extraction. Let the
+      // driver's monitoring + maxIdleTimeMS manage socket lifecycle.
       connectTimeoutMS: 10000,
       maxPoolSize: 10,
       minPoolSize: 1,                    // Reduce minimum pool size
@@ -102,8 +108,8 @@ export const connect_to_mongodb = async (): Promise<Db | null> => {
       console.warn('⚠️  Primary MongoDB connection failed, trying fallback URI...');
       try {
         client = new MongoClient(fallback_uri, {
-          serverSelectionTimeoutMS: 8000,
-          socketTimeoutMS: 10000,
+          serverSelectionTimeoutMS: 15000,
+          socketTimeoutMS: 0,
           connectTimeoutMS: 10000,
           maxPoolSize: 10,
           minPoolSize: 1,
