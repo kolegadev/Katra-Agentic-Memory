@@ -285,6 +285,11 @@ export class EmbeddingService {
             embedding,
             embedding_model: MODEL_NAME,
             embedding_version: EMBEDDING_VERSION,
+            // Boolean marker so "find un-embedded facts" queries are
+            // index-friendly. The embedding array itself cannot be indexed
+            // (384 floats exceed the index key limit) and $exists scans the
+            // whole collection on every background cycle.
+            has_embedding: true,
           },
         }
       );

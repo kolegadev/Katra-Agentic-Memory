@@ -604,12 +604,18 @@ export class BackgroundProcessor {
       const db = get_database();
 
       // Candidates must be embeddable per the embedding policy (content
-      // length >= MIN_CONTENT_LENGTH, not quality-skipped). Without this
-      // filter, short facts (e.g. extraction noise) sit at the head of the
-      // natural order, get picked every cycle, fail shouldEmbed(), and the
-      // processor livelocks at "Embedded 0/20" forever — reporting success
-      // while embedding nothing.
+      // length >= MIN_CONTENT_LENGTH, not quality-skipped, no embedding yet).
+      // Without the length filter, short facts (e.g. extraction noise) sit
+      // at the head of the natural order, get picked every cycle, fail
+      // shouldEmbed(), and the processor livelocks at "Embedded 0/20"
+      // forever — reporting success while embedding nothing.
+      // `has_embedding: {$ne: true}` is used instead of
+      // `embedding: {$exists: false}` because the 384-dim embedding array
+      // exceeds MongoDB's index key limit, so $exists forces a full
+      // collection scan every cycle; the boolean marker is indexable.
+      // Backed by index {user_id: 1, has_embedding: 1, created_at: 1}.
       const embeddableFactFilter = {
+        has_embedding: { $ne: true },
         $expr: { $gte: [{ $strLenCP: { $ifNull: ['$content', ''] } }, MIN_CONTENT_LENGTH] },
         embedding_skipped: { $ne: true },
       };
@@ -619,7 +625,6 @@ export class BackgroundProcessor {
         .find({
           user_id: userId,
           'metadata.extraction_context.source_event_id': eventId,
-          embedding: { $exists: false },
           ...embeddableFactFilter,
         })
         .sort({ created_at: 1 })
@@ -632,7 +637,6 @@ export class BackgroundProcessor {
       const otherFacts = await db.collection('semantic_facts')
         .find({
           user_id: userId,
-          embedding: { $exists: false },
           _id: { $nin: embeddedIds },
           ...embeddableFactFilter,
         })

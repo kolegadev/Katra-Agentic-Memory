@@ -34,7 +34,7 @@ async function main() {
   const col = db.collection('semantic_facts');
 
   const filter = {
-    embedding: { $exists: false },
+    has_embedding: { $ne: true },
     $expr: { $gte: [{ $strLenCP: { $ifNull: ['$content', ''] } }, MIN_LEN] },
   };
   if (USER_ID) filter.user_id = USER_ID;
@@ -62,7 +62,7 @@ async function main() {
       if (vec) {
         await col.updateOne(
           { _id: d._id },
-          { $set: { embedding: vec, embedding_model: embeddingService.modelName, embedding_version: embeddingService.version } }
+          { $set: { embedding: vec, embedding_model: embeddingService.modelName, embedding_version: embeddingService.version, has_embedding: true } }
         );
         embedded++;
       } else {
