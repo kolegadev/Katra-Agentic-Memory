@@ -8,9 +8,14 @@
  *
  *   1. import evidence  — caller file's `imports_from` edge to file F with
  *      exactly one candidate living in F → EXTRACTED (1.0);
- *   2. unique candidate → INFERRED;
- *   3. path proximity (strict unique longest common dir prefix) → INFERRED;
- *   4. otherwise SKIPPED (ambiguous, the god-node guard).
+ *   2. non-test preference (Graphify `disambiguate_ambiguous_candidates`
+ *      stage 1, `paths.py`): a NON-test caller drops candidates living in
+ *      test files before ANY further disambiguation, so test mocks/stubs
+ *      never shadow real symbols or win proximity tiebreaks; a test caller
+ *      keeps the full candidate set (test-local resolution allowed);
+ *   3. unique candidate → INFERRED;
+ *   4. path proximity (strict unique longest common dir prefix) → INFERRED;
+ *   5. otherwise SKIPPED (ambiguous, the god-node guard).
  *
  * Member calls (kind 'method') resolve ONLY via import evidence or global
  * uniqueness — never path proximity — EXCEPT F7 typed member calls: a member
@@ -141,6 +146,97 @@ function dedupeCandidates(candidates: LabelIndexEntry[]): LabelIndexEntry[] {
     out.push(candidate);
   }
   return out;
+}
+
+/**
+ * Path segments that, when they appear as a WHOLE path component, mark the
+ * path as a test location (Graphify `_TEST_DIR_SEGMENTS` in paths.py).
+ * Matched against segments, never raw substrings, so `src/contest.py` and
+ * `src/latest/x.py` do NOT match.
+ */
+const TEST_DIR_SEGMENTS = new Set([
+  'tests',
+  'test',
+  'spec',
+  'specs',
+  '__tests__',
+]);
+
+/**
+ * Filename patterns marking a file as a test, matched against the filename
+ * only (Graphify `_TEST_FILENAME_PATTERNS` in paths.py). The first five are
+ * case-insensitive; the Java/C# conventions are case-sensitive (require an
+ * uppercase-led `Test`/`Tests` before the extension).
+ */
+const TEST_FILENAME_PATTERNS: RegExp[] = [
+  /^test_.*/i,
+  /.*_test\..+$/i,
+  /.*\.test\..+$/i,
+  /.*\.spec\..+$/i,
+  /.*_spec\..+$/i,
+  /.*\.tests\.ps1$/i,
+  /.*Test\.java$/,
+  /.*Tests\.java$/,
+  /.*Tests\.cs$/,
+];
+
+/**
+ * Classify a source path as a test path (case-insensitive, segment-aware) —
+ * a faithful port of Graphify `_is_test_path` (paths.py). A path is a test
+ * path when any whole path segment equals a known test dir name
+ * (`tests`/`test`/`spec`/`specs`/`__tests__`) or the filename matches a
+ * known test-file naming convention (`test_*.ts`, `*_test.ts`, `*.test.ts`,
+ * `*.spec.ts`, `*_spec.ts`, `*.Tests.ps1`, `*Test.java`, `*Tests.java`,
+ * `*Tests.cs`). Conservative on purpose: `latest.py`, `src/contest.py` and
+ * `test-utils.ts` are NON-test.
+ */
+export function isTestPath(relPath: string): boolean {
+  if (!relPath) return false;
+  // Accept both POSIX and Windows separators (Graphify normalizes the same).
+  const norm = relPath.replace(/\\/g, '/');
+  const segments = norm.split('/').filter((s) => s !== '' && s !== '.');
+  for (const segment of segments) {
+    if (TEST_DIR_SEGMENTS.has(segment.toLowerCase())) return true;
+  }
+  const filename = segments[segments.length - 1] ?? '';
+  if (!filename) return false;
+  return TEST_FILENAME_PATTERNS.some((pattern) => pattern.test(filename));
+}
+
+/**
+ * Graphify `disambiguate_ambiguous_candidates` stage 1: a NON-test call
+ * site drops candidates living in test files (test mocks/stubs must not
+ * shadow real symbols); a test call site keeps the full candidate set
+ * (test-local resolution allowed). Order-preserving, so determinism is
+ * unchanged. Single candidates are returned as-is (Graphify short-circuits
+ * the single-candidate case before the test filter).
+ */
+export function preferNonTest<T extends { file: string }>(
+  candidates: T[],
+  callerFile: string,
+): T[] {
+  if (candidates.length <= 1) return candidates;
+  if (isTestPath(callerFile)) return candidates;
+  return candidates.filter((candidate) => !isTestPath(candidate.file));
+}
+
+/**
+ * F7/F8 class-name choice: import evidence first (an explicit import
+ * binding wins regardless of test/non-test — Graphify behavior too), then
+ * non-test preference before the unique-global fallback, else null (the
+ * caller skips — god-node guard).
+ */
+function chooseClassCandidate(
+  typeCandidates: LabelIndexEntry[],
+  callerFile: string,
+  candidateMatchesImport: (candidate: LabelIndexEntry) => boolean,
+): LabelIndexEntry | null {
+  if (typeCandidates.length === 0) return null;
+  const importMatches = typeCandidates.filter(candidateMatchesImport);
+  if (importMatches.length === 1) return importMatches[0];
+  const preferred = preferNonTest(typeCandidates, callerFile);
+  if (preferred.length === 1) return preferred[0];
+  return null;
 }
 
 /** Directory segments of a posix relPath (`a/b/x.ts` → [`a`, `b`]). */
@@ -323,17 +419,16 @@ export async function resolveCrossFileCalls(
       // before the name-based ladder applies — the type is authoritative and
       // the ladder never guesses on its behalf. Type → class candidates:
       // import-bound preference (exactly one candidate in an imported file),
-      // else a globally unique class, else skip.
+      // else non-test preference, else a globally unique class, else skip.
       if (rawCall.kind === 'method' && rawCall.receiver?.typeName) {
         const typeCandidates = dedupeCandidates(
           classIndex.get(rawCall.receiver.typeName) ?? [],
         );
-        let chosen: LabelIndexEntry | null = null;
-        if (typeCandidates.length > 0) {
-          const importMatches = typeCandidates.filter(candidateMatchesImport);
-          if (importMatches.length === 1) chosen = importMatches[0];
-          else if (typeCandidates.length === 1) chosen = typeCandidates[0];
-        }
+        const chosen = chooseClassCandidate(
+          typeCandidates,
+          relPath,
+          candidateMatchesImport,
+        );
         if (chosen === null) {
           skippedAmbiguous++;
           continue;
@@ -386,28 +481,33 @@ export async function resolveCrossFileCalls(
           }
           return false;
         };
-        // 1. initializerCall lookup: import evidence, else unique global.
+        // 1. initializerCall lookup: import evidence first (unaffected by
+        //    test/non-test), else non-test preference before the
+        //    unique-global fallback (Graphify disambiguate stage 1).
         let chosen: ReturnTypeIndexEntry | null = null;
         if (retCandidates.length > 0) {
           const importMatches = retCandidates.filter(returnTypeMatchesImport);
           if (importMatches.length === 1) chosen = importMatches[0];
-          else if (retCandidates.length === 1) chosen = retCandidates[0];
+          else {
+            const preferred = preferNonTest(retCandidates, relPath);
+            if (preferred.length === 1) chosen = preferred[0];
+          }
         }
         if (chosen === null) {
           skippedAmbiguous++;
           continue;
         }
         // 2. Return type → class candidates: EXACTLY the F7 class-name index
-        //    path (import-bound preference, else unique global, else skip).
+        //    path (import-bound preference, non-test preference, else unique
+        //    global, else skip).
         const typeCandidates = dedupeCandidates(
           classIndex.get(chosen.typeName) ?? [],
         );
-        let chosenClass: LabelIndexEntry | null = null;
-        if (typeCandidates.length > 0) {
-          const importMatches = typeCandidates.filter(candidateMatchesImport);
-          if (importMatches.length === 1) chosenClass = importMatches[0];
-          else if (typeCandidates.length === 1) chosenClass = typeCandidates[0];
-        }
+        const chosenClass = chooseClassCandidate(
+          typeCandidates,
+          relPath,
+          candidateMatchesImport,
+        );
         if (chosenClass === null) {
           skippedAmbiguous++;
           continue;
@@ -437,7 +537,9 @@ export async function resolveCrossFileCalls(
         continue;
       }
 
-      // 1. Import evidence: exactly one candidate in an imported file.
+      // 1. Import evidence: exactly one candidate in an imported file
+      //    (EXTRACTED — an explicit import binding wins regardless of
+      //    test/non-test, Graphify behavior too).
       const importMatches = candidates.filter(candidateMatchesImport);
       if (importMatches.length === 1) {
         pushResolvedEdge(extraction, rawCall, importMatches[0], 'EXTRACTED', relPath);
@@ -445,10 +547,19 @@ export async function resolveCrossFileCalls(
         continue;
       }
 
-      // 2. Unique global candidate → INFERRED.
-      if (candidates.length === 1) {
-        pushResolvedEdge(extraction, rawCall, candidates[0], 'INFERRED', relPath);
+      // 2. Non-test preference BEFORE the unique-global check (Graphify
+      //    disambiguate stage 1): a NON-test caller drops test-file
+      //    candidates, so a label polluted by test mocks/stubs still
+      //    resolves when exactly one non-test candidate survives. A test
+      //    caller keeps the full set (test-local resolution allowed).
+      const preferred = preferNonTest(candidates, relPath);
+      if (preferred.length === 1) {
+        pushResolvedEdge(extraction, rawCall, preferred[0], 'INFERRED', relPath);
         resolved++;
+        continue;
+      }
+      if (preferred.length === 0) {
+        skippedAmbiguous++;
         continue;
       }
 
@@ -459,8 +570,9 @@ export async function resolveCrossFileCalls(
         continue;
       }
 
-      // 4. Path proximity: strict unique winner only.
-      const winner = pathProximityWinner(relPath, candidates);
+      // 4. Path proximity over the preferred candidates: strict unique
+      //    winner only (a nearer test mock never wins — already filtered).
+      const winner = pathProximityWinner(relPath, preferred);
       if (winner !== null) {
         pushResolvedEdge(extraction, rawCall, winner, 'INFERRED', relPath);
         resolved++;
