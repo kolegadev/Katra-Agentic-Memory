@@ -14,7 +14,7 @@ import { dispatch_service, DispatchContext } from './dispatch-service.js';
 import { getEpisodicEventManager } from '../memory/episodic-event-manager.js';
 import { TimeBlockSummarizer } from './time-block-summarizer.js';
 import { ProspectiveMemoryService } from '../memory/prospective-memory-service.js';
-import { embeddingService } from '../infrastructure/embedding-service.js';
+import { embeddingService, MIN_CONTENT_LENGTH } from '../infrastructure/embedding-service.js';
 import { entityResolver } from '../integration/entity-resolver.js';
 import { stableContentHash } from '../infrastructure/content-hash-utils.js';
 import { DecisionActionService } from './decision-action-service.js';
@@ -603,13 +603,26 @@ export class BackgroundProcessor {
       const { get_database } = await import('../../database/connection.js');
       const db = get_database();
 
+      // Candidates must be embeddable per the embedding policy (content
+      // length >= MIN_CONTENT_LENGTH, not quality-skipped). Without this
+      // filter, short facts (e.g. extraction noise) sit at the head of the
+      // natural order, get picked every cycle, fail shouldEmbed(), and the
+      // processor livelocks at "Embedded 0/20" forever — reporting success
+      // while embedding nothing.
+      const embeddableFactFilter = {
+        $expr: { $gte: [{ $strLenCP: { $ifNull: ['$content', ''] } }, MIN_CONTENT_LENGTH] },
+        embedding_skipped: { $ne: true },
+      };
+
       // 2a. Event-linked facts from extraction pipeline
       const linkedFacts = await db.collection('semantic_facts')
         .find({
           user_id: userId,
           'metadata.extraction_context.source_event_id': eventId,
           embedding: { $exists: false },
+          ...embeddableFactFilter,
         })
+        .sort({ created_at: 1 })
         .limit(20)
         .toArray();
 
@@ -621,7 +634,9 @@ export class BackgroundProcessor {
           user_id: userId,
           embedding: { $exists: false },
           _id: { $nin: embeddedIds },
+          ...embeddableFactFilter,
         })
+        .sort({ created_at: 1 })
         .limit(20)
         .toArray();
 
@@ -640,7 +655,11 @@ export class BackgroundProcessor {
             await embeddingService.storeEmbedding('semantic_facts', allFacts[i]._id, vec);
           }
         }
-        console.log(`🧠 Embedded ${embeddings.filter(Boolean).length}/${allFacts.length} semantic facts (${linkedFacts.length} linked, ${otherFacts.length} other)`);
+        const embeddedCount = embeddings.filter(Boolean).length;
+        if (embeddedCount < allFacts.length) {
+          console.warn(`⚠️ Embedded only ${embeddedCount}/${allFacts.length} semantic facts — ${allFacts.length - embeddedCount} skipped by quality filter or encoding failure`);
+        }
+        console.log(`🧠 Embedded ${embeddedCount}/${allFacts.length} semantic facts (${linkedFacts.length} linked, ${otherFacts.length} other)`);
       }
     } catch (e: any) {
       console.warn('⚠️ Failed to embed semantic facts:', e.message);
