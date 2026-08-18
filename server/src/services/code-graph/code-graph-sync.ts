@@ -266,6 +266,20 @@ export class CodeGraphSync {
       for (const node of extraction.nodes) {
         const id = kgNodeId(rootKey, node.id);
         upsertedNodeIds.add(id);
+        const properties: Record<string, unknown> = {
+          name: node.label,
+          source_path: relPath,
+          source_file: relPath,
+          code_language: languageFor(relPath),
+          summary: `Katra-code ${node.kind}: ${node.label}`,
+          code_root: resolvedRoot,
+        };
+        // F8: persist the declared return type so the cross-file resolver can
+        // reconstruct unchanged files' return types from the DB. Only set
+        // when present — nodes without a return type never gain the key.
+        if (node.returnType !== undefined) {
+          properties.return_type = node.returnType;
+        }
         nodeOps.push({
           updateOne: {
             filter: { id },
@@ -273,14 +287,7 @@ export class CodeGraphSync {
               $set: {
                 type: node.kind,
                 name: node.label,
-                properties: {
-                  name: node.label,
-                  source_path: relPath,
-                  source_file: relPath,
-                  code_language: languageFor(relPath),
-                  summary: `Katra-code ${node.kind}: ${node.label}`,
-                  code_root: resolvedRoot,
-                },
+                properties,
                 source: 'katra-code',
                 updated_at: now,
               },

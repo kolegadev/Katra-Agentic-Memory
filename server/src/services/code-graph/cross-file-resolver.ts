@@ -8,9 +8,14 @@
  *
  *   1. import evidence  — caller file's `imports_from` edge to file F with
  *      exactly one candidate living in F → EXTRACTED (1.0);
- *   2. unique candidate → INFERRED;
- *   3. path proximity (strict unique longest common dir prefix) → INFERRED;
- *   4. otherwise SKIPPED (ambiguous, the god-node guard).
+ *   2. non-test preference (Graphify `disambiguate_ambiguous_candidates`
+ *      stage 1, `paths.py`): a NON-test caller drops candidates living in
+ *      test files before ANY further disambiguation, so test mocks/stubs
+ *      never shadow real symbols or win proximity tiebreaks; a test caller
+ *      keeps the full candidate set (test-local resolution allowed);
+ *   3. unique candidate → INFERRED;
+ *   4. path proximity (strict unique longest common dir prefix) → INFERRED;
+ *   5. otherwise SKIPPED (ambiguous, the god-node guard).
  *
  * Member calls (kind 'method') resolve ONLY via import evidence or global
  * uniqueness — never path proximity — EXCEPT F7 typed member calls: a member
@@ -19,6 +24,13 @@
  * emitting `calls` to the `${classId}_${callee}` method node ONLY when that
  * method node exists (never invented). Confidence is EXTRACTED for
  * annotation/new/parameter/this receivers and INFERRED for return_flow.
+ *
+ * F8 extends F7 to cross-file return-type propagation: a receiver whose
+ * initializer call has no in-file type (`const svc = getService(); …`) is
+ * looked up in a global return-type index and resolved through the same
+ * class-name path. A successful F8 resolution consumes the call; an F8
+ * lookup failure FALLS THROUGH to the name-based ladder, whose uniqueness
+ * requirement keeps the god-node guard intact.
  *
  * The resolver NEVER adds nodes and NEVER guesses: ambiguous calls are
  * skipped, dangling calls are counted and dropped. All ids on emitted edges
@@ -41,6 +53,12 @@ import type {
 /** One resolvable symbol: its bare node id and the source file it lives in. */
 export interface LabelIndexEntry {
   id: string;
+  file: string;
+}
+
+/** F8: one declared return type for a function label, with its source file. */
+export interface ReturnTypeIndexEntry {
+  typeName: string;
   file: string;
 }
 
@@ -102,6 +120,29 @@ export function buildClassIndex(
   return index;
 }
 
+/**
+ * Return-type index (F8): function nodes that declare a `returnType`, keyed
+ * by their exact label (`name()`). Built from the same node set as the label
+ * index (fresh extractions + stored nodes of unchanged files) — the basis
+ * for cross-file return-type propagation of call-initializer receivers.
+ * Method nodes never enter this index (their labels are `.name()`).
+ */
+export function buildReturnTypeIndex(
+  nodes: CodeNode[],
+): Map<string, ReturnTypeIndexEntry[]> {
+  const index = new Map<string, ReturnTypeIndexEntry[]>();
+  for (const node of nodes) {
+    if (node.kind !== 'function' || !node.returnType) continue;
+    const key = node.label;
+    if (!key) continue;
+    const entry: ReturnTypeIndexEntry = { typeName: node.returnType, file: node.sourceFile };
+    const existing = index.get(key);
+    if (existing) existing.push(entry);
+    else index.set(key, [entry]);
+  }
+  return index;
+}
+
 /** Deduplicate candidates by id, preserving first-occurrence order. */
 function dedupeCandidates(candidates: LabelIndexEntry[]): LabelIndexEntry[] {
   const seen = new Set<string>();
@@ -112,6 +153,97 @@ function dedupeCandidates(candidates: LabelIndexEntry[]): LabelIndexEntry[] {
     out.push(candidate);
   }
   return out;
+}
+
+/**
+ * Path segments that, when they appear as a WHOLE path component, mark the
+ * path as a test location (Graphify `_TEST_DIR_SEGMENTS` in paths.py).
+ * Matched against segments, never raw substrings, so `src/contest.py` and
+ * `src/latest/x.py` do NOT match.
+ */
+const TEST_DIR_SEGMENTS = new Set([
+  'tests',
+  'test',
+  'spec',
+  'specs',
+  '__tests__',
+]);
+
+/**
+ * Filename patterns marking a file as a test, matched against the filename
+ * only (Graphify `_TEST_FILENAME_PATTERNS` in paths.py). The first five are
+ * case-insensitive; the Java/C# conventions are case-sensitive (require an
+ * uppercase-led `Test`/`Tests` before the extension).
+ */
+const TEST_FILENAME_PATTERNS: RegExp[] = [
+  /^test_.*/i,
+  /.*_test\..+$/i,
+  /.*\.test\..+$/i,
+  /.*\.spec\..+$/i,
+  /.*_spec\..+$/i,
+  /.*\.tests\.ps1$/i,
+  /.*Test\.java$/,
+  /.*Tests\.java$/,
+  /.*Tests\.cs$/,
+];
+
+/**
+ * Classify a source path as a test path (case-insensitive, segment-aware) —
+ * a faithful port of Graphify `_is_test_path` (paths.py). A path is a test
+ * path when any whole path segment equals a known test dir name
+ * (`tests`/`test`/`spec`/`specs`/`__tests__`) or the filename matches a
+ * known test-file naming convention (`test_*.ts`, `*_test.ts`, `*.test.ts`,
+ * `*.spec.ts`, `*_spec.ts`, `*.Tests.ps1`, `*Test.java`, `*Tests.java`,
+ * `*Tests.cs`). Conservative on purpose: `latest.py`, `src/contest.py` and
+ * `test-utils.ts` are NON-test.
+ */
+export function isTestPath(relPath: string): boolean {
+  if (!relPath) return false;
+  // Accept both POSIX and Windows separators (Graphify normalizes the same).
+  const norm = relPath.replace(/\\/g, '/');
+  const segments = norm.split('/').filter((s) => s !== '' && s !== '.');
+  for (const segment of segments) {
+    if (TEST_DIR_SEGMENTS.has(segment.toLowerCase())) return true;
+  }
+  const filename = segments[segments.length - 1] ?? '';
+  if (!filename) return false;
+  return TEST_FILENAME_PATTERNS.some((pattern) => pattern.test(filename));
+}
+
+/**
+ * Graphify `disambiguate_ambiguous_candidates` stage 1: a NON-test call
+ * site drops candidates living in test files (test mocks/stubs must not
+ * shadow real symbols); a test call site keeps the full candidate set
+ * (test-local resolution allowed). Order-preserving, so determinism is
+ * unchanged. Single candidates are returned as-is (Graphify short-circuits
+ * the single-candidate case before the test filter).
+ */
+export function preferNonTest<T extends { file: string }>(
+  candidates: T[],
+  callerFile: string,
+): T[] {
+  if (candidates.length <= 1) return candidates;
+  if (isTestPath(callerFile)) return candidates;
+  return candidates.filter((candidate) => !isTestPath(candidate.file));
+}
+
+/**
+ * F7/F8 class-name choice: import evidence first (an explicit import
+ * binding wins regardless of test/non-test — Graphify behavior too), then
+ * non-test preference before the unique-global fallback, else null (the
+ * caller skips — god-node guard).
+ */
+function chooseClassCandidate(
+  typeCandidates: LabelIndexEntry[],
+  callerFile: string,
+  candidateMatchesImport: (candidate: LabelIndexEntry) => boolean,
+): LabelIndexEntry | null {
+  if (typeCandidates.length === 0) return null;
+  const importMatches = typeCandidates.filter(candidateMatchesImport);
+  if (importMatches.length === 1) return importMatches[0];
+  const preferred = preferNonTest(typeCandidates, callerFile);
+  if (preferred.length === 1) return preferred[0];
+  return null;
 }
 
 /** Directory segments of a posix relPath (`a/b/x.ts` → [`a`, `b`]). */
@@ -224,6 +356,7 @@ export async function resolveCrossFileCalls(
     dbNodes = docs.flatMap((doc): CodeNode[] => {
       const storedId = doc.id;
       const sourceFile = doc.properties?.source_file;
+      const returnType = doc.properties?.return_type;
       if (
         typeof storedId !== 'string' ||
         !storedId.startsWith(prefix) ||
@@ -231,14 +364,18 @@ export async function resolveCrossFileCalls(
       ) {
         return [];
       }
-      return [
-        {
-          id: storedId.slice(prefix.length),
-          label: String(doc.name ?? ''),
-          kind: doc.type as CodeNode['kind'],
-          sourceFile,
-        },
-      ];
+      const node: CodeNode = {
+        id: storedId.slice(prefix.length),
+        label: String(doc.name ?? ''),
+        kind: doc.type as CodeNode['kind'],
+        sourceFile,
+      };
+      // F8: unchanged files' declared return types are reconstructed from
+      // their stored `properties.return_type` (only when present).
+      if (typeof returnType === 'string' && returnType !== '') {
+        node.returnType = returnType;
+      }
+      return [node];
     });
   } catch {
     dbNodes = []; // best-effort: DB unavailable → fresh nodes only
@@ -247,6 +384,7 @@ export async function resolveCrossFileCalls(
   const allNodes = [...freshNodes, ...dbNodes];
   const index = buildLabelIndex(allNodes);
   const classIndex = buildClassIndex(allNodes);
+  const returnTypeIndex = buildReturnTypeIndex(allNodes);
   // Method node ids actually present (`.name()` entries) — a typed member
   // call only ever targets an EXISTING method node (never invented).
   const methodIds = new Set(
@@ -288,17 +426,16 @@ export async function resolveCrossFileCalls(
       // before the name-based ladder applies — the type is authoritative and
       // the ladder never guesses on its behalf. Type → class candidates:
       // import-bound preference (exactly one candidate in an imported file),
-      // else a globally unique class, else skip.
+      // else non-test preference, else a globally unique class, else skip.
       if (rawCall.kind === 'method' && rawCall.receiver?.typeName) {
         const typeCandidates = dedupeCandidates(
           classIndex.get(rawCall.receiver.typeName) ?? [],
         );
-        let chosen: LabelIndexEntry | null = null;
-        if (typeCandidates.length > 0) {
-          const importMatches = typeCandidates.filter(candidateMatchesImport);
-          if (importMatches.length === 1) chosen = importMatches[0];
-          else if (typeCandidates.length === 1) chosen = typeCandidates[0];
-        }
+        const chosen = chooseClassCandidate(
+          typeCandidates,
+          relPath,
+          candidateMatchesImport,
+        );
         if (chosen === null) {
           skippedAmbiguous++;
           continue;
@@ -324,6 +461,85 @@ export async function resolveCrossFileCalls(
         continue;
       }
 
+      // F8: a member call whose receiver is initialized by a call to a
+      // function typed ELSEWHERE (`const svc = getService(); svc.start()`)
+      // resolves through the global return-type index — ONE propagation hop
+      // only. The receiver fact carries the bare initializer callee and no
+      // in-file typeName. On SUCCESS the edge is emitted and the ladder is
+      // NOT consulted again (no double-emit). On ANY lookup failure (unknown
+      // initializer, ambiguous initializer, unknown class, missing method
+      // node) the branch FALLS THROUGH to the generic F6 ladder below, which
+      // may still resolve the rawCall as a receiver-less-style unique
+      // `.name()` lookup (INFERRED) — the ladder's uniqueness requirement is
+      // the god-node guard, so falling through can never invent anything.
+      if (rawCall.kind === 'method' && rawCall.receiver?.initializerCall) {
+        const initializer = rawCall.receiver.initializerCall.trim();
+        const seenReturnTypes = new Set<string>();
+        const retCandidates = (returnTypeIndex.get(`${initializer}()`) ?? []).filter(
+          (entry) => {
+            const key = `${entry.typeName}\u0000${entry.file}`;
+            if (seenReturnTypes.has(key)) return false;
+            seenReturnTypes.add(key);
+            return true;
+          },
+        );
+        const returnTypeMatchesImport = (
+          candidate: ReturnTypeIndexEntry,
+        ): boolean => {
+          const fileId = makeId(fileStem(candidate.file));
+          for (const imported of importedFileIds) {
+            if (fileId === imported) return true;
+          }
+          return false;
+        };
+        // 1. initializerCall lookup: import evidence first (unaffected by
+        //    test/non-test), else non-test preference before the
+        //    unique-global fallback (Graphify disambiguate stage 1). A
+        //    failed lookup does NOT skip — the F6 ladder gets its chance.
+        let chosen: ReturnTypeIndexEntry | null = null;
+        if (retCandidates.length > 0) {
+          const importMatches = retCandidates.filter(returnTypeMatchesImport);
+          if (importMatches.length === 1) chosen = importMatches[0];
+          else {
+            const preferred = preferNonTest(retCandidates, relPath);
+            if (preferred.length === 1) chosen = preferred[0];
+          }
+        }
+        let f8Resolved = false;
+        if (chosen !== null) {
+          // 2. Return type → class candidates: EXACTLY the F7 class-name index
+          //    path (import-bound preference, non-test preference, else unique
+          //    global, else skip). Failure falls through to the F6 ladder.
+          const typeCandidates = dedupeCandidates(
+            classIndex.get(chosen.typeName) ?? [],
+          );
+          const chosenClass = chooseClassCandidate(
+            typeCandidates,
+            relPath,
+            candidateMatchesImport,
+          );
+          if (chosenClass !== null) {
+            // 3. The method node must EXIST (god-node guard: never invent).
+            //    Missing method → fall through to the F6 ladder.
+            const retMethodId = makeId(chosenClass.id, callee);
+            if (methodIds.has(retMethodId)) {
+              // Return-flow provenance → INFERRED (F7 confidence rule).
+              pushResolvedEdge(
+                extraction,
+                rawCall,
+                { id: retMethodId, file: chosenClass.file },
+                'INFERRED',
+                relPath,
+              );
+              resolved++;
+              f8Resolved = true;
+            }
+          }
+        }
+        if (f8Resolved) continue;
+        // Fall through: the generic F6 ladder below gets its chance.
+      }
+
       const key = INDEX_KEY_FOR_KIND[rawCall.kind](callee);
       const candidates = dedupeCandidates(index.get(key) ?? []);
       if (candidates.length === 0) {
@@ -331,7 +547,9 @@ export async function resolveCrossFileCalls(
         continue;
       }
 
-      // 1. Import evidence: exactly one candidate in an imported file.
+      // 1. Import evidence: exactly one candidate in an imported file
+      //    (EXTRACTED — an explicit import binding wins regardless of
+      //    test/non-test, Graphify behavior too).
       const importMatches = candidates.filter(candidateMatchesImport);
       if (importMatches.length === 1) {
         pushResolvedEdge(extraction, rawCall, importMatches[0], 'EXTRACTED', relPath);
@@ -339,10 +557,19 @@ export async function resolveCrossFileCalls(
         continue;
       }
 
-      // 2. Unique global candidate → INFERRED.
-      if (candidates.length === 1) {
-        pushResolvedEdge(extraction, rawCall, candidates[0], 'INFERRED', relPath);
+      // 2. Non-test preference BEFORE the unique-global check (Graphify
+      //    disambiguate stage 1): a NON-test caller drops test-file
+      //    candidates, so a label polluted by test mocks/stubs still
+      //    resolves when exactly one non-test candidate survives. A test
+      //    caller keeps the full set (test-local resolution allowed).
+      const preferred = preferNonTest(candidates, relPath);
+      if (preferred.length === 1) {
+        pushResolvedEdge(extraction, rawCall, preferred[0], 'INFERRED', relPath);
         resolved++;
+        continue;
+      }
+      if (preferred.length === 0) {
+        skippedAmbiguous++;
         continue;
       }
 
@@ -353,8 +580,9 @@ export async function resolveCrossFileCalls(
         continue;
       }
 
-      // 4. Path proximity: strict unique winner only.
-      const winner = pathProximityWinner(relPath, candidates);
+      // 4. Path proximity over the preferred candidates: strict unique
+      //    winner only (a nearer test mock never wins — already filtered).
+      const winner = pathProximityWinner(relPath, preferred);
       if (winner !== null) {
         pushResolvedEdge(extraction, rawCall, winner, 'INFERRED', relPath);
         resolved++;

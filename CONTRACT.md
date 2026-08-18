@@ -379,6 +379,74 @@ server/tests/fixtures/code-graph/memb-*.ts             (NEW fixtures)
 - Python member-call typing, cross-file return-type propagation, and interface/union types are
   future features (F8+). Do NOT touch sync predicates, scanner, auth, or the graphify scripts.
 
+## F8 — Cross-file return-type propagation, TS/JS (loop-director, 2026-08-18)
+
+### Goal
+
+Resolve member calls on receivers initialized by a call to a function whose return type is
+declared in ANOTHER file: `const svc = getService(); svc.start()` resolves to the
+`Service.start()` method node when `getService(): Service` lives elsewhere and is import-bound
+or globally unique. Confidence: INFERRED (return-flow provenance, per F7). One propagation hop
+only — a return type that is itself an unresolved call stays unresolved (F9).
+
+### Interfaces (delta on F7)
+
+```ts
+// types.ts
+CodeNode.returnType?: string;                    // kind 'function'/'method', TS annotations only
+RawCall.receiver.initializerCall?: string;       // bare callee name of a call-initializer
+                                                 // (`const x = f()` → 'f') when the extractor
+                                                 // cannot type x within the file
+```
+
+- Extractor (TS/TSX/JS-via-TS): function/method declarations with return type annotations get
+  `node.returnType` = last segment of the annotation (generics stripped, qualified types reduced
+  — same rules as F7). For `const x = f(...)` initializers where f's return type is NOT resolvable
+  same-file (f not declared in the file, or no annotation), emit
+  `receiver: { name: 'x', typeSource: 'return_flow', initializerCall: 'f' }` (no typeName).
+  Same-file resolvable flows keep the F7 behavior (typeName set, no initializerCall).
+- Resolver: before the generic ladder, for kind 'method' rawCalls with receiver.initializerCall:
+  1. Global return-type index built alongside the other indexes: function label `name()` →
+     {returnType} from fresh extraction nodes PLUS DB nodes of unchanged files (returnType
+     reconstructed from `properties.return_type`).
+  2. initializerCall lookup: import evidence (caller's imports_from → prefer candidate in the
+     imported file) else unique global → return type T; else skip.
+  3. T → class lookup and method-node check, EXACTLY as F7 (import-bound class ambiguity,
+     `${classNodeId}_${callee}` must exist, never invent). Emit calls edge, INFERRED.
+  4. Guard: if T is itself unknown or the class/method lookup fails → skip. One hop only.
+- Sync: node upsert $set properties.return_type when node.returnType is present (stored so the
+  resolver can reconstruct return types of unchanged files' nodes from the DB). Do NOT persist
+  initializerCall anywhere — it is per-run resolution state.
+
+### Files F8 owns
+
+```
+server/src/services/code-graph/types.ts                (MODIFIED — CodeNode.returnType, receiver.initializerCall)
+server/src/services/code-graph/codebase-extractor.ts   (MODIFIED — node.returnType, initializerCall facts)
+server/src/services/code-graph/cross-file-resolver.ts  (MODIFIED — return-type index + resolution)
+server/src/services/code-graph/code-graph-sync.ts      (MODIFIED — persist properties.return_type)
+server/tests/unit/code-graph/extractor.test.ts         (MODIFIED)
+server/tests/unit/code-graph/cross-file-resolver.test.ts (MODIFIED)
+server/tests/unit/code-graph/sync.test.ts              (MODIFIED — return_type persisted)
+server/tests/fixtures/code-graph/ret-*.ts              (NEW fixtures)
+```
+
+### Success criteria
+
+1. Full suite green; existing F6/F7 assertions unchanged in behavior (additive only).
+2. Unit: cross-file return flow resolves → INFERRED; import-bound initializer disambiguation;
+   ambiguous initializer name skipped; return type with no matching class/method skipped;
+   one-hop limit (initializerCall whose function has no returnType stays skipped);
+   node.returnType captured (qualified/generic rules); sync persists properties.return_type;
+   determinism.
+3. Live dogfood: forced re-sync raises `calls` above the F7 baseline (2,552), dangling stays 0.
+
+### Boundaries
+
+- Multi-hop propagation, Python member typing, and union/intersection return types are future
+  features (F9+). Do NOT touch sync predicates beyond properties.return_type, auth, scanner,
+  or the graphify scripts.
+
 ## Known limitations (explicit, not defects)
 
 - Cross-file call resolution, fuzzy entity dedup (MinHash/LSH), community detection, and
