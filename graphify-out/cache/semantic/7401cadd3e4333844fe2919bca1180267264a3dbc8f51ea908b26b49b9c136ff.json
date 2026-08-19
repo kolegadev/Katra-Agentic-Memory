@@ -1,0 +1,1 @@
+{"nodes": [{"id": "dashboard_ui", "label": "Dashboard Web UI", "file_type": "code", "source_file": "dashboard/index.html"}], "edges": [{"source": "dashboard_index_html", "target": "dashboard_ui", "relation": "implements", "confidence": "EXTRACTED", "confidence_score": 1.0, "source_file": "dashboard/index.html"}], "hyperedges": []}

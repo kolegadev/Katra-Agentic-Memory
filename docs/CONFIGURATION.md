@@ -6,7 +6,7 @@ All configuration is via environment variables (or `.env` file). See `.env.examp
 
 ## Security Configuration
 
-Katra stores API keys as SHA-256 hashes in MongoDB. Plaintext keys exist only in `.env` or the one-time console output at generation time.
+Satori stores API keys as SHA-256 hashes in MongoDB. Plaintext keys exist only in `.env` or the one-time console output at generation time.
 
 | Variable | Default | Description |
 |---|---|---|
@@ -16,7 +16,7 @@ Katra stores API keys as SHA-256 hashes in MongoDB. Plaintext keys exist only in
 
 **Key storage**: Only SHA-256 hashes are persisted to MongoDB `system_settings`. Validation hashes the incoming token and compares against the stored digest using constant-time comparison — the database never holds a value that grants API access directly.
 
-**Key auto-generation**: If both keys are unset, Katra generates 256-bit random keys on first boot, prints them to `docker logs`, and persists the hashes. Subsequent restarts reuse the stored hashes.
+**Key auto-generation**: If both keys are unset, Satori generates 256-bit random keys on first boot, prints them to `docker logs`, and persists the hashes. Subsequent restarts reuse the stored hashes.
 
 ### Core Ports
 
@@ -46,7 +46,7 @@ Example: `mongodb://admin:password@mongo:27017/katra?authSource=admin`
 
 ### LLM Provider
 
-Katra supports any OpenAI-compatible LLM provider. Configure via either the legacy pattern or the multi-provider pattern.
+Satori supports any OpenAI-compatible LLM provider. Configure via either the legacy pattern or the multi-provider pattern.
 
 **Legacy (single provider):**
 | Variable | Description |
@@ -67,7 +67,7 @@ Katra supports any OpenAI-compatible LLM provider. Configure via either the lega
 | `LLM_PROVIDER_CUSTOM_BASE_URL` | Custom OpenAI-compatible endpoint |
 | `LLM_PROVIDER_CUSTOM_MODEL` | Default model |
 
-If no LLM keys are configured, Katra runs in **local-only mode** (no AI summarization/extraction, but all storage and search still work).
+If no LLM keys are configured, Satori runs in **local-only mode** (no AI summarization/extraction, but all storage and search still work).
 
 ### Embeddings
 
@@ -103,13 +103,13 @@ The included `docker-compose.yml` starts:
 - **mongo** — MongoDB 7.0 (internal port 27017, not exposed to host)
 - **redis** — Redis 7 Alpine (internal port 6379, not exposed to host)
 - **minio** — MinIO (internal port 9000 API / 9001 console, not exposed to host)
-- **katra** — Katra server (external `HOST_API_PORT:9012` → internal `9002`; external `HOST_MCP_PORT:3112` → internal `3100`)
+- **katra** — Satori server (external `HOST_API_PORT:9012` → internal `9002`; external `HOST_MCP_PORT:3112` → internal `3100`)
 
 Customize by editing `docker-compose.yml` or overriding env vars in `.env`.
 
 ## Connecting to External Services
 
-You can run Katra without Docker Compose by connecting to external services:
+You can run Satori without Docker Compose by connecting to external services:
 
 ```bash
 # .env
@@ -120,7 +120,7 @@ AWS_ACCESS_KEY_ID=AKIA...
 AWS_SECRET_ACCESS_KEY=...
 ```
 
-Then run Katra directly:
+Then run Satori directly:
 ```bash
 cd server
 npm install

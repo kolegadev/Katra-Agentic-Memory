@@ -8,7 +8,7 @@ The Autonomous Loop solves the "next session start" problem for AI agents — ho
 
 It uses **sleep consolidation reflections** and **emotional signatures** as the trigger mechanism. When the system's emotional landscape indicates urgency, the heartbeat accelerates. When things are quiet, it slows to once per day.
 
-**Everything is Katra-native.** The autonomous loop operates on the shared memory layer inside Katra. It doesn't know about any specific agent — each agent joins by setting one environment variable.
+**Everything is Satori-native.** The autonomous loop operates on the shared memory layer inside Satori. It doesn't know about any specific agent — each agent joins by setting one environment variable.
 
 ## Architecture
 
@@ -44,7 +44,7 @@ It uses **sleep consolidation reflections** and **emotional signatures** as the 
 
 ## Agent-Agnostic Design
 
-The entire autonomous loop is **Katra-native**. All components operate on the shared memory layer inside Katra's MongoDB. They don't know about KolegaCode, OpenCode, or any specific agent. Agents join by setting **one environment variable**:
+The entire autonomous loop is **Satori-native**. All components operate on the shared memory layer inside Satori's MongoDB. They don't know about KolegaCode, OpenCode, or any specific agent. Agents join by setting **one environment variable**:
 
 ```bash
 export KATRA_AGENT_ID="your-agent-id"
@@ -87,7 +87,7 @@ One per agent. Set `KATRA_AGENT_ID` to tell it who it is.
 
 | Scope | Classification | Behavior |
 |-------|---------------|----------|
-| **A — AUTONOMOUS** | Katra, extractors, memory, Docker | Execute immediately |
+| **A — AUTONOMOUS** | Satori, extractors, memory, Docker | Execute immediately |
 | **B — GATED** | External repos, user projects | Report only, never modify |
 | **C — CAUTIOUS** | System config, launchd, nginx | Inspect first, preserve defaults |
 

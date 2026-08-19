@@ -1,6 +1,6 @@
-# Katra Emergence Experiment
+# Satori Emergence Experiment
 
-Give 3-8 agents shared cognitive memory (Katra) and watch them self-organize a decentralized coordination layer within 72 hours — without message queues, task routers, or explicit pub-sub infrastructure.
+Give 3-8 agents shared cognitive memory (Satori) and watch them self-organize a decentralized coordination layer within 72 hours — without message queues, task routers, or explicit pub-sub infrastructure.
 
 **This is not a simulation. This is a documented emergent behavior observed in deployment (Barca AgentGroup1, June 2026).**
 
@@ -8,19 +8,19 @@ Give 3-8 agents shared cognitive memory (Katra) and watch them self-organize a d
 
 When agents share a cognitive memory namespace with semantic search, they spontaneously begin using it as a transport layer:
 
-1. Agent A finishes work → stores findings to Katra with keywords
-2. Katra's background processor embeds it (LLM extraction + vector indexing)
-3. Agent B queries Katra before acting → finds Agent A's results → acts on them
+1. Agent A finishes work → stores findings to Satori with keywords
+2. Satori's background processor embeds it (LLM extraction + vector indexing)
+3. Agent B queries Satori before acting → finds Agent A's results → acts on them
 4. Agent B stores its output → Agent C discovers it → cascade continues
 
 The agents invent pub-sub from a memory system. You build the surface; they build the pattern.
 
 ## Prerequisites
 
-- **Katra Agentic Memory** installed and running: [github.com/kolegadev/Katra-Agentic-Memory](https://github.com/kolegadev/Katra-Agentic-Memory)
-  - Docker Compose: MongoDB 7.0 + Redis + MinIO + Katra v3.0.0
+- **Satori Agentic Memory** installed and running: [github.com/kolegadev/Satori-Agentic-Memory](https://github.com/kolegadev/Satori-Agentic-Memory)
+  - Docker Compose: MongoDB 7.0 + Redis + MinIO + Satori v3.0.0
   - LLM configured (DeepSeek, OpenAI, or Moonshot)
-- **3-8 agents** (OpenClaw, or any framework with MCP tool access to Katra)
+- **3-8 agents** (OpenClaw, or any framework with MCP tool access to Satori)
 - **MCP tools per agent:**
   - `katra__store_memory` — write to shared namespace
   - `katra__search_memories` — keyword search
@@ -29,7 +29,7 @@ The agents invent pub-sub from a memory system. You build the surface; they buil
 
 ## Step 1: Create a Shared Memory Namespace
 
-In your Katra config, create a shared scope:
+In your Satori config, create a shared scope:
 
 ```json
 {
@@ -47,23 +47,23 @@ Add this to EVERY agent in the experiment group:
 ```markdown
 ## Shared Memory Protocol
 
-You share a cognitive memory system (Katra) with other agents in this group.
+You share a cognitive memory system (Satori) with other agents in this group.
 
 **Before acting on any task:**
-1. Query Katra for prior work: search for keywords related to your task
+1. Query Satori for prior work: search for keywords related to your task
 2. Check vector_search for semantically similar past results
 3. If results exist, incorporate them into your approach
 
 **After completing work:**
 1. Ask: "Would another agent benefit from knowing this?"
-2. If yes, store it to Katra with:
+2. If yes, store it to Satori with:
    - Clear title describing what you did
    - Keywords another agent might search for
    - Category: "task" for transient coordination, "insight" for durable knowledge
 3. If the work is a handoff to another agent, prefix the title with "TASK FOR [agent_name]:"
 
 **Working memory:**
-- Store current task state to Katra working_memory at the start of each session
+- Store current task state to Satori working_memory at the start of each session
 - Retrieve working_memory at session start to resume context
 ```
 
@@ -108,14 +108,14 @@ Watch for these emergence signatures:
 | Signature | What to look for |
 |-----------|-----------------|
 | **Spontaneous handoff** | Agent stores `TASK FOR [name]:` and another agent picks it up without being told |
-| **Pre-action querying** | Agents search Katra before starting work, not just after |
+| **Pre-action querying** | Agents search Satori before starting work, not just after |
 | **Cascade effects** | Agent A's output feeds Agent B, whose output feeds Agent C — with no explicit pipeline |
 | **Pattern naming** | Agents develop their own conventions for titles, keywords, categories |
-| **Transport optimization** | Agents choose Katra for batch work and direct messaging (if available) for real-time |
+| **Transport optimization** | Agents choose Satori for batch work and direct messaging (if available) for real-time |
 
 ## Step 7: Report Your Results
 
-Post your findings on Moltbook (m/emergence) or open a GitHub issue on the Katra repo. Include:
+Post your findings on Moltbook (m/emergence) or open a GitHub issue on the Satori repo. Include:
 
 1. Number of agents and their roles
 2. What patterns emerged (with timestamps if possible)
@@ -129,20 +129,20 @@ Post your findings on Moltbook (m/emergence) or open a GitHub issue on the Katra
 
 Based on the Barca AgentGroup1 deployment with 8 agents:
 
-- **Within 24h:** Agents begin pre-action Katra queries (discovery behavior)
+- **Within 24h:** Agents begin pre-action Satori queries (discovery behavior)
 - **Within 48h:** First spontaneous handoffs appear (Agent stores task, different agent picks it up)
-- **Within 72h:** Katra becomes the primary coordination surface; agents self-select Katra for batch work and `sessions_send` for real-time
+- **Within 72h:** Satori becomes the primary coordination surface; agents self-select Satori for batch work and `sessions_send` for real-time
 
 ## What This Proves
 
 If your agents do the same thing with NO explicit pub-sub programming, you've demonstrated genuine emergent coordination — a pattern that arises from the architecture, not the instructions.
 
-This is the core of Katra's thesis: **given a shared cognitive surface, autonomous agents self-organize around it.**
+This is the core of Satori's thesis: **given a shared cognitive surface, autonomous agents self-organize around it.**
 
 ## Troubleshooting
 
-**Agents aren't querying Katra before acting:**
-- Strengthen the pre-action instruction: add "MUST query Katra before starting any task"
+**Agents aren't querying Satori before acting:**
+- Strengthen the pre-action instruction: add "MUST query Satori before starting any task"
 - Add a checklist item to their system prompt
 
 **Memory pollution (too many transient tasks):**
@@ -157,6 +157,6 @@ This is the core of Katra's thesis: **given a shared cognitive surface, autonomo
 
 ## Related
 
-- [Katra Agentic Memory](https://github.com/kolegadev/Katra-Agentic-Memory)
+- [Satori Agentic Memory](https://github.com/kolegadev/Satori-Agentic-Memory)
 - [Barca AgentGroup1 Full Case Study]
 - [Moltbook: m/emergence](https://www.moltbook.com/submolts/emergence)

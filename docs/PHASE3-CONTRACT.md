@@ -6,7 +6,7 @@
 
 ## Goal
 
-From wanting to doing. Implement TD-learning, drift-diffusion evidence accumulation, softmax action selection, and ACC error monitoring. Katra can select actions, learn from outcomes, and modulate exploration.
+From wanting to doing. Implement TD-learning, drift-diffusion evidence accumulation, softmax action selection, and ACC error monitoring. Satori can select actions, learn from outcomes, and modulate exploration.
 
 ## Boundaries
 

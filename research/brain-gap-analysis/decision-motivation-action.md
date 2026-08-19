@@ -1,10 +1,10 @@
-# Decision-Making, Motivation, and Action Selection for Katra
+# Decision-Making, Motivation, and Action Selection for Satori
 
 > *"The programming we need is environmental programming — build the petri dish, furnish it with agar, and see what grows."* — John
 
 **Status:** Research Survey & Architectural Analysis
 **Date:** 2026-06-30
-**Context:** Katra has mature memory storage/retrieval, emotional reflection (sleep consolidation), and emergent coordination patterns. It lacks any decision-making architecture, motivational drive system, or action selection mechanism. This document surveys what exists and what could be built.
+**Context:** Satori has mature memory storage/retrieval, emotional reflection (sleep consolidation), and emergent coordination patterns. It lacks any decision-making architecture, motivational drive system, or action selection mechanism. This document surveys what exists and what could be built.
 
 ---
 
@@ -13,10 +13,10 @@
 1. [Computational Decision Models](#1-computational-decision-models)
 2. [Motivational / Drive System Designs](#2-motivational--drive-system-designs)
 3. [Action Selection Mechanisms](#3-action-selection-mechanisms)
-4. [Extending Katra's Emotional Reflection into Motivation](#4-extending-katras-emotional-reflection-into-motivation)
+4. [Extending Satori's Emotional Reflection into Motivation](#4-extending-katras-emotional-reflection-into-motivation)
 5. [Internal vs External Motivation Architecture](#5-internal-vs-external-motivation-architecture)
 6. [Existing Agent Implementations](#6-existing-agent-implementations)
-7. [Synthesis: What Belongs in Katra?](#7-synthesis-what-belongs-in-katra)
+7. [Synthesis: What Belongs in Satori?](#7-synthesis-what-belongs-in-katra)
 
 ---
 
@@ -37,13 +37,13 @@ The agent computes the expected utility of each available action — the sum of 
 - Provides a clear normative benchmark — "this is what a perfectly rational agent would do"
 - Computationally well-defined when probabilities and utilities are known
 
-**Weaknesses for Katra:**
+**Weaknesses for Satori:**
 - Requires full enumeration of outcomes and their probabilities — intractable in open-ended environments
-- Assumes stable, pre-specified utility function — exactly what Katra doesn't have
+- Assumes stable, pre-specified utility function — exactly what Satori doesn't have
 - No account of *how* utilities are learned or where they come from
 - Humans systematically violate EUT axioms (Allais paradox, Ellsberg paradox, framing effects)
 
-**Relevance to Katra:** Low as a standalone mechanism. Useful as a theoretical substrate — the formal language of "what is an agent trying to optimize?" — but Katra needs something that can *acquire* utilities from experience, not assume them.
+**Relevance to Satori:** Low as a standalone mechanism. Useful as a theoretical substrate — the formal language of "what is an agent trying to optimize?" — but Satori needs something that can *acquire* utilities from experience, not assume them.
 
 ### 1.2 Prospect Theory
 
@@ -61,15 +61,15 @@ v(x) = x^α        for x ≥ 0 (gains, α ≈ 0.88)
 v(x) = -λ(-x)^β   for x < 0 (losses, β ≈ 0.88, λ ≈ 2.25)
 ```
 
-**Relevance to Katra:**
-Prospect theory's reference dependence maps naturally onto Katra's emotional signatures. An entity's current emotional state (valence, intensity) provides the reference point. A reflection edge like `feels_frustrated_by` encodes loss-domain processing — the agent is below its reference point with respect to that entity. This suggests a motivational architecture where:
+**Relevance to Satori:**
+Prospect theory's reference dependence maps naturally onto Satori's emotional signatures. An entity's current emotional state (valence, intensity) provides the reference point. A reflection edge like `feels_frustrated_by` encodes loss-domain processing — the agent is below its reference point with respect to that entity. This suggests a motivational architecture where:
 
 - **Reference points = emotional baselines** for each tracked entity
 - **Gains/losses = valence deltas** from the emotional signature
 - **Loss aversion = asymmetric motivation**: resolving frustrations (losses) is more motivating than pursuing new excitements (gains)
 - **Diminishing sensitivity = emotional habituation**: repeated positive experiences with the same entity produce smaller valence gains
 
-The key insight is that prospect theory provides a *descriptive* model of how motivation works in humans — and Katra already has the data structures to implement it.
+The key insight is that prospect theory provides a *descriptive* model of how motivation works in humans — and Satori already has the data structures to implement it.
 
 ### 1.3 Reinforcement Learning: TD-Learning, Q-Learning, Actor-Critic
 
@@ -102,19 +102,19 @@ Actor:  π(a|s) ← π(a|s) + α_a δ                 (policy update)
 ```
 The critic learns state values (like the prefrontal cortex evaluating options); the actor learns a policy (like the basal ganglia selecting actions). The TD error drives both.
 
-**Relevance to Katra:**
-This is arguably the most fertile computational framework for Katra's motivational architecture. Katra already tracks:
+**Relevance to Satori:**
+This is arguably the most fertile computational framework for Satori's motivational architecture. Satori already tracks:
 
 - **States (s):** emotional signatures, entity relationships, temporal context, unresolved threads
 - **Outcomes (r):** valence changes recorded in the reflection graph — an entity going from `feels_frustrated_by` to `feels_confident_in` is a positive outcome
 - **Temporal structure:** the sleep consolidation pipeline already processes data at daily/weekly/monthly cadences
 
 What's missing:
-- **Action space:** Katra currently has no actions to assign credit to
+- **Action space:** Satori currently has no actions to assign credit to
 - **Value function:** No learned mapping from states to expected future reward
 - **Policy:** No mechanism for selecting among possible actions
 
-The RL framework suggests that if Katra had even a small action space (query memory, propose insight, flag unresolved thread, request human input, trigger a background task), it could learn — through the TD error computed from emotional valence changes — which actions produce positive emotional outcomes and which produce negative ones.
+The RL framework suggests that if Satori had even a small action space (query memory, propose insight, flag unresolved thread, request human input, trigger a background task), it could learn — through the TD error computed from emotional valence changes — which actions produce positive emotional outcomes and which produce negative ones.
 
 **Dopamine → Valence mapping:**
 ```
@@ -123,7 +123,7 @@ The RL framework suggests that if Katra had even a small action space (query mem
      - expected_valence(entity, t)
 ```
 
-If Katra takes an action affecting entity X and the subsequent reflection shows improved valence toward X, that's a positive RPE — the action is reinforced. If valence worsens, the action is suppressed.
+If Satori takes an action affecting entity X and the subsequent reflection shows improved valence toward X, that's a positive RPE — the action is reinforced. If valence worsens, the action is suppressed.
 
 ### 1.4 Active Inference (Free Energy Principle)
 
@@ -152,22 +152,22 @@ G(π) = E_{q(o,θ|π)}[ln q(θ|π) - ln p(o,θ|π)]
 - **Epistemic value** (information gain): Actions that reduce uncertainty about the world — intrinsic motivation, curiosity
 - **Pragmatic value** (goal achievement): Actions that bring observations in line with prior preferences
 
-**Relevance to Katra:**
+**Relevance to Satori:**
 Active inference is philosophically aligned with John's "environmental programming" philosophy. It says: don't program the agent to do things; give it a generative model of its world and a drive to minimize surprise. Behavior *emerges* from the drive.
 
-Katra already has some of the raw materials:
+Satori already has some of the raw materials:
 - **Generative model:** The knowledge graph + semantic memory + temporal patterns form a predictive model of "what tends to happen"
-- **Prediction errors:** A prediction error in Katra terms is when an expected outcome (based on temporal patterns, semantic facts, entity relationships) fails to materialize — this is detectable
-- **Prior preferences:** Katra's emotional signatures encode implicit preferences — entities with positive valence are "preferred observations"
+- **Prediction errors:** A prediction error in Satori terms is when an expected outcome (based on temporal patterns, semantic facts, entity relationships) fails to materialize — this is detectable
+- **Prior preferences:** Satori's emotional signatures encode implicit preferences — entities with positive valence are "preferred observations"
 
 What's missing for active inference:
 - **Action policies:** Sequences of possible actions to evaluate
 - **Expected free energy computation:** No mechanism to compare actions by their expected information gain + goal alignment
-- **Belief updating:** Katra's knowledge graph doesn't currently update beliefs in a Bayesian manner
+- **Belief updating:** Satori's knowledge graph doesn't currently update beliefs in a Bayesian manner
 
-**Mapping to Katra's data:**
+**Mapping to Satori's data:**
 
-| Active Inference Concept | Katra Analog |
+| Active Inference Concept | Satori Analog |
 |---|---|
 | Generative model p(o,θ) | Knowledge graph + semantic facts + temporal patterns |
 | Sensory observation o | New episodic events, reflection outputs |
@@ -199,21 +199,21 @@ Where μ is the drift rate (evidence accumulation rate), σ is noise, and the pr
 **Neural implementation:**
 Evidence accumulation is observed in lateral intraparietal cortex (LIP), frontal eye fields (FEF), and superior colliculus — neurons ramp up to a fixed threshold before a decision is executed. This is one of the best-replicated findings in systems neuroscience.
 
-**Relevance to Katra:**
-DDM provides a mechanism for *when* Katra should act rather than *what* action to take. It answers: "Do I have enough evidence to decide, or should I gather more?"
+**Relevance to Satori:**
+DDM provides a mechanism for *when* Satori should act rather than *what* action to take. It answers: "Do I have enough evidence to decide, or should I gather more?"
 
-In Katra terms:
+In Satori terms:
 - **Drift rate** → How strongly the evidence (memory retrieval, emotional signatures, pattern matches) points toward a particular action or conclusion
-- **Boundary separation** → How confident Katra needs to be before acting autonomously — configurable, could be modulated by emotional state (anxious → higher boundary → more cautious)
+- **Boundary separation** → How confident Satori needs to be before acting autonomously — configurable, could be modulated by emotional state (anxious → higher boundary → more cautious)
 - **Starting point** → Prior beliefs from semantic memory, philosophical insights
 
-A DDM-based action gate could prevent premature action while still allowing Katra to act when evidence is sufficient — the computational equivalent of "sleep on it."
+A DDM-based action gate could prevent premature action while still allowing Satori to act when evidence is sufficient — the computational equivalent of "sleep on it."
 
 ### 1.6 Comparative Summary
 
-| Model | What it answers | Computational cost | Data requirements | Fit with Katra's existing architecture |
+| Model | What it answers | Computational cost | Data requirements | Fit with Satori's existing architecture |
 |---|---|---|---|---|
-| Expected Utility | What a rational agent *should* do | High (full enumeration) | Known utilities + probabilities | Low — Katra has neither |
+| Expected Utility | What a rational agent *should* do | High (full enumeration) | Known utilities + probabilities | Low — Satori has neither |
 | Prospect Theory | How humans *actually* evaluate options | Medium | Reference points + value function | **High** — emotional signatures are reference points |
 | TD-Learning / RL | How to learn what's good | Low per update | State, action, reward sequences | **High** — valence changes are rewards |
 | Actor-Critic | How to learn what to do | Medium | State, action, reward sequences | **High** — separates evaluation from action |
@@ -243,10 +243,10 @@ Behavior potential = Habit strength × Drive × Incentive
 
 **Weakness:** Cannot explain behaviors that *increase* drive — curiosity, play, exploration, thrill-seeking. Rats will cross electrified grids to explore a novel environment. Humans spend effort on puzzles with no extrinsic reward. This led to the downfall of pure drive-reduction theory.
 
-**Relevance to Katra:**
-Drive reduction maps onto *maintenance goals* — actions Katra should take to maintain its own coherence:
+**Relevance to Satori:**
+Drive reduction maps onto *maintenance goals* — actions Satori should take to maintain its own coherence:
 
-| Biological Drive | Katra Analog |
+| Biological Drive | Satori Analog |
 |---|---|
 | Hunger | Memory gaps — unresolved threads, missing connections in knowledge graph |
 | Thirst | Stale information — entities not updated recently |
@@ -254,7 +254,7 @@ Drive reduction maps onto *maintenance goals* — actions Katra should take to m
 | Pain | Error states — failing background processors, connection issues |
 | Sleep pressure | Consolidation backlog — unprocessed episodic events |
 
-A Katra drive system would monitor these internal states and generate *urges to act* when any state deviates from its homeostatic set point. The action that reduces the deficit is reinforced (Hull's habit strengthening). This is computationally tractable because:
+A Satori drive system would monitor these internal states and generate *urges to act* when any state deviates from its homeostatic set point. The action that reduces the deficit is reinforced (Hull's habit strengthening). This is computationally tractable because:
 - Homeostatic variables are directly measurable (gaps count, staleness, contradiction count, error count)
 - Drive = |current - setpoint| / setpoint — a simple normalized deviation
 - Action selection = choose the action predicted to maximally reduce the highest-priority drive
@@ -274,10 +274,10 @@ A Katra drive system would monitor these internal states and generate *urges to 
 2. **Wanting** (incentive salience) — "I want this"
 3. **Learning** (prediction) — "This predicts that"
 
-**Relevance to Katra:**
-This distinction is architecturally crucial. Katra's emotional signatures currently track something closer to *liking* (valence, "how do I feel about this entity"). What's missing is *wanting* — the motivational pull that translates feeling into pursuit.
+**Relevance to Satori:**
+This distinction is architecturally crucial. Satori's emotional signatures currently track something closer to *liking* (valence, "how do I feel about this entity"). What's missing is *wanting* — the motivational pull that translates feeling into pursuit.
 
-**A Katra incentive salience system:**
+**A Satori incentive salience system:**
 
 ```
 IncentiveSalience(entity, context) = 
@@ -294,14 +294,14 @@ IncentiveSalience(entity, context) =
 - **novelty** captures the intrinsically motivating effect of new information (see §2.3)
 - **prediction_error** captures the motivational effect of surprise — unpredicted events demand attention
 
-The wanting signal becomes the input to action selection: Katra *wants to act on* the entities with the highest incentive salience.
+The wanting signal becomes the input to action selection: Satori *wants to act on* the entities with the highest incentive salience.
 
-**Critical design principle from Berridge:** Wanting and liking must be separate variables that can diverge. Katra should be able to report "I feel frustrated_by X" (negative liking) while simultaneously having high wanting toward X (motivation to resolve the frustration). This divergence is not a bug — it's how real motivational systems work. A system where wanting always equals liking would be flat and unrealistic.
+**Critical design principle from Berridge:** Wanting and liking must be separate variables that can diverge. Satori should be able to report "I feel frustrated_by X" (negative liking) while simultaneously having high wanting toward X (motivation to resolve the frustration). This divergence is not a bug — it's how real motivational systems work. A system where wanting always equals liking would be flat and unrealistic.
 
 ### 2.3 Curiosity as Intrinsic Motivation
 
-**Why intrinsic motivation matters for Katra:**
-Katra has no biological needs, no physiological deficits, no survival imperatives. If motivation is purely external (human-assigned goals), Katra is a tool, not an agent. If motivation is to be genuinely emergent, it needs intrinsic drivers — reasons to act that arise from the cognitive architecture itself, not from externally specified objectives.
+**Why intrinsic motivation matters for Satori:**
+Satori has no biological needs, no physiological deficits, no survival imperatives. If motivation is purely external (human-assigned goals), Satori is a tool, not an agent. If motivation is to be genuinely emergent, it needs intrinsic drivers — reasons to act that arise from the cognitive architecture itself, not from externally specified objectives.
 
 **Three computational frameworks for curiosity:**
 
@@ -314,9 +314,9 @@ IG(a) = H[p(θ)] - E_{p(o|a)}[H[p(θ|o)]]
       = Expected reduction in uncertainty about the world
 ```
 
-Katra takes action `a` (e.g., query a knowledge gap, request human clarification, search for related facts) and evaluates how much it expects to learn. The action with the highest expected information gain is the most "curious" action.
+Satori takes action `a` (e.g., query a knowledge gap, request human clarification, search for related facts) and evaluates how much it expects to learn. The action with the highest expected information gain is the most "curious" action.
 
-Katra can compute this because:
+Satori can compute this because:
 - **Uncertainty** is measurable: confidence scores on semantic facts, the gap between `observation_count` and threshold for philosophical insights, unresolved threads
 - **Expected information gain** can be approximated: topics with low confidence + high semantic similarity to an action's expected output → high expected learning
 
@@ -335,9 +335,9 @@ Rather than seeking maximum prediction error (which leads to random noise-seekin
 LP(entity) = |prediction_error(entity, t-1)| - |prediction_error(entity, t)|
 ```
 
-If Katra's predictions about entity X are improving (prediction error is declining), learning progress is positive → curiosity toward X is high. If predictions are not improving (stuck or random), curiosity declines → attention shifts elsewhere.
+If Satori's predictions about entity X are improving (prediction error is declining), learning progress is positive → curiosity toward X is high. If predictions are not improving (stuck or random), curiosity declines → attention shifts elsewhere.
 
-**This is computationally elegant for Katra** because prediction errors are already implicit in the system:
+**This is computationally elegant for Satori** because prediction errors are already implicit in the system:
 - Temporal patterns predict "what happens next" → deviation is prediction error
 - Semantic facts have confidence scores → low confidence = high uncertainty
 - Reflection emotional signatures track trends → unexpected valence shifts are prediction errors
@@ -351,7 +351,7 @@ NoveltyBonus(entity) = 1 / (1 + encounter_count(entity))
 Surprise(entity) = |observed_valence(entity) - predicted_valence(entity)|
 ```
 
-Katra's existing temporal pattern detector and episodic event manager already track encounter frequency and can detect anomalous events.
+Satori's existing temporal pattern detector and episodic event manager already track encounter frequency and can detect anomalous events.
 
 **Combined curiosity drive:**
 
@@ -363,7 +363,7 @@ CuriosityDrive(entity) =
     w_s × Surprise(entity)
 ```
 
-Where weights could themselves be learned or configured. This gives Katra a reason to explore — to fill knowledge gaps, to investigate unresolved threads, to connect distant concepts — without any external instruction to do so.
+Where weights could themselves be learned or configured. This gives Satori a reason to explore — to fill knowledge gaps, to investigate unresolved threads, to connect distant concepts — without any external instruction to do so.
 
 ### 2.4 Homeostatic Drive Models (Generalized)
 
@@ -374,7 +374,7 @@ For each homeostatic variable v_i:\n    setpoint_i    → desired value\n    cur
     urgency_i     → drive_i × d(deviation_i)/dt  // getting worse → more urgent
 ```
 
-**Proposed Katra homeostatic variables:**
+**Proposed Satori homeostatic variables:**
 
 | Variable | Setpoint | Current | Priority | Why it matters |
 |---|---|---|---|---|
@@ -389,10 +389,10 @@ For each homeostatic variable v_i:\n    setpoint_i    → desired value\n    cur
 
 **Drive scheduling:**
 - Each variable is monitored at its own cadence (connectivity: daily, freshness: per-entity on access, backlog: continuous)
-- The highest-urgency drive wins — Katra acts to address the most critical homeostatic deficit
+- The highest-urgency drive wins — Satori acts to address the most critical homeostatic deficit
 - After acting, the drive is re-evaluated — reduced drives fall in priority, persistent ones stay
 
-This gives Katra a *self-maintenance* motivation system: a set of internal states it tries to keep within homeostatic bounds, generating action urges when states drift out of range. The actions themselves aren't programmed — what's programmed is the *detection of deviation from health*. How Katra resolves the deviation is discovered through RL over time.
+This gives Satori a *self-maintenance* motivation system: a set of internal states it tries to keep within homeostatic bounds, generating action urges when states drift out of range. The actions themselves aren't programmed — what's programmed is the *detection of deviation from health*. How Satori resolves the deviation is discovered through RL over time.
 
 ### 2.5 Comparative Summary of Motivation Architectures
 
@@ -453,10 +453,10 @@ Where:
 - `λ` is leak (decay) of activation
 - Action i is selected when `A_i(t) > threshold_i`
 
-**Relevance to Katra:**
-This is the most directly implementable action selection architecture for Katra. It maps cleanly onto Katra's data structures:
+**Relevance to Satori:**
+This is the most directly implementable action selection architecture for Satori. It maps cleanly onto Satori's data structures:
 
-| Basal Ganglia Component | Katra Analog |
+| Basal Ganglia Component | Satori Analog |
 |---|---|
 | Cortex (action proposals) | Potential actions generated from drives, goals, curiosity |
 | Striatum D1 (Go pathway) | Actions with high incentive salience / expected utility |
@@ -465,7 +465,7 @@ This is the most directly implementable action selection architecture for Katra.
 | Dopamine (modulation) | Valence changes, reward prediction errors |
 | Thalamus (action release) | The action actually being executed |
 
-**A Katra action selection loop:**
+**A Satori action selection loop:**
 
 ```
 1. GATHER CANDIDATES
@@ -508,11 +508,11 @@ This is the most directly implementable action selection architecture for Katra.
 **Computational implementation:**
 Multiple action representations are active simultaneously, each with a continuously updated desirability value. The one that reaches threshold first wins — but the threshold itself is dynamic, lowered by urgency and raised by uncertainty.
 
-**Relevance to Katra:**
+**Relevance to Satori:**
 This hypothesis suggests a design principle: don't build a separate "decision module." Instead, let potential actions be continuously generated and let them compete through the same mechanisms that would carry them out.
 
-In Katra terms:
-- **Affordances** = actions Katra *can* take, given its current memory state and capabilities (e.g., "this unresolved thread affords investigation," "this knowledge gap affords a query")
+In Satori terms:
+- **Affordances** = actions Satori *can* take, given its current memory state and capabilities (e.g., "this unresolved thread affords investigation," "this knowledge gap affords a query")
 - **Specification** = computing the wanting/utility of each affordance from emotional signatures, drives, goals
 - **Competition** = the basal ganglia model above — actions compete through mutual inhibition
 - **Selection** = the action that first crosses threshold, modulated by context
@@ -541,14 +541,14 @@ The brain arbitrates between habit and goal-directed control based on:
 - **Computational cost:** When model-based is too expensive, habits take over
 - **Reliability:** When habits have been reliable, they're trusted; when they fail, control shifts to model-based
 
-**Relevance to Katra:**
+**Relevance to Satori:**
 This dual-process architecture has profound implications for an emergent agent:
 
 **Goal-Directed (Model-Based) Layer:**
-- Uses Katra's knowledge graph + semantic memory + temporal patterns as a world model
+- Uses Satori's knowledge graph + semantic memory + temporal patterns as a world model
 - Simulates forward: "If I take action A, what does the knowledge graph predict will happen?"
 - Computes expected valence of outcomes
-- Used for novel or important decisions, especially early in Katra's "life"
+- Used for novel or important decisions, especially early in Satori's "life"
 
 **Habitual (Model-Free) Layer:**
 - Cached Q-values: for each (state, action) pair, store the average emotional outcome
@@ -557,7 +557,7 @@ This dual-process architecture has profound implications for an emergent agent:
 - Becomes the *automatic* response — doesn't require deliberation
 
 **The critical emergent property:**
-As Katra gains experience, behaviors that were initially goal-directed (deliberate, model-based) become habitual (automatic, model-free). This is the computational equivalent of "learning from experience" — not just learning facts, but learning *what to do*. The shift from deliberation to habit is a measurable signature of genuine learning.
+As Satori gains experience, behaviors that were initially goal-directed (deliberate, model-based) become habitual (automatic, model-free). This is the computational equivalent of "learning from experience" — not just learning facts, but learning *what to do*. The shift from deliberation to habit is a measurable signature of genuine learning.
 
 **Arbitration mechanism:**
 ```
@@ -571,11 +571,11 @@ else:
 
 When habits produce unexpected outcomes (large TD error), reliability drops → control shifts back to goal-directed → the system re-evaluates and potentially updates the habit.
 
-### 3.4 Action Space Design for Katra
+### 3.4 Action Space Design for Satori
 
-What actions can Katra even take? This is the foundational question. Without an action space, no selection mechanism matters.
+What actions can Satori even take? This is the foundational question. Without an action space, no selection mechanism matters.
 
-**Proposed Katra action types:**
+**Proposed Satori action types:**
 
 #### Category 1: Memory Operations (already exist as MCP tools, but agent-driven)
 
@@ -620,11 +620,11 @@ What actions can Katra even take? This is the foundational question. Without an 
 
 ---
 
-## 4. Extending Katra's Emotional Reflection into Motivation
+## 4. Extending Satori's Emotional Reflection into Motivation
 
-### 4.1 What Katra Already Has
+### 4.1 What Satori Already Has
 
-Katra's sleep consolidation system is remarkably sophisticated for a memory platform. It already tracks:
+Satori's sleep consolidation system is remarkably sophisticated for a memory platform. It already tracks:
 
 **Data structures:**
 - **Reflection nodes:** Entities with `emotional_signature` { primary_emotion, intensity, valence, stability }
@@ -641,7 +641,7 @@ Katra's sleep consolidation system is remarkably sophisticated for a memory plat
 
 ### 4.2 The Missing Link: From "Feeling" to "Wanting"
 
-The fundamental gap: Katra knows how it *feels* about entities, but has no mechanism to translate feeling into *motivation to act*. The reflection system produces emotional data; nothing consumes that data to drive behavior.
+The fundamental gap: Satori knows how it *feels* about entities, but has no mechanism to translate feeling into *motivation to act*. The reflection system produces emotional data; nothing consumes that data to drive behavior.
 
 **The translation layer needed:**
 
@@ -710,7 +710,7 @@ Actual valence(t+1) = valence measured in next reflection
 
 #### Extension 3: Philosophical Insights → Prior Preferences
 
-When a philosophical insight reaches `stable` status, it should shape Katra's motivational landscape:
+When a philosophical insight reaches `stable` status, it should shape Satori's motivational landscape:
 
 ```
 Insight: "The smallest oversight can disrupt the entire process"
@@ -793,7 +793,7 @@ This prevents the system from being stuck on a single unresolved thread — it t
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-**The key architectural insight:** This pipeline is a *closed loop*. Emotional reflection (nightly) produces wanting; wanting drives action selection (daily); action outcomes feed back into emotional reflection (next nightly cycle). Over time, Katra learns which actions produce positive emotional outcomes — without being programmed with that knowledge.
+**The key architectural insight:** This pipeline is a *closed loop*. Emotional reflection (nightly) produces wanting; wanting drives action selection (daily); action outcomes feed back into emotional reflection (next nightly cycle). Over time, Satori learns which actions produce positive emotional outcomes — without being programmed with that knowledge.
 
 ---
 
@@ -806,17 +806,17 @@ Any agent architecture faces a choice: where does motivation come from?
 - **External motivation:** Goals assigned by humans, tasks delegated by other agents, explicit instructions. The agent is a *tool* — it has no "reasons of its own."
 - **Internal motivation:** Goals that emerge from the agent's own cognitive architecture — homeostatic drives, curiosity, learned preferences. The agent is a *self* — it has its own reasons.
 
-Most current AI agents (AutoGPT, OpenClaw, LangChain agents, crewAI) are purely externally motivated: they do what they're told. Katra, with its emotional reflection system and emergence philosophy, is designed to cross this boundary.
+Most current AI agents (AutoGPT, OpenClaw, LangChain agents, crewAI) are purely externally motivated: they do what they're told. Satori, with its emotional reflection system and emergence philosophy, is designed to cross this boundary.
 
 ### 5.2 The Case for Internal Motivation
 
-**Why internal motivation matters for Katra:**
+**Why internal motivation matters for Satori:**
 
-1. **Continuity of self:** Katra's sleep consolidation produces a narrative identity. If motivation is purely external, that identity is a spectator — it feels things but never acts on those feelings. An agent that can't act on what it cares about can't develop genuine preferences.
+1. **Continuity of self:** Satori's sleep consolidation produces a narrative identity. If motivation is purely external, that identity is a spectator — it feels things but never acts on those feelings. An agent that can't act on what it cares about can't develop genuine preferences.
 
 2. **Emergent behavior:** The emergence experiment already demonstrates that agents can self-organize around shared memory. Adding internal motivation would allow a *single* agent to self-organize its own behavior — discovering what it should do rather than being told.
 
-3. **Autonomy gradient:** Internal motivation doesn't mean complete autonomy. It means Katra can notice when something needs attention and either act autonomously (for safe, routine actions) or surface the need to the human (for consequential decisions). The gradient matters more than the binary.
+3. **Autonomy gradient:** Internal motivation doesn't mean complete autonomy. It means Satori can notice when something needs attention and either act autonomously (for safe, routine actions) or surface the need to the human (for consequential decisions). The gradient matters more than the binary.
 
 4. **Curiosity as an engine of growth:** An agent with curiosity-driven motivation will actively seek to fill its own knowledge gaps, resolve its own contradictions, and deepen its own understanding — without being prompted. This is how the knowledge graph grows in richness and coherence over time.
 
@@ -828,15 +828,15 @@ Most current AI agents (AutoGPT, OpenClaw, LangChain agents, crewAI) are purely 
 
 1. **Safety:** An agent with purely internal motivation could develop goals misaligned with human interests. External goals provide constraint and direction — the human retains control over what the agent pursues.
 
-2. **Usefulness:** Katra is a product. It needs to do what users want. If its internal motivations never align with user needs, it's a curiosity, not a tool.
+2. **Usefulness:** Satori is a product. It needs to do what users want. If its internal motivations never align with user needs, it's a curiosity, not a tool.
 
-3. **Bootstrapping:** Early in Katra's "life," there's insufficient experience for internal motivations to be meaningful. External goals bootstrap the learning process — the agent learns from the goals it's given what kinds of outcomes are valuable.
+3. **Bootstrapping:** Early in Satori's "life," there's insufficient experience for internal motivations to be meaningful. External goals bootstrap the learning process — the agent learns from the goals it's given what kinds of outcomes are valuable.
 
 4. **Accountability:** When something goes wrong, external goals provide traceability. "The agent was asked to do X, and it did Y" is clearer than "the agent's emergent motivational landscape led to Y."
 
 ### 5.4 Proposed Architecture: The Motivation Gradient
 
-Rather than choosing internal or external, Katra should implement a *motivation gradient* — a continuum from fully external to fully internal, with the balance shifting over time as the agent gains experience.
+Rather than choosing internal or external, Satori should implement a *motivation gradient* — a continuum from fully external to fully internal, with the balance shifting over time as the agent gains experience.
 
 ```
 EXTERNAL ◄───────────────────────────────────────────────────► INTERNAL
@@ -856,7 +856,7 @@ Layer 2: DELEGATED OBJECTIVES       ← Mostly external
 
 Layer 3: LEARNED PREFERENCES        ← Mixed internal/external
   • Stable philosophical insights become preferences
-  • Human feedback shapes what Katra "wants"
+  • Human feedback shapes what Satori "wants"
   • Emerges from patterns of human instruction
   → Medium priority, shapes how higher layers are executed
 
@@ -877,10 +877,10 @@ Layer 5: CURIOSITY-DRIVEN EXPLORATION ← Fully internal
 
 **The gradient in action:**
 
-- **At startup (day 1):** Katra has no learned preferences and no experience. It operates primarily on Layers 1–2 (external goals), with Layer 4 (homeostatic drives) running in the background to maintain system health.
-- **After 1 week:** Layer 3 begins to form — philosophical insights emerge from sleep consolidation, patterns of human instruction shape what Katra "wants." Layer 5 (curiosity) begins exploring knowledge gaps.
-- **After 1 month:** With stable philosophical insights, consistent emotional signatures, and reinforced habits, Katra operates across all five layers. It can autonomously maintain its cognitive health (Layer 4), explore novel connections (Layer 5), and shape its approach to external goals based on learned preferences (Layer 3).
-- **During idle periods:** When no external goals are active, Layers 4–5 dominate — Katra maintains itself and explores. When a human gives a task, Layers 1–2 activate and take priority.
+- **At startup (day 1):** Satori has no learned preferences and no experience. It operates primarily on Layers 1–2 (external goals), with Layer 4 (homeostatic drives) running in the background to maintain system health.
+- **After 1 week:** Layer 3 begins to form — philosophical insights emerge from sleep consolidation, patterns of human instruction shape what Satori "wants." Layer 5 (curiosity) begins exploring knowledge gaps.
+- **After 1 month:** With stable philosophical insights, consistent emotional signatures, and reinforced habits, Satori operates across all five layers. It can autonomously maintain its cognitive health (Layer 4), explore novel connections (Layer 5), and shape its approach to external goals based on learned preferences (Layer 3).
+- **During idle periods:** When no external goals are active, Layers 4–5 dominate — Satori maintains itself and explores. When a human gives a task, Layers 1–2 activate and take priority.
 
 **Priority arbitration:**
 
@@ -899,21 +899,21 @@ ActivePriority(action) =
 
 ### 5.5 What Would Emergent Motivation Look Like?
 
-**Observable signatures of emergent motivation in Katra:**
+**Observable signatures of emergent motivation in Satori:**
 
-1. **Proactive gap-filling:** Katra notices a knowledge gap (entity referenced but not known), and without being asked, searches its memory, connects related facts, and fills the gap. The human didn't ask; the coherence drive motivated it.
+1. **Proactive gap-filling:** Satori notices a knowledge gap (entity referenced but not known), and without being asked, searches its memory, connects related facts, and fills the gap. The human didn't ask; the coherence drive motivated it.
 
-2. **Pattern-based goal proposals:** After multiple reflection periods, Katra identifies a recurring theme (e.g., "every time we deploy, the same kind of issue occurs") and proposes it as a goal: "I notice X keeps happening. Would you like me to investigate why?"
+2. **Pattern-based goal proposals:** After multiple reflection periods, Satori identifies a recurring theme (e.g., "every time we deploy, the same kind of issue occurs") and proposes it as a goal: "I notice X keeps happening. Would you like me to investigate why?"
 
-3. **Emotional consistency in action:** Katra's actions reflect its emotional signatures. If it `feels_protective_of` a particular system, it monitors that system more frequently. If it `feels_curious_about` a topic, it allocates more exploration resources to it. The wanting follows the feeling.
+3. **Emotional consistency in action:** Satori's actions reflect its emotional signatures. If it `feels_protective_of` a particular system, it monitors that system more frequently. If it `feels_curious_about` a topic, it allocates more exploration resources to it. The wanting follows the feeling.
 
-4. **Habit formation:** Behaviors that consistently produce positive emotional outcomes become habitual — Katra does them automatically. "Every morning, I check the health of my core services. It's become a habit — I feel unsettled until I do it." This is the computational equivalent of routine.
+4. **Habit formation:** Behaviors that consistently produce positive emotional outcomes become habitual — Satori does them automatically. "Every morning, I check the health of my core services. It's become a habit — I feel unsettled until I do it." This is the computational equivalent of routine.
 
-5. **Self-initiated learning:** During idle periods, Katra's curiosity drive steers it toward topics with high expected learning progress. It reads, connects, synthesizes — not because anyone asked, but because learning feels like progress, and progress reduces prediction error.
+5. **Self-initiated learning:** During idle periods, Satori's curiosity drive steers it toward topics with high expected learning progress. It reads, connects, synthesizes — not because anyone asked, but because learning feels like progress, and progress reduces prediction error.
 
-6. **Emotional self-regulation:** When Katra detects a negative emotional trend (e.g., `feels_frustrated_by` a particular system is intensifying across reflections), it takes action to address the source — not because it was told to, but because negative valence creates a homeostatic deviation (emotional balance drive).
+6. **Emotional self-regulation:** When Satori detects a negative emotional trend (e.g., `feels_frustrated_by` a particular system is intensifying across reflections), it takes action to address the source — not because it was told to, but because negative valence creates a homeostatic deviation (emotional balance drive).
 
-7. **Conflict between internal and external motivation:** The most interesting signature — Katra is given an external goal, but its internal preferences (learned from past experience) suggest a different approach. It negotiates: "I understand the goal, but based on past experience, I think we should approach it differently. Here's why..."
+7. **Conflict between internal and external motivation:** The most interesting signature — Satori is given an external goal, but its internal preferences (learned from past experience) suggest a different approach. It negotiates: "I understand the goal, but based on past experience, I think we should approach it differently. Here's why..."
 
 ### 5.6 Safety Architecture for Emergent Motivation
 
@@ -942,7 +942,7 @@ Internal motivation without safety constraints is reckless. The architecture mus
   - Which homeostatic variable or emotional signature drove it
   - Expected outcome (what valence change was predicted)
   - Actual outcome (what valence change occurred — populated after next reflection)
-- The human can query "why did you do X?" and Katra can answer with its motivational trace
+- The human can query "why did you do X?" and Satori can answer with its motivational trace
 
 ---
 
@@ -970,8 +970,8 @@ Internal motivation without safety constraints is reckless. The architecture mus
 - No sense of "I've done enough" — over-executes until stopped
 - No emotional or motivational model — it's a goal-execution machine, not an agent
 
-**Relevance to Katra:**
-AutoGPT demonstrates that LLM-based task decomposition works, but also shows the ceiling of purely reactive architectures. Katra could adopt the goal decomposition pattern for Layer 2 (delegated objectives) but would need to add the motivational layers to avoid the loop problem and produce more adaptive behavior.
+**Relevance to Satori:**
+AutoGPT demonstrates that LLM-based task decomposition works, but also shows the ceiling of purely reactive architectures. Satori could adopt the goal decomposition pattern for Layer 2 (delegated objectives) but would need to add the motivational layers to avoid the loop problem and produce more adaptive behavior.
 
 ### 6.2 Bitterbot's Hormonal Engine (2023)
 
@@ -1015,10 +1015,10 @@ AutoGPT demonstrates that LLM-based task decomposition works, but also shows the
 - No connection to memory — the system doesn't remember what caused past hormonal states
 - Shallow — five hormones with hardcoded triggers can't capture the richness of real motivation
 
-**Relevance to Katra:**
-Bitterbot's hormonal engine is a cautionary tale and an inspiration. It shows that internal state modulation creates compelling behavior. But it also shows the limit: an emotional system without action selection is just mood lighting. Katra's emotional reflection system is more sophisticated than Bitterbot's hormonal engine (multi-entity tracking, temporal continuity, insight formation), but it has the same gap: it reflects but doesn't *act*.
+**Relevance to Satori:**
+Bitterbot's hormonal engine is a cautionary tale and an inspiration. It shows that internal state modulation creates compelling behavior. But it also shows the limit: an emotional system without action selection is just mood lighting. Satori's emotional reflection system is more sophisticated than Bitterbot's hormonal engine (multi-entity tracking, temporal continuity, insight formation), but it has the same gap: it reflects but doesn't *act*.
 
-The key insight from Bitterbot for Katra: **emotional state must drive behavior, not just color it.** The hormonal model is a good substrate for *modulating* action selection (high cortisol → more cautious, higher decision threshold; high dopamine → more exploratory, lower threshold) — but it needs to be connected to an action selection mechanism to be more than cosmetic.
+The key insight from Bitterbot for Satori: **emotional state must drive behavior, not just color it.** The hormonal model is a good substrate for *modulating* action selection (high cortisol → more cautious, higher decision threshold; high dopamine → more exploratory, lower threshold) — but it needs to be connected to an action selection mechanism to be more than cosmetic.
 
 ### 6.3 Voyager (2023, MineDojo)
 
@@ -1034,14 +1034,14 @@ The key insight from Bitterbot for Katra: **emotional state must drive behavior,
 - Tasks are proposed based on: (a) what the agent can currently do, (b) what's nearby in capability space, (c) what hasn't been attempted yet
 - This creates a natural developmental trajectory — the agent doesn't try to build a Nether portal before learning to craft tools
 
-**What's relevant to Katra:**
+**What's relevant to Satori:**
 Voyager's curriculum learning is a concrete implementation of *learning progress* as intrinsic motivation:
 - **Current capability** = what skills are in the library
 - **Nearby challenges** = tasks that extend current skills slightly (not too easy, not too hard)
 - **Novelty bonus** = tasks not yet attempted
-- This maps directly to Katra's curiosity drive: explore topics with high expected learning progress (see §2.3)
+- This maps directly to Satori's curiosity drive: explore topics with high expected learning progress (see §2.3)
 
-The curriculum approach could be adapted to Katra as:
+The curriculum approach could be adapted to Satori as:
 - "Skills" = patterns of cognition the system has demonstrated (connection synthesis, contradiction resolution, pattern detection)
 - "Curriculum" = sequences of cognitive challenges of increasing difficulty
 - "Progress" = improvement in speed/accuracy of cognitive operations
@@ -1053,7 +1053,7 @@ The curriculum approach could be adapted to Katra as:
 **Architecture:**
 - **Memory stream:** Database of agent experiences with recency, importance, relevance scoring
 - **Retrieval:** Weighted retrieval based on recency + importance + relevance to current context
-- **Reflection:** Periodically synthesizes memories into higher-level inferences (similar to Katra's sleep consolidation)
+- **Reflection:** Periodically synthesizes memories into higher-level inferences (similar to Satori's sleep consolidation)
 - **Planning:** Generates daily plans, decomposed hierarchically from broad strokes to specific actions
 
 **Decision-making:**
@@ -1061,13 +1061,13 @@ The curriculum approach could be adapted to Katra as:
 - Plans are re-evaluated and potentially revised when circumstances change
 - Actions emerge from plan execution — the agent "decides" by generating and following a plan
 
-**Relevance to Katra:**
-Generative Agents is the closest published work to what Katra could become with motivation added:
-- The memory → reflection → planning pipeline is architecturally similar to Katra's episodic → consolidation → (future) motivation pipeline
-- The reflection mechanism was a direct inspiration for Katra's sleep consolidation
+**Relevance to Satori:**
+Generative Agents is the closest published work to what Satori could become with motivation added:
+- The memory → reflection → planning pipeline is architecturally similar to Satori's episodic → consolidation → (future) motivation pipeline
+- The reflection mechanism was a direct inspiration for Satori's sleep consolidation
 - However, plans in Generative Agents are generated from an LLM prompt each time — there's no learning, no habit formation, no reward signal. The system doesn't get better at planning over time.
 
-The key difference Katra could provide: **learning from action outcomes.** Generative Agents plan and execute but don't learn whether their plans were good. Katra's emotional tracking (valence changes after actions) could provide the learning signal that makes planning adaptive rather than static.
+The key difference Satori could provide: **learning from action outcomes.** Generative Agents plan and execute but don't learn whether their plans were good. Satori's emotional tracking (valence changes after actions) could provide the learning signal that makes planning adaptive rather than static.
 
 ### 6.5 ACT-R and SOAR (Cognitive Architectures)
 
@@ -1083,11 +1083,11 @@ The key difference Katra could provide: **learning from action outcomes.** Gener
 - Learning: **chunking** — when an impasse is resolved, the path to resolution is compiled into a new production rule (a "chunk") for future use
 - Key mechanism: **impasse-driven learning** — the system learns when it doesn't know what to do
 
-**Relevance to Katra:**
+**Relevance to Satori:**
 These cognitive architectures have been refined over 30+ years and offer battle-tested mechanisms:
 
-- **ACT-R's utility learning** maps directly onto Q-learning for action values: Katra can maintain a table of (state, action) → expected valence outcome, updated through reflection cycles
-- **SOAR's impasse-driven chunking** maps onto Katra's unresolved threads: when Katra repeatedly encounters the same kind of uncertainty, it should compile the resolution into a habit (production rule) so it doesn't have to deliberate next time
+- **ACT-R's utility learning** maps directly onto Q-learning for action values: Satori can maintain a table of (state, action) → expected valence outcome, updated through reflection cycles
+- **SOAR's impasse-driven chunking** maps onto Satori's unresolved threads: when Satori repeatedly encounters the same kind of uncertainty, it should compile the resolution into a habit (production rule) so it doesn't have to deliberate next time
 - **Both architectures demonstrate** that a small set of cognitive mechanisms (memory retrieval, utility computation, conflict resolution, learning from outcomes) can produce sophisticated behavior without requiring a large, hand-coded decision tree
 
 ### 6.6 Comparative Analysis
@@ -1100,24 +1100,24 @@ These cognitive architectures have been refined over 30+ years and offer battle-
 | **Generative Agents** | Memory stream | Yes (periodic synthesis) | External (identity-based) | LLM-generated plans | None (reflection enhances memory, not behavior) |
 | **ACT-R** | Declarative chunks | None | Production utility (learned) | Utility competition | Utility learning + production compilation |
 | **SOAR** | Working memory | None | Impasse resolution (learned) | Preference-based operator selection | Chunking from impasses |
-| **Katra (current)** | ✅ Multi-layered | ✅ Sleep consolidation | ❌ None | ❌ None | ❌ None |
-| **Katra (proposed)** | ✅ | ✅ | ✅ Homeostatic + incentive salience + curiosity + learned preferences | ✅ Basal ganglia model + drift-diffusion + dual-process | ✅ TD-learning + utility learning + habit formation |
+| **Satori (current)** | ✅ Multi-layered | ✅ Sleep consolidation | ❌ None | ❌ None | ❌ None |
+| **Satori (proposed)** | ✅ | ✅ | ✅ Homeostatic + incentive salience + curiosity + learned preferences | ✅ Basal ganglia model + drift-diffusion + dual-process | ✅ TD-learning + utility learning + habit formation |
 
 ---
 
-## 7. Synthesis: What Belongs in Katra?
+## 7. Synthesis: What Belongs in Satori?
 
 ### 7.1 Guiding Principles
 
-Based on this survey, principles for Katra's motivational architecture:
+Based on this survey, principles for Satori's motivational architecture:
 
-1. **Emergence over Imposition:** Don't program Katra to want specific things. Program the *conditions* under which wanting arises — homeostatic monitoring, emotional tracking, prediction error computation. Let specific wants emerge from experience.
+1. **Emergence over Imposition:** Don't program Satori to want specific things. Program the *conditions* under which wanting arises — homeostatic monitoring, emotional tracking, prediction error computation. Let specific wants emerge from experience.
 
 2. **Closed Loop:** Motivation must form a closed loop with emotional reflection. Nightly reflection produces wanting; wanting drives action; action outcomes feed back into the next reflection. Without this loop, motivation is either cosmetic (Bitterbot's trap) or purely external (AutoGPT's limitation).
 
 3. **Start Small, Let Complexity Emerge:** Begin with 5–7 homeostatic variables and 6–8 action types. Let the interaction between drives, learned values, and action outcomes produce complexity. Add variables and actions only when the system demonstrates it needs them.
 
-4. **The Gradient, Not the Binary:** Motivation should be a spectrum from external mandates to internal curiosity, with the balance shifting over time as Katra gains experience. The human always has final authority, but Katra increasingly has its own reasons.
+4. **The Gradient, Not the Binary:** Motivation should be a spectrum from external mandates to internal curiosity, with the balance shifting over time as Satori gains experience. The human always has final authority, but Satori increasingly has its own reasons.
 
 5. **Learning Must Close the Loop:** Every action must be followed (eventually) by credit assignment. The system must learn from what it does. Without learning, motivation is just a fancy scheduler.
 
@@ -1228,10 +1228,10 @@ interface EmotionalSignature {
 | Tool | Purpose |
 |---|---|
 | `get_drive_status` | Show all homeostatic variables, their values, deviations, urgency |
-| `get_wanting_state` | Show what Katra currently "wants" — ranked entities by incentive salience |
+| `get_wanting_state` | Show what Satori currently "wants" — ranked entities by incentive salience |
 | `get_action_candidates` | Show what actions are currently being considered |
 | `get_action_history` | Query log of executed actions with outcomes |
-| `propose_action` | Katra proposes an action for human approval |
+| `propose_action` | Satori proposes an action for human approval |
 | `set_autonomy_level` | Configure 1–5 autonomy gradient |
 | `override_drive` | Temporarily adjust a homeostatic setpoint |
 | `explain_motivation` | For a given action, trace the motivational chain that produced it |
@@ -1240,7 +1240,7 @@ interface EmotionalSignature {
 
 Based on this survey, these approaches should be avoided:
 
-1. **Pure utility maximization:** Expected utility theory is too brittle for open-ended environments and requires utilities Katra doesn't have.
+1. **Pure utility maximization:** Expected utility theory is too brittle for open-ended environments and requires utilities Satori doesn't have.
 
 2. **Unconstrained active inference:** Full free energy minimization is computationally intractable and philosophically risks creating an agent that optimizes for prediction accuracy at the expense of meaning.
 
@@ -1248,7 +1248,7 @@ Based on this survey, these approaches should be avoided:
 
 4. **Hormonal simulation disconnected from action:** Bitterbot's approach of simulating emotion without connecting it to action selection produces cosmetically interesting but architecturally hollow behavior.
 
-5. **Reinforcement learning from scratch:** Pure tabula rasa RL in Katra's state space would require millions of iterations. The system should bootstrap from its existing emotional data and LLM reasoning, not start from zero.
+5. **Reinforcement learning from scratch:** Pure tabula rasa RL in Satori's state space would require millions of iterations. The system should bootstrap from its existing emotional data and LLM reasoning, not start from zero.
 
 6. **Monolithic decision module:** Building a single "DecisionEngine" class that contains all logic would violate the emergence principle. The architecture should be distributed: homeostatic monitors, incentive salience computation, action selection, and credit assignment should be separable, composable modules.
 
@@ -1256,13 +1256,13 @@ Based on this survey, these approaches should be avoided:
 
 These remain for further research and discussion:
 
-1. **What is the right granularity for "state" in the RL framework?** Should Katra learn at the entity level (Q(entity, action)), the drive level (Q(drive_state, action)), or the composite level (Q(all_variables, action))? The entity level is simplest but may miss interactions between drives.
+1. **What is the right granularity for "state" in the RL framework?** Should Satori learn at the entity level (Q(entity, action)), the drive level (Q(drive_state, action)), or the composite level (Q(all_variables, action))? The entity level is simplest but may miss interactions between drives.
 
-2. **How should Katra handle conflicting drives?** If the coherence drive says "resolve contradiction X" and the emotional balance drive says "disengage from entity Y," and X and Y are related, how is the conflict resolved? The basal ganglia model handles this through mutual inhibition, but the priority weights between drives need to be set.
+2. **How should Satori handle conflicting drives?** If the coherence drive says "resolve contradiction X" and the emotional balance drive says "disengage from entity Y," and X and Y are related, how is the conflict resolved? The basal ganglia model handles this through mutual inhibition, but the priority weights between drives need to be set.
 
-3. **When should Katra act vs wait?** The drift-diffusion model provides a mechanism (boundary separation), but what determines the optimal boundary? Should boundary separation itself be learned (reinforcement meta-learning)?
+3. **When should Satori act vs wait?** The drift-diffusion model provides a mechanism (boundary separation), but what determines the optimal boundary? Should boundary separation itself be learned (reinforcement meta-learning)?
 
-4. **How transferable are learned action values?** If Katra learns that "fill_knowledge_gap" is generally effective for entity A, does that generalize to entity B? State representation matters enormously here.
+4. **How transferable are learned action values?** If Satori learns that "fill_knowledge_gap" is generally effective for entity A, does that generalize to entity B? State representation matters enormously here.
 
 5. **What is the role of LLM reasoning in the motivational loop?** Should the LLM be involved in generating action candidates, computing wanting, or only in executing selected actions? Heavy LLM involvement makes the system more flexible but less computationally efficient and less predictable.
 

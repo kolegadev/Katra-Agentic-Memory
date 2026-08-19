@@ -1,6 +1,6 @@
-# Memory Decay Models for Katra
+# Memory Decay Models for Satori
 
-> Research for Katra's agentic cognitive memory system — brain-gap analysis.
+> Research for Satori's agentic cognitive memory system — brain-gap analysis.
 > **Date:** 2026-06-30
 > **Status:** Draft
 
@@ -270,7 +270,7 @@ Effective_Retrievability(memory_m) = Base_Decay(m) - Σᵢ Interference(m, i)
 
 Where `Interference(m, i)` is a function of the **similarity** between memory `m` and competing memory `i`, and the **relative ages** of the memories. Higher similarity → stronger interference. This is not a single formula but a class of models; ACT-R handles this partially through its spreading activation and partial matching mechanisms.
 
-**Relevance to Katra:** In a knowledge graph, adding a new edge that contradicts or is semantically similar to an existing edge should weaken the older edge. This is interference, not mere time decay.
+**Relevance to Satori:** In a knowledge graph, adding a new edge that contradicts or is semantically similar to an existing edge should weaken the older edge. This is interference, not mere time decay.
 
 ---
 
@@ -285,16 +285,16 @@ In biological memory, sleep serves to:
 
 During wake, synaptic strength increases globally. During slow-wave sleep, synapses are downscaled proportionally — weak connections are eliminated, strong connections are preserved. This is a **relative, not absolute, pruning mechanism**.
 
-**Relevance to Katra:** An agent system could implement a "sleep cycle" — a periodic batch process that:
+**Relevance to Satori:** An agent system could implement a "sleep cycle" — a periodic batch process that:
 1. Computes importance scores for all memory edges
 2. Weakens or prunes edges below a relative threshold
 3. Strengthens edges that were accessed/used during the "waking" period
 
 ---
 
-## 2. Suitability Matrix for Katra Memory Types
+## 2. Suitability Matrix for Satori Memory Types
 
-Katra currently has (or will have) multiple memory subsystems. Different decay models suit different types.
+Satori currently has (or will have) multiple memory subsystems. Different decay models suit different types.
 
 | Memory Type | Recommended Model | Rationale | Key Parameters |
 |---|---|---|---|
@@ -311,7 +311,7 @@ Katra currently has (or will have) multiple memory subsystems. Different decay m
 **For Episodic Memory (ACT-R):**
 
 ```python
-# Katra episodic decay function
+# Satori episodic decay function
 def episodic_activation(event_timestamps, current_time, d=0.5):
     """
     event_timestamps: list of UNIX timestamps when this event was accessed/recalled
@@ -527,7 +527,7 @@ def consolidate_memories(memories, now):
 
 ---
 
-### 3.5 Recommended Composite Approach for Katra
+### 3.5 Recommended Composite Approach for Satori
 
 **A layered system combining multiple mechanisms:**
 
@@ -583,7 +583,7 @@ Layer 4: Periodic Consolidation (Approach D)
 4. **Privacy compliance**: GDPR "right to be forgotten" and data retention policies may require deletion.
 5. **Agent focus**: An agent with 100,000 "forgotten but recoverable" memories will have worse retrieval precision than one with 10,000 strong memories.
 
-### Recommended Katra Policy: **Soft Decay + Archival Tier + Hard Pruning at Extreme Ages**
+### Recommended Satori Policy: **Soft Decay + Archival Tier + Hard Pruning at Extreme Ages**
 
 ```
 ┌─────────────────────────────────────────────────────┐
@@ -610,7 +610,7 @@ Layer 4: Periodic Consolidation (Approach D)
 - `θ₂` (archival threshold): retrieval_score ≤ 0.05
 - `T_max` (hard delete): age > 2–5 years AND access_count = 0
 
-**This gives Katra:**
+**This gives Satori:**
 - **Soft decay** for most memories (strength-based retrieval filtering)
 - **Archival** for very old memories (storage cost reduction, still recoverable)
 - **Hard delete** only for truly irrelevant memories (extreme age, never accessed, no emotional weight)
@@ -625,7 +625,7 @@ Layer 4: Periodic Consolidation (Approach D)
 
 **Decay Mechanism:** **None found.** Mem0's documentation emphasizes ADD-only extraction: "memories accumulate; nothing is overwritten." The system uses single-pass extraction (no UPDATE/DELETE) and temporal reasoning to rank the "right dated instance" for time-sensitive queries. There is no explicit forgetting curve, no decay parameter, and no pruning mechanism documented.
 
-**Relevance to Katra:** Mem0 represents the baseline that Katra's decay model would improve upon. It's a pure append-only store with relevance ranking but no biological forgetting.
+**Relevance to Satori:** Mem0 represents the baseline that Satori's decay model would improve upon. It's a pure append-only store with relevance ranking but no biological forgetting.
 
 ---
 
@@ -640,7 +640,7 @@ Layer 4: Periodic Consolidation (Approach D)
 
 The archival/recall distinction is a crude form of decay: recent memories are in the "recall" window, older memories move to "archival" (lower retrieval priority). But there is no continuous decay function, no spaced repetition, and no interference model documented in the core architecture.
 
-**Relevance to Katra:** Letta's hierarchical memory (core → archival) is a useful design pattern. Katra could extend this with continuous decay within each tier.
+**Relevance to Satori:** Letta's hierarchical memory (core → archival) is a useful design pattern. Satori could extend this with continuous decay within each tier.
 
 ---
 
@@ -650,13 +650,13 @@ The archival/recall distinction is a crude form of decay: recent memories are in
 
 **Decay Mechanism:** **None found.** Cognee focuses on graph construction (entity extraction, relationship inference) and graph-based retrieval (graph traversal + vector search). No documentation of decay, forgetting, or edge weakening over time.
 
-**Relevance to Katra:** Cognee's knowledge graph architecture is the closest structural analogue to Katra's append-only graph. Cognee demonstrates the need for decay — without it, contradictory edges accumulate. Katra could pioneer graph-native decay.
+**Relevance to Satori:** Cognee's knowledge graph architecture is the closest structural analogue to Satori's append-only graph. Cognee demonstrates the need for decay — without it, contradictory edges accumulate. Satori could pioneer graph-native decay.
 
 ---
 
 ### 5.4 Bitterbot's Hormonal Engine
 
-**Reference:** Referenced in the Katra task description. Bitterbot is a Discord chatbot by @maya that uses a "hormonal engine" to modulate behavior.
+**Reference:** Referenced in the Satori task description. Bitterbot is a Discord chatbot by @maya that uses a "hormonal engine" to modulate behavior.
 
 **Decay Mechanism:** **Hormone-modulated decay (inferred).** Based on the description, Bitterbot uses hormonal states (analogous to neurotransmitter levels) that:
 - Rise and fall over time (natural decay)
@@ -671,7 +671,7 @@ Hormonal State → Memory Access Weights → Behavior
   Hormone Decay → Lower weight on old memories
 ```
 
-**Relevance to Katra:** The hormonal modulation approach could add emotional/contextual modulation to Katra's decay model. A "dopamine" equivalent could strengthen recently rewarded memories; a "cortisol" equivalent could weaken memories associated with negative outcomes.
+**Relevance to Satori:** The hormonal modulation approach could add emotional/contextual modulation to Satori's decay model. A "dopamine" equivalent could strengthen recently rewarded memories; a "cortisol" equivalent could weaken memories associated with negative outcomes.
 
 ---
 
@@ -683,7 +683,7 @@ Multiple open-source ACT-R implementations exist (Python ACT-R, ACT-UP, jsACT-R)
 - **ACT-UP** (van Rij et al.): Lightweight Python ACT-R implementation used in cognitive modeling research
 - **Adaptive Recall** (adaptiverecall.com): Developer-focused implementation of ACT-R base-level activation for search/retrieval systems
 
-**Relevance to Katra:** These are the most mature implementations of power-law memory decay that Katra could draw from. The Adaptive Recall implementation is particularly interesting — it applies ACT-R to general retrieval systems, not just cognitive modeling.
+**Relevance to Satori:** These are the most mature implementations of power-law memory decay that Satori could draw from. The Adaptive Recall implementation is particularly interesting — it applies ACT-R to general retrieval systems, not just cognitive modeling.
 
 ---
 
@@ -702,16 +702,16 @@ Multiple open-source ACT-R implementations exist (Python ACT-R, ACT-UP, jsACT-R)
 │ Chroma/Weaviate    │ None (vector stores, no time-awareness)  │
 │ ACT-R (academic)   │ Full power-law decay (not agent-focused) │
 │ Bitterbot          │ Hormonal modulation (limited details)    │
-│ **Katra (proposed)**│ **Multi-layer decay: ACT-R + FSRS +     │
+│ **Satori (proposed)**│ **Multi-layer decay: ACT-R + FSRS +     │
 │                    │  interference + sleep consolidation**    │
 └────────────────────┴─────────────────────────────────────────┘
 ```
 
-**Key finding:** No existing production agent memory system implements a principled, neuroscience-informed decay model. Katra has the opportunity to be the first.
+**Key finding:** No existing production agent memory system implements a principled, neuroscience-informed decay model. Satori has the opportunity to be the first.
 
 ---
 
-## 6. Recommendations for Katra
+## 6. Recommendations for Satori
 
 ### Immediate (Phase 1): Per-Memory Power-Law Decay
 

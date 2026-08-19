@@ -1,26 +1,26 @@
 /**
- * Katra SDK — Low-Level MCP Client
+ * Satori SDK — Low-Level MCP Client
  *
  * Handles the MCP protocol layer: JSON-RPC framing, SSE response parsing,
  * session handshake (`initialize`), authentication, and request deduplication.
  *
- * This class is used internally by `KatraClient`. End-users should use the
- * high-level `KatraClient` API instead.
+ * This class is used internally by `SatoriClient`. End-users should use the
+ * high-level `SatoriClient` API instead.
  *
  * @module mcp-client
  * @internal
  */
 
 import {
-  KatraConnectionError,
-  KatraAuthError,
-  KatraError,
+  SatoriConnectionError,
+  SatoriAuthError,
+  SatoriError,
 } from './errors.js';
 import type { MCPRequest, MCPResponse, MCPInitializeResult } from './types.js';
 
 /** Options for the low-level MCP client. */
 export interface MCPClientOptions {
-  /** Base URL of the Katra MCP server. */
+  /** Base URL of the Satori MCP server. */
   url: string;
   /** API key (optional — only needed if the server requires auth). */
   apiKey?: string;
@@ -71,9 +71,9 @@ export class MCPClient {
    * returns an `mcp-session-id` header that must be passed on subsequent
    * requests.
    *
-   * @throws {KatraConnectionError} if the server is unreachable.
-   * @throws {KatraAuthError} if the server returns 401/403.
-   * @throws {KatraError} on other errors.
+   * @throws {SatoriConnectionError} if the server is unreachable.
+   * @throws {SatoriAuthError} if the server returns 401/403.
+   * @throws {SatoriError} on other errors.
    */
   async initialize(): Promise<MCPInitializeResult> {
     const request: MCPRequest = {
@@ -125,7 +125,7 @@ export class MCPClient {
    * @param name - Tool name (e.g. `store_memory`).
    * @param args - Tool arguments object.
    * @returns Parsed JSON-RPC result content.
-   * @throws {KatraError} if the server returns a JSON-RPC error.
+   * @throws {SatoriError} if the server returns a JSON-RPC error.
    */
   async callTool(name: string, args: Record<string, unknown> = {}): Promise<unknown> {
     if (!this.#initialized) {
@@ -142,7 +142,7 @@ export class MCPClient {
     const { response } = await this.#send(request);
 
     if (response.error) {
-      throw new KatraError(response.error.message, {
+      throw new SatoriError(response.error.message, {
         code: response.error.code,
         status: response.error.code === -32000 ? 401 : 500,
       });
@@ -156,7 +156,7 @@ export class MCPClient {
     // If the tool itself returned an error
     if (result.isError) {
       const text = result.content?.map((c) => c.text).join('\n') ?? 'Unknown error';
-      throw new KatraError(text);
+      throw new SatoriError(text);
     }
 
     return result.content?.map((c) => c.text).join('\n') ?? null;
@@ -225,8 +225,8 @@ export class MCPClient {
         signal: AbortSignal.timeout(this.#timeoutMs),
       });
     } catch (err) {
-      throw new KatraConnectionError(
-        `Failed to reach Katra server at ${this.#url}`,
+      throw new SatoriConnectionError(
+        `Failed to reach Satori server at ${this.#url}`,
         { cause: err },
       );
     }
@@ -236,17 +236,17 @@ export class MCPClient {
 
     // Handle auth errors
     if (res.status === 401 || res.status === 403) {
-      throw new KatraAuthError(`Authentication failed (HTTP ${res.status})`);
+      throw new SatoriAuthError(`Authentication failed (HTTP ${res.status})`);
     }
 
     // Some servers return 405 for GET SSE (we only POST so this is unusual)
     if (res.status === 405) {
-      throw new KatraError('Katra server does not support this request method');
+      throw new SatoriError('Satori server does not support this request method');
     }
 
     if (!res.ok) {
       const text = await res.text().catch(() => res.statusText);
-      throw new KatraError(`Katra server error (HTTP ${res.status}): ${text}`, {
+      throw new SatoriError(`Satori server error (HTTP ${res.status}): ${text}`, {
         status: res.status,
       });
     }
@@ -288,7 +288,7 @@ export class MCPClient {
       return {
         jsonrpc: '2.0',
         id: requestId,
-        error: { code: -32603, message: 'Empty SSE response from Katra' },
+        error: { code: -32603, message: 'Empty SSE response from Satori' },
       };
     }
 

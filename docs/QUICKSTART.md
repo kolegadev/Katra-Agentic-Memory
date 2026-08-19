@@ -1,6 +1,6 @@
 # Quick Start Guide
 
-Get Katra running in 5 minutes.
+Get Satori running in 5 minutes.
 
 ## Prerequisites
 
@@ -10,20 +10,20 @@ Get Katra running in 5 minutes.
 ## 1. Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kolegadev/Katra-Agentic-Memory/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/kolegadev/Satori-Agentic-Memory/main/install.sh | bash
 ```
 
 That is the whole thing. It clones the source to `~/.katra/src`, generates a
 `.env` with real credentials, builds and starts all four containers (MongoDB,
-Redis, MinIO and the Katra server), waits for them to report healthy, and prints
+Redis, MinIO and the Satori server), waits for them to report healthy, and prints
 the config snippet for connecting your agent — including the generated
 `MCP_API_KEY`.
 
 Add `--with-watcher` to ingest your existing agent session history, and
-`--with-systemd` to start Katra on boot:
+`--with-systemd` to start Satori on boot:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kolegadev/Katra-Agentic-Memory/main/install.sh \
+curl -fsSL https://raw.githubusercontent.com/kolegadev/Satori-Agentic-Memory/main/install.sh \
   | bash -s -- --with-watcher --with-systemd
 ```
 
@@ -88,7 +88,7 @@ curl -X POST http://localhost:3112/mcp \
     "params": {
       "name": "store_memory",
       "arguments": {
-        "content": "Hello Katra! This is my first memory.",
+        "content": "Hello Satori! This is my first memory.",
         "user_id": "my-agent",
         "category": "event"
       }
@@ -120,7 +120,7 @@ curl -X POST http://localhost:3112/mcp \
 
 ## 5. Connect Your Agent
 
-Add Katra to your agent's MCP config:
+Add Satori to your agent's MCP config:
 
 ```json
 {
@@ -143,7 +143,7 @@ Restart your agent. It now has 48 memory tools available.
 
 ## 6. Run the Test Suite
 
-Katra includes a comprehensive test suite (87 tests, 9 files, 0 failures):
+Satori includes a comprehensive test suite (87 tests, 9 files, 0 failures):
 
 ```bash
 cd server
@@ -160,7 +160,7 @@ Tests cover: API key hashing, memory scope filtering, prototype pollution preven
 
 ## 7. Configure the LLM Provider
 
-Katra needs an LLM provider for semantic extraction, auto-journaling, and summaries.
+Satori needs an LLM provider for semantic extraction, auto-journaling, and summaries.
 Configure it via MCP tool, dashboard, or env vars.
 
 **Via MCP tool (from your agent):**

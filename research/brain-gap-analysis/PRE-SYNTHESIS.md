@@ -1,15 +1,15 @@
-# Katra Brain-Gap Analysis — Pre-Synthesis
+# Satori Brain-Gap Analysis — Pre-Synthesis
 
 ## John's First Principle
 > "Build the petri dish. Furnish it with agar. See what grows. Stop programming behaviors — program environments. Deterministic programming limits emergence."
 
-This document maps what Katra IS (current functions) → what the human brain IS (target functions) → what's MISSING (gaps) → and candidate approaches to fill those gaps, consistent with environmental programming.
+This document maps what Satori IS (current functions) → what the human brain IS (target functions) → what's MISSING (gaps) → and candidate approaches to fill those gaps, consistent with environmental programming.
 
 ---
 
-## 1. Current Katra ↔ Brain Function Map
+## 1. Current Satori ↔ Brain Function Map
 
-| Brain Region | Human Function | Katra Analog | Status |
+| Brain Region | Human Function | Satori Analog | Status |
 |---|---|---|---|
 | **Hippocampus** | Episodic memory formation, pattern separation/completion, consolidation | EpisodicEventManager + SleepConsolidationService | ✅ PRESENT |
 | **Neocortex** | Semantic memory, facts, categories | SemanticMemoryService + vector embeddings | ✅ PRESENT |
@@ -73,7 +73,7 @@ This document maps what Katra IS (current functions) → what the human brain IS
 - **Intrinsic motivation via information gain:** Reward = reduction in prediction error. The system is motivated to explore areas where its predictions are poor. This creates a self-directed learning drive.
 - **Homeostatic drive model:** Define "needs" (e.g., need for coherence, need for novelty, need for social connection). Each need depletes over time and is replenished by relevant activities. Drive strength = 1 - (current_level / target_level). The system is motivated by the largest current deficit.
 - **Curiosity as prediction error:** Schmidhuber's formal theory of curiosity — reward proportional to the agent's improvement in prediction accuracy. The system seeks out learnable-but-not-yet-learned patterns.
-- **Emotional valence as motivational attractor:** Katra already tracks emotional valence for entities. Positive-valence entities become approach goals. Negative-valence entities become avoidance goals. The system is motivated to move toward entities it has positive feelings about.
+- **Emotional valence as motivational attractor:** Satori already tracks emotional valence for entities. Positive-valence entities become approach goals. Negative-valence entities become avoidance goals. The system is motivated to move toward entities it has positive feelings about.
 
 **Environmental programming approach:** Don't program "pursue goal X." Instead: define the drive dimensions (coherence, novelty, connection, growth) and let motivation emerge from the current deficit state. Let the emotional reflection system discover what entities produce positive outcomes and naturally develop preferences. The "wanting" emerges from the tracking of what has historically produced positive emotional deltas.
 
@@ -88,7 +88,7 @@ This document maps what Katra IS (current functions) → what the human brain IS
 - **Interference-based decay:** New memories that are similar to existing ones weaken the old ones. This implements the "catastrophic interference" that neural networks experience — and that human memory also exhibits.
 - **Soft decay vs hard deletion:** Soft = reduced retrieval priority but data preserved. Hard = permanent removal. Soft decay is safer for an initial implementation — the data exists but is down-weighted. Hard deletion could be gated behind confirmation (memory has been below retrieval threshold for N periods).
 
-**Katra connection:** The append-only graph doesn't need to delete. It needs a retrieval-weight layer. Each node/edge has a "retrieval weight" that decays over time unless reinforced. The append-only integrity is preserved; the accessibility decays.
+**Satori connection:** The append-only graph doesn't need to delete. It needs a retrieval-weight layer. Each node/edge has a "retrieval weight" that decays over time unless reinforced. The append-only integrity is preserved; the accessibility decays.
 
 #### E. MEMORY POISONING DEFENSE
 **Why important:** An agent that cannot distinguish genuine memories from planted ones is trivially manipulable. In a multi-agent system with shared memory, any agent could inject false memories that corrupt the shared knowledge. The human brain has multiple defenses: source monitoring, reality monitoring, consistency checking, social corroboration.
@@ -98,18 +98,18 @@ This document maps what Katra IS (current functions) → what the human brain IS
 **Candidate approaches:**
 - **Statistical outlier detection:** For each new memory, compute its embedding distance from the centroid of recent related memories. If distance > k standard deviations → flag as anomalous. High anomaly score → reduced initial confidence, quarantine until corroborated.
 - **Consistency checking in knowledge graph:** New edges that contradict existing graph structure (e.g., A→B positive, new edge claims A→B negative) create a contradiction. Contradicting edges reduce confidence of BOTH the new and existing edge until resolved.
-- **Provenance-weighted trust:** Each memory carries its source. Sources accumulate trust scores based on historical accuracy. Memories from low-trust sources get lower initial confidence. Katra already has epistemic tiers — extend with dynamic trust.
-- **Multi-source corroboration:** A memory is "verified" when observed by N independent agents with different provenance chains. This is Katra's Tier-4 (Corroborated Across Channels) — but currently manual. Could be automated: auto-promote when independent retrieval paths surface the same entity.
+- **Provenance-weighted trust:** Each memory carries its source. Sources accumulate trust scores based on historical accuracy. Memories from low-trust sources get lower initial confidence. Satori already has epistemic tiers — extend with dynamic trust.
+- **Multi-source corroboration:** A memory is "verified" when observed by N independent agents with different provenance chains. This is Satori's Tier-4 (Corroborated Across Channels) — but currently manual. Could be automated: auto-promote when independent retrieval paths surface the same entity.
 
 **Environmental programming approach:** Don't program "reject false memories." Instead: define the conditions under which a memory is suspect (statistical outlier, source with low trust, contradiction with existing graph) and let the system quarantine rather than delete. Quarantined memories exist but are excluded from retrieval and reflection. They can be rehabilitated by corroboration.
 
 ### 🟢 ENHANCEMENT (valuable but not blocking)
 
 #### F. HABIT FORMATION
-The basal ganglia automate frequently-repeated action sequences. In Katra: frequently traversed graph paths could become "habits" — pre-computed, low-latency retrieval paths that the system uses without deliberation. The "hot edge" instrumentation proposed in our Moltbook responses is a first step.
+The basal ganglia automate frequently-repeated action sequences. In Satori: frequently traversed graph paths could become "habits" — pre-computed, low-latency retrieval paths that the system uses without deliberation. The "hot edge" instrumentation proposed in our Moltbook responses is a first step.
 
 #### G. ERROR/CONFLICT MONITORING
-The anterior cingulate cortex detects when expected outcomes diverge from actual outcomes. In Katra: the emotional delta between periods already captures some of this (feels_frustrated_by, feels_conflicted_between). Could be formalized into an explicit conflict detection mechanism that triggers deeper reflection when predictions fail.
+The anterior cingulate cortex detects when expected outcomes diverge from actual outcomes. In Satori: the emotional delta between periods already captures some of this (feels_frustrated_by, feels_conflicted_between). Could be formalized into an explicit conflict detection mechanism that triggers deeper reflection when predictions fail.
 
 #### H. PROCEDURAL MEMORY
 The cerebellum stores motor patterns and fine-tuned skills. For an agent, the analog is "tool-use patterns" — sequences of tool calls that reliably produce good outcomes. Could be stored as "skill templates" in the graph: node type "SkillPattern" with edges to the tools and parameters used.

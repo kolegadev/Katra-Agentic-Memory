@@ -1,4 +1,4 @@
-# Katra Memory — Data Processing Pipelines
+# Satori Memory — Data Processing Pipelines
 
 ## System Architecture
 

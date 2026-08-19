@@ -1,7 +1,7 @@
 # CONTRACT: Amygdala — Rapid Valence Tagger + Emotional Memory Modulation
 
 ## Goal
-Add real-time emotional processing at event ingestion. Currently Katra only assigns emotional signatures during nightly sleep consolidation — hours after events. The amygdala proxy tags events *during* ingestion with valence/arousal, modulates memory encoding by emotion, and boosts high-arousal events in processing priority.
+Add real-time emotional processing at event ingestion. Currently Satori only assigns emotional signatures during nightly sleep consolidation — hours after events. The amygdala proxy tags events *during* ingestion with valence/arousal, modulates memory encoding by emotion, and boosts high-arousal events in processing priority.
 
 ## From Research
 "Rapid Valence Tagger: Lightweight regex/sentiment classifier. Runs during episodic event ingestion. Tags each event: valence (-1 to +1), arousal (0 to 1). Fast — no LLM call, pure classifier."

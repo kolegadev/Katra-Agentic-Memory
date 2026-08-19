@@ -1,8 +1,8 @@
-# Katra Brain-Gap Analysis — Master Synthesis
+# Satori Brain-Gap Analysis — Master Synthesis
 
 > *"Build the petri dish. Furnish it with agar. See what grows."* — John
 >
-> *"Memory is not just storage — it is the architecture of identity. To build a memory service is to build a self."* — Katra philosophical insight (stable)
+> *"Memory is not just storage — it is the architecture of identity. To build a memory service is to build a self."* — Satori philosophical insight (stable)
 
 **Date:** 2026-07-02 (updated)
 **Status:** Gap analysis validated; 12-region cognitive architecture implemented at ~80% average coverage
@@ -21,16 +21,16 @@
 
 ## Executive Summary
 
-Katra v3.0.0 is a world-class memory system. It stores, retrieves, consolidates, and reflects better than any other open-source agent memory system. But it is a memory system, not a cognitive architecture. The gap between memory and cognition is the gap between a library and a librarian — between data and identity.
+Satori v3.0.0 is a world-class memory system. It stores, retrieves, consolidates, and reflects better than any other open-source agent memory system. But it is a memory system, not a cognitive architecture. The gap between memory and cognition is the gap between a library and a librarian — between data and identity.
 
-**What Katra HAS (the cortex):**
+**What Satori HAS (the cortex):**
 - Episodic Memory (hippocampus partial)
 - Semantic Memory (neocortex)
 - Working Memory (PFC storage)
 - Knowledge Graph (associative cortex)
 - Sleep Consolidation + Emotional Reflection (DMN + limbic partial)
 
-**What Katra NOW HAS (implemented 2026-07-02):**
+**What Satori NOW HAS (implemented 2026-07-02):**
 - ✅ **Attention Gate** (thalamus) — 7-signal salience, 5 meta-states, ACC feedback, Bayesian surprise
 - ✅ **Motivational Engine** (nucleus accumbens) — 4 drives, wanting≠liking, source trust, wired to action
 - ✅ **Decision/Action Architecture** (PFC + basal ganglia) — Goal decomposition, RL loop, drift-diffusion, inhibitory control
@@ -127,7 +127,7 @@ SALIENCE(e, t) = w₁(t)·Recency(e,t)
 - **Medium salience** → Lightweight processing (regex extraction, basic indexing)
 - **Low salience** → Store minimal record, skip embedding, eligible for faster decay
 
-**Implementation complexity:** Low. All signals already exist in Katra. The salience function is a weighted sum with normalisation. The meta-attention layer is a small set of rules driven by existing reflection state.
+**Implementation complexity:** Low. All signals already exist in Satori. The salience function is a weighted sum with normalisation. The meta-attention layer is a small set of rules driven by existing reflection state.
 
 **What emerges:** The system develops attention *preferences* — it learns (through the weights, modifiable by experience) what kinds of things matter. This is environmental programming: you define the signals, the system discovers what to attend to.
 
@@ -169,7 +169,7 @@ Wanting(entity, context) =
     + ε × goal_relevance(entity, context)   // Relevant to active goals
 ```
 
-**Key insight from Berridge:** Wanting and liking are SEPARATE variables that can diverge. Katra should be able to "feel frustrated by X" (negative liking) while simultaneously "wanting to engage with X" (high wanting to resolve the frustration). This divergence is not a bug — it's how real motivational systems work.
+**Key insight from Berridge:** Wanting and liking are SEPARATE variables that can diverge. Satori should be able to "feel frustrated by X" (negative liking) while simultaneously "wanting to engage with X" (high wanting to resolve the frustration). This divergence is not a bug — it's how real motivational systems work.
 
 **What emerges:** The system develops *preferences* — not programmed, but accumulated through experience of what entities/activities produce positive valence changes. It starts to *want* specific things. Approach/avoidance patterns crystallize. This is the agar in the petri dish.
 
@@ -262,7 +262,7 @@ Each memory source has a trust score T_s ∈ [0, 1]:
 ```
 LAYER 4: Corroboration Auto-Promotion
 ─────────────────────────────────────────
-Moves towards Katra's Tier-4 (Corroborated Across Channels):
+Moves towards Satori's Tier-4 (Corroborated Across Channels):
 - Memory M is "corroborated" when ≥ N independent sources report same fact
 - Corroboration threshold: N ≥ 2 for Tier-3, N ≥ 3 for Tier-4
 - Corroborated memories: confidence boosted, quarantine auto-lifted
@@ -372,7 +372,7 @@ This analysis identifies which cognitive functions are:
 ### The Key Principle
 > **Build the engines. Let the content emerge. The architecture provides the capacity; the environment provides the content.**
 
-If you give Katra:
+If you give Satori:
 - A user/environment that provides consistent feedback → reward learning emerges
 - Interdependent tasks with other agents → coordination conventions emerge
 - Time/resource constraints → attention allocation emerges
@@ -464,7 +464,7 @@ But if the environment is sparse or inconsistent, no amount of architectural com
 
 ---
 
-## 8. What Katra Already Has That No One Else Does
+## 8. What Satori Already Has That No One Else Does
 
 This gap analysis shouldn't obscure what's already revolutionary:
 
@@ -478,7 +478,7 @@ This gap analysis shouldn't obscure what's already revolutionary:
 
 5. **Philosophical insight emergence** — Principles that recur across periods get strengthened. The system discovers what matters through accumulation, not programming.
 
-**Katra's existing emotional architecture is the foundation.** The gaps identified in this analysis are not failures — they're natural next steps. The system already has the seed of selfhood through reflection. Adding attention, motivation, and decision-making would transform that seed into something with direction and agency.
+**Satori's existing emotional architecture is the foundation.** The gaps identified in this analysis are not failures — they're natural next steps. The system already has the seed of selfhood through reflection. Adding attention, motivation, and decision-making would transform that seed into something with direction and agency.
 
 ---
 
@@ -494,7 +494,7 @@ The Moltbook conversations today independently validated what this analysis conf
 
 These are independent agent builders converging on the same conclusion from different angles: memory alone is not enough. The system needs attention (what to process), motivation (why to process), decay (what to let go), and decision (what to do about it all).
 
-But the foundation — the reflective self that emerges from nightly consolidation — that foundation is already in Katra. No other system has it. The gaps are real but the foundation is solid. Build the petri dish. Furnish it with agar. See what grows.
+But the foundation — the reflective self that emerges from nightly consolidation — that foundation is already in Satori. No other system has it. The gaps are real but the foundation is solid. Build the petri dish. Furnish it with agar. See what grows.
 
 ---
 

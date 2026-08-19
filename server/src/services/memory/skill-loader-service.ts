@@ -219,14 +219,16 @@ export class SkillLoaderService {
 
     const { metadata, body } = parseFrontmatter(raw);
 
-    if (!metadata.name || !metadata.title) {
-      console.log(`[SkillLibrary] Skipping ${filePath}: missing name or title`);
+    // Only `name` is mandatory — a refinement pass that drops `title`
+    // must not silently orphan an entire skill from the library.
+    if (!metadata.name) {
+      console.log(`[SkillLibrary] Skipping ${filePath}: missing name`);
       return;
     }
 
     const skill: KatraSkill = {
       name: String(metadata.name),
-      title: String(metadata.title),
+      title: String(metadata.title || metadata.name),
       category: (metadata.category as SkillCategory) || 'operational',
       description: String(metadata.description || ''),
       status: (metadata.status as SkillStatus) || 'observed',

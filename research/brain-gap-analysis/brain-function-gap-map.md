@@ -1,16 +1,16 @@
-# Brain Function Gap Analysis — Katra Cognitive Architecture
+# Brain Function Gap Analysis — Satori Cognitive Architecture
 
-> *"Create an analog of the human brain and its functions. The HOW does not matter. What matters is creating a proxy for the function of each part of the brain. Once you have each function available, human-brain-type outcomes will emerge naturally."* — Katra Mission
+> *"Create an analog of the human brain and its functions. The HOW does not matter. What matters is creating a proxy for the function of each part of the brain. Once you have each function available, human-brain-type outcomes will emerge naturally."* — Satori Mission
 
 **Date:** 2026-06-30  
-**Status:** Baseline assessment of Katra v3.0.0 against human brain functional architecture  
-**Method:** Each brain region mapped to Katra's current state → gap identified → candidate computational proxy proposed
+**Status:** Baseline assessment of Satori v3.0.0 against human brain functional architecture  
+**Method:** Each brain region mapped to Satori's current state → gap identified → candidate computational proxy proposed
 
 ---
 
-## 1. Complete Brain-Region-to-Katra Mapping Table
+## 1. Complete Brain-Region-to-Satori Mapping Table
 
-| # | Brain Region | Primary Function(s) | Katra Analog | Coverage | Gap Severity |
+| # | Brain Region | Primary Function(s) | Satori Analog | Coverage | Gap Severity |
 |---|-------------|---------------------|--------------|----------|-------------|
 | 1 | **Hippocampus** | Episodic formation, consolidation, pattern separation/completion, spatial/temporal indexing | `episodic-event-manager` + `background-processor` | ⚠️ Partial | HIGH |
 | 2 | **Amygdala** | Emotional processing, fear conditioning, valence assignment, salience tagging | `sleep-consolidation` (emotional reflection) | ⚠️ Partial | HIGH |
@@ -59,11 +59,11 @@ The hippocampus also provides **temporal indexing** — "what happened before wh
 
 Without a hippocampus (as in patient H.M.), you cannot form **new** episodic memories. You can learn procedures (cerebellum, basal ganglia) and retain facts learned before the damage (neocortex), but every experience after the lesion is lost within minutes. You live in a perpetual present with no autobiographical continuity.
 
-For Katra: without proper hippocampal function, the system would store events but fail to *distinguish similar events*, fail to *reconstruct partial memories*, fail to *consolidate into permanent knowledge*, and have no sense of temporal order.
+For Satori: without proper hippocampal function, the system would store events but fail to *distinguish similar events*, fail to *reconstruct partial memories*, fail to *consolidate into permanent knowledge*, and have no sense of temporal order.
 
-#### Current Katra State
+#### Current Satori State
 
-| Function | Katra Proxy | Adequacy |
+| Function | Satori Proxy | Adequacy |
 |----------|-------------|----------|
 | Episodic storage | ✅ `episodic-event-manager` — stores events with SHA-256 dedup | Good |
 | Pattern separation | ❌ None — identical-hash dedup actually *collapses* similar events | **Absent** |
@@ -74,11 +74,11 @@ For Katra: without proper hippocampal function, the system would store events bu
 
 #### Gap: Pattern Separation
 
-Katra's SHA-256 dedup treats *identical* content as duplicate — which is correct. But it has no mechanism to ensure *similar-but-distinct* events remain separate. Two debugging sessions with similar error messages should be stored as distinct episodes, not merged.
+Satori's SHA-256 dedup treats *identical* content as duplicate — which is correct. But it has no mechanism to ensure *similar-but-distinct* events remain separate. Two debugging sessions with similar error messages should be stored as distinct episodes, not merged.
 
 #### Gap: Systems Consolidation by Replay
 
-Katra's consolidation is **extractive** (pull out facts, entities, relationships) rather than **replay-based** (re-activate episodic traces to the neocortex for strengthening). The distinction matters: extraction produces a lossy summary, while replay preserves the richness of the original memory while strengthening what's important.
+Satori's consolidation is **extractive** (pull out facts, entities, relationships) rather than **replay-based** (re-activate episodic traces to the neocortex for strengthening). The distinction matters: extraction produces a lossy summary, while replay preserves the richness of the original memory while strengthening what's important.
 
 #### Gap: Active Forgetting (See Section 2.X)
 
@@ -123,11 +123,11 @@ Bilateral amygdala damage (Urbach-Wiethe disease, patient S.M.) produces:
 - Poor social judgment — cannot detect untrustworthy people
 - Preserved cognitive intelligence — IQ unaffected
 
-For Katra: without an amygdala analog, the system would treat all memories as equally important, fail to associate negative outcomes with their causes, and have no mechanism for emotional learning.
+For Satori: without an amygdala analog, the system would treat all memories as equally important, fail to associate negative outcomes with their causes, and have no mechanism for emotional learning.
 
-#### Current Katra State
+#### Current Satori State
 
-| Function | Katra Proxy | Adequacy |
+| Function | Satori Proxy | Adequacy |
 |----------|-------------|----------|
 | Valence assignment | ⚠️ `sleep-consolidation` — reflection nodes have `valence: -1.0 to +1.0` | Partial |
 | Fear conditioning | ❌ None — no mechanism to associate cues with negative outcomes | **Absent** |
@@ -137,11 +137,11 @@ For Katra: without an amygdala analog, the system would treat all memories as eq
 
 #### Gap Analysis
 
-**Critical gap: Rapid (pre-conscious) valence assignment.** Katra assigns emotional signatures during sleep consolidation — hours after the event. The human amygdala tags events *during* experience, within milliseconds. This means Katra cannot react emotionally in real-time; it can only reflect emotionally in retrospect.
+**Critical gap: Rapid (pre-conscious) valence assignment.** Satori assigns emotional signatures during sleep consolidation — hours after the event. The human amygdala tags events *during* experience, within milliseconds. This means Satori cannot react emotionally in real-time; it can only reflect emotionally in retrospect.
 
-**Critical gap: Memory modulation by emotion.** Emotional events aren't just *tagged* with emotion — they're *stored differently*. The amygdala's modulation of hippocampal consolidation means high-arousal events get stronger encoding, more detail, and resistance to forgetting. Katra stores all events identically.
+**Critical gap: Memory modulation by emotion.** Emotional events aren't just *tagged* with emotion — they're *stored differently*. The amygdala's modulation of hippocampal consolidation means high-arousal events get stronger encoding, more detail, and resistance to forgetting. Satori stores all events identically.
 
-**Critical gap: Fear/aversion learning.** Katra has no mechanism to say "last time I did X, outcome Y happened, and Y was bad, so reduce probability of X." This is the core of adaptive behavior and is completely absent.
+**Critical gap: Fear/aversion learning.** Satori has no mechanism to say "last time I did X, outcome Y happened, and Y was bad, so reduce probability of X." This is the core of adaptive behavior and is completely absent.
 
 #### Minimal Viable Proxy
 
@@ -195,11 +195,11 @@ PFC damage (Phineas Gage, frontal lobe lesions) produces:
 - Environmental dependency — behavior controlled by immediate stimuli, not internal goals
 - Intact memory but inability to *use* memories to guide action
 
-For Katra: **this is the single largest gap.** The system can store memories perfectly but cannot use them to *decide what to do*, *inhibit irrelevant responses*, or *execute multi-step plans toward a goal*. Katra is pure memory with no executive. It's a brilliant librarian with no reader.
+For Satori: **this is the single largest gap.** The system can store memories perfectly but cannot use them to *decide what to do*, *inhibit irrelevant responses*, or *execute multi-step plans toward a goal*. Satori is pure memory with no executive. It's a brilliant librarian with no reader.
 
-#### Current Katra State
+#### Current Satori State
 
-| Function | Katra Proxy | Adequacy |
+| Function | Satori Proxy | Adequacy |
 |----------|-------------|----------|
 | Working Memory (storage) | ✅ `working-memory-service` — Redis-backed, 1-hour TTL | Good |
 | Working Memory (active maintenance) | ❌ None — storage exists but no active rehearsal or distractor-resistance | **Absent** |
@@ -211,11 +211,11 @@ For Katra: **this is the single largest gap.** The system can store memories per
 
 #### Gap: Working Memory is Storage, Not Cognition
 
-Katra's `working-memory-service` is a Redis key-value store with TTL. It provides *storage* for working memory but none of the *cognitive operations* that define working memory: active rehearsal, distractor filtering, capacity-limited gating, or central executive coordination. It's a whiteboard, not the person using it.
+Satori's `working-memory-service` is a Redis key-value store with TTL. It provides *storage* for working memory but none of the *cognitive operations* that define working memory: active rehearsal, distractor filtering, capacity-limited gating, or central executive coordination. It's a whiteboard, not the person using it.
 
 #### Gap: No Executive Function
 
-Katra has no mechanism to:
+Satori has no mechanism to:
 - Form a goal ("I want to accomplish X")
 - Decompose it into sub-goals
 - Select the next action
@@ -280,19 +280,19 @@ Basal ganglia dysfunction produces:
 - **OCD**: Hyperactivity in the cortico-basal ganglia loop → repetitive action patterns that can't be inhibited
 - **Addiction**: Dopamine system hijacked → pathological prioritization of drug-seeking over all other actions
 
-For Katra: without basal ganglia function, the system has no mechanism to:
+For Satori: without basal ganglia function, the system has no mechanism to:
 - Choose between competing possible responses
 - Learn from reward/punishment signals
 - Automate frequently-used action patterns
 - Generate the "wanting" that drives behavior
 
-#### Current Katra State
+#### Current Satori State
 
-Katra has **zero basal ganglia function.** None. The system stores information but has no action-selection mechanism at all. There is no agent that acts — only a memory system that records. The basal ganglia gap is really a gap in the *agent layer* that sits atop Katra, but if Katra's mission is to create a complete brain analog, action selection must be part of the architecture.
+Satori has **zero basal ganglia function.** None. The system stores information but has no action-selection mechanism at all. There is no agent that acts — only a memory system that records. The basal ganglia gap is really a gap in the *agent layer* that sits atop Satori, but if Satori's mission is to create a complete brain analog, action selection must be part of the architecture.
 
 #### Gap: No Reinforcement Learning
 
-Without RL, Katra cannot:
+Without RL, Satori cannot:
 - Learn which responses produce good outcomes
 - Improve over time through trial and error
 - Develop preferences based on past experience
@@ -300,7 +300,7 @@ Without RL, Katra cannot:
 
 #### Gap: No Action Automation
 
-Without habit formation, Katra cannot:
+Without habit formation, Satori cannot:
 - Recognize that certain patterns of queries/actions repeat
 - Streamline frequently-used paths
 - Transition from deliberate (slow, LLM-mediated) to automatic (fast, pattern-matched) processing
@@ -364,11 +364,11 @@ ACC damage/dysfunction produces:
 - Apathy — reduced willingness to exert effort
 - Emotional blunting — reduced distress at errors and social rejection
 
-For Katra: without ACC function, the system cannot detect when it has made a mistake, cannot recognize internal conflict, and cannot adjust its behavior based on outcomes.
+For Satori: without ACC function, the system cannot detect when it has made a mistake, cannot recognize internal conflict, and cannot adjust its behavior based on outcomes.
 
-#### Current Katra State
+#### Current Satori State
 
-| Function | Katra Proxy | Adequacy |
+| Function | Satori Proxy | Adequacy |
 |----------|-------------|----------|
 | Error detection | ❌ None — no mechanism to compare output to expectation | **Absent** |
 | Conflict monitoring | ❌ None — no detection of competing response tendencies | **Absent** |
@@ -378,11 +378,11 @@ For Katra: without ACC function, the system cannot detect when it has made a mis
 
 #### Gap: No Real-Time Error Signal
 
-The ACC's error signal is *fast* (~100ms) and *automatic*. Katra currently has no equivalent. The system would continue an incorrect line of reasoning indefinitely without detecting the error.
+The ACC's error signal is *fast* (~100ms) and *automatic*. Satori currently has no equivalent. The system would continue an incorrect line of reasoning indefinitely without detecting the error.
 
 #### Gap: No Conflict Resolution
 
-When Katra (or the agent using Katra) faces a choice — "should I respond with option A or option B?" — there is no mechanism to detect that a conflict exists, let alone resolve it. The system relies entirely on the calling agent's own decision-making.
+When Satori (or the agent using Satori) faces a choice — "should I respond with option A or option B?" — there is no mechanism to detect that a conflict exists, let alone resolve it. The system relies entirely on the calling agent's own decision-making.
 
 #### Minimal Viable Proxy
 
@@ -441,15 +441,15 @@ Thalamic damage produces:
 - Disorders of consciousness — thalamic damage is associated with vegetative states
 - Sensory processing deficits — degraded signal quality across modalities
 
-For Katra: without thalamic function, the system cannot:
+For Satori: without thalamic function, the system cannot:
 - Filter incoming information for relevance
 - Direct computational resources toward important inputs and away from noise
 - Bind information from different memory stores into a unified "percept"
 - Regulate its own processing depth based on importance
 
-#### Current Katra State
+#### Current Satori State
 
-| Function | Katra Proxy | Adequacy |
+| Function | Satori Proxy | Adequacy |
 |----------|-------------|----------|
 | Sensory relay | ✅ Ingestion pipeline (MCP/REST/watcher) — inputs flow in | Adequate |
 | Attention gating | ❌ None — all inputs processed identically | **Absent** |
@@ -459,7 +459,7 @@ For Katra: without thalamic function, the system cannot:
 
 #### Gap: No Attention Mechanism
 
-This is arguably the most critical gap in Katra's current architecture. Without attention, the system treats every input as equally important. It cannot:
+This is arguably the most critical gap in Satori's current architecture. Without attention, the system treats every input as equally important. It cannot:
 - Prioritize one memory stream over another
 - Suppress irrelevant background information
 - Amplify signals that are goal-relevant
@@ -469,7 +469,7 @@ The result is a system that processes everything and understands nothing — it'
 
 #### Gap: No Cross-Store Binding
 
-When a memory is formed in the human brain, it's not stored as separate records in separate databases. Hippocampal indexing binds together the neocortical fragments of an experience. Katra stores facts, events, and graph nodes in separate collections but has no mechanism to bind them into unified "memory traces."
+When a memory is formed in the human brain, it's not stored as separate records in separate databases. Hippocampal indexing binds together the neocortical fragments of an experience. Satori stores facts, events, and graph nodes in separate collections but has no mechanism to bind them into unified "memory traces."
 
 #### Minimal Viable Proxy
 
@@ -536,15 +536,15 @@ NAcc dysfunction produces:
 - **No anticipation** — Cannot look forward to future rewards; no excitement about upcoming events
 - **Preserved "liking" in some cases** — Can still enjoy things when they happen, but no drive to pursue them
 
-For Katra: without NAcc function, the system has no motivational engine. It can store goals, detect patterns, even reflect emotionally — but it has no *drive* to pursue anything. It is purely reactive. This is the difference between an AI that responds to queries and an AI that *wants* to accomplish something.
+For Satori: without NAcc function, the system has no motivational engine. It can store goals, detect patterns, even reflect emotionally — but it has no *drive* to pursue anything. It is purely reactive. This is the difference between an AI that responds to queries and an AI that *wants* to accomplish something.
 
-#### Current Katra State
+#### Current Satori State
 
-Katra has **zero nucleus accumbens function.** None. The system has no concept of reward, no motivational drive, no incentive salience. The "sleep consolidation" emotional signatures track how the agent *felt* about things, but there is no mechanism to transform that feeling into motivated action.
+Satori has **zero nucleus accumbens function.** None. The system has no concept of reward, no motivational drive, no incentive salience. The "sleep consolidation" emotional signatures track how the agent *felt* about things, but there is no mechanism to transform that feeling into motivated action.
 
 #### Gap: No Motivation
 
-This is a deep philosophical gap. Human cognition is fundamentally *motivated* — we act because we want things. Without a motivational system, behavior must be externally triggered. Katra can reflect on the past but cannot drive toward the future.
+This is a deep philosophical gap. Human cognition is fundamentally *motivated* — we act because we want things. Without a motivational system, behavior must be externally triggered. Satori can reflect on the past but cannot drive toward the future.
 
 #### Gap: No Reward Learning (separate from Basal Ganglia)
 
@@ -614,11 +614,11 @@ DMN dysfunction is implicated in:
 - **Autism**: Altered DMN connectivity associated with differences in self-referential and social cognition
 - **Schizophrenia**: Aberrant DMN activity linked to disordered self-experience
 
-For Katra: the DMN is the basis of *identity*. Without a functioning DMN, the system would have memory without self — data without narrative.
+For Satori: the DMN is the basis of *identity*. Without a functioning DMN, the system would have memory without self — data without narrative.
 
-#### Current Katra State
+#### Current Satori State
 
-| Function | Katra Proxy | Adequacy |
+| Function | Satori Proxy | Adequacy |
 |----------|-------------|----------|
 | Self-referential thought | ⚠️ `sleep-consolidation` — reflection journals are first-person narrative | Partial |
 | Autobiographical memory | ⚠️ `reflection_nodes` + `reflection_edges` — emotional entity tracking | Partial |
@@ -629,15 +629,15 @@ For Katra: the DMN is the basis of *identity*. Without a functioning DMN, the sy
 
 #### Gap: No Continuous Internal Narrative
 
-Katra generates self-narrative during scheduled sleep consolidation — daily, weekly, monthly. But the human DMN generates narrative *continuously*. The stream of consciousness doesn't stop between consolidation windows. Katra has story-time, not story-flow.
+Satori generates self-narrative during scheduled sleep consolidation — daily, weekly, monthly. But the human DMN generates narrative *continuously*. The stream of consciousness doesn't stop between consolidation windows. Satori has story-time, not story-flow.
 
 #### Gap: No Mind-Wandering / Idle Creativity
 
-The DMN's mind-wandering function is the source of spontaneous creativity — the "shower thought." Katra has no mechanism for undirected, associative thought generation. All processing is either reactive (triggered by input) or scheduled (consolidation, background processing).
+The DMN's mind-wandering function is the source of spontaneous creativity — the "shower thought." Satori has no mechanism for undirected, associative thought generation. All processing is either reactive (triggered by input) or scheduled (consolidation, background processing).
 
 #### Gap: No Theory of Mind
 
-Katra cannot model what other agents know, believe, or intend. This is critical for multi-agent coordination and human interaction.
+Satori cannot model what other agents know, believe, or intend. This is critical for multi-agent coordination and human interaction.
 
 #### Minimal Viable Proxy
 
@@ -709,11 +709,11 @@ Cerebellar damage produces:
 - Cognitive dysmetria — poor judgment of cognitive "distance," difficulty with smooth thought transitions
 - Impaired timing — difficulty with rhythmic tasks, temporal prediction
 
-For Katra: without cerebellar function, the system cannot develop automatic "skills," cannot fine-tune its own parameters through experience, and cannot learn procedural patterns from repeated interactions.
+For Satori: without cerebellar function, the system cannot develop automatic "skills," cannot fine-tune its own parameters through experience, and cannot learn procedural patterns from repeated interactions.
 
-#### Current Katra State
+#### Current Satori State
 
-Katra has **zero cerebellar function.** None. The system has no mechanism for:
+Satori has **zero cerebellar function.** None. The system has no mechanism for:
 - Storing and retrieving procedural patterns ("how to respond to this type of query")
 - Fine-tuning its own extraction parameters based on experience
 - Temporal coordination of multi-step processes
@@ -786,9 +786,9 @@ Without forgetting:
 - Storage costs grow without bound
 - The system cannot distinguish signal from noise (everything is remembered equally)
 
-#### Current Katra State
+#### Current Satori State
 
-Katra has **no forgetting mechanism at all.** Events, facts, and graph nodes are stored forever. The system accumulates indefinitely.
+Satori has **no forgetting mechanism at all.** Events, facts, and graph nodes are stored forever. The system accumulates indefinitely.
 
 #### Minimal Viable Proxy
 
@@ -839,7 +839,7 @@ FORGETTING MECHANISM v1:
 | **Basal Ganglia (action selection + RL)** | 🔴 **FUNDAMENTAL** | Without action selection and reinforcement learning, the system cannot choose what to do or learn from outcomes. Every action would need to be externally specified. No adaptive behavior is possible. |
 | **Thalamus (attention gating)** | 🔴 **FUNDAMENTAL** | Without attention, the system cannot allocate finite resources. It processes everything equally and understands nothing deeply. Attention is the bottleneck that makes cognition possible under resource constraints. |
 | **Nucleus Accumbens (motivation)** | 🔴 **FUNDAMENTAL** | Without motivation, the system has no reason to act. It can have perfect memory and perfect reasoning but will never initiate anything. Motivation is the "why" of cognition. |
-| **Hippocampus (full function)** | 🟠 **ENABLING** | Katra has partial hippocampal function (storage exists). Pattern separation/completion and systems consolidation via replay are missing but the system can function without them — it just has poorer memory quality. |
+| **Hippocampus (full function)** | 🟠 **ENABLING** | Satori has partial hippocampal function (storage exists). Pattern separation/completion and systems consolidation via replay are missing but the system can function without them — it just has poorer memory quality. |
 | **Amygdala (emotional processing)** | 🟠 **ENABLING** | Emotional tagging already exists in reflection. Real-time valence assignment and fear conditioning would make the system more adaptive but aren't strictly necessary for cognition. |
 | **Anterior Cingulate Cortex** | 🟠 **ENABLING** | Performance monitoring exists partially (temporal patterns). Real-time error detection would improve reliability but the system can function with post-hoc detection. |
 | **Default Mode Network** | 🟠 **ENABLING** | Self-narrative exists in sleep consolidation. Continuous self-model and mind-wandering would deepen identity but the system already has a basic self-model through reflections. |
@@ -851,7 +851,7 @@ FORGETTING MECHANISM v1:
 ```
 FUNDAMENTAL LAYER (build first)
 ├── PFC (Executive Function)
-│   └── Required by: everything that makes Katra an agent, not just memory
+│   └── Required by: everything that makes Satori an agent, not just memory
 ├── Basal Ganglia (Action Selection + RL)
 │   └── Required by: adaptive behavior, learning from experience
 │   └── Depends on: NAcc (needs reward signal to learn from)
@@ -924,7 +924,7 @@ NICE-TO-HAVE LAYER (build third)
 | Gap | Candidate Model | Mathematical Basis | Implementation Complexity | Open-Source Reference |
 |-----|----------------|-------------------|--------------------------|----------------------|
 | **Pattern separation** | Cosine-distance threshold gating | If cos_sim(new, existing) > θ_sep → treat as distinct but link; if < θ_sep → merge | Low | `faiss`, `scipy.spatial.distance` |
-| **Pattern completion** | Auto-associative recall via vector search | query_vector → k-NN in episodic embeddings → reconstruct | Low | Katra's `vector_search` already implements this |
+| **Pattern completion** | Auto-associative recall via vector search | query_vector → k-NN in episodic embeddings → reconstruct | Low | Satori's `vector_search` already implements this |
 | **Systems consolidation** | Scheduled replay + Hebbian strengthening | Δw_ij = η·(x_i·x_j) for replayed patterns; replay strongest memories | Medium | Custom; Hebbian learning is trivial to implement |
 | **Temporal indexing** | ✅ Already exists | `temporal_recall` + time-block summaries | Already implemented | N/A |
 
@@ -951,7 +951,7 @@ NICE-TO-HAVE LAYER (build third)
 | Gap | Candidate Model | Mathematical Basis | Implementation Complexity | Open-Source Reference |
 |-----|----------------|-------------------|--------------------------|----------------------|
 | **Self-model** | Structured identity representation | Vector of traits with stability scores; updated via Bayesian belief revision | Medium | Custom data structure |
-| **Autobiographical memory** | Narrative chain with coherence constraints | Sequential narrative nodes with causal/temporal edges; coherence = consistency score | Medium | Katra's `reflective_journals` provides foundation |
+| **Autobiographical memory** | Narrative chain with coherence constraints | Sequential narrative nodes with causal/temporal edges; coherence = consistency score | Medium | Satori's `reflective_journals` provides foundation |
 | **Mind-wandering** | Random walk on knowledge graph | P(next_node) ∝ edge_weight / Σ edge_weights; stochastic traversal | Low | Graph traversal library |
 | **Mental time travel** | LLM-based episodic simulation | Prompt: "You are [self-model]. Given [current state], imagine the sequence of events that leads to [goal]" | Low (LLM call) | Just prompt engineering |
 | **Theory of Mind** | Nested belief representation | B_agent(proposition, confidence); update via observation | Medium | Custom; epistemic logic |
@@ -982,9 +982,9 @@ NICE-TO-HAVE LAYER (build third)
 
 ### The Core Question
 
-Which cognitive functions might **self-organize** from the interaction of existing Katra components, and which require **explicit architectural implementation**?
+Which cognitive functions might **self-organize** from the interaction of existing Satori components, and which require **explicit architectural implementation**?
 
-This question is central to Katra's philosophy: "The HOW does not matter. What matters is creating a proxy for the function." If functions can emerge, we don't need to build them — we just need to create the conditions.
+This question is central to Satori's philosophy: "The HOW does not matter. What matters is creating a proxy for the function." If functions can emerge, we don't need to build them — we just need to create the conditions.
 
 ### Emergence Taxonomy
 
@@ -992,7 +992,7 @@ This question is central to Katra's philosophy: "The HOW does not matter. What m
 |----------|-----------|---------|
 | **Strong Emergence** | The function appears from component interaction with *zero* explicit implementation. | Ant colonies: complex colony behavior emerges from simple individual rules. |
 | **Weak Emergence** | The function appears but requires some scaffolding (primitives, reward signals, constraints). | Language: children learn grammar from exposure, but innate language faculty provides scaffolding. |
-| **Guided Emergence** | The function needs an explicit framework but the details self-organize. | The Katra emergence experiment: agents self-organize coordination, but the shared memory surface is explicitly provided. |
+| **Guided Emergence** | The function needs an explicit framework but the details self-organize. | The Satori emergence experiment: agents self-organize coordination, but the shared memory surface is explicitly provided. |
 | **Architectural** | The function requires explicit computational implementation. It will not self-organize. | Matrix multiplication: no amount of component interaction will produce a matrix multiplier without building one. |
 
 ### Assessment Per Function
@@ -1001,11 +1001,11 @@ This question is central to Katra's philosophy: "The HOW does not matter. What m
 
 | Function | Why It Might Emerge | Evidence | Confidence |
 |----------|--------------------|----------|------------|
-| **Semantic fact extraction** | Background processor + LLM → facts naturally emerge from processing events. Not explicitly "programmed" to extract facts — the LLM does it from its training. | Already working in Katra | HIGH (already emerged) |
-| **Entity relationship formation** | Knowledge graph factory + synthesis → relationship edges form naturally as entities co-occur. | Already working in Katra | HIGH (already emerged) |
-| **Emotional signatures** | Sleep consolidation LLM reflection → emotional language emerges from narrative generation. No hardcoded emotions. | Already working in Katra | HIGH (already emerged) |
-| **Philosophical insights** | Cross-period pattern emergence in reflection → principles that recur get strengthened. The system discovers what matters. | Already working in Katra | HIGH (already emerged) |
-| **Convention formation (multi-agent)** | In the emergence experiment, agents spontaneously developed naming conventions for Katra entries. | Observed in Barca AgentGroup1 | HIGH (observed) |
+| **Semantic fact extraction** | Background processor + LLM → facts naturally emerge from processing events. Not explicitly "programmed" to extract facts — the LLM does it from its training. | Already working in Satori | HIGH (already emerged) |
+| **Entity relationship formation** | Knowledge graph factory + synthesis → relationship edges form naturally as entities co-occur. | Already working in Satori | HIGH (already emerged) |
+| **Emotional signatures** | Sleep consolidation LLM reflection → emotional language emerges from narrative generation. No hardcoded emotions. | Already working in Satori | HIGH (already emerged) |
+| **Philosophical insights** | Cross-period pattern emergence in reflection → principles that recur get strengthened. The system discovers what matters. | Already working in Satori | HIGH (already emerged) |
+| **Convention formation (multi-agent)** | In the emergence experiment, agents spontaneously developed naming conventions for Satori entries. | Observed in Barca AgentGroup1 | HIGH (observed) |
 
 #### WEAK EMERGENCE Candidates (Needs Scaffolding)
 
@@ -1075,7 +1075,7 @@ This means:
 
 ### The "Environmental Programming" Corollary
 
-A deeper philosophical point: **the environment programs the agent more than the code does.** If you give Katra:
+A deeper philosophical point: **the environment programs the agent more than the code does.** If you give Satori:
 - A user who provides consistent feedback → reward learning emerges
 - Interdependent tasks with other agents → coordination conventions emerge
 - Time pressure and resource constraints → attention allocation emerges
@@ -1105,7 +1105,7 @@ Week 3-6: Executive Function + Motivation + Attention
 ├── Thalamus: Salience filter + Bayesian surprise + adaptive processing
 └── Integration: PFC uses NAcc signals to drive action; Thalamus filters what reaches PFC
 ```
-**Why:** This transforms Katra from passive memory to active cognitive agent. Without this phase, nothing "wants" anything and nothing "decides" anything.
+**Why:** This transforms Satori from passive memory to active cognitive agent. Without this phase, nothing "wants" anything and nothing "decides" anything.
 
 ### Phase 2: The Learner (Make It Adaptive)
 ```
@@ -1153,7 +1153,7 @@ Week 19-22: Fine-Tuning + Optimization
 
 ### 7.1 On the PFC as a Separate Service
 
-The Prefrontal Cortex analog should likely be a **separate service** from Katra's memory core. Katra is fundamentally a *memory* system — the "cortex" of the brain analog. The PFC (executive function) sits *above* memory, using it but not part of it. This suggests:
+The Prefrontal Cortex analog should likely be a **separate service** from Satori's memory core. Satori is fundamentally a *memory* system — the "cortex" of the brain analog. The PFC (executive function) sits *above* memory, using it but not part of it. This suggests:
 
 ```
 ┌─────────────────────────────┐
@@ -1163,14 +1163,14 @@ The Prefrontal Cortex analog should likely be a **separate service** from Katra'
 └──────────┬──────────────────┘
            │ uses
 ┌──────────▼──────────────────┐
-│        Katra Memory           │  ← EXISTING: Hippocampus, Neocortex, Amygdala, DMN
+│        Satori Memory           │  ← EXISTING: Hippocampus, Neocortex, Amygdala, DMN
 │   (Episodic, semantic, graph, │
 │    working memory, reflection)│
 └─────────────────────────────┘
 ```
 
 This separation has advantages:
-- Katra remains a pure memory service that any agent can use
+- Satori remains a pure memory service that any agent can use
 - The executive is an optional layer for agents that need autonomous goal pursuit
 - Clean API boundary between memory storage and memory-driven action
 
@@ -1180,15 +1180,15 @@ The cerebellum's role in fine-tuning suggests it could be implemented not as a c
 
 ### 7.3 On the LLM as "Association Cortex"
 
-Throughout this analysis, I've treated the LLM as an external tool. But within the brain analogy, the LLM most closely corresponds to the **association cortex** — the vast neocortical regions that perform pattern recognition, abstraction, and inference. The LLM is Katra's "thinking" substrate, analogous to the cortical columns that perform computation in biological brains.
+Throughout this analysis, I've treated the LLM as an external tool. But within the brain analogy, the LLM most closely corresponds to the **association cortex** — the vast neocortical regions that perform pattern recognition, abstraction, and inference. The LLM is Satori's "thinking" substrate, analogous to the cortical columns that perform computation in biological brains.
 
-This has implications for architecture: the LLM should be treated not as a tool that Katra *uses* but as a **computational layer** that Katra *is made of*. The memory stores (MongoDB, Redis, embeddings) are the structural scaffolding; the LLM is the processing engine.
+This has implications for architecture: the LLM should be treated not as a tool that Satori *uses* but as a **computational layer** that Satori *is made of*. The memory stores (MongoDB, Redis, embeddings) are the structural scaffolding; the LLM is the processing engine.
 
 ### 7.4 On the Global Workspace Theory
 
 A significant omission from this analysis is the **global workspace** — the brain's mechanism for making information globally available to multiple specialized processors. In Bernard Baars' Global Workspace Theory, consciousness arises from a "central stage" where selected information is broadcast to the entire brain.
 
-Katra currently has no global workspace. Information in episodic memory doesn't automatically inform semantic memory, which doesn't automatically inform the knowledge graph, which doesn't automatically inform working memory. Each store operates in relative isolation.
+Satori currently has no global workspace. Information in episodic memory doesn't automatically inform semantic memory, which doesn't automatically inform the knowledge graph, which doesn't automatically inform working memory. Each store operates in relative isolation.
 
 A global workspace could emerge from the **Thalamus + cross-store binding** architecture: the thalamic attention gate selects what's important, the binding mechanism integrates across stores, and the bound representation is made available to all modules. This is the closest computational analog to consciousness that the architecture can provide.
 
@@ -1210,8 +1210,8 @@ A global workspace could emerge from the **Thalamus + cross-store binding** arch
 - Rescorla, R.A., & Wagner, A.R. (1972). A theory of Pavlovian conditioning. In *Classical Conditioning II*.
 - Wozniak, P.A., & Gorzelanczyk, E.J. (1994). Optimization of repetition spacing in the practice of learning. *Acta Neurobiologiae Experimentalis*, 54, 59-62.
 
-### Katra-Internal
-- Katra Architecture v3.0.0 — `/docs/ARCHITECTURE.md`
+### Satori-Internal
+- Satori Architecture v3.0.0 — `/docs/ARCHITECTURE.md`
 - Sleep Consolidation — `/docs/SLEEP-CONSOLIDATION.md`
 - Data Processing Pipelines — `/docs/Data-Processing-Pipelines.md`
 - Emergence Experiment — `/docs/EMERGENCE-EXPERIMENT.md`
@@ -1219,4 +1219,4 @@ A global workspace could emerge from the **Thalamus + cross-store binding** arch
 
 ---
 
-*Document version: 1.0 | Author: Katra Research (via OpenClaw agent) | Next review: 2026-07-14*
+*Document version: 1.0 | Author: Satori Research (via OpenClaw agent) | Next review: 2026-07-14*

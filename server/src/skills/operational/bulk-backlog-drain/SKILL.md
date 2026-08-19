@@ -1,6 +1,6 @@
 ---
 name: bulk-backlog-drain
-title: Bulk Drain of Katra Distillation Backlogs
+title: Bulk Drain of Satori Distillation Backlogs
 category: operational
 description: Bulk-process the episodic_events distillation backlog with the purpose-built scripts/drain-backlog.mjs (bounded concurrency, Redis locks, processing_log idempotency, runs inside the katra-server container). Use when the backlog is large (10k+ unprocessed events), the health check FAILs on background_processor for a long time, a drain died mid-run leaving stale 'processing' entries, or the user asks to bulk process / bulk distill memories. The live background processor throttles to 12 conversation events per 30s cycle — it is NOT the tool for a large backlog.
 status: stable
@@ -26,7 +26,7 @@ triggers:
 created_at: 2026-08-13T00:00:00.000Z
 source: manual-request
 ---
-# Bulk Drain of Katra Distillation Backlogs
+# Bulk Drain of Satori Distillation Backlogs
 
 Bulk-process the episodic-event distillation backlog using the purpose-built script. The live server's background processor throttles conversation events to 12 per 30s cycle **by design** — a backlog of 100k+ events would take weeks to drain that way. `scripts/drain-backlog.mjs` runs the **same pipeline** (extraction, entity resolution, dispatch, `processing_log` idempotency, Redis locks) with bounded concurrency and **no per-cycle bottleneck**.
 

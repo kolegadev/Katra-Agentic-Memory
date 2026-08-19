@@ -1,7 +1,7 @@
 # CONTRACT: PFC Goal Manager — Goal Decomposition & Progress Tracking
 
 ## Goal
-Extend Katra's `memory_missions` from passive goal storage into an active executive function. The Goal Manager decomposes goals into subtask dependency graphs, selects the next unblocked action, and detects when progress stalls — providing the planning/temporal-organization core of the PFC.
+Extend Satori's `memory_missions` from passive goal storage into an active executive function. The Goal Manager decomposes goals into subtask dependency graphs, selects the next unblocked action, and detects when progress stalls — providing the planning/temporal-organization core of the PFC.
 
 ## From Research (brain-function-gap-map.md §2.3)
 "Goal Manager: Create, decompose, track goals. Decomposition: LLM breaks goal into sub-tasks. Dependency graph between sub-tasks. Progress monitoring via completion signals."

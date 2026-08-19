@@ -1,7 +1,7 @@
 # CONTRACT: Close the RL Loop — Wire recordOutcome to Real Events
 
 ## Goal
-Wire `DecisionActionService.recordOutcome()` to real Katra processing events so Q-values are learned from extraction outcomes, policies emerge, and the drift-diffusion gate activates with meaningful evidence.
+Wire `DecisionActionService.recordOutcome()` to real Satori processing events so Q-values are learned from extraction outcomes, policies emerge, and the drift-diffusion gate activates with meaningful evidence.
 
 ## Boundaries
 - MODIFY: `background-processor.ts` — add outcome observation after extraction

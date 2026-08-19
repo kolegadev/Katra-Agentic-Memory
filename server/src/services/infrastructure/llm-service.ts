@@ -674,7 +674,12 @@ CRITICAL RULES:
           this._trackCacheStats(response);
           const msg = response.choices[0]?.message as any;
           const content = msg?.content || '{}';
-          return JSON.parse(content);
+          try {
+            return JSON.parse(content);
+          } catch {
+            // Model returned malformed/truncated JSON — fall through to the
+            // lenient retry below (fence/prose stripping) instead of giving up.
+          }
         } catch (error: any) {
           if (error?.status !== 400 && error?.status !== 404 && !error?.message?.includes('response_format')) {
             throw error;

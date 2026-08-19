@@ -1,11 +1,11 @@
-# CONTRACT — Katra-Native Code Graph (loop-director)
+# CONTRACT — Satori-Native Code Graph (loop-director)
 
 Branch: `test/feat-native-code-graph` · Author: Loop Director · Date: 2026-08-17
 
 ## Goal
 
-Give Katra its own codebase structural mapping: scan, parse, merge into the knowledge
-graph, and retract on change — so Katra no longer requires Graphify to initially map a
+Give Satori its own codebase structural mapping: scan, parse, merge into the knowledge
+graph, and retract on change — so Satori no longer requires Graphify to initially map a
 codebase or to expand its view as the codebase evolves. The methodology is a faithful
 Node/TypeScript reimplementation of Graphify's pipeline (detect → extract → build-merge
 → retract), validated against the Graphify 0.9.6 source installed on this machine.
@@ -33,8 +33,8 @@ Node/TypeScript reimplementation of Graphify's pipeline (detect → extract → 
 - **IDs (Graphify-compatible)**: `makeId(parts)` = NFKC → non-word runs → `_` → collapse `_` →
   strip edges → casefold. File node = `makeId(stem)` where stem = repo-relative posix path
   minus extension. Symbols = `fileId + '_' + name`.
-- **Multi-repo namespacing (AMENDED 2026-08-17, F3 verifier finding)**: Katra's knowledge graph is
-  global across codebases, and repo-relative stems collide across roots (RankPilot and Katra both
+- **Multi-repo namespacing (AMENDED 2026-08-17, F3 verifier finding)**: Satori's knowledge graph is
+  global across codebases, and repo-relative stems collide across roots (RankPilot and Satori both
   have `server/src/...`). Graphify solves exactly this in its global graph via `repo_tag::`
   prefixes (`prefix_graph_for_global`). Native sync therefore stores node IDs as
   `graphify:<rootKey>:<stem>` and edge IDs as `graphify:edge:<rootKey>:<fromId>:<relation>:<toId>`
@@ -124,7 +124,7 @@ server/tests/unit/code-graph/manifest-store.test.ts
 - `classifyChanges(prev: ScanManifest | null, current: ScannedFile[]): ChangeSet`
 - `manifest-store.ts`: `loadManifest(db, root)`, `saveManifest(db, root, files)` — collection
   `code_scan_state`, document `{_id: sha256(normalizedRoot), root, updatedAt, files}`.
-  Both take a `mongodb.Db` as constructor/dependency (Katra service convention).
+  Both take a `mongodb.Db` as constructor/dependency (Satori service convention).
 - Tests use `tests/helpers/db.ts` + `test_` collection prefix, cleanup in `afterAll`.
 
 ### F2 — `codebase-extractor.ts` + `grammars.ts` (files F2 exclusively owns)
@@ -202,7 +202,7 @@ scripts/README-code-graph.md (usage, 20 lines max)
   classification, and — unless `--dry-run` — extracts and syncs. Exit code 0 on success,
   1 on error. `--force` re-extracts all files even when unchanged.
 - Does NOT modify the two graphify scripts. Dogfood run (by the Loop Director, not the
-  Generator): `node scripts/code-graph.mjs /home/johnpellew/Katra-Agentic-Memory`.
+  Generator): `node scripts/code-graph.mjs /home/johnpellew/Satori-Agentic-Memory`.
 
 ## F6 — Cross-file call resolution (loop-director, 2026-08-17)
 
@@ -288,7 +288,7 @@ server/tests/fixtures/code-graph/cross-*.ts                  (NEW fixtures)
    → class node; rawCalls emitted with caller/callee/sourceLocation.
 3. Integration: A calls B cross-file → edge appears; delete B → sync retracts B's nodes AND
    the A→B edge (no dangling).
-4. Live dogfood: forced re-sync of the Katra repo raises `calls` from ~1,132 to ≥1,800,
+4. Live dogfood: forced re-sync of the Satori repo raises `calls` from ~1,132 to ≥1,800,
    zero dangling edges (`to_id`/`from_id` not in node set).
 
 ### Boundaries
@@ -371,7 +371,7 @@ server/tests/fixtures/code-graph/memb-*.ts             (NEW fixtures)
 2. Unit: annotation receiver → EXTRACTED; `new T()` receiver → EXTRACTED; parameter-typed receiver
    → EXTRACTED; same-file return_flow → INFERRED; unknown receiver skipped; ambiguous type name
    skipped unless import-bound; method node never invented; determinism.
-3. Live dogfood: forced re-sync of the Katra repo raises `calls` above the F6 baseline (2,431),
+3. Live dogfood: forced re-sync of the Satori repo raises `calls` above the F6 baseline (2,431),
    dangling stays 0, EXTRACTED grows.
 
 ### Boundaries

@@ -1,7 +1,7 @@
-# Technology & Mathematical Models Survey for Katra Cognitive Architecture
+# Technology & Mathematical Models Survey for Satori Cognitive Architecture
 
 > **Date:** 2026-06-30  
-> **Purpose:** Identify technologies and mathematical frameworks to fill gaps in Katra's agentic cognitive memory system: attention/salience, decision-making, motivation/drive, memory decay, poisoning defense, habit formation, error monitoring, and reward learning.
+> **Purpose:** Identify technologies and mathematical frameworks to fill gaps in Satori's agentic cognitive memory system: attention/salience, decision-making, motivation/drive, memory decay, poisoning defense, habit formation, error monitoring, and reward learning.
 
 ---
 
@@ -21,14 +21,14 @@
 | Synfire chains / polychronous groups | Precisely timed spike sequences that encode temporal patterns | Episodic memory, sequence learning |
 | Surrogate gradient learning | Differentiable approximation of the non-differentiable spike for backprop-through-time | Trainable SNNs for decision-making pipelines |
 
-**Connection to Katra gaps:**
+**Connection to Satori gaps:**
 - **Attention/salience:** WTA and lateral inhibition provide a natural salience filter — only the most activated representations "fire through."
 - **Memory decay:** STDP with slow depression naturally implements forgetting curves (exponential decay of unused synapses).
 - **Error monitoring:** The temporal precision allows comparing expected vs. actual spike times — a spike-timing prediction error.
 
 **Complexity:** 4/5 — Training deep SNNs remains challenging; surrogate gradient methods are improving but still lag behind ANNs for many tasks. The neurosimulation software ecosystem (Brian2, NEST, Norse) is mature but requires domain expertise.
 
-**Relevance to Katra:** 3/5 — SNNs are excellent for biologically plausible temporal processing, but integrating them into a practical agentic system introduces significant engineering overhead. The conceptual principles (STDP, WTA, homeostatic plasticity) are more immediately applicable than full SNN implementations.
+**Relevance to Satori:** 3/5 — SNNs are excellent for biologically plausible temporal processing, but integrating them into a practical agentic system introduces significant engineering overhead. The conceptual principles (STDP, WTA, homeostatic plasticity) are more immediately applicable than full SNN implementations.
 
 **Key papers & resources:**
 - Maass (1997), "Networks of spiking neurons: the third generation of neural network models"
@@ -52,7 +52,7 @@
 | The Thousand Brains Theory | Each cortical column learns a complete model of objects; columns "vote" via lateral connections | Decision-making (ensemble voting), multi-perspective representation |
 | Anomaly score | Deviation of actual input from predicted SDR activations | Error monitoring (prediction error), novelty detection |
 
-**Connection to Katra gaps:**
+**Connection to Satori gaps:**
 - **Memory decay:** HTM's Temporal Memory naturally forgets unused sequences; distal segments with low activation prune over time.
 - **Attention/salience:** Anomaly scores serve as intrinsic salience signals — unexpected inputs draw attention.
 - **Error monitoring:** Prediction error is native to HTM; every inference step produces a measurable mismatch signal.
@@ -63,7 +63,7 @@
 
 **Complexity:** 2/5 — HTM's concepts are well-documented and intuitive. The htm.core library provides a clean API. Spatial Pooler and Temporal Memory are self-contained components that can be used modularly.
 
-**Relevance to Katra:** 5/5 — HTM is the *single most directly applicable model* for Katra. It addresses memory formation, anomaly detection (error monitoring), attention (via prediction error), and poisoning defense (SDRs) with minimal engineering overhead. Sequence memory provides a foundation for habit and skill learning.
+**Relevance to Satori:** 5/5 — HTM is the *single most directly applicable model* for Satori. It addresses memory formation, anomaly detection (error monitoring), attention (via prediction error), and poisoning defense (SDRs) with minimal engineering overhead. Sequence memory provides a foundation for habit and skill learning.
 
 **Key papers & resources:**
 - Hawkins & Ahmad (2016), "Why Neurons Have Thousands of Synapses" (Thousand Brains Theory)
@@ -99,14 +99,14 @@ d_i^f = \arg\min \int \|f(x) - \sum_i a_i(x) d_i\|^2 dx
 **Dynamics (implementing \(\dot{x} = Ax + Bu\)):**
 Recurrent connection weights \(w_{ij} = \alpha_j \langle e_j, A' d_i \rangle\) where \(A' = \tau A + I\).
 
-**Connection to Katra gaps:**
+**Connection to Satori gaps:**
 - **Decision-making:** NEF can implement attractor networks and integrator circuits — two neural substrates for decision-making (evidence accumulation to threshold, working memory maintenance).
 - **Error monitoring:** Implement a Kalman filter in neurons via NEF — compare predicted state vs. observed, generate error signal.
 - **Reward learning:** The basal ganglia model (action selection via NEF) supports reinforcement learning circuits — dopamine as a temporal difference error signal.
 
 **Complexity:** 4/5 — Requires understanding of linear algebra, control theory, and neuron tuning curves. The Nengo software abstracts much of this, but designing custom dynamical systems for agentic behavior is non-trivial.
 
-**Relevance to Katra:** 3/5 — Powerful for implementing specific neural computations (integration, oscillation, attractor dynamics) in a biologically constrained way, but may be over-engineered for a practical agent system unless biological fidelity is a core goal.
+**Relevance to Satori:** 3/5 — Powerful for implementing specific neural computations (integration, oscillation, attractor dynamics) in a biologically constrained way, but may be over-engineered for a practical agent system unless biological fidelity is a core goal.
 
 **Key papers & resources:**
 - Eliasmith & Anderson (2003), "Neural Engineering" (the book)
@@ -118,9 +118,9 @@ Recurrent connection weights \(w_{ij} = \alpha_j \langle e_j, A' d_i \rangle\) w
 
 **Core concept:** Spaun is a 2.5-million-neuron functional brain model that performs 8 cognitive tasks (digit recognition, counting, question answering, etc.) using NEF principles. It's the largest functional brain model to date and demonstrates how spiking neurons can implement complete cognitive tasks end-to-end.
 
-**Architecture components (and Katra analogs):**
+**Architecture components (and Satori analogs):**
 
-| Spaun Component | Function | Katra Equivalent |
+| Spaun Component | Function | Satori Equivalent |
 |-----------------|----------|------------------|
 | Visual hierarchy | Encode handwritten digits → neural representation | Input/tool-output encoding |
 | Working memory (prefrontal) | Maintain task-relevant info via recurrent attractor dynamics | Active memory buffer |
@@ -128,14 +128,14 @@ Recurrent connection weights \(w_{ij} = \alpha_j \langle e_j, A' d_i \rangle\) w
 | Hippocampus | Episodic encoding and cued recall | Episodic/declarative memory |
 | Semantic pointers | Compressed neural representations that bind concepts (role-filler binding) | Compressed memory representations |
 
-**Connection to Katra gaps:**
+**Connection to Satori gaps:**
 - **Decision-making:** Basal ganglia circuit provides a neurally grounded action selection mechanism — competing actions inhibit each other; the one with strongest cortical drive wins.
 - **Attention/salience:** Working memory gating (what enters WM) is a fundamental attention mechanism — the basal ganglia gates prefrontal update.
 - **Reward learning:** Spaun's basal ganglia uses a value-based selection; could be extended with dopamine-modulated TD learning.
 
 **Complexity:** 5/5 — Full Spaun requires the Nengo ecosystem and substantial computational resources. However, isolated components (basal ganglia model, working memory circuit) can be extracted.
 
-**Relevance to Katra:** 2/5 — Spaun is inspiring as a proof-of-concept that complete cognitive systems can be built from neural principles, but its task domain (digit manipulation) is too narrow. Its architectural blueprint (modular brain regions with communication via semantic pointers) is the most transferable concept.
+**Relevance to Satori:** 2/5 — Spaun is inspiring as a proof-of-concept that complete cognitive systems can be built from neural principles, but its task domain (digit manipulation) is too narrow. Its architectural blueprint (modular brain regions with communication via semantic pointers) is the most transferable concept.
 
 **Key resources:**
 - Eliasmith et al. (2012), Science
@@ -146,7 +146,7 @@ Recurrent connection weights \(w_{ij} = \alpha_j \langle e_j, A' d_i \rangle\) w
 
 ## 2. Cognitive Architecture Design Patterns
 
-This section extracts design patterns from major cognitive architectures that are relevant to Katra's gaps, regardless of whether we adopt the full architecture.
+This section extracts design patterns from major cognitive architectures that are relevant to Satori's gaps, regardless of whether we adopt the full architecture.
 
 ### 2.1 ACT-R (Adaptive Control of Thought—Rational)
 
@@ -164,7 +164,7 @@ ACT-R operates on a 50ms cognitive cycle:
 3. **Production firing:** Execute the selected rule, modifying buffers
 4. **Declarative retrieval:** If a rule requests a memory chunk, retrieve it from declarative memory
 
-**Key mechanisms for Katra:**
+**Key mechanisms for Satori:**
 
 | Mechanism | Math/Algorithm | Gap Addressed |
 |-----------|---------------|---------------|
@@ -188,15 +188,15 @@ def select_action(productions, goal_value, temperature=1.0):
     return random.choices(productions, weights=probs)[0]
 ```
 
-**Connection to Katra:**
-- **Decision-making:** ACT-R's utility learning is the gold standard for modeling how agents learn which cognitive actions to take. It directly addresses Katra's decision-making gap.
+**Connection to Satori:**
+- **Decision-making:** ACT-R's utility learning is the gold standard for modeling how agents learn which cognitive actions to take. It directly addresses Satori's decision-making gap.
 - **Memory decay:** Base-level learning (power-law decay) is well-validated empirically and computationally cheap.
 - **Motivation/drive:** Goal values (G) modulate action selection — a natural place to hook in drive signals.
 - **Habit formation:** Production compilation models the transition from deliberate to automatic behavior.
 
 **Complexity:** 2/5 — The core equations are simple. ACT-R's full architecture includes visual/motor modules that are not needed.
 
-**Relevance to Katra:** 5/5 — ACT-R's production-utility framework and declarative memory activation equations are directly implementable and address multiple Katra gaps simultaneously.
+**Relevance to Satori:** 5/5 — ACT-R's production-utility framework and declarative memory activation equations are directly implementable and address multiple Satori gaps simultaneously.
 
 **Key papers:**
 - Anderson et al. (2004), "An integrated theory of the mind" (Psychological Review)
@@ -231,14 +231,14 @@ THEN create subgoal: "find an operator"
   → On success: chunk the resolution
 ```
 
-**Connection to Katra:**
+**Connection to Satori:**
 - **Error monitoring:** SOAR's impasse mechanism is a built-in error/warning detector — "I don't know what to do" triggers metacognitive processing. This maps directly to error monitoring.
 - **Habit formation:** Chunking is habit/skill formation par excellence.
 - **Motivation/drive:** Appraisal theory in SOAR provides a formal model of how goal progress generates drive signals.
 
 **Complexity:** 3/5 — SOAR's symbolic production matching (Rete algorithm) adds complexity. The full SOAR is heavy. But the design patterns (impasse, chunking, appraisal) are extractable.
 
-**Relevance to Katra:** 3/5 — The impasse-driven metacognition and chunking patterns are highly relevant. SOAR's symbolic bias may not align well with Katra's neural/continuous representations.
+**Relevance to Satori:** 3/5 — The impasse-driven metacognition and chunking patterns are highly relevant. SOAR's symbolic bias may not align well with Satori's neural/continuous representations.
 
 **Key resources:**
 - Laird (2012), "The Soar Cognitive Architecture" (MIT Press)
@@ -270,7 +270,7 @@ THEN create subgoal: "find an operator"
      └──────────────────────┘
 ```
 
-**Key mechanisms for Katra:**
+**Key mechanisms for Satori:**
 
 | Mechanism | Description | Gap Addressed |
 |-----------|-------------|---------------|
@@ -303,14 +303,14 @@ class MotivationalSubsystem:
         return weights
 ```
 
-**Connection to Katra:**
-- **Motivation/drive:** CLARION's Motivational Subsystem is the most developed model of intrinsic/extrinsic drive in any cognitive architecture. It's *exactly* what Katra needs for autonomous goal generation and self-directed behavior.
+**Connection to Satori:**
+- **Motivation/drive:** CLARION's Motivational Subsystem is the most developed model of intrinsic/extrinsic drive in any cognitive architecture. It's *exactly* what Satori needs for autonomous goal generation and self-directed behavior.
 - **Habit formation:** The explicit→implicit pathway is the clearest model of habit formation across architectures.
 - **Error monitoring:** The Metacognitive Subsystem monitors processing and can detect when explicit and implicit recommendations conflict.
 
 **Complexity:** 4/5 — The dual-representation system (explicit + implicit for each subsystem) is architecturally complex. Extracting just the motivational and metacognitive modules is more tractable.
 
-**Relevance to Katra:** 4/5 — CLARION's drive model and dual-process learning are the most relevant patterns for motivation and habit formation gaps.
+**Relevance to Satori:** 4/5 — CLARION's drive model and dual-process learning are the most relevant patterns for motivation and habit formation gaps.
 
 **Key resources:**
 - Sun (2016), "Anatomy of the Mind"
@@ -367,14 +367,14 @@ def cognitive_cycle(percepts, memories, goals):
     return action
 ```
 
-**Connection to Katra:**
-- **Attention/salience:** LIDA provides the richest model of attention allocation — codelets as specialized salience detectors competing for the workspace. This directly addresses Katra's attention gap with a biologically grounded mechanism (conscious access = global broadcast).
+**Connection to Satori:**
+- **Attention/salience:** LIDA provides the richest model of attention allocation — codelets as specialized salience detectors competing for the workspace. This directly addresses Satori's attention gap with a biologically grounded mechanism (conscious access = global broadcast).
 - **Memory decay:** Coalition decay and attention slips naturally implement working memory limits and forgetting.
 - **Decision-making:** Action scheme competition with relevance to current broadcast content.
 
 **Complexity:** 3/5 — Global Workspace Theory is conceptually straightforward. Implementing multiple codelet types requires careful design. LIDA's Java reference implementation exists but is research-grade.
 
-**Relevance to Katra:** 4/5 — The attention mechanism (coalition competition + global broadcast) is the most immediately applicable pattern. LIDA's modular codelet architecture also provides a clean way to extend Katra incrementally.
+**Relevance to Satori:** 4/5 — The attention mechanism (coalition competition + global broadcast) is the most immediately applicable pattern. LIDA's modular codelet architecture also provides a clean way to extend Satori incrementally.
 
 **Key resources:**
 - Baars (1988), "A Cognitive Theory of Consciousness"
@@ -399,7 +399,7 @@ OpenCog components:
 - **Pattern Miner:** Frequent/interesting pattern discovery in AtomSpace
 - **URE (Unified Rule Engine):** Chainers for forward/backward inference
 
-**Key mechanisms for Katra — ECAN and OpenPsi:**
+**Key mechanisms for Satori — ECAN and OpenPsi:**
 
 **ECAN (Economic Attention Network):**
 The most innovative attention mechanism in AGI research. Atoms (nodes/links) have two economic values:
@@ -440,10 +440,10 @@ M_{urgency} = \sum_d w_d \cdot \max\left(0, \frac{N_d^{target} - N_d^{current}}{
 Drives include:
 - **Competence (effectance):** Drive to increase own competence/capability
 - **Certainty:** Drive to reduce uncertainty about the world
-- **Affiliation:** Drive to maintain social connections (not applicable to Katra)
+- **Affiliation:** Drive to maintain social connections (not applicable to Satori)
 - **Physical integrity:** Drive to avoid termination (resource preservation)
 
-**Connection to Katra gaps:**
+**Connection to Satori gaps:**
 
 | Gap | OpenCog Mechanism | Applicability |
 |-----|-------------------|---------------|
@@ -457,7 +457,7 @@ Drives include:
 
 **Complexity:** 5/5 — OpenCog is the most complex cognitive architecture. The full system requires understanding of hypergraphs, logic, evolutionary computation, and economic dynamics. However, ECAN and OpenPsi can be extracted as standalone algorithms.
 
-**Relevance to Katra:** 4/5 — ECAN and OpenPsi are *exactly* the algorithms Katra needs for attention and motivation, but implementing them requires stripping them from OpenCog's full infrastructure.
+**Relevance to Satori:** 4/5 — ECAN and OpenPsi are *exactly* the algorithms Satori needs for attention and motivation, but implementing them requires stripping them from OpenCog's full infrastructure.
 
 **Key resources:**
 - Goertzel & Pennachin (2007), "Artificial General Intelligence"
@@ -467,7 +467,7 @@ Drives include:
 
 ---
 
-### 2.6 Summary: Cognitive Architecture Design Patterns for Katra
+### 2.6 Summary: Cognitive Architecture Design Patterns for Satori
 
 | Design Pattern | Source | Gap Addressed | Extractable? | Complexity |
 |---------------|--------|---------------|--------------|------------|
@@ -542,7 +542,7 @@ Any system can be partitioned into:
 
 The blanket separates the agent from the world — this is the mathematical definition of an agent boundary.
 
-**Connection to Katra gaps:**
+**Connection to Satori gaps:**
 
 | Gap | FEP/AI Application | Mechanism |
 |-----|-------------------|-----------|
@@ -593,7 +593,7 @@ class FreeEnergyAgent:
 
 **Complexity:** 4/5 — FEP requires understanding of variational inference, KL divergence, and hierarchical generative models. The equations are compact but the concepts are deep. Implementing a working active inference agent requires non-trivial engineering.
 
-**Relevance to Katra:** 5/5 — Free energy / active inference is the most *mathematically unified* framework covering all of Katra's gaps. It provides a single optimization principle (minimize free energy) that naturally gives rise to perception, action, attention, learning, and motivation. However, implementing full active inference is a major undertaking.
+**Relevance to Satori:** 5/5 — Free energy / active inference is the most *mathematically unified* framework covering all of Satori's gaps. It provides a single optimization principle (minimize free energy) that naturally gives rise to perception, action, attention, learning, and motivation. However, implementing full active inference is a major undertaking.
 
 **Key papers:**
 - Friston (2010), "The free-energy principle: a unified brain theory?" (Nature Reviews Neuroscience)
@@ -639,14 +639,14 @@ class PredictiveCodingNode:
         self.state += precision * pred_error * learning_rate
 ```
 
-**Connection to Katra:**
+**Connection to Satori:**
 - **Attention:** Precision-weighting is attention.
 - **Error monitoring:** Prediction error magnitude IS the error signal.
 - **Memory:** Hierarchical generative models are memory — levels encode increasingly abstract, temporally extended regularities.
 
 **Complexity:** 3/5 — Predictive processing is conceptually simpler than full active inference; it's the perceptual half without the action/policy component.
 
-**Relevance to Katra:** 5/5 — The hierarchical prediction error framework provides a mathematically clean way to implement attention (precision), error monitoring (prediction error), and learning (minimizing prediction error).
+**Relevance to Satori:** 5/5 — The hierarchical prediction error framework provides a mathematically clean way to implement attention (precision), error monitoring (prediction error), and learning (minimizing prediction error).
 
 **Key resources:**
 - Clark (2013), "Whatever next? Predictive brains, situated agents, and the future of cognitive science" (Behavioral and Brain Sciences)
@@ -662,7 +662,7 @@ class PredictiveCodingNode:
 
 Agent in state \(s\), takes action \(a\), receives reward \(r\), transitions to \(s'\). Objective: maximize expected cumulative discounted reward \( \mathbb{E}[\sum_t \gamma^t r_t] \).
 
-**Variants and their Katra applicability:**
+**Variants and their Satori applicability:**
 
 | Variant | Key Equation | Gap Addressed | Notes |
 |---------|-------------|---------------|-------|
@@ -676,7 +676,7 @@ Agent in state \(s\), takes action \(a\), receives reward \(r\), transitions to 
 | **Inverse RL** | Infer reward function from demonstrations | Reward learning | Learn what agent values from observation |
 | **Maximum entropy RL (SAC)** | \(\pi^* = \arg\max \mathbb{E}[\sum r(s,a) + \alpha H(\pi(\cdot|s))]\) | Exploration | Built-in entropy bonus encourages exploration |
 
-**Intrinsic motivation formulas (critical for Katra's motivation gap):**
+**Intrinsic motivation formulas (critical for Satori's motivation gap):**
 
 | Type | Formula | Description |
 |------|---------|-------------|
@@ -699,13 +699,13 @@ This maps directly to dopaminergic reward prediction error in the brain.
 - Model-based, Hierarchical: 3/5
 - Distributional, Info-theoretic: 4/5
 
-**Relevance to Katra:** 4/5 — RL provides well-tested algorithms for reward learning, decision-making, and error monitoring. The intrinsic motivation formulations directly address the motivation gap. Actor-critic TD errors provide a clean error monitoring signal.
+**Relevance to Satori:** 4/5 — RL provides well-tested algorithms for reward learning, decision-making, and error monitoring. The intrinsic motivation formulations directly address the motivation gap. Actor-critic TD errors provide a clean error monitoring signal.
 
 ---
 
 ### 3.4 Information Theory
 
-**Core concepts and Katra applications:**
+**Core concepts and Satori applications:**
 
 #### 3.4.1 Mutual Information for Attention & Salience
 
@@ -778,7 +778,7 @@ R(D) = \min_{p(\hat{x}|x): \mathbb{E}[d(x,\hat{x})] \leq D} I(X; \hat{X})
 
 **Complexity:** 3/5 — Computing transfer entropy, mutual information from agent experience streams (continuous, non-stationary) requires careful estimation (k-nearest neighbors methods, kernel density estimation). The mathematical concepts are standard but empirical implementation is nuanced.
 
-**Relevance to Katra:** 3/5 — The information-theoretic measures provide principled definitions of attention, salience, and error, but computing them online in a live agent requires significant estimation infrastructure. Best used as *design principles* rather than computed metrics.
+**Relevance to Satori:** 3/5 — The information-theoretic measures provide principled definitions of attention, salience, and error, but computing them online in a live agent requires significant estimation infrastructure. Best used as *design principles* rather than computed metrics.
 
 **Key resources:**
 - Cover & Thomas (2006), "Elements of Information Theory"
@@ -830,7 +830,7 @@ As input strength increases, a new stable fixed point (rest + decision state) em
 **Hopf bifurcation** (oscillation onset for working memory):
 Working memory maintenance can be modeled as limit cycle oscillations via Hopf bifurcation. Gamma/theta oscillations maintain items in memory.
 
-**Application to Katra:**
+**Application to Satori:**
 - **Decision-making:** Attractor dynamics with bifurcation provides mathematical formalism for "moment of decision" — the precise point where deliberation becomes commitment.
 - **Error monitoring:** The "distance to separatrix" is a pre-decision confidence metric. Short distance = close call = low confidence → trigger error check.
 - **Attention shifts:** Bifurcations model sudden attention shifts — the system rapidly transitions from one attractor (focus on task A) to another (focus on task B).
@@ -846,7 +846,7 @@ Habits form when behavior becomes "trapped" on a slow manifold — actions that 
 
 where \(\delta(t)\) is the reinforcement signal. Over time, the weight matrix \(W\) creates deeper attractors for rewarded action sequences.
 
-| Concept | Application to Katra |
+| Concept | Application to Satori |
 |---------|---------------------|
 | Attractor dynamics | Decision-making, working memory, attention stability |
 | Saddle-node bifurcation | Decision commitment threshold, metacognitive "point of no return" |
@@ -857,7 +857,7 @@ where \(\delta(t)\) is the reinforcement signal. Over time, the weight matrix \(
 
 **Complexity:** 4/5 — Dynamical systems theory requires comfort with differential equations, phase plane analysis, and bifurcation theory. Practical implementation in discrete-time code is tractable if you stick to the concepts.
 
-**Relevance to Katra:** 3/5 — Provides deep mathematical understanding of why cognitive architectures work the way they do, but direct implementation is best limited to the key equations (attractor dynamics for decision-making, reinforcement-driven plasticity for habits).
+**Relevance to Satori:** 3/5 — Provides deep mathematical understanding of why cognitive architectures work the way they do, but direct implementation is best limited to the key equations (attractor dynamics for decision-making, reinforcement-driven plasticity for habits).
 
 **Key resources:**
 - Strogatz (2018), "Nonlinear Dynamics and Chaos"
@@ -894,7 +894,7 @@ This is equivalent to maximizing the Evidence Lower BOund (ELBO):
 \mathcal{L}(q) = \mathbb{E}_{q(\theta)}[\log p(D|\theta)] - D_{KL}[q(\theta) \| p(\theta)]
 \]
 
-**Application to Katra gaps:**
+**Application to Satori gaps:**
 
 | Gap | Bayesian Application |
 |-----|---------------------|
@@ -930,7 +930,7 @@ def detect_context_change(observations):
 
 **Complexity:** 3/5 — The mathematical framework is well-understood. Practical implementation requires careful choice of conjugate priors or approximation methods (variational, MCMC). Particle filtering (Section 4) provides a sequential Monte Carlo approach.
 
-**Relevance to Katra:** 4/5 — Bayesian inference provides a principled framework for *uncertainty-aware* cognition. Bayesian surprise is a mathematically grounded salience signal. Bayesian change-point detection provides error monitoring.
+**Relevance to Satori:** 4/5 — Bayesian inference provides a principled framework for *uncertainty-aware* cognition. Bayesian surprise is a mathematically grounded salience signal. Bayesian change-point detection provides error monitoring.
 
 **Key resources:**
 - Gelman et al. (2013), "Bayesian Data Analysis"
@@ -984,7 +984,7 @@ class ThompsonAttentionAllocator:
 
 **Complexity:** 1/5 — Bandit algorithms are among the simplest in machine learning. Thompson sampling with Beta-Bernoulli conjugate priors requires only a few lines of code.
 
-**Relevance to Katra:** 5/5 — This is the most immediately implementable algorithm for attention allocation. Thompson sampling provides optimal exploration-exploitation balance with minimal computation. The "usefulness" signal for channel updates can come from downstream task performance, prediction error reduction, or intrinsic reward.
+**Relevance to Satori:** 5/5 — This is the most immediately implementable algorithm for attention allocation. Thompson sampling provides optimal exploration-exploitation balance with minimal computation. The "usefulness" signal for channel updates can come from downstream task performance, prediction error reduction, or intrinsic reward.
 
 **Key resources:**
 - Lattimore & Szepesvári (2020), "Bandit Algorithms"
@@ -1035,14 +1035,14 @@ class ParticleFilter:
         return self.get_belief()  # Weighted mixture of particles
 ```
 
-**Application to Katra:**
+**Application to Satori:**
 - **User intent tracking:** Multiple competing hypotheses about what the user wants — particles represent different intent hypotheses
 - **Model confidence tracking:** Particles over environment model parameters → belief about which model is correct
 - **Poisoning defense:** Anomalous observations produce low likelihoods for all particles → high entropy belief → trigger defensive mode
 
-**Complexity:** 2/5 — Particle filters are well-understood and have mature implementations. The main challenge is defining appropriate transition and observation models for Katra's domain.
+**Complexity:** 2/5 — Particle filters are well-understood and have mature implementations. The main challenge is defining appropriate transition and observation models for Satori's domain.
 
-**Relevance to Katra:** 3/5 — Particle filters provide uncertainty-aware belief tracking, which is valuable for intent detection and model selection. They're heavier than Kalman filters but handle non-Gaussian, multi-modal beliefs.
+**Relevance to Satori:** 3/5 — Particle filters provide uncertainty-aware belief tracking, which is valuable for intent detection and model selection. They're heavier than Kalman filters but handle non-Gaussian, multi-modal beliefs.
 
 **Key resources:**
 - Doucet & Johansen (2011), "A tutorial on particle filtering and smoothing"
@@ -1073,19 +1073,19 @@ class MCTSPlanner:
         return root.best_child().action  # Most visited child
 ```
 
-**Application to Katra:**
+**Application to Satori:**
 - **Deliberative decision-making:** MCTS for complex multi-step planning (task decomposition, tool selection)
 - **Self-play for habit learning:** MCTS can generate training data for habit systems — the MCTS policy trains a fast-reactive habit policy
 - **Error monitoring:** MCTS tree statistics (value variance, visit count distribution) indicate decision confidence
 
-**Why MCTS fits Katra:**
+**Why MCTS fits Satori:**
 - **Anytime algorithm:** Improves with more computation; can be interrupted for results (fits agentic time budgets)
 - **No value function needed:** Plans with just a world model and terminal evaluation
 - **Asymmetric tree growth:** Automatically focuses computation on promising branches
 
 **Complexity:** 3/5 — MCTS is conceptually simple but requires a world model (transition + terminal evaluation). For LLM-based agents, the "world model" could be the LLM itself generating rollouts.
 
-**Relevance to Katra:** 4/5 — MCTS is the most practical algorithm for multi-step planning in agentic systems. When combined with LLM-based rollouts (as in AlphaGo-style or Tree-of-Thoughts approaches), it provides deliberative decision-making that complements reactive habits.
+**Relevance to Satori:** 4/5 — MCTS is the most practical algorithm for multi-step planning in agentic systems. When combined with LLM-based rollouts (as in AlphaGo-style or Tree-of-Thoughts approaches), it provides deliberative decision-making that complements reactive habits.
 
 **Key resources:**
 - Browne et al. (2012), "A Survey of Monte Carlo Tree Search Methods"
@@ -1129,14 +1129,14 @@ class DiffusionDecisionMaker:
         return trajectory[0]  # First action of denoised plan
 ```
 
-**Application to Katra:**
+**Application to Satori:**
 - **Deliberative decision-making:** Diffusion generates diverse candidate action sequences, then refines toward high-value plans
 - **Creative exploration:** Unlike MCTS (tree-structured search), diffusion can generate novel action combinations by exploring the continuous action space
 - **Error monitoring:** The denoising trajectory itself provides a confidence measure — if the process fails to converge to a coherent plan, model uncertainty is high
 
 **Complexity:** 4/5 — Training a diffusion model for decision-making requires significant investment. Using pre-trained models as a reasoning engine is more practical but still complex.
 
-**Relevance to Katra:** 2/5 — Diffusion for planning is cutting-edge research (2022–2024) with impressive results but high engineering cost. It's more appropriate for Katra's future roadmap than immediate implementation.
+**Relevance to Satori:** 2/5 — Diffusion for planning is cutting-edge research (2022–2024) with impressive results but high engineering cost. It's more appropriate for Satori's future roadmap than immediate implementation.
 
 **Key resources:**
 - Janner et al. (2022), "Planning with Diffusion for Flexible Behavior Synthesis" (Diffuser)
@@ -1157,7 +1157,7 @@ where \(z_i\) is the anchor representation, \(z_i^+\) is the positive pair, and 
 
 **Key algorithms:**
 
-| Algorithm | Approach | Application to Katra |
+| Algorithm | Approach | Application to Satori |
 |-----------|----------|---------------------|
 | **SimCLR** | Contrast images augmented from same source | Learn invariant representations of tool outputs |
 | **CLIP** | Contrast text-image pairs (multi-modal) | Align text descriptions with perceptual representations |
@@ -1165,7 +1165,7 @@ where \(z_i\) is the anchor representation, \(z_i^+\) is the positive pair, and 
 | **Barlow Twins** | Redundancy reduction (cross-correlation) | Decorrelated representations → better memory separability |
 | **VICReg** | Variance-Invariance-Covariance Regularization | Stable representations with explicit variance control |
 
-**Application to Katra:**
+**Application to Satori:**
 - **Memory formation:** Contrastive learning produces well-separated memory representations — similar memories are close, dissimilar are far → natural retrieval via nearest neighbor
 - **Poisoning defense:** Poisoned inputs produce out-of-distribution representations → detected by distance from clean representations
 - **Abstraction/compression:** Temperature \(\tau\) controls the granularity of the representation space — low \(\tau\) = fine-grained distinctions, high \(\tau\) = coarse categories
@@ -1192,7 +1192,7 @@ class ContrastiveMemory:
 
 **Complexity:** 3/5 — Training requires careful data augmentation design and negative sampling strategy. Using pre-trained contrastive encoders (e.g., sentence-transformers) reduces complexity.
 
-**Relevance to Katra:** 3/5 — Contrastive learning provides a principled way to build a semantic memory store. The InfoNCE objective is closely related to mutual information maximization. Most useful as a pre-trained component rather than something Katra trains online.
+**Relevance to Satori:** 3/5 — Contrastive learning provides a principled way to build a semantic memory store. The InfoNCE objective is closely related to mutual information maximization. Most useful as a pre-trained component rather than something Satori trains online.
 
 **Key resources:**
 - Chen et al. (2020), "A Simple Framework for Contrastive Learning of Visual Representations" (SimCLR)
@@ -1211,7 +1211,7 @@ class ContrastiveMemory:
 | **Eligibility Traces (TD(λ))** | Reward credit assignment | 2/5 | 4/5 | Bridges TD(0) and Monte Carlo. λ controls temporal credit assignment horizon — critical for delayed reward learning. |
 | **Successor Representations** | Transfer, planning | 3/5 | 3/5 | \(M^\pi(s, s') = \mathbb{E}[\sum_t \gamma^t \mathbb{I}(S_t = s') | S_0 = s]\) — encodes expected future state occupancy. Enables rapid re-evaluation when rewards change. |
 | **Variational Autoencoders** | Representation, compression | 3/5 | 3/5 | Learn compressed latent representations with a generative decoder. Can serve as a memory compression module. |
-| **Neural ODEs** | Continuous-time dynamics | 4/5 | 2/5 | Parameterize continuous-time dynamics for temporal processing. Interesting but over-engineered for most Katra needs. |
+| **Neural ODEs** | Continuous-time dynamics | 4/5 | 2/5 | Parameterize continuous-time dynamics for temporal processing. Interesting but over-engineered for most Satori needs. |
 
 ---
 
@@ -1228,7 +1228,7 @@ class ContrastiveMemory:
 - Nengo GUI: Interactive model building and visualization
 - Nengo Loihi: Backend for Intel's Loihi neuromorphic chip
 
-**Katra-relevant components:**
+**Satori-relevant components:**
 - `nengo.networks.BasalGanglia`: Action selection circuit
 - `nengo.networks.EnsembleArray`: Distributed neural representation
 - `nengo.spa`: Semantic pointers for bindable representations
@@ -1253,7 +1253,7 @@ class ContrastiveMemory:
 - Classifiers: SDR classifiers for anomaly detection and prediction
 - Encoders: Scalar, date, category, etc. → SDR encoding
 
-**Katra-relevant components:**
+**Satori-relevant components:**
 - `SpatialPooler`: Poisoning defense via sparsity constraint
 - `TemporalMemory`: Sequence memory + anomaly score (prediction error)
 - `AnomalyLikelihood`: Probabilistic anomaly detection on top of raw anomaly scores
@@ -1278,7 +1278,7 @@ class ContrastiveMemory:
 - Cosine similarity retrieval: nearest-neighbor semantic memory
 - Multiple languages supported
 
-**Katra-relevant pattern:**
+**Satori-relevant pattern:**
 ```python
 from sentence_transformers import SentenceTransformer
 model = SentenceTransformer('all-MiniLM-L6-v2')
@@ -1301,7 +1301,7 @@ embeddings = model.encode(messages)  # Create memory embeddings
 - **Neurorobotics Platform:** Embodied brain models + robots
 - **Knowledge Graph:** Structured brain research data
 
-**Katra relevance:** Indirect — provides reference architectures and biological constraints. Not directly integrable as software components.
+**Satori relevance:** Indirect — provides reference architectures and biological constraints. Not directly integrable as software components.
 
 **URL:** https://ebrains.eu
 
@@ -1323,13 +1323,13 @@ embeddings = model.encode(messages)  # Create memory embeddings
 - MPI parallel; scales to supercomputers
 
 **Complexity to adopt:** 5/5 — Requires C++ build, domain expertise.
-**Relevance:** 2/5 — Overkill; only relevant if Katra needs biologically detailed neural simulation.
+**Relevance:** 2/5 — Overkill; only relevant if Satori needs biologically detailed neural simulation.
 
 ---
 
 ### 5.6 Additional Projects (Summary)
 
-| Project | Type | Primary Katra Gap | Complexity | Relevance | URL |
+| Project | Type | Primary Satori Gap | Complexity | Relevance | URL |
 |---------|------|-------------------|------------|-----------|-----|
 | **Brian2** | SNN simulator (Python) | Temporal processing | 3/5 | 2/5 | briansimulator.org |
 | **Norse** | SNN library (PyTorch) | Trainable SNNs | 3/5 | 2/5 | github.com/norse/norse |
@@ -1349,8 +1349,8 @@ embeddings = model.encode(messages)  # Create memory embeddings
 ### 6.1 Full Matrix
 
 Each technology/model is rated on:
-- **Complexity (1–5):** Engineering difficulty to implement in Katra (1 = trivial, 5 = major research project)
-- **Relevance (1–5):** How directly it addresses Katra's gaps (1 = tangential, 5 = core solution)
+- **Complexity (1–5):** Engineering difficulty to implement in Satori (1 = trivial, 5 = major research project)
+- **Relevance (1–5):** How directly it addresses Satori's gaps (1 = tangential, 5 = core solution)
 
 **Gap Coverage Legend:**
 - **A:** Attention/Salience
@@ -1449,7 +1449,7 @@ class KatraEconomy:
 
 **Implementation options:**
 - **Light:** Import htm.core, use TemporalMemory directly for sequence prediction + anomaly score
-- **Deep:** Reimplement TM's core algorithm (SDR transition learning) as a native Katra component
+- **Deep:** Reimplement TM's core algorithm (SDR transition learning) as a native Satori component
 
 **Estimated effort:** 1-3 weeks (light integration) / 4-8 weeks (native reimplementation).
 
@@ -1457,7 +1457,7 @@ class KatraEconomy:
 
 #### 🏅 Recommendation #4: Intrinsic Motivation via Prediction Error + Empowerment
 **Gaps:** Motivation/Drive, Reward Learning, Error Monitoring  
-**Why:** Intrinsic motivation gives Katra autonomous drive — it doesn't need external rewards to learn and explore. Two complementary formulations:
+**Why:** Intrinsic motivation gives Satori autonomous drive — it doesn't need external rewards to learn and explore. Two complementary formulations:
 - **Curiosity** (prediction error): \(r_i = \|f(s_t, a_t) - s_{t+1}\|^2\) — reward exploring states the agent can't yet predict
 - **Empowerment**: \(I(A; S'|S)\) — reward actions that maximize future options
 
@@ -1541,9 +1541,9 @@ Phase 5 (Future): Deepening
 
 ### 6.4 Key Design Principles (Cross-Cutting)
 
-1. **Prediction error is the universal learning signal.** Across HTM, predictive processing, FEP, and TD learning, the same pattern recurs: compare expected vs. actual, minimize the difference. Build Katra's core around this principle.
+1. **Prediction error is the universal learning signal.** Across HTM, predictive processing, FEP, and TD learning, the same pattern recurs: compare expected vs. actual, minimize the difference. Build Satori's core around this principle.
 
-2. **Precision/attention is the gating mechanism.** Every system — Bayesian, predictive coding, ECAN — uses a precision-weighting mechanism to select what matters. Katra should have a unified attention mechanism (ECAN or Thompson) that gates ALL processing.
+2. **Precision/attention is the gating mechanism.** Every system — Bayesian, predictive coding, ECAN — uses a precision-weighting mechanism to select what matters. Satori should have a unified attention mechanism (ECAN or Thompson) that gates ALL processing.
 
 3. **Drives as prior preferences.** Motivation doesn't need to be a separate module — it emerges from the agent's innate preferences (minimize prediction error, maximize empowerment, maintain homeostasis). Define these as the "constitution" of the agent.
 
@@ -1593,4 +1593,4 @@ Phase 5 (Future): Deepening
 
 ---
 
-*Survey compiled for the Katra cognitive architecture project. Recommendations reflect a pragmatic balance between mathematical rigor and engineering feasibility for an agentic memory system evolving into a complete cognitive architecture.*
+*Survey compiled for the Satori cognitive architecture project. Recommendations reflect a pragmatic balance between mathematical rigor and engineering feasibility for an agentic memory system evolving into a complete cognitive architecture.*

@@ -1,4 +1,4 @@
-# Attention Mechanisms & Salience — Brain Gap Analysis for Katra
+# Attention Mechanisms & Salience — Brain Gap Analysis for Satori
 
 > *"Build environmental programming — the petri dish. Don't program deterministic behaviors. Create the conditions for attention to emerge."* — John Pellew
 
@@ -11,7 +11,7 @@
 3. [Salience Function Design with Multi-Signal Fusion](#3-salience-function-design-with-multi-signal-fusion)
 4. [Attention Decay & Shift Dynamics](#4-attention-decay--shift-dynamics)
 5. [Bottleneck vs Distributed Attention Architecture](#5-bottleneck-vs-distributed-attention-architecture)
-6. [Integration Path with Katra's Existing Emotional Reflection System](#6-integration-path-with-katras-existing-emotional-reflection-system)
+6. [Integration Path with Satori's Existing Emotional Reflection System](#6-integration-path-with-katras-existing-emotional-reflection-system)
 7. [Implementation Roadmap](#7-implementation-roadmap)
 
 ---
@@ -24,13 +24,13 @@ The human brain receives approximately 11 million bits of sensory input per seco
 
 Three brain structures govern biological attention:
 
-| Structure | Function | Katra Analog |
+| Structure | Function | Satori Analog |
 |---|---|---|
 | **Thalamus (especially pulvinar nuclei)** | Gates sensory input; modulates physical/perceptual salience in attentional selection | A salience-gated retrieval filter that scores memories before they reach the agent's context window |
 | **Reticular Activating System (RAS)** | Controls arousal and alertness; determines whether the organism is in a state receptive to new input | An arousal parameter that gates the attention system's sensitivity — high arousal = everything looks salient; low arousal = only the most intense signals pass through |
 | **Prefrontal Cortex (PFC)** | Directs top-down attention based on goals, working memory, and executive function | Queries and filters shaped by the agent's current mission, active goals, and working memory state |
 
-The key insight for Katra: **attention is not a property of the memory — it is a property of the retrieval.** What matters is not whether a memory is "important" in absolute terms, but whether it is important *right now* given the agent's current context, goals, and emotional state.
+The key insight for Satori: **attention is not a property of the memory — it is a property of the retrieval.** What matters is not whether a memory is "important" in absolute terms, but whether it is important *right now* given the agent's current context, goals, and emotional state.
 
 ### 1.2 Feature Integration Theory (Treisman & Gelade, 1980)
 
@@ -46,7 +46,7 @@ Anne Treisman's Feature Integration Theory (FIT) proposes that perception operat
 - This requires attention — it is serial, conscious, and capacity-limited
 - Without this stage, illusory conjunctions occur (e.g., perceiving a "red O" when shown a "blue O" and "red T")
 
-**Relevance to Katra:** Katra already has feature maps, distributed across collections:
+**Relevance to Satori:** Satori already has feature maps, distributed across collections:
 - `semantic_facts` → the "semantic feature map"
 - `knowledge_nodes` and `knowledge_relationships` → the "relational/structural feature map"
 - `episodic_events` → the "temporal feature map"
@@ -67,7 +67,7 @@ The biased competition model proposes that objects in the visual field **compete
 
 The biased competition model uses a **winner-takes-all** dynamic mediated by mutual suppression. When two memories compete for retrieval, the one with stronger combined bottom-up + top-down activation suppresses the other.
 
-**Relevance to Katra:** This model maps perfectly onto memory retrieval competition. When the agent queries Katra (or when the autonomous loop decides what to surface), memories compete for inclusion in the context window. Currently, this competition is unweighted — every matching memory has equal "pull." A biased competition layer would:
+**Relevance to Satori:** This model maps perfectly onto memory retrieval competition. When the agent queries Satori (or when the autonomous loop decides what to surface), memories compete for inclusion in the context window. Currently, this competition is unweighted — every matching memory has equal "pull." A biased competition layer would:
 - Rank memories by salience (bottom-up: novelty, emotional intensity, recency)
 - Bias toward goal-relevant memories (top-down: mission alignment, current task)
 - Suppress memories that are semantically similar but less salient (mutual inhibition)
@@ -96,17 +96,17 @@ The Itti-Koch salience model is the most widely implemented computational model 
         └──────────┘                    └──────────┘
 ```
 
-**Key mechanisms transferable to Katra:**
+**Key mechanisms transferable to Satori:**
 
 1. **Center-surround differences**: Salience emerges from contrast, not absolute values. A memory with moderate emotional intensity is salient in a field of neutral memories — not because it's intense, but because it *differs* from its neighbors.
 
-2. **Across-scale combination**: Features are computed at multiple scales and combined. For Katra, this means salience should be assessed at multiple temporal scales: within-session, within-day, within-week.
+2. **Across-scale combination**: Features are computed at multiple scales and combined. For Satori, this means salience should be assessed at multiple temporal scales: within-session, within-day, within-week.
 
 3. **Normalization (N operator)**: Feature maps are normalized to a common dynamic range before combination. Prevents one strong dimension (e.g., recent events) from dominating all others.
 
-4. **Inhibition of return**: After a location (or memory) wins attention, it is transiently inhibited to prevent perseveration — the system must move on. This is critical for Katra: without inhibition of return, the same high-salience memory would be surfaced repeatedly, preventing new information from entering attention.
+4. **Inhibition of return**: After a location (or memory) wins attention, it is transiently inhibited to prevent perseveration — the system must move on. This is critical for Satori: without inhibition of return, the same high-salience memory would be surfaced repeatedly, preventing new information from entering attention.
 
-**The V1 Saliency Hypothesis (Li, 2002)**: The primary visual cortex itself generates a bottom-up salience map — salience is computed as early as V1, not in higher association cortices. This suggests that for Katra, salience scoring should be a **pre-retrieval computation**, not a post-retrieval filter. Score first, then fetch only what passes threshold.
+**The V1 Saliency Hypothesis (Li, 2002)**: The primary visual cortex itself generates a bottom-up salience map — salience is computed as early as V1, not in higher association cortices. This suggests that for Satori, salience scoring should be a **pre-retrieval computation**, not a post-retrieval filter. Score first, then fetch only what passes threshold.
 
 ### 1.5 Transformer Self-Attention as Analogy
 
@@ -123,18 +123,18 @@ Attention(Q, K, V) = softmax(Q·K^T / √d_k) · V
 - **Q·K^T**: The match score between what the agent wants and what each memory offers. This is the computational analog of salience.
 - **softmax**: Competition and normalization across all memories. Winners get more representation; losers get near-zero.
 
-**Critical difference from Katra's current state:** In transformers, every token attends to every other token — the attention matrix is dense. Katra's equivalent would be computing salience for all memories. This is computationally infeasible at scale. **The key design challenge is sparsifying attention — computing salience only for candidate memories that pass a pre-filter.**
+**Critical difference from Satori's current state:** In transformers, every token attends to every other token — the attention matrix is dense. Satori's equivalent would be computing salience for all memories. This is computationally infeasible at scale. **The key design challenge is sparsifying attention — computing salience only for candidate memories that pass a pre-filter.**
 
 **What transformers teach us that biology already knew:**
 - Multi-head attention allows attending to different feature dimensions simultaneously (semantic content, recency, emotional valence, entity association)
 - The scaling factor (√d_k) prevents dot products from growing too large in high dimensions — analogous to normalizing feature maps before combination
-- Positional encoding ensures temporal ordering matters — similar to how Katra must weight recency
+- Positional encoding ensures temporal ordering matters — similar to how Satori must weight recency
 
-### 1.6 Summary Table: Models and Their Katra Application
+### 1.6 Summary Table: Models and Their Satori Application
 
-| Model | Core Principle | Direct Application to Katra |
+| Model | Core Principle | Direct Application to Satori |
 |---|---|---|
-| Feature Integration Theory | Separate feature maps unified by focused attention | Unify Katra's distributed feature maps (semantic, episodic, graph, emotional) into a single salience score per memory |
+| Feature Integration Theory | Separate feature maps unified by focused attention | Unify Satori's distributed feature maps (semantic, episodic, graph, emotional) into a single salience score per memory |
 | Biased Competition | Competing stimuli; winner-take-all biased by top-down + bottom-up | Rank memories by combined salience; suppress similar-but-less-salient alternatives |
 | Itti-Koch Salience Maps | Center-surround contrast, normalization, inhibition of return | Compute salience as contrast against baseline; normalize across dimensions; inhibit recently-attended memories |
 | V1 Saliency Hypothesis | Salience computed at earliest possible stage | Pre-retrieval salience scoring — filter before fetch, not after |
@@ -144,7 +144,7 @@ Attention(Q, K, V) = softmax(Q·K^T / √d_k) · V
 
 ## 2. Novelty Detection Algorithms
 
-Novelty is one of the strongest bottom-up drivers of attention. The brain's orienting response (Sokolov, 1960) causes automatic attentional capture by unexpected stimuli. In Katra, novelty detection answers the question: **"Has the agent seen something like this before, and how surprising is it?"**
+Novelty is one of the strongest bottom-up drivers of attention. The brain's orienting response (Sokolov, 1960) causes automatic attentional capture by unexpected stimuli. In Satori, novelty detection answers the question: **"Has the agent seen something like this before, and how surprising is it?"**
 
 ### 2.1 Statistical Novelty Detection
 
@@ -164,7 +164,7 @@ novelty_score(item) = √((x - μ)^T · Σ⁻¹ · (x - μ))
 ```
 Accounts for covariance between features. A memory might have a moderate z-score on each individual dimension but be extremely novel when the *combination* of features is considered.
 
-**Practical implementation for Katra:**
+**Practical implementation for Satori:**
 - Maintain rolling statistics (mean, variance, covariance) over a sliding window (e.g., 7 days, 30 days)
 - Compute novelty at ingestion time and store as a `novelty_score` field on memories
 - This score decays over time as the distribution shifts to absorb the novel memory (it becomes "the new normal")
@@ -187,7 +187,7 @@ Concept drift algorithms detect when the underlying data distribution has change
 - When two large enough sub-windows of the window exhibit "distinct enough" averages, drop the older sub-window
 - The window shrinks during drift (the old distribution is no longer relevant) and grows when the distribution stabilizes
 
-**Application to Katra:** Concept drift detection could identify when the agent's domain of operation has fundamentally changed — e.g., switching from a web development project to an embedded systems project. This would trigger a "context shift" event that adjusts the attention system's baseline, preventing it from constantly flagging the new domain as "novel."
+**Application to Satori:** Concept drift detection could identify when the agent's domain of operation has fundamentally changed — e.g., switching from a web development project to an embedded systems project. This would trigger a "context shift" event that adjusts the attention system's baseline, preventing it from constantly flagging the new domain as "novel."
 
 #### 2.1.3 Density-Based Novelty Detection
 
@@ -202,7 +202,7 @@ Concept drift algorithms detect when the underlying data distribution has change
 - Points that can be isolated quickly (short paths) are anomalies
 - Efficient for high-dimensional data like embedding vectors
 
-**Practical implementation for Katra:**
+**Practical implementation for Satori:**
 - Use LOF on the embedding space of recent memories (last N days)
 - New memory → compute embedding → find k-nearest neighbors in embedding index → compute LOF
 - High LOF = semantically novel (the agent hasn't seen concepts like this recently)
@@ -220,7 +220,7 @@ I(m) = -log₂ P(m | context)
 
 Where P(m | context) is the probability of memory m occurring given the agent's current context model. The rarer the event, the higher the surprise.
 
-**Implementation approach for Katra:**
+**Implementation approach for Satori:**
 - Build a simple n-gram model or Markov chain over the agent's memory stream (sequence of memory topics, entity mentions, action types)
 - New memory → predict its probability given the preceding sequence → surprise = -log(probability)
 - This captures *sequential novelty* — a memory is surprising not because of its content alone, but because it's unexpected in sequence
@@ -239,9 +239,9 @@ Where:
 - P(M) is the prior distribution over model parameters (the agent's beliefs before seeing the new data)
 - P(M|D) is the posterior distribution after observing the new data D
 
-**Why this is powerful for Katra:** Bayesian surprise distinguishes between *unexpected but inconsequential* and *unexpected and belief-changing* events. A memory of "it rained today" might have high Shannon surprise (rare event) but low Bayesian surprise (it doesn't change any beliefs). A memory of "the production server architecture is different from what we thought" has high Bayesian surprise because it fundamentally updates the agent's world model.
+**Why this is powerful for Satori:** Bayesian surprise distinguishes between *unexpected but inconsequential* and *unexpected and belief-changing* events. A memory of "it rained today" might have high Shannon surprise (rare event) but low Bayesian surprise (it doesn't change any beliefs). A memory of "the production server architecture is different from what we thought" has high Bayesian surprise because it fundamentally updates the agent's world model.
 
-**Implementation approach for Katra:**
+**Implementation approach for Satori:**
 - Treat `semantic_facts` as the agent's belief model (each fact has a `confidence` score)
 - New episodic event → extract candidate facts → compute how much each would shift existing beliefs
 - Bayesian surprise = sum of belief shifts across all affected facts
@@ -257,7 +257,7 @@ IG = H(prior) - H(posterior)
 
 Where H is the entropy of the agent's belief distribution. A memory that resolves ambiguity is more attention-worthy than one that adds information to an already-certain domain.
 
-**Application to Katra:** The agent maintains many uncertain states — unresolved threads from sleep consolidation, low-confidence semantic facts, open questions. A memory that addresses one of these uncertainties (e.g., "the user confirmed the deployment target is AWS") has high information gain and should be surfaced. This connects attention directly to the `unresolved_threads` from the reflection system.
+**Application to Satori:** The agent maintains many uncertain states — unresolved threads from sleep consolidation, low-confidence semantic facts, open questions. A memory that addresses one of these uncertainties (e.g., "the user confirmed the deployment target is AWS") has high information gain and should be surfaced. This connects attention directly to the `unresolved_threads` from the reflection system.
 
 ### 2.3 Neural Network-Based Novelty Detection
 
@@ -282,7 +282,7 @@ Modern approach: train a model to distinguish between similar (normal) and dissi
 - At inference time, distance to the nearest normal cluster = novelty score
 - This can be done with the existing embedding space — no additional model needed
 
-### 2.4 Novelty Detection Strategy for Katra
+### 2.4 Novelty Detection Strategy for Satori
 
 **Recommendation: A layered approach with three tiers:**
 
@@ -592,7 +592,7 @@ Where `satisfaction(t)` measures how useful recently-retrieved memories were (di
 
 ## 5. Bottleneck vs Distributed Attention Architecture
 
-This is the most consequential architectural decision for Katra's attention system. Should attention be a **single bottleneck** (like human conscious attention) or **distributed** (parallel attention across multiple memory subsystems)?
+This is the most consequential architectural decision for Satori's attention system. Should attention be a **single bottleneck** (like human conscious attention) or **distributed** (parallel attention across multiple memory subsystems)?
 
 ### 5.1 The Single Bottleneck Model (Human-Like)
 
@@ -673,7 +673,7 @@ This is the most consequential architectural decision for Katra's attention syst
 - **Misses cross-layer salience**: A memory might be important *because* it spans layers (an episodic event that confirms a semantic fact and strengthens a graph edge), but per-layer gates can't detect this
 - **Higher cognitive load for the agent**: More items in working memory = more to process
 
-### 5.3 The Hybrid Model (Recommended for Katra)
+### 5.3 The Hybrid Model (Recommended for Satori)
 
 ```
 ┌───────────────────────────────────────────────────────────────┐
@@ -762,11 +762,11 @@ Step 5: Return the K selected items to the agent
 
 ---
 
-## 6. Integration Path with Katra's Existing Emotional Reflection System
+## 6. Integration Path with Satori's Existing Emotional Reflection System
 
-Katra's sleep consolidation system already computes much of what an attention mechanism needs. The integration strategy is to extend the existing system rather than building a parallel one.
+Satori's sleep consolidation system already computes much of what an attention mechanism needs. The integration strategy is to extend the existing system rather than building a parallel one.
 
-### 6.1 What Katra Already Has
+### 6.1 What Satori Already Has
 
 The reflection system already tracks:
 
@@ -939,7 +939,7 @@ The `emotional_signature.stability` field already captures some of this (`volati
 - Goal: full attention-driven context delivery
 
 **Phase 4: Autonomous Loop Integration**
-- The autonomous loop (already in Katra's design) uses the attention system to decide what to act on
+- The autonomous loop (already in Satori's design) uses the attention system to decide what to act on
 - Attention scores determine which memories trigger agent actions
 - The curiosity drive parameter controls the rate of autonomous actions
 - Goal: emergent autonomous behavior driven by attention, not explicit task routing
@@ -1077,4 +1077,4 @@ e(t) = e(t-1) + η_explore · (1 - satisfaction(t)) - η_exploit · satisfaction
 
 ---
 
-*Research compiled from neuroscience literature, machine learning attention mechanisms, and Katra's existing architecture analysis. Last updated: 2026-06-30.*
+*Research compiled from neuroscience literature, machine learning attention mechanisms, and Satori's existing architecture analysis. Last updated: 2026-06-30.*

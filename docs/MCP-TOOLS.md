@@ -1,6 +1,6 @@
 # MCP Tools Reference
 
-Katra exposes **48 tools** via the Model Context Protocol (MCP). All tools are accessible through the MCP endpoint at `http://localhost:3112/mcp`.
+Satori exposes **48 tools** via the Model Context Protocol (MCP). All tools are accessible through the MCP endpoint at `http://localhost:3112/mcp`.
 
 ## Authentication
 
@@ -38,7 +38,7 @@ curl -X POST http://localhost:3112/mcp \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
   -H "mcp-session-id: $SESSION_ID" \
-  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"store_memory","arguments":{"content":"Hello Katra","user_id":"my-agent"}}}'
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"store_memory","arguments":{"content":"Hello Satori","user_id":"my-agent"}}}'
 ```
 
 ---
@@ -72,7 +72,7 @@ Store a memory (fact, preference, insight, event, or general).
 
 **Episodic event example:**
 ```json
-{"name":"store_memory","arguments":{"content":"User asked about Katra memory fixes","user_id":"my-agent","category":"event","session_id":"thread-123","source":"kolega-code","tags":["conversation"]}}
+{"name":"store_memory","arguments":{"content":"User asked about Satori memory fixes","user_id":"my-agent","category":"event","session_id":"thread-123","source":"kolega-code","tags":["conversation"]}}
 ```
 
 ### store_journal

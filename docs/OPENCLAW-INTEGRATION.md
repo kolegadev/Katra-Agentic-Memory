@@ -1,7 +1,7 @@
-# OpenClaw ↔ Katra Integration — Configuration & Lessons Learned
+# OpenClaw ↔ Satori Integration — Configuration & Lessons Learned
 
 > **Last updated:** 2026-06-24
-> **Katra version:** 3.0.0
+> **Satori version:** 3.0.0
 > **Key features:** 48 MCP tools, sleep consolidation, security hardening, test suite (87 tests)
 
 ## Architecture Overview
@@ -32,7 +32,7 @@
 
 ## Key Concepts: Memory Scope & `shared_id`
 
-Katra's memory scoping is **server-side** — configured once via `set_memory_scope` and applied globally to all queries. Agents do NOT pass `shared_id` per-message.
+Satori's memory scoping is **server-side** — configured once via `set_memory_scope` and applied globally to all queries. Agents do NOT pass `shared_id` per-message.
 
 ### Scope Modes
 
@@ -100,7 +100,7 @@ episodic_events (unprocessed)
 
 ## Configuration Reference
 
-### Katra `.env` (gitignored — contains secrets)
+### Satori `.env` (gitignored — contains secrets)
 
 ```bash
 # Required: API keys for MCP and Admin access
@@ -108,7 +108,7 @@ MCP_API_KEY=katra-local-mcp-2026
 KATRA_API_KEY=katra-local-admin-2026
 
 # Set in .env to avoid auto-generation on startup.
-# If unset, Katra generates random keys (256-bit) and persists SHA-256 hashes
+# If unset, Satori generates random keys (256-bit) and persists SHA-256 hashes
 # to MongoDB system_settings. Keys survive restarts but NOT MongoDB resets.
 ```
 
@@ -131,17 +131,17 @@ KATRA_API_KEY=katra-local-admin-2026
 ```
 
 > **Critical: `transport` must be `"streamable-http"`, NOT `"sse"`.**  
-> The MCP SDK's `StreamableHTTPServerTransport` has a bug in its Node.js adapter where GET SSE streams produce an empty response. Katra rejects GET requests on `/mcp` with HTTP 405 to force POST-only mode. If you use `"sse"` transport, OpenClaw will fail with `"Server not initialized"` or silent timeouts. Only `"streamable-http"` (POST) works correctly.
+> The MCP SDK's `StreamableHTTPServerTransport` has a bug in its Node.js adapter where GET SSE streams produce an empty response. Satori rejects GET requests on `/mcp` with HTTP 405 to force POST-only mode. If you use `"sse"` transport, OpenClaw will fail with `"Server not initialized"` or silent timeouts. Only `"streamable-http"` (POST) works correctly.
 
 > **Note:** The `Authorization` header in the OpenClaw MCP config is protected — it can't be modified via `gateway config.patch`. To rotate the API key, edit `openclaw.json` directly and restart the gateway.
 
 ### Memory Migration — Phased Cutover (CRITICAL ORDER)
 
-> **Do NOT disable OpenClaw's built-in memory first.** If you disable `memory_search` and `memory-core` before Katra is wired in, your agent becomes memory-less — losing `MEMORY.md`, session notes, drafts, and preferences. Migrate in this order:
+> **Do NOT disable OpenClaw's built-in memory first.** If you disable `memory_search` and `memory-core` before Satori is wired in, your agent becomes memory-less — losing `MEMORY.md`, session notes, drafts, and preferences. Migrate in this order:
 
-#### Phase 1: Wire Katra into OpenClaw
+#### Phase 1: Wire Satori into OpenClaw
 
-Add the MCP server config (see above) and restart the gateway. Verify Katra is reachable:
+Add the MCP server config (see above) and restart the gateway. Verify Satori is reachable:
 
 ```bash
 # From the Pi5:
@@ -149,15 +149,15 @@ curl -H "Authorization: Bearer <MCP_API_KEY>" http://localhost:3112/health
 # Expected: { "status": "ok", "version": "3.0.0", "transport": "http-sse", ... }
 ```
 
-Confirm MCP tools are visible in the agent session — the agent should see `katra__store_memory`, `katra__search_memories`, and other Katra tools in its tool list.
+Confirm MCP tools are visible in the agent session — the agent should see `katra__store_memory`, `katra__search_memories`, and other Satori tools in its tool list.
 
 #### Phase 2: Backfill Existing Memory Files
 
-Have your agent read and store its existing local memory into Katra:
+Have your agent read and store its existing local memory into Satori:
 
 ```
 Agent prompt: "Read MEMORY.md, memory/2026-06-25.md, memory/katra-project.md,
-and any other memory files you have. Store each one in Katra with appropriate
+and any other memory files you have. Store each one in Satori with appropriate
 tags and categories."
 ```
 
@@ -171,19 +171,19 @@ curl -H "Authorization: Bearer <MCP_API_KEY>" \
   }'
 ```
 
-#### Phase 3: Verify Katra Handles Recall
+#### Phase 3: Verify Satori Handles Recall
 
 Test that the agent can recall backfilled memories before cutting over:
 
 ```
-Agent prompt: "What are my preferences and project context? Use Katra tools only."
+Agent prompt: "What are my preferences and project context? Use Satori tools only."
 ```
 
-If the agent correctly recalls your identity, preferences, and project details from Katra, proceed to cutover.
+If the agent correctly recalls your identity, preferences, and project details from Satori, proceed to cutover.
 
 #### Phase 4: Cut Over — Disable OpenClaw's Local Memory
 
-Only now, after Katra is verified working with backfilled data, disable the local memory system. Add to `openclaw.json`:
+Only now, after Satori is verified working with backfilled data, disable the local memory system. Add to `openclaw.json`:
 
 ```json
 {
@@ -200,21 +200,21 @@ Only now, after Katra is verified working with backfilled data, disable the loca
 }
 ```
 
-Without this, agents see two competing memory systems — OpenClaw's broken local memory (0/0 chunks, "index metadata is missing") and Katra — causing confusion.
+Without this, agents see two competing memory systems — OpenClaw's broken local memory (0/0 chunks, "index metadata is missing") and Satori — causing confusion.
 
 Restart the gateway after adding this config.
 
-## Agent Katra Tool Allocation
+## Agent Satori Tool Allocation
 
 | Agent | Minimum Tools | Notes |
 |---|---|---|
-| **main** (user-facing) | All Katra tools | Primary user-facing, queries Katra before responding |
+| **main** (user-facing) | All Satori tools | Primary user-facing, queries Satori before responding |
 | **admin-ops** | `katra__store_memory`, `katra__search_memories`, `katra__vector_search`, `katra__get_temporal_context`, `katra__get_memory_diagnostics`, `katra__get_background_status` | Provisions agents, stores system events |
 | **prospectors** | `katra__store_memory`, `katra__search_memories`, `katra__vector_search`, `katra__get_temporal_context` | Systemic discoveries only, not raw data |
 | **mail handler** | `katra__store_memory`, `katra__search_memories`, `katra__vector_search`, `katra__get_temporal_context` | Email task completion, contact patterns |
-| **katra-caretaker** | All Katra tools + `katra__summarize_time_blocks`, `katra__get_time_block_summaries`, `katra__get_heartbeat_status`, `katra__get_health`, `katra__store_journal`, `katra__get_auto_journal`, `katra__trigger_reflection` | Health checks, summarization, journaling, sleep consolidation |
+| **katra-caretaker** | All Satori tools + `katra__summarize_time_blocks`, `katra__get_time_block_summaries`, `katra__get_heartbeat_status`, `katra__get_health`, `katra__store_journal`, `katra__get_auto_journal`, `katra__trigger_reflection` | Health checks, summarization, journaling, sleep consolidation |
 
-## Katra Caretaker Agent (Mnemosyne)
+## Satori Caretaker Agent (Mnemosyne)
 
 - **Persona:** Lighthouse-keeper, calm and methodical
 - **Heartbeat routine:** Health check → background processor status → summarize time blocks → store journal → store status
@@ -266,7 +266,7 @@ cd server && npm test
 
 3. **Short messages (< 200 chars) don't use LLM:** By design — the extraction service uses lightweight regex patterns for short messages to save API costs. Only substantial content triggers LLM distillation.
 
-4. **`memory_search` returns "disabled" after configuring memory-core:** That's OpenClaw's local memory, NOT Katra. It was intentionally disabled. Use `katra__search_memories` or `katra__vector_search` instead.
+4. **`memory_search` returns "disabled" after configuring memory-core:** That's OpenClaw's local memory, NOT Satori. It was intentionally disabled. Use `katra__search_memories` or `katra__vector_search` instead.
 
 5. **Time-block summaries show 0/0 even with events:** The summarizer is idempotent — it skips time blocks that already have summaries. New summaries are generated for new days/weeks/months only.
 

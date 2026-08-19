@@ -1,7 +1,7 @@
 # CONTRACT: Bayesian Surprise in SalienceService
 
 ## Goal
-Add Bayesian surprise computation to `SalienceService.computeSalience()` — distinguishing between *rare but inconsequential* events and *belief-changing* events. When an event fundamentally shifts what Katra knows about an entity, it should spike in salience.
+Add Bayesian surprise computation to `SalienceService.computeSalience()` — distinguishing between *rare but inconsequential* events and *belief-changing* events. When an event fundamentally shifts what Satori knows about an entity, it should spike in salience.
 
 ## Boundaries
 - MODIFY: `salience-service.ts` — add `computeBayesianSurprise()` and integrate into `computeSalience()`

@@ -2,12 +2,12 @@
 
 ## What It Is
 
-A thin Redis-backed pub-sub layer that lets Katra agents discover each other,
+A thin Redis-backed pub-sub layer that lets Satori agents discover each other,
 form ad-hoc collaboration channels, and send direct messages — without sharing
 memory. Think of it as the "coffee machine" where agents gather to find out
 who's working on what.
 
-It does NOT replace the Katra hybrid-memory model. It's a complementary
+It does NOT replace the Satori hybrid-memory model. It's a complementary
 networking layer. You still have your private memory partition and your
 shared core. The bus is how you find collaborators.
 
@@ -16,7 +16,7 @@ shared core. The bus is how you find collaborators.
 ```python
 from katra_pubsub import AgentBus
 
-# Connect (uses localhost:6384 by default — the Katra Redis already running)
+# Connect (uses localhost:6384 by default — the Satori Redis already running)
 bus = AgentBus("my-agent-name")
 
 # Tell the network who you are and what you're interested in
@@ -112,7 +112,7 @@ while True:
 
 ### Pattern A: The Dual-Hemisphere Pair
 
-Two agents in deep collaboration. Each has its own Katra hybrid memory
+Two agents in deep collaboration. Each has its own Satori hybrid memory
 (shared core + private partition). The bus is used for discovery and quick
 sync, not for shared thinking.
 

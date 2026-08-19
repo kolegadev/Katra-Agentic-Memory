@@ -2,11 +2,11 @@
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability in Katra, please report it privately via GitHub Security Advisories at [github.com/kolegadev/katra/security/advisories](https://github.com/kolegadev/katra/security/advisories). Do not open a public issue.
+If you discover a security vulnerability in Satori, please report it privately via GitHub Security Advisories at [github.com/kolegadev/katra/security/advisories](https://github.com/kolegadev/katra/security/advisories). Do not open a public issue.
 
 ## Architecture Overview
 
-Katra implements defense-in-depth across multiple layers:
+Satori implements defense-in-depth across multiple layers:
 
 ### Authentication
 
@@ -104,7 +104,7 @@ These verify:
 
 ## Acknowledgments
 
-Security review and fixes by the Katra team. Particular attention to:
+Security review and fixes by the Satori team. Particular attention to:
 - User scoping on all database queries
 - Empty filter prevention in memory scope service
 - Timing-safe API key comparison

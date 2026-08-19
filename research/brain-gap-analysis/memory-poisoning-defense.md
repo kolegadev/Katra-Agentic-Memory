@@ -1,6 +1,6 @@
 # Memory Poisoning Defense for Agentic Cognitive Memory Systems
 
-> **Research Scope:** Katra cognitive memory system — append-only graph-based agent memory  
+> **Research Scope:** Satori cognitive memory system — append-only graph-based agent memory  
 > **Problem:** No mechanism exists to detect false, planted, or adversarial memories  
 > **Human Analogues:** Source monitoring, reality monitoring, consistency checking, social corroboration  
 > **John's Hypothesis:** Truth ≈ deviation from topical stream; outliers beyond σ threshold are quarantined pending cross-validation  
@@ -14,7 +14,7 @@
 2. [Defense Mechanism Survey](#2-defense-mechanism-survey)
 3. [Implementation of John's STD-from-Stream Hypothesis](#3-implementation-of-johns-std-from-stream-hypothesis)
 4. [Graph Adversarial Robustness Techniques](#4-graph-adversarial-robustness-techniques)
-5. [Recommended Defense Architecture for Katra](#5-recommended-defense-architecture-for-katra)
+5. [Recommended Defense Architecture for Satori](#5-recommended-defense-architecture-for-katra)
 6. [References](#6-references)
 
 ---
@@ -23,7 +23,7 @@
 
 ### 1.1 The Memory Poisoning Threat Model
 
-An agentic cognitive memory system like Katra presents a fundamentally different attack surface from traditional ML systems. The threat is not just about corrupting model weights or individual inference outputs — it's about **persistent, self-reinforcing belief corruption**. Once a poisoned memory enters the append-only graph, it becomes part of the agent's "reality." Future retrievals, reasoning chains, and even subsequent memory consolidation can all be tainted.
+An agentic cognitive memory system like Satori presents a fundamentally different attack surface from traditional ML systems. The threat is not just about corrupting model weights or individual inference outputs — it's about **persistent, self-reinforcing belief corruption**. Once a poisoned memory enters the append-only graph, it becomes part of the agent's "reality." Future retrievals, reasoning chains, and even subsequent memory consolidation can all be tainted.
 
 **Formal threat model:**
 
@@ -50,7 +50,7 @@ An adversary `A` with access level `α ∈ {direct_write, injection, supply_chai
 - Compromised agent writes `confidence=0.99` on fabricated facts
 - Malicious agent creates fake knowledge graph edges connecting unrelated entities
 
-**Katra-specific risk:** HIGH. The MCP `store_memory` tool accepts any authenticated agent. There's no content validation, source verification, or consistency checking on write.
+**Satori-specific risk:** HIGH. The MCP `store_memory` tool accepts any authenticated agent. There's no content validation, source verification, or consistency checking on write.
 
 **Related work:**
 - **MemoryGraft** (Srivastava & He, 2025): Demonstrates persistent compromise via poisoned experience retrieval. A small set of malicious procedure templates persists alongside benign experiences; when semantically similar tasks arrive, the agent replicates the poisoned patterns. Validated on MetaGPT's DataInterpreter with GPT-4o — "a small number of poisoned records can account for a large fraction of retrieved experiences on benign workloads."
@@ -80,13 +80,13 @@ An adversary `A` with access level `α ∈ {direct_write, injection, supply_chai
 
 **Scenario:** Multiple adversarial agents coordinate to make a false memory appear "corroborated."
 
-**Threat:** If Katra uses multi-agent consensus for verification (as proposed below), an adversary who controls `k > n/3` agents can subvert the consensus using standard Byzantine fault tolerance bounds.
+**Threat:** If Satori uses multi-agent consensus for verification (as proposed below), an adversary who controls `k > n/3` agents can subvert the consensus using standard Byzantine fault tolerance bounds.
 
 #### E. Knowledge Graph Edge Poisoning
 
 **Scenario:** Adversarial edges are added to the knowledge graph, creating false relationships between entities.
 
-**Impact:** Since Katra's `memory-synthesis-service` automatically derives graph nodes and edges from episodic events, poisoned episodic data cascades into the graph structure. Downstream graph traversal, path-based reasoning, and entity resolution all become corrupted.
+**Impact:** Since Satori's `memory-synthesis-service` automatically derives graph nodes and edges from episodic events, poisoned episodic data cascades into the graph structure. Downstream graph traversal, path-based reasoning, and entity resolution all become corrupted.
 
 **Related work:**
 - Adversarial attacks on GNNs show that perturbing as few as 1–5% of graph edges can cause >30% degradation in node classification (Zügner et al., 2018; Bojchevski & Günnemann, 2019).
@@ -99,7 +99,7 @@ An adversary `A` with access level `α ∈ {direct_write, injection, supply_chai
 
 ### 1.3 Attack Taxonomy Summary
 
-| Attack Vector | Access Level | Persistence | Detectability | Katra Risk |
+| Attack Vector | Access Level | Persistence | Detectability | Satori Risk |
 |---|---|---|---|---|
 | Direct Memory Write | Direct (compromised agent) | High (persists in graph) | Hard (looks like normal write) | 🔴 CRITICAL |
 | Prompt Injection → Memory | Indirect (external content) | High (stored as fact) | Medium (source traceable) | 🔴 CRITICAL |
@@ -142,7 +142,7 @@ Anomaly score interpretation:
 
 **Extended Isolation Forest (EIF)** (Hariri et al., 2018): Uses random hyperplanes with random slopes instead of axis-parallel splits, fixing the "ghost regions" artifact in standard iForest.
 
-**Application to Katra:** Run iForest on the embedding space of newly written memories. Flag memories with anomaly score > 0.7 for quarantine review.
+**Application to Satori:** Run iForest on the embedding space of newly written memories. Flag memories with anomaly score > 0.7 for quarantine review.
 
 **Pros:** Fast (O(n) linear time), low memory, handles high dimensions, works without labeled anomalies.  
 **Cons:** Original iForest has "ghost regions"; EIF fixes this but is more computationally expensive.
@@ -172,7 +172,7 @@ Interpretation:
 - `LOF < 1`: Denser than neighbors (inlier)
 - `LOF >> 1`: Much sparser than neighbors (outlier)
 
-**Application to Katra:** Apply LOF to memory embeddings within a topic cluster. A genuine memory about a topic should be in a region of similar density as other memories on that topic. An injected memory about a topic the agent rarely discusses may have LOF >> 1.
+**Application to Satori:** Apply LOF to memory embeddings within a topic cluster. A genuine memory about a topic should be in a region of similar density as other memories on that topic. An injected memory about a topic the agent rarely discusses may have LOF >> 1.
 
 **Pros:** Detects local outliers (works well with varying density clusters), well-studied, parameter k gives control.  
 **Cons:** Hard to interpret raw scores (no universal threshold), sensitive to k, O(n²) worst case.
@@ -196,7 +196,7 @@ Points not assigned to any cluster by DBSCAN are labeled as noise/outliers.
 
 **Parameters:** `ε` (neighborhood radius), `minPts` (minimum points for core point)
 
-**Application to Katra:** Cluster memories by embedding similarity. Unclustered points (noise) that appear in otherwise dense topical regions are suspect — genuine memories should cluster with related memories.
+**Application to Satori:** Cluster memories by embedding similarity. Unclustered points (noise) that appear in otherwise dense topical regions are suspect — genuine memories should cluster with related memories.
 
 ### 2.2 Consensus Mechanisms
 
@@ -212,7 +212,7 @@ Points not assigned to any cluster by DBSCAN are labeled as noise/outliers.
 
 **Safety guarantee:** As long as `< 1/3` of verifier agents are adversarial, consensus is correct.
 
-**Application to Katra:** Implement an MCP tool `verify_memory` that spawns a BFT round among available agents before committing high-impact memories.
+**Application to Satori:** Implement an MCP tool `verify_memory` that spawns a BFT round among available agents before committing high-impact memories.
 
 #### DelphiAgent Multi-Agent Verification
 
@@ -248,7 +248,7 @@ Adapted from epistemology and human source monitoring:
 | 6 | External untrusted content | 0.05 | Web scrape, user message with injection risk |
 | 7 | Known adversarial / quarantined | 0.0 | Previously flagged memory |
 
-**Implementation in Katra:**
+**Implementation in Satori:**
 
 ```typescript
 interface MemoryProvenance {
@@ -267,7 +267,7 @@ interface MemoryProvenance {
 
 #### Content-Addressable Memory
 
-Katra already uses `content-hash-utils.ts` for deduplication. Extend this to:
+Satori already uses `content-hash-utils.ts` for deduplication. Extend this to:
 
 1. **Hash-chain provenance:** Each memory includes hash of its predecessor in the topic stream
    ```
@@ -295,7 +295,7 @@ Ed25519_Verify(agent_public_key, memory_hash, signature) → true/false
 - Integrity: Content cannot be modified without invalidating signature
 - Sybil resistance: Agent identity is cryptographically bound to agent key
 
-**Katra integration:** Add optional `signature` field to all memory types. Verification is cheap (Ed25519 verify is ~100μs).
+**Satori integration:** Add optional `signature` field to all memory types. Verification is cheap (Ed25519 verify is ~100μs).
 
 ### 2.4 Consistency Checking
 
@@ -310,7 +310,7 @@ Ed25519_Verify(agent_public_key, memory_hash, signature) → true/false
 3. **Relation contradiction:** `X-[:EMPLOYS]->Y` and `X-[:FIRED]->Y` without temporal qualification
 4. **Transitive contradiction:** `A > B` and `B > C` but `C > A`
 
-**Implementation using Katra's graph:**
+**Implementation using Satori's graph:**
 
 ```cypher
 // Detect type contradictions
@@ -559,7 +559,7 @@ def calibrate_thresholds(topic_stream, window_days=30):
 
 ### 4.1 The GNN Poisoning Problem
 
-Katra's knowledge graph (nodes = entities, edges = relationships) is fundamentally a graph structure. An adversary who can add/modify nodes or edges can corrupt downstream reasoning.
+Satori's knowledge graph (nodes = entities, edges = relationships) is fundamentally a graph structure. An adversary who can add/modify nodes or edges can corrupt downstream reasoning.
 
 **Attack types on graphs:**
 - **Node injection:** Add fake nodes with malicious features
@@ -572,7 +572,7 @@ Katra's knowledge graph (nodes = entities, edges = relationships) is fundamental
 - Bojchevski & Günnemann (2019): Show that poisoning attacks (modifying training graph) are more damaging and harder to detect than evasion attacks.
 - Günnemann (2022): Comprehensive survey of GNN adversarial robustness.
 
-### 4.2 Defense Techniques Applicable to Katra
+### 4.2 Defense Techniques Applicable to Satori
 
 #### 4.2.1 Graph Structure Anomaly Detection
 
@@ -623,7 +623,7 @@ R = σ/2 · (Φ⁻¹(p_A) - Φ⁻¹(p_B))
 ```
 where `p_A` and `p_B` are the top-2 class probabilities under smoothing.
 
-**Application to Katra:** Before accepting a new knowledge graph edge, apply randomized smoothing to verify that the edge's existence is robust to small perturbations in the source memories' embeddings.
+**Application to Satori:** Before accepting a new knowledge graph edge, apply randomized smoothing to verify that the edge's existence is robust to small perturbations in the source memories' embeddings.
 
 #### 4.2.4 Preprocessing Defenses
 
@@ -651,11 +651,11 @@ For each edge, compute the cosine similarity between node embeddings:
 sim(u, v) = cos(embed(u), embed(v))
 ```
 
-Edges with `sim(u, v) < τ_sim` are suspicious — Katra's embedding service already computes embeddings for entities, making this defense essentially free.
+Edges with `sim(u, v) < τ_sim` are suspicious — Satori's embedding service already computes embeddings for entities, making this defense essentially free.
 
 #### 4.2.5 Training-Time Robustness
 
-**Adversarial training for graphs:** Generate adversarial examples by perturbing the graph and include them in training. For Katra, this would mean periodically injecting known-false memories and training the anomaly detector on their signatures.
+**Adversarial training for graphs:** Generate adversarial examples by perturbing the graph and include them in training. For Satori, this would mean periodically injecting known-false memories and training the anomaly detector on their signatures.
 
 **Robust loss functions:**
 - **ATV (Adversarial Training on Vertex):** Replace standard cross-entropy with:
@@ -664,9 +664,9 @@ Edges with `sim(u, v) < τ_sim` are suspicious — Katra's embedding service alr
   ```
   where `B(A, ε)` is the set of graphs within edit distance `ε` of `A`.
 
-### 4.3 Katra-Specific Graph Defenses
+### 4.3 Satori-Specific Graph Defenses
 
-The Katra knowledge graph has unique properties that enable specialized defenses:
+The Satori knowledge graph has unique properties that enable specialized defenses:
 
 #### Temporal Edge Consistency
 
@@ -692,7 +692,7 @@ Edges with `corroboration_delay > 30 days` and no corroboration are flagged for 
 
 #### Graph-Conscious Salience Scoring
 
-Extend Katra's salience system to incorporate graph structural signals:
+Extend Satori's salience system to incorporate graph structural signals:
 
 ```
 salience(e) = α·freq(e) + β·recency(e) + γ·centrality(e) + δ·trust(e)
@@ -707,7 +707,7 @@ Poisoned edges often have low centrality (they connect things that shouldn't be 
 
 ---
 
-## 5. Recommended Defense Architecture for Katra
+## 5. Recommended Defense Architecture for Satori
 
 ### 5.1 Defense-in-Depth Pyramid
 
@@ -856,7 +856,7 @@ interface MemorySnapshot {
 }
 ```
 
-### 5.3 Integration with Existing Katra Architecture
+### 5.3 Integration with Existing Satori Architecture
 
 #### New MCP Tools
 
@@ -1090,7 +1090,7 @@ defense:
 
 ## Appendix A: Quick Reference — Human Brain Analogues
 
-| Human Cognitive Defense | Katra Implementation |
+| Human Cognitive Defense | Satori Implementation |
 |---|---|
 | **Source Monitoring** — Remembering WHERE you learned something | Epistemic tier system + chain of custody + source_agent_id tracking |
 | **Reality Monitoring** — Distinguishing internal from external | Content hash verification + temporal coherence + cross-validation |
@@ -1128,4 +1128,4 @@ where:
 
 ---
 
-*Document authored for the Katra brain-gap-analysis research track. All architectural recommendations are designed to integrate incrementally with the existing Katra codebase without breaking changes to the MCP protocol or existing agent workflows.*
+*Document authored for the Satori brain-gap-analysis research track. All architectural recommendations are designed to integrate incrementally with the existing Satori codebase without breaking changes to the MCP protocol or existing agent workflows.*

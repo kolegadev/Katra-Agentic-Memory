@@ -6,7 +6,7 @@
 
 ## Goal
 
-Give Katra reasons to care. Implement homeostatic drive system, incentive salience (wanting ≠ liking), source trust weighting, and full quarantine/corroboration pipeline. Protect memory integrity.
+Give Satori reasons to care. Implement homeostatic drive system, incentive salience (wanting ≠ liking), source trust weighting, and full quarantine/corroboration pipeline. Protect memory integrity.
 
 ## Boundaries
 

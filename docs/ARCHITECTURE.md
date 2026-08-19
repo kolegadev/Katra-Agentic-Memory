@@ -1,10 +1,10 @@
-# Katra — Cognitive Memory as a Service for AI Agents
+# Satori — Cognitive Memory as a Service for AI Agents
 
 ## Executive Summary
 
-Katra is an extraction and productization of the cognitive memory system originally built inside the Solomon/cognitive-memory-chat project. It provides **persistent, multi-layered memory infrastructure** for any AI agent or LLM application via the Model Context Protocol (MCP) and a REST API.
+Satori is an extraction and productization of the cognitive memory system originally built inside the Solomon/cognitive-memory-chat project. It provides **persistent, multi-layered memory infrastructure** for any AI agent or LLM application via the Model Context Protocol (MCP) and a REST API.
 
-The core insight: every agent framework (OpenClaw, LangChain, CrewAI, AutoGen, etc.) needs memory, but most implement it poorly or not at all. Katra provides memory as a standalone service — episodic storage, semantic facts, knowledge graphs, working memory, temporal recall, and vector search — accessible through the standardized MCP protocol that any agent can consume.
+The core insight: every agent framework (OpenClaw, LangChain, CrewAI, AutoGen, etc.) needs memory, but most implement it poorly or not at all. Satori provides memory as a standalone service — episodic storage, semantic facts, knowledge graphs, working memory, temporal recall, and vector search — accessible through the standardized MCP protocol that any agent can consume.
 
 ---
 
@@ -12,7 +12,7 @@ The core insight: every agent framework (OpenClaw, LangChain, CrewAI, AutoGen, e
 
 ### Current System Topology
 
-The cognitive-memory-chat project contains **67 TypeScript files** across backend services, routes, database, types, and MCP server. Not all of this was ported to Katra.
+The cognitive-memory-chat project contains **67 TypeScript files** across backend services, routes, database, types, and MCP server. Not all of this was ported to Satori.
 
 #### Core Memory Engine (EXTRACT)
 
@@ -71,7 +71,7 @@ These services form the irreducible memory system:
 
 #### Frontend (minimal dashboard only- aplha)
 
-The current frontend is a full chat interface. Katra needs only a lightweight admin dashboard showing:
+The current frontend is a full chat interface. Satori needs only a lightweight admin dashboard showing:
 - Memory stats (events, facts, graph nodes)
 - Ingestion status
 - API key management
@@ -79,7 +79,7 @@ The current frontend is a full chat interface. Katra needs only a lightweight ad
 
 ---
 
-## Katra Architecture
+## Satori Architecture
 
 ### System Design
 
@@ -93,7 +93,7 @@ The current frontend is a full chat interface. Katra needs only a lightweight ad
         (29+ tools)            (/api/v1/*)
                │                      │
 ┌──────────────┴──────────────────────┴────────────────────┐
-│                    Katra Server                            │
+│                    Satori Server                            │
 │                                                            │
 │  ┌─────────┐  ┌──────────┐  ┌───────────┐  ┌───────────┐ │
 │  │ Episodic│  │ Semantic │  │ Knowledge │  │  Working  │ │
@@ -173,7 +173,7 @@ The core data model is unchanged from the proven cognitive-memory-chat implement
 
 ### LLM Provider Abstraction
 
-The current system hardcodes DeepSeek. Katra abstracts this:
+The current system hardcodes DeepSeek. Satori abstracts this:
 
 ```typescript
 interface LLMProvider {
@@ -202,7 +202,7 @@ Three modes, auto-detected from config:
 
 ## Security Architecture
 
-Katra implements defense-in-depth across four layers:
+Satori implements defense-in-depth across four layers:
 
 ### Layer 1: Authentication
 
@@ -261,19 +261,19 @@ docker-compose.yml:
 
 ### Tier 2: Cloud Deployable (Self-Managed, AWS/Azure/GCP)
 
-**Target:** Teams deploying Katra alongside their multi-agent infrastructure in the cloud
+**Target:** Teams deploying Satori alongside their multi-agent infrastructure in the cloud
 
 **Infrastructure:**
 ```
 Tier 2a — Managed Services (recommended):
-  - Katra Server → ECS Fargate / Cloud Run / Azure Container Apps
+  - Satori Server → ECS Fargate / Cloud Run / Azure Container Apps
   - MongoDB → MongoDB Atlas (M10+ tier)
   - Redis → ElastiCache / Azure Cache / Memorystore
   - S3 / Blob / GCS (replaces MinIO)
   - Secrets Manager / Key Vault / Secret Manager
 
 Tier 2b — Self-Managed (IaC):
-  - Katra Server → EC2 / VM / Compute Engine
+  - Satori Server → EC2 / VM / Compute Engine
   - MongoDB → EC2 + Docker or DocumentDB
   - Redis → EC2 + Docker or ElastiCache
   - S3 / MinIO on EC2
@@ -448,15 +448,15 @@ results = katra.search("user preferences")
 
 ## Competitive Positioning
 
-| Product | What it does | How Katra differs |
+| Product | What it does | How Satori differs |
 |---|---|---|
-| Mem0 | Agent memory SaaS | Katra is open-source with self-host option; MCP-native |
-| Zep | Long-term memory for LangChain | Katra is framework-agnostic; MCP protocol works with any agent |
-| LangChain Memory | In-process memory modules | Katra is a standalone service; survives process restarts; multi-agent |
-| Pinecone | Vector database | Katra is a full memory system (episodic + semantic + graph + temporal) |
-| Weaviate | Vector + graph database | Katra adds episodic events, working memory, MCP protocol, LLM-powered extraction |
+| Mem0 | Agent memory SaaS | Satori is open-source with self-host option; MCP-native |
+| Zep | Long-term memory for LangChain | Satori is framework-agnostic; MCP protocol works with any agent |
+| LangChain Memory | In-process memory modules | Satori is a standalone service; survives process restarts; multi-agent |
+| Pinecone | Vector database | Satori is a full memory system (episodic + semantic + graph + temporal) |
+| Weaviate | Vector + graph database | Satori adds episodic events, working memory, MCP protocol, LLM-powered extraction |
 
-**Katra's unique advantages:**
+**Satori's unique advantages:**
 - **MCP-native** — Works with any MCP-compatible agent, no SDK required
 - **Multi-layered** — Episodic, semantic, knowledge graph, working memory, temporal — not just vectors
 - **Background processing** — Automatically extracts facts, builds knowledge graph, generates summaries

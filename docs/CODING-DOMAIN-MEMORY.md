@@ -1,7 +1,7 @@
 # Design Note — Coding-Domain Memory
 
 **Status:** draft for review · **Source:** CTO meeting notes, 2026-07-22
-**One-liner:** Specialize Katra for software development by biasing the *semantic distillation* prompts toward code-domain facts — kept minimal, optionally run on a coding-specialized model — with a light dev system-prompt fragment.
+**One-liner:** Specialize Satori for software development by biasing the *semantic distillation* prompts toward code-domain facts — kept minimal, optionally run on a coding-specialized model — with a light dev system-prompt fragment.
 
 This note interprets the meeting notes and maps them to concrete integration points. It is deliberately small: the guiding constraint from the notes is **"not too many rules."**
 
@@ -9,7 +9,7 @@ This note interprets the meeting notes and maps them to concrete integration poi
 
 ## What we're trying to do
 
-Make Katra a better memory for engineering work: capture and surface the things that matter in a codebase — conventions, architectural decisions, API/interface contracts, library choices, "we do X this way" — instead of treating code sessions as generic conversation.
+Make Satori a better memory for engineering work: capture and surface the things that matter in a codebase — conventions, architectural decisions, API/interface contracts, library choices, "we do X this way" — instead of treating code sessions as generic conversation.
 
 Two sub-goals, ordered by priority:
 

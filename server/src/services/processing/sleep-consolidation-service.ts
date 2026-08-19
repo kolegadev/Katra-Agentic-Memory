@@ -657,12 +657,22 @@ RULES:
       if (reflectionModel) {
         console.log(`[sleep-consolidation] reflection model override: ${reflectionModel}`);
       }
-      const result = await llmService.extractJson(
+      let result = await llmService.extractJson(
         systemInstruction,
         prompt,
-        4000,
+        12000,
         reflectionModel,
       );
+
+      // Fallback: if the reflection override model returned nothing
+      // (rate limit, context overflow, JSON refusal), retry on the
+      // default configured model. The daily reflection is the foundation
+      // of the autonomy loop — it must not silently die because one
+      // model refused the large consolidation prompt.
+      if ((!result || Object.keys(result).length === 0) && reflectionModel) {
+        console.warn('⚠️ Reflection model returned empty — retrying with default LLM');
+        result = await llmService.extractJson(systemInstruction, prompt, 12000);
+      }
       
       if (!result || Object.keys(result).length === 0) {
         console.warn('⚠️ LLM reflection returned empty result');
@@ -1091,7 +1101,7 @@ Respond with ONLY a valid JSON object in this exact shape:
       const result = await llmService.extractJson(
         systemInstruction,
         prompt,
-        3000,
+        12000,
         process.env.KATRA_REFLECTION_MODEL || undefined,
       );
 

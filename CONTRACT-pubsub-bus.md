@@ -6,7 +6,7 @@ ad-hoc collaboration channels — without replacing the existing hybrid-memory
 architecture.
 
 **Boundaries (must NOT touch):**
-- Katra MCP server (`server/src/`) — no changes
+- Satori MCP server (`server/src/`) — no changes
 - Hybrid memory model (shared + private) — no changes
 - Docker Compose / infrastructure — Redis already present
 - Existing `wake_service.py` — it already handles event delivery; I will extend

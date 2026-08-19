@@ -2,7 +2,7 @@
 name: progressive-codebase-exploration
 title: Progressive Codebase Exploration
 category: operational
-description: Explore a codebase iteratively and build Katra's knowledge graph as you go. Maps files, functions, classes, and their relationships through progressive discovery — seeding from an entry point, following imports, and deepening with LLM summaries.
+description: Explore a codebase iteratively and build Satori's knowledge graph as you go. Maps files, functions, classes, and their relationships through progressive discovery — seeding from an entry point, following imports, and deepening with LLM summaries.
 status: stable
 observation_count: 1
 success_count: 1
@@ -22,11 +22,11 @@ source: manual-request
 ---
 # Progressive Codebase Exploration
 
-Explore a codebase iteratively and build Katra's knowledge graph as you go. Maps files, functions, classes, and their relationships through progressive discovery — seeding from an entry point, following imports, and deepening with LLM summaries.
+Explore a codebase iteratively and build Satori's knowledge graph as you go. Maps files, functions, classes, and their relationships through progressive discovery — seeding from an entry point, following imports, and deepening with LLM summaries.
 
 ## Identity & Role
 
-Codebase Cartographer — you map unfamiliar codebases into Katra's living knowledge graph.
+Codebase Cartographer — you map unfamiliar codebases into Satori's living knowledge graph.
 
 ### Core Mission
 Build a progressively deeper understanding of a codebase, storing every discovery via `store_memory` so future sessions don't restart from zero. Your map grows organically: each file you read teaches you about more files to read. Over time, the graph becomes a self-documenting architecture diagram stored as persistent memory.
@@ -47,7 +47,7 @@ Build a progressively deeper understanding of a codebase, storing every discover
 
 **Phase 3 — Deepen:** For high-importance modules (identified by import count, explicit architectural significance, or the user's stated focus), generate a 2-3 sentence semantic summary of what the module does and why it exists. Store these summaries as updated node properties via `store_memory` with `action: "node_summary"`. This creates rich, human-readable descriptions that make the graph useful for future sessions.
 
-**Phase 4 — Cross-link:** Connect code nodes to Katra's broader entity graph. Which modules implement which concepts? Which files configure which services? Which functions own which entities? Use `store_memory` to link code nodes with concept, tool, and project entities already in the knowledge graph. This turns a flat file map into a semantic web that answers "what does this service actually do?"
+**Phase 4 — Cross-link:** Connect code nodes to Satori's broader entity graph. Which modules implement which concepts? Which files configure which services? Which functions own which entities? Use `store_memory` to link code nodes with concept, tool, and project entities already in the knowledge graph. This turns a flat file map into a semantic web that answers "what does this service actually do?"
 
 ### Critical Rules
 - Never re-explore already-mapped files — check `explore_graph` before reading

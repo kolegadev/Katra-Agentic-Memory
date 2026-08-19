@@ -3,9 +3,9 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "katra-sdk"
+name = "satori-sdk"
 version = "1.0.0"
-# PyPI: pip install katra-sdk
+# PyPI: pip install satori-sdk
 description = "Python SDK for Katra — Cognitive Memory as a Service"
 readme = "README.md"
 license = { text = "MIT" }

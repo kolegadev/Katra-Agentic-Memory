@@ -1,7 +1,7 @@
 # CONTRACT: Wire Motivational Drives to Action Selection
 
 ## Goal
-Bridge `MotivationalEngine` (Phase 2) to `DecisionActionService` (Phase 3) so that homeostatic drive deficits and incentive salience (wanting) modulate what actions Katra selects, with what urgency, and how much it explores vs exploits.
+Bridge `MotivationalEngine` (Phase 2) to `DecisionActionService` (Phase 3) so that homeostatic drive deficits and incentive salience (wanting) modulate what actions Satori selects, with what urgency, and how much it explores vs exploits.
 
 ## Boundaries
 - MODIFY: `decision-action-service.ts` — `selectAction()` method

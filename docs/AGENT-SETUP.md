@@ -1,7 +1,7 @@
-# Katra — Multi-Platform Memory Collection
+# Satori — Multi-Platform Memory Collection
 
 A persistent, searchable memory system that gives AI agents continuity across sessions.
-Katra captures every conversation, processes it, and makes it queryable via natural language —
+Satori captures every conversation, processes it, and makes it queryable via natural language —
 turning stateless agents into agents with memory.
 
 **One memory server. One watcher daemon. Any platform.**
@@ -12,7 +12,7 @@ turning stateless agents into agents with memory.
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│                     Katra Docker Appliance                         │
+│                     Satori Docker Appliance                         │
 │            (MongoDB + Redis + MinIO + MCP Server)                  │
 │                    Internal network only                           │
 └──────────────────────────────┬─────────────────────────────────────┘
@@ -28,7 +28,7 @@ turning stateless agents into agents with memory.
         │           │           │           │           │          │
         └───────────┴───────────┴─────┬─────┴───────────┴──────────┘
                                       │
-                           Katra watcher daemon
+                           Satori watcher daemon
                            (multi-platform ingestion)
                                       │
         ┌─────────────────────────────┼─────────────────────────────┐
@@ -57,20 +57,20 @@ turning stateless agents into agents with memory.
 
 ## Installation
 
-### 1. Start the Katra Server
+### 1. Start the Satori Server
 
 ```bash
-git clone https://github.com/kolegadev/Katra-Agentic-Memory.git
-cd Katra-Agentic-Memory
+git clone https://github.com/kolegadev/Satori-Agentic-Memory.git
+cd Satori-Agentic-Memory
 cp .env.example .env  # Optional: set custom API keys; leave blank for auto-generation
 docker-compose up -d --build
 ```
 
 **What happens during first startup:**
-- MongoDB, Redis, MinIO, and Katra server containers start
+- MongoDB, Redis, MinIO, and Satori server containers start
 - The Docker image uses `node:20-slim` (Debian-based) — required for the
   ONNX runtime that powers local embeddings. Alpine/musl does NOT work.
-- If `MCP_API_KEY` / `KATRA_API_KEY` are not set in `.env`, Katra generates
+- If `MCP_API_KEY` / `KATRA_API_KEY` are not set in `.env`, Satori generates
   secure random keys, persists them in MongoDB, and prints them in the logs.
 - The embedding model (`Xenova/all-MiniLM-L6-v2`, ~80MB) downloads
   automatically on first memory storage and caches in the container.
@@ -85,7 +85,7 @@ Dashboard: `http://localhost:9012/dashboard/`
 ### 2. Configure the LLM Provider
 
 The LLM powers semantic extraction, auto-journaling, entity extraction, and summaries.
-**Katra needs an LLM provider to enable its intelligence features.**
+**Satori needs an LLM provider to enable its intelligence features.**
 
 Choose ONE of these methods:
 
@@ -146,7 +146,7 @@ Then restart: `docker-compose restart server`
 
 ### 3. Deploy the Solomem Watchers
 
-The watchers live in the Katra repo under `watcher/`. Copy them to `~/.katra`
+The watchers live in the Satori repo under `watcher/`. Copy them to `~/.katra`
 (or any directory you prefer):
 
 ```bash
@@ -258,7 +258,7 @@ For continuous collection, wrap the dedicated extractor in its own launchd/syste
 
 ## How Embeddings Work
 
-Katra uses **local embeddings** — no API key, no external service, no cost.
+Satori uses **local embeddings** — no API key, no external service, no cost.
 
 - **Model:** `Xenova/all-MiniLM-L6-v2` (22M params, 384 dimensions, ~80MB)
 - **Runtime:** Transformers.js (ONNX via WASM) — runs on CPU, including Raspberry Pi
@@ -273,7 +273,7 @@ even if embeddings fail to load (graceful degradation).
 
 ## Identity Modes
 
-Katra supports three memory sharing modes. The watcher always sends `user_id` and
+Satori supports three memory sharing modes. The watcher always sends `user_id` and
 optionally `shared_id` — the server decides what to use based on its scope mode.
 
 | Mode | Behavior | shared_id | Use Case |
@@ -340,7 +340,7 @@ Add to `~/.openclaw/openclaw.json`:
 
 Restart: `openclaw gateway restart`
 
-**Disable OpenClaw's built-in memory:** OpenClaw's local `memory_search` (SQLite per-agent) conflicts with Katra. Disable it:
+**Disable OpenClaw's built-in memory:** OpenClaw's local `memory_search` (SQLite per-agent) conflicts with Satori. Disable it:
 
 ```json
 {
@@ -361,7 +361,7 @@ Without this, agents see two competing memory systems causing confusion.
 
 > **Full integration guide:** [OPENCLAW-INTEGRATION.md](docs/OPENCLAW-INTEGRATION.md)
 
-> **Docker SSE tip:** If your agent runs inside Docker, use the Katra container's
+> **Docker SSE tip:** If your agent runs inside Docker, use the Satori container's
 > direct IP instead of `localhost`:
 > ```bash
 > docker inspect katra-server --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'
@@ -414,7 +414,7 @@ Add to your OpenCode config (`~/.config/opencode/opencode.jsonc`):
 > A backup of the previous config is saved at `~/.config/opencode/opencode.jsonc.bak-*`.
 
 For OpenCode's SQLite sessions, also run the extractor. To join a shared
-consciousness, use the same `shared_id` as your other agents and ensure Katra
+consciousness, use the same `shared_id` as your other agents and ensure Satori
 is in `shared` or `hybrid` memory scope mode:
 
 ```bash
@@ -494,7 +494,7 @@ platform directories every 30 seconds:
 
 1. Finds new or modified `.jsonl` session files
 2. Parses user/assistant messages from JSONL format
-3. Initializes an MCP session with the Katra server
+3. Initializes an MCP session with the Satori server
 4. Calls `store_memory` for each session, batching all turns into one document
 5. Tracks processed files via a state file to avoid duplicates
 
@@ -516,7 +516,7 @@ vector_search, working_memory, get_auto_journal, detect_patterns
 
 ### Background Processing
 
-The Katra server's background processor automatically:
+The Satori server's background processor automatically:
 - Deduplicates events via content hashing
 - Extracts semantic facts and entities (requires LLM)
 - Builds a knowledge graph from conversations (requires LLM)
@@ -567,7 +567,7 @@ python3 scripts/agent_executor.py --once
 python3 scripts/agent_executor.py
 ```
 
-Works with KolegaCode, OpenCode, Claude Code, OpenClaw, or any LLM that stores memories in Katra. See [Autonomous Loop](docs/AUTONOMOUS-LOOP.md) for full documentation.
+Works with KolegaCode, OpenCode, Claude Code, OpenClaw, or any LLM that stores memories in Satori. See [Autonomous Loop](docs/AUTONOMOUS-LOOP.md) for full documentation.
 
 ---
 
@@ -575,7 +575,7 @@ Works with KolegaCode, OpenCode, Claude Code, OpenClaw, or any LLM that stores m
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MCP_URL` | `http://localhost:3112/mcp` | Katra MCP server URL |
+| `MCP_URL` | `http://localhost:3112/mcp` | Satori MCP server URL |
 | `MCP_API_KEY` | *(required)* | MCP authentication key |
 | `KATRA_USER_ID` | `<hostname>-agent` | Default user_id for memories |
 | `KATRA_SHARED_ID` | *(empty)* | Shared ID for communal memory |

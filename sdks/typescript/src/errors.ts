@@ -1,23 +1,23 @@
 /**
- * Katra SDK — Custom Error Classes
+ * Satori SDK — Custom Error Classes
  *
  * Provides typed errors for connection failures, authentication issues,
- * and general API errors returned by the Katra cognitive memory server.
+ * and general API errors returned by the Satori cognitive memory server.
  *
  * @module errors
  */
 
-/** Base error class for all Katra SDK errors. */
-export class KatraError extends Error {
+/** Base error class for all Satori SDK errors. */
+export class SatoriError extends Error {
   /** Optional HTTP status code associated with the error. */
   public readonly status?: number;
 
-  /** Optional Katra-specific error code. */
+  /** Optional Satori-specific error code. */
   public readonly code?: number;
 
   constructor(message: string, options?: { status?: number; code?: number; cause?: unknown }) {
     super(message, { cause: options?.cause });
-    this.name = 'KatraError';
+    this.name = 'SatoriError';
     this.status = options?.status;
     this.code = options?.code;
   }
@@ -26,25 +26,25 @@ export class KatraError extends Error {
 /**
  * Thrown when authentication fails (401/403).
  *
- * The Katra server validates credentials via:
+ * The Satori server validates credentials via:
  * - `Authorization: Bearer <token>` header
  * - `X-MCP-Auth` header
  * - `?token=` query parameter
  */
-export class KatraAuthError extends KatraError {
+export class SatoriAuthError extends SatoriError {
   constructor(message = 'Authentication failed — check your API key') {
     super(message, { status: 401 });
-    this.name = 'KatraAuthError';
+    this.name = 'SatoriAuthError';
   }
 }
 
 /**
- * Thrown when the SDK cannot reach the Katra server or the connection is
+ * Thrown when the SDK cannot reach the Satori server or the connection is
  * interrupted mid-session.
  */
-export class KatraConnectionError extends KatraError {
-  constructor(message = 'Could not connect to Katra server', options?: { cause?: unknown }) {
+export class SatoriConnectionError extends SatoriError {
+  constructor(message = 'Could not connect to Satori server', options?: { cause?: unknown }) {
     super(message, { status: 503, cause: options?.cause });
-    this.name = 'KatraConnectionError';
+    this.name = 'SatoriConnectionError';
   }
 }

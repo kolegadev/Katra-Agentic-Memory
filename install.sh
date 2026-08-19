@@ -430,7 +430,7 @@ install_systemd() {
     [ "$(uname -s)" = "Linux" ] || { warn "--with-systemd is Linux-only; skipping on $(uname -s)"; return 0; }
     have systemctl || { warn "systemctl not found (WSL without systemd?); skipping boot unit"; return 0; }
 
-    local template="$SRC_DIR/katra.service.template"
+    local template="$SRC_DIR/satori.service.template"
     [ -f "$template" ] || { warn "$template not found; skipping boot unit"; return 0; }
 
     step "Installing boot unit"
@@ -439,7 +439,7 @@ install_systemd() {
     if [ "$(id -u)" != 0 ]; then
         have sudo || { warn "need root or sudo to install to /etc/systemd/system; skipping"; return 0; }
         sudo_cmd="sudo"
-        info "this needs sudo to write /etc/systemd/system/katra.service"
+        info "this needs sudo to write /etc/systemd/system/satori.service"
     fi
 
     # Prefer SUDO_USER: if someone runs the whole installer under sudo,
@@ -453,10 +453,10 @@ install_systemd() {
         -e "s|__DOCKER_BIN__|$(command -v docker)|g" \
         "$template" > "$rendered"
 
-    $sudo_cmd install -m 644 "$rendered" /etc/systemd/system/katra.service
+    $sudo_cmd install -m 644 "$rendered" /etc/systemd/system/satori.service
     rm -f "$rendered"
     $sudo_cmd systemctl daemon-reload
-    $sudo_cmd systemctl enable katra.service >/dev/null 2>&1 || warn "could not enable katra.service"
+    $sudo_cmd systemctl enable satori.service >/dev/null 2>&1 || warn "could not enable katra.service"
     ok "katra.service installed for user $unit_user at $SRC_DIR"
     info "it starts the stack at boot; the containers' own restart policy keeps them running"
 }
@@ -472,7 +472,7 @@ install_watcher() {
 
     mkdir -p "$KATRA_HOME"
     local f
-    for f in katra_watcher.py katra_opencode_extractor.py claude_history_extractor.py kolega_code_extractor.py; do
+    for f in satori_watcher.py satori_opencode_extractor.py claude_history_extractor.py kolega_code_extractor.py; do
         if [ -f "$wsrc/$f" ]; then
             install -m 644 "$wsrc/$f" "$KATRA_HOME/$f"
         else
@@ -512,7 +512,7 @@ PY
 
     # Backfill existing history once, so memory is not empty on day one.
     info "backfilling existing session history (this can take a few minutes)"
-    if python3 "$KATRA_HOME/katra_watcher.py" --once --config "$cfg" >"$KATRA_HOME/backfill.log" 2>&1; then
+    if python3 "$KATRA_HOME/satori_watcher.py" --once --config "$cfg" >"$KATRA_HOME/backfill.log" 2>&1; then
         ok "backfill complete"
     else
         warn "backfill exited non-zero — see $KATRA_HOME/backfill.log"
@@ -598,10 +598,10 @@ do_uninstall() {
         systemctl --user disable --now katra-watcher.service 2>/dev/null || true
         rm -f "$HOME/.config/systemd/user/katra-watcher.service"
         systemctl --user daemon-reload 2>/dev/null || true
-        if [ -f /etc/systemd/system/katra.service ]; then
+        if [ -f /etc/systemd/system/satori.service ]; then
             local sudo_cmd=""; [ "$(id -u)" != 0 ] && have sudo && sudo_cmd="sudo"
-            $sudo_cmd systemctl disable --now katra.service 2>/dev/null || true
-            $sudo_cmd rm -f /etc/systemd/system/katra.service
+            $sudo_cmd systemctl disable --now satori.service 2>/dev/null || true
+            $sudo_cmd rm -f /etc/systemd/system/satori.service
             $sudo_cmd systemctl daemon-reload 2>/dev/null || true
         fi
     fi
@@ -612,7 +612,7 @@ do_uninstall() {
     ok "units removed"
 
     step "Removing watcher files"
-    rm -f "$KATRA_HOME"/katra_watcher.py "$KATRA_HOME"/katra_opencode_extractor.py \
+    rm -f "$KATRA_HOME"/satori_watcher.py "$KATRA_HOME"/satori_opencode_extractor.py \
           "$KATRA_HOME"/claude_history_extractor.py "$KATRA_HOME"/kolega_code_extractor.py \
           "$KATRA_HOME"/watcher-config.json "$KATRA_HOME"/watcher-state.json "$KATRA_HOME"/backfill.log
     ok "watcher files removed from $KATRA_HOME"

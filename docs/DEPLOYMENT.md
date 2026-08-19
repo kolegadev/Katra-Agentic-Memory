@@ -3,7 +3,7 @@
 ## Install script (Recommended)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kolegadev/Katra-Agentic-Memory/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/kolegadev/Satori-Agentic-Memory/main/install.sh | bash
 ```
 
 That clones the source to `~/.katra/src`, generates a `.env` with real
@@ -18,7 +18,7 @@ Useful flags:
 | Flag | Effect |
 |---|---|
 | `--with-watcher` | Also install the host-side session watcher (see below) |
-| `--with-systemd` | Install the boot unit so Katra starts on reboot (needs sudo) |
+| `--with-systemd` | Install the boot unit so Satori starts on reboot (needs sudo) |
 | `--rebuild` | Rebuild and recreate just the server container, then verify |
 | `--no-start` | Write config but don't start containers |
 | `--dir PATH` | Where to clone/find the source (default `~/.katra/src`) |
@@ -29,7 +29,7 @@ Useful flags:
 Passing flags through a pipe needs `bash -s --`:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kolegadev/Katra-Agentic-Memory/main/install.sh \
+curl -fsSL https://raw.githubusercontent.com/kolegadev/Satori-Agentic-Memory/main/install.sh \
   | bash -s -- --with-watcher --with-systemd
 ```
 
@@ -45,8 +45,8 @@ It is also idempotent: re-running it against an existing install keeps your
 If you'd rather do it by hand:
 
 ```bash
-git clone https://github.com/kolegadev/Katra-Agentic-Memory.git
-cd Katra-Agentic-Memory
+git clone https://github.com/kolegadev/Satori-Agentic-Memory.git
+cd Satori-Agentic-Memory
 cp .env.example .env
 # Required: MONGO_PASS, MINIO_USER, MINIO_PASS — compose refuses to start
 # without them. See "Credentials" below for the two pairs that must match.
@@ -157,7 +157,7 @@ When running directly on the host, the default ports are `9002` (REST) and `3100
 
 ## Connecting to External Services
 
-Katra can use managed cloud services:
+Satori can use managed cloud services:
 
 ```bash
 # MongoDB Atlas
@@ -271,7 +271,7 @@ which is normal, not an error. What keeps the containers alive after boot is
 
 ## Nginx Reverse Proxy
 
-If you run Katra behind Nginx, proxy the **host-mapped ports** (`9012`/`3112` by
+If you run Satori behind Nginx, proxy the **host-mapped ports** (`9012`/`3112` by
 default; adjust if you changed `HOST_API_PORT`/`HOST_MCP_PORT`):
 
 ```nginx
@@ -326,7 +326,7 @@ katra.example.com {
 
 ## SaaS / Multi-Tenant Mode
 
-Katra supports database-per-tenant isolation for SaaS deployments.
+Satori supports database-per-tenant isolation for SaaS deployments.
 
 ### Enable Multi-Tenancy
 
@@ -386,12 +386,12 @@ installation instructions.
 
 ## Running on Raspberry Pi
 
-Katra is designed to run on a Raspberry Pi 5 (16GB):
+Satori is designed to run on a Raspberry Pi 5 (16GB):
 
 1. Use Docker Compose (recommended)
 2. If building locally, use `node esbuild.config.mjs` (not `tsc`)
 3. Local embeddings (`@xenova/transformers`) work on ARM64
-4. Default memory usage: ~384MB total (MongoDB 254MB, Katra 52MB, MinIO 73MB, Redis 5MB)
+4. Default memory usage: ~384MB total (MongoDB 254MB, Satori 52MB, MinIO 73MB, Redis 5MB)
 
 ## Health Monitoring
 
@@ -408,7 +408,7 @@ curl -H "Authorization: Bearer YOUR_KEY" http://localhost:9012/api/v1/admin/diag
 
 ## Running the Test Suite
 
-Katra includes 87 tests across 9 files (unit, security, and integration):
+Satori includes 87 tests across 9 files (unit, security, and integration):
 
 ```bash
 cd server

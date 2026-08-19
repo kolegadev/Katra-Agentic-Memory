@@ -1,10 +1,10 @@
 {
-  "name": "@katra/sdk",
+  "name": "@satori/sdk",
   "version": "1.0.0",
-  "description": "TypeScript SDK for Katra — Cognitive Memory as a Service",
+  "description": "TypeScript SDK for Satori — Cognitive Memory as a Service",
   "type": "module",
   "license": "MIT",
-  "author": "Katra Contributors",
+  "author": "Satori Contributors",
   "repository": {
     "type": "git",
     "url": "https://github.com/kolegadev/katra",

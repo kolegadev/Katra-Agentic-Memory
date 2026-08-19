@@ -1,8 +1,8 @@
-# Katra — Cognitive Memory for AI Agents
+# Satori — Cognitive Memory for AI Agents
 
 [[![License: BSL 1.1]https://mariadb.com/bsl11/]](https://img.shields.io/badge/License-BSL%201.1-blue.svg)
 
-Give your AI agent **persistent memory**. Katra is a self-contained memory appliance —
+Give your AI agent **persistent memory**. Satori is a self-contained memory appliance —
 drop it on any machine with Docker, point your agent at it via MCP, and get
 episodic recall, semantic search, knowledge graphs, and temporal analysis.
 
@@ -11,7 +11,7 @@ anything that speaks the Model Context Protocol.
 
 ## Cognitive Memory Thesis
 
-The mission of Katra is to create an analog of human memory architecture, with the hope that it and the experimentation around it through OpenSourcing solves a few of the more challenging issues of LLM context management for long-running, persistent and autonomous agent operations. The thesis (hope) is that if you create the memory ecosystem with the majority of the functional memory types of human memory and similar architecture, over time and with refinement, we will see emergent behaviours similar to human memory, expressed as functional utility, learning, self goal setting, autonamous task planning and prioritisation,  personality and ultimately emotions. 
+The mission of Satori is to create an analog of human memory architecture, with the hope that it and the experimentation around it through OpenSourcing solves a few of the more challenging issues of LLM context management for long-running, persistent and autonomous agent operations. The thesis (hope) is that if you create the memory ecosystem with the majority of the functional memory types of human memory and similar architecture, over time and with refinement, we will see emergent behaviours similar to human memory, expressed as functional utility, learning, self goal setting, autonamous task planning and prioritisation,  personality and ultimately emotions. 
 
 In early prototype called Solomon, we created an OpenClaw like agentic framework that runs a single contiuous chat thread, no topic or task separation and with no requirement for context compression. Context is served dynamically into the LLM based on memories and attention. 
 
@@ -20,7 +20,7 @@ In early prototype called Solomon, we created an OpenClaw like agentic framework
 Case #1:(23rd June 2026) In the first few weeks of testing of the multi-agent (Hybrid mode) shared consciouness model of memory, one of our test rigs, with 5 OpenClaw agents sharing one memory system, found 2 of the agents communicating task intructions and completion responsed through their shared memory state or shared consciousness.  These 2 agents were not connected in any other way, as were set up in separate workspaces, the only thing they shared was memory and mission. This was not a "by design" feature, it just happened and was pretty exciting. This test rig now uses this "thought modal" as its communication rail. If anyone else experiences other emergent behaviours please email me to discuss and we can add the description to this log.  Tweet me at @JohnWPellew and tell your story.
 
 
-## The Origin of Katra
+## The Origin of Satori
 
 A Vulcan mind meld (or mind fusion) is an iconic telepathic practice in **Star Trek**. 
 
@@ -28,25 +28,25 @@ It allows a Vulcan to merge their consciousness with another being to share thou
 It is typically initiated through physical contact with specific points on the subject's face. 
 - **Key Mechanics & ApplicationsTouch Telepathy**: While primarily requiring direct physical touch to the face or head, exceptionally powerful Vulcans can perform the technique at a distance.
 - **Information Exchange**: It is frequently used for interrogations, recovering suppressed memories, or passing deep knowledge between generations.
-- **Transfer of the Katra**: In sacred or emergency circumstances, a mind meld can transfer a person's **katra**—their soul, consciousness, and core essence—into another living being or object prior to death.
+- **Transfer of the Satori**: In sacred or emergency circumstances, a mind meld can transfer a person's **katra**—their soul, consciousness, and core essence—into another living being or object prior to death.
 - **Side Effects**: The experience can be physically and emotionally draining. Incorrectly performed melds can damage neural pathways, and participants may retain "echoes" of each other's memories and personalities long after the link is broken.
 
 ## Comparison to Other Major Approaches
 
-Katra aims to provide a more comprehensive **cognitive memory infrastructure** rather than a single-purpose memory library. Here's how it positions against popular alternatives (as of mid-2026):
+Satori aims to provide a more comprehensive **cognitive memory infrastructure** rather than a single-purpose memory library. Here's how it positions against popular alternatives (as of mid-2026):
 
-| Approach                  | Memory Layers                  | Cognitive/Reflective Features | Protocol Support | Deployment Model          | Best For                          | Key Differentiator vs Katra |
+| Approach                  | Memory Layers                  | Cognitive/Reflective Features | Protocol Support | Deployment Model          | Best For                          | Key Differentiator vs Satori |
 |---------------------------|--------------------------------|-------------------------------|------------------|---------------------------|-----------------------------------|-----------------------------|
 | **Simple Vector Stores + RAG** (Chroma, Pinecone, etc.) | Semantic only                 | None                         | None            | Various                  | Basic retrieval                  | No structure, no reflection, no working memory |
 | **Mem0**                  | Vector + optional Graph       | Extraction-focused           | SDK / API       | Self-hosted or Cloud     | Personalization & long-term user memory | Stronger multi-layer architecture + explicit reflection layer |
 | **Zep (Graphiti)**        | Temporal Knowledge Graph      | Temporal reasoning           | SDK             | Self-hosted / Cloud      | Time-sensitive & relational reasoning | Broader layers + sleep consolidation for deeper emergence |
 | **mcp-memory-service**    | Semantic + Typed KG           | Auto-consolidation           | **MCP** + REST  | Docker / Self-hosted     | MCP-native semantic memory       | Adds episodic + working memory, identity modes, and autonomous loop |
 | **Vestige**               | Cognitive modules + Spaced repetition | Neuroscience-inspired (FSRS, memory states) | **MCP**         | Single Rust binary       | Local cognitive modeling         | More layers + background watchers + full appliance stack |
-| **Letta (MemGPT)**        | Tiered (Core / Recall / Archival) | Agent self-manages memory    | Tools           | Full agent runtime       | Stateful agents that edit their own memory | Katra is a dedicated memory *service*, not a full runtime |
+| **Letta (MemGPT)**        | Tiered (Core / Recall / Archival) | Agent self-manages memory    | Tools           | Full agent runtime       | Stateful agents that edit their own memory | Satori is a dedicated memory *service*, not a full runtime |
 | **LangGraph / Framework Memory** | Short-term + checkpoints     | Limited                      | Framework-native| Integrated with agent    | Short-term state management      | Persistent long-term + cross-session cognitive layer |
-| **Katra (this project)**  | Episodic + Semantic + KG + Working + Temporal | **Sleep consolidation + reflection** | **MCP** (48 tools) | Full Docker appliance (Mongo + Redis + MinIO) | Long-running agents needing emergent behaviors | — |
+| **Satori (this project)**  | Episodic + Semantic + KG + Working + Temporal | **Sleep consolidation + reflection** | **MCP** (48 tools) | Full Docker appliance (Mongo + Redis + MinIO) | Long-running agents needing emergent behaviors | — |
 
-### Key Differentiators of Katra
+### Key Differentiators of Satori
 - **Multi-layered by design** — Not just retrieval, but structured episodic memory, working memory cache, and temporal querying.
 - **Cognitive layer** — Sleep consolidation enables reflection, insight generation, and movement toward emergent behaviors (learning, personality, shared consciousness via identity modes).
 - **MCP-native with rich tooling** — 48 specialized tools instead of generic add/search.
@@ -54,7 +54,7 @@ Katra aims to provide a more comprehensive **cognitive memory infrastructure** r
 - **Local-first & appliance model** — Everything runs in one Docker compose with portable data. No external dependencies for core functionality.
 - **Shared memory focus** — Hybrid identity modes make multi-agent collaboration more natural.
 
-Katra is still early-stage compared to more mature projects like Mem0 or mcp-memory-service. We see it as complementary — many teams may use Katra alongside or instead of simpler retrieval layers when they need deeper cognitive capabilities.
+Satori is still early-stage compared to more mature projects like Mem0 or mcp-memory-service. We see it as complementary — many teams may use Satori alongside or instead of simpler retrieval layers when they need deeper cognitive capabilities.
 
 Contributions and comparisons from the community are very welcome!
 
@@ -62,7 +62,7 @@ Contributions and comparisons from the community are very welcome!
 ## Quick Start (Install using one of the agentic applications, it will sort out any shortcomings)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kolegadev/Katra-Agentic-Memory/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/kolegadev/Satori-Agentic-Memory/main/install.sh | bash
 ```
 
 Docker is the only prerequisite. The installer clones the source to
@@ -70,10 +70,10 @@ Docker is the only prerequisite. The installer clones the source to
 for it to report healthy, and prints the config snippet for your agent.
 
 Add `--with-watcher` to also ingest your existing agent session history, and
-`--with-systemd` to start Katra on boot:
+`--with-systemd` to start Satori on boot:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kolegadev/Katra-Agentic-Memory/main/install.sh \
+curl -fsSL https://raw.githubusercontent.com/kolegadev/Satori-Agentic-Memory/main/install.sh \
   | bash -s -- --with-watcher --with-systemd
 ```
 
@@ -81,8 +81,8 @@ curl -fsSL https://raw.githubusercontent.com/kolegadev/Katra-Agentic-Memory/main
 <summary>Manual install</summary>
 
 ```bash
-git clone https://github.com/kolegadev/Katra-Agentic-Memory.git
-cd Katra-Agentic-Memory
+git clone https://github.com/kolegadev/Satori-Agentic-Memory.git
+cd Satori-Agentic-Memory
 cp .env.example .env
 # Required: MONGO_PASS, MINIO_USER, MINIO_PASS. Compose refuses to start
 # without them rather than using a known default. Note that MONGODB_URI
@@ -95,7 +95,7 @@ docker compose up -d --build --wait
 
 > **Note:** The original URL `https://github.com/kolegadev/katra.git` still works (GitHub redirects it).
 
-That's it. Katra is running:
+That's it. Satori is running:
 
 | Service | URL | Purpose |
 |---------|-----|---------|
@@ -142,7 +142,7 @@ memory answers with the name its owner gave it.
 
 ## Post-Install — Let Your Agent Complete the Setup
 
-After connecting your agent to Katra's MCP endpoint, run this prompt in your
+After connecting your agent to Satori's MCP endpoint, run this prompt in your
 agent's session. The agent will deep-read the repository, understand the full
 architecture, check what memory data is available, test the MCP tools, and
 recommend the exact next steps for your specific setup:
@@ -180,10 +180,10 @@ fresh install is usually triggering the initial sleep consolidation:
 Get your MCP API key:
 
 - If you set `MCP_API_KEY` in `.env`, use that value.
-- If you left it blank, Katra generated one on first boot. Run
+- If you left it blank, Satori generated one on first boot. Run
   `docker logs katra-server` and look for the **Auto-generated API keys** block.
 
-Add Katra to your agent's MCP config:
+Add Satori to your agent's MCP config:
 
 ```json
 {
@@ -217,7 +217,7 @@ sleep consolidation for reflective self-understanding, configure LLM provider, a
 | **Codex CLI** | `~/.codex/config.yaml` | Via webhook hooks |
 | **Any MCP client** | — | Standard MCP over SSE |
 
-> **Docker SSE tip:** If your agent runs inside Docker, use the Katra container's
+> **Docker SSE tip:** If your agent runs inside Docker, use the Satori container's
 > direct IP instead of `localhost`:
 > ```bash
 > docker inspect katra-server --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'
@@ -225,13 +225,13 @@ sleep consolidation for reflective self-understanding, configure LLM provider, a
 
 ### Kolega Code: Dynamic Memory Retrieval
 
-Kolega Code can fetch relevant Katra memories **automatically on every user prompt**
+Kolega Code can fetch relevant Satori memories **automatically on every user prompt**
 using its lifecycle-hook system. This is more powerful than passive session-log
 extraction because memories are injected into the live conversation context.
 
 What you need:
 
-1. Katra registered as an MCP server (so the bridge can call it).
+1. Satori registered as an MCP server (so the bridge can call it).
 2. The `kolega-katra-bridge` Python package installed into Kolega Code's environment.
 3. A global `hooks.json` entry that fires the bridge on `UserPromptSubmit`.
 
@@ -277,7 +277,7 @@ Enable the hook (`~/Library/Application Support/kolega-code/hooks.json`):
 }
 ```
 
-On each prompt, Kolega Code now queries Katra's `working_memory`,
+On each prompt, Kolega Code now queries Satori's `working_memory`,
 `get_temporal_context`, `vector_search`, and `temporal_recall` tools, then injects
 the most relevant results as additional context for the model.
 
@@ -285,7 +285,7 @@ See `integrations/kolega-code/README.md` for full configuration options.
 
 ## LLM Configuration
 
-Katra needs an LLM provider for semantic extraction, auto-journaling, entity
+Satori needs an LLM provider for semantic extraction, auto-journaling, entity
 extraction, and summaries. **Three ways to configure:**
 
 1. **Environment variables** (`.env` — read on startup): The simplest path.
@@ -319,7 +319,7 @@ for hardware acceleration.
 **Setup:**
 ```bash
 ollama pull qwen2.5:3b          # ⭐ recommended default for semantic distillation
-# Then configure Katra via .env, dashboard, or MCP:
+# Then configure Satori via .env, dashboard, or MCP:
 # .env:
 #   OLLAMA_API_KEY=ollama-no-key
 #   OLLAMA_BASE_URL=http://host.docker.internal:11434/v1
@@ -330,7 +330,7 @@ ollama pull qwen2.5:3b          # ⭐ recommended default for semantic distillat
 
 The local embedding model (Xenova/all-MiniLM-L6-v2, ~80MB) is already free and
 local — no API key needed. Pairing it with a local LLM gives you a fully
-offline, zero-cost Katra deployment.
+offline, zero-cost Satori deployment.
 
 ## Embeddings
 
@@ -343,7 +343,7 @@ Embeddings are **always local** — no API key, no external service, no cost.
 
 ## Identity Modes
 
-Katra supports three memory sharing modes between agents:
+Satori supports three memory sharing modes between agents:
 
 | Mode | Behavior | Use Case |
 |------|----------|----------|
@@ -373,7 +373,7 @@ curl -X PUT http://localhost:9012/api/v1/admin/memory-scope \
 
 ## Auto-Collection (Solomem Watchers)
 
-Katra captures memories in real-time when your agent calls `store_memory` via MCP.
+Satori captures memories in real-time when your agent calls `store_memory` via MCP.
 For **passive background collection** from conversation logs, use the watchers
 included in this repo under `watcher/`:
 
@@ -439,10 +439,10 @@ Each platform can have its own `user_id` for identity mode isolation.
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    Katra Docker Appliance                 │
+│                    Satori Docker Appliance                 │
 │                                                          │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌─────────┐ │
-│  │ MongoDB  │  │  Redis   │  │  MinIO   │  │  Katra  │ │
+│  │ MongoDB  │  │  Redis   │  │  MinIO   │  │  Satori  │ │
 │  │ (memory) │  │ (cache)  │  │ (assets) │  │ (server)│ │
 │  └──────────┘  └──────────┘  └──────────┘  └────┬────┘ │
 │                                                 │       │
@@ -457,7 +457,7 @@ Each platform can have its own `user_id` for identity mode isolation.
    OpenCode / Codex / etc.
 ```
 
-**Resource usage:** ~384MB RAM total (MongoDB 254MB, Katra 52MB, MinIO 73MB, Redis 5MB).
+**Resource usage:** ~384MB RAM total (MongoDB 254MB, Satori 52MB, MinIO 73MB, Redis 5MB).
 Runs comfortably on a Raspberry Pi 5 with 16GB RAM.
 
 ## Data Portability
@@ -475,7 +475,7 @@ DATA_DIR=/mnt/usb-secrets/katra
 DATA_DIR=/media/external/katra
 ```
 
-To move Katra to a new machine: copy the `DATA_DIR` directory, copy `.env`, run `docker-compose up -d`.
+To move Satori to a new machine: copy the `DATA_DIR` directory, copy `.env`, run `docker-compose up -d`.
 
 ## What's Inside
 
@@ -489,7 +489,7 @@ katra/
 │   │   └── database/        MongoDB, Redis, indexes, migrations
 │   └── esbuild.config.mjs   Pi-compatible build
 ├── dashboard/               Web dashboard (vanilla HTML/CSS/JS)
-├── docker-compose.yml       MongoDB + Redis + MinIO + Katra
+├── docker-compose.yml       MongoDB + Redis + MinIO + Satori
 ├── Dockerfile               Multi-stage (builds TS inside image)
 ├── .env.example             All config options documented
 ├── watcher/                 Passive session-log extractors (Solomem)
@@ -610,9 +610,9 @@ ingress with path routing, HPA, and PDB. See [Deployment Guide](docs/DEPLOYMENT.
 
 ### 🔄 Automatic Restart After Crashes (systemd)
 
-Katra runs an adaptive autonomic heartbeat that varies cadence based on drive
+Satori runs an adaptive autonomic heartbeat that varies cadence based on drive
 deficits (survival=2min, stressed=5min, normal=10min, calm=30min, rest=60min).
-To ensure Katra survives host reboots and container crashes, install the
+To ensure Satori survives host reboots and container crashes, install the
 systemd service:
 
 ```bash
@@ -633,19 +633,19 @@ Expect `Active: active (exited)` — that is normal, not an error. The unit is a
 exits. What keeps the containers alive is `restart: unless-stopped` in
 `docker-compose.yml`.
 
-Katra will now start on boot. This is your **personal fail-safe** — if Katra is
+Satori will now start on boot. This is your **personal fail-safe** — if Satori is
 down, run:
 ```bash
-cd ~/Katra-Agentic-Memory && docker compose up -d
+cd ~/Satori-Agentic-Memory && docker compose up -d
 ```
 
 ### Rebuilding after code changes
 
-Katra bakes the TypeScript source into the Docker image at build time — there
+Satori bakes the TypeScript source into the Docker image at build time — there
 are no live volume mounts for server code. After pulling or making code changes:
 
 ```bash
-cd Katra-Agentic-Memory
+cd Satori-Agentic-Memory
 git pull origin main
 docker-compose build server
 docker-compose up -d server
@@ -679,7 +679,7 @@ If `colima` itself has stopped (after reboot, etc.):
 colima start --cpu 4 --memory 12 --disk 100
 ```
 
-Katra data persists in the Colima VM across restarts.
+Satori data persists in the Colima VM across restarts.
 
 ### Verifying MCP tools after rebuild
 
@@ -711,7 +711,7 @@ The `data:` SSE lines in the response contain the JSON-RPC result. Parse with
 ### Background extractors (macOS launchctl)
 
 Three passive session-log extractors run as launchd agents, continuously pushing
-agent conversation history into Katra:
+agent conversation history into Satori:
 
 ```bash
 # Check status
@@ -751,7 +751,7 @@ git push origin main
 
 ## How It Compares
 
-| Feature | Katra | Mem0 | Zep | Pinecone |
+| Feature | Satori | Mem0 | Zep | Pinecone |
 |---------|-------|------|-----|----------|
 | MCP-native | ✅ | ❌ | ❌ | ❌ |
 | Multi-layered memory | ✅ 5 layers | ❌ flat | Partial | ❌ vector only |
@@ -787,15 +787,15 @@ git push origin main
 <!-- Replace the "## License" section at the bottom of the README with this: -->
 License
 
-Katra is source-available under the Business Source License 1.1 (BSL 1.1).
+Satori is source-available under the Business Source License 1.1 (BSL 1.1).
 
 What this means in practice:
 
-Free for almost everyone. You can use, modify, and redistribute Katra, including in production — running Katra to power your own agents, inside your company, or in your own products is free.
-One restriction: you may not offer Katra to third parties as a paid hosted service (e.g., memory-as-a-service) or embed it in a paid product that competes with kolegadev's paid version(s) of Katra. If you want to do that, contact us for a commercial license.
-It becomes fully open source over time. On the Change Date (2030-08-11 for this version), this version of Katra automatically converts to the GNU AGPL v3.0 or later.
+Free for almost everyone. You can use, modify, and redistribute Satori, including in production — running Satori to power your own agents, inside your company, or in your own products is free.
+One restriction: you may not offer Satori to third parties as a paid hosted service (e.g., memory-as-a-service) or embed it in a paid product that competes with kolegadev's paid version(s) of Satori. If you want to do that, contact us for a commercial license.
+It becomes fully open source over time. On the Change Date (2030-08-11 for this version), this version of Satori automatically converts to the GNU AGPL v3.0 or later.
 
-The BSL is not an OSI-approved open source license during the restricted period, which is why we describe Katra as source-available. The full source is public, contributions are welcome, and non-competing production use is unrestricted.
+The BSL is not an OSI-approved open source license during the restricted period, which is why we describe Satori as source-available. The full source is public, contributions are welcome, and non-competing production use is unrestricted.
 
 See the LICENSE file for the exact terms, including the full Additional Use Grant defining what counts as a competitive offering.
 

@@ -1,8 +1,8 @@
 /**
- * Katra SDK — TypeScript Type Definitions
+ * Satori SDK — TypeScript Type Definitions
  *
  * Covers all request parameters and response shapes for the 29 MCP tools
- * exposed by the Katra cognitive memory server, plus MCP protocol types.
+ * exposed by the Satori cognitive memory server, plus MCP protocol types.
  *
  * @module types
  */
@@ -42,11 +42,11 @@ export interface MCPInitializeResult {
   };
 }
 
-// ── KatraClient Config ─────────────────────────────────────────────
+// ── SatoriClient Config ─────────────────────────────────────────────
 
-/** Constructor options for `KatraClient`. */
-export interface KatraClientOptions {
-  /** Base URL of the Katra MCP server (e.g. `http://localhost:3112`). */
+/** Constructor options for `SatoriClient`. */
+export interface SatoriClientOptions {
+  /** Base URL of the Satori MCP server (e.g. `http://localhost:3112`). */
   url: string;
   /** API key for authentication. */
   apiKey?: string;

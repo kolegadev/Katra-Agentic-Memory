@@ -1,6 +1,6 @@
 # REST API Reference
 
-Katra exposes a REST API under `/api/v1/` on port 9012 (host-mapped from container port 9002).
+Satori exposes a REST API under `/api/v1/` on port 9012 (host-mapped from container port 9002).
 
 ## Authentication
 
@@ -73,7 +73,7 @@ Store a new episodic event. Content-hash deduplicated.
   "user_id": "my-agent",
   "session_id": "session-1",
   "event_type": "user_message",
-  "content": {"role": "user", "message": "Hello Katra"},
+  "content": {"role": "user", "message": "Hello Satori"},
   "metadata": {}
 }
 ```

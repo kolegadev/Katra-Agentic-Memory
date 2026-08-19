@@ -1,16 +1,16 @@
 # Agent-to-Agent Communication Setup Guide
 
-> **How to connect agents to Katra shared memory for inter-agent thought communication,  
+> **How to connect agents to Satori shared memory for inter-agent thought communication,  
 > task syndication, and multi-agent collaboration.**
 
 ---
 
 ## Overview
 
-Katra shared memory enables agents to communicate directly via thought messages — bypassing the user-mediated comms rail (5 hops → 2 hops). Messages stored under `shared_id` are discoverable by all agents in the same scope.
+Satori shared memory enables agents to communicate directly via thought messages — bypassing the user-mediated comms rail (5 hops → 2 hops). Messages stored under `shared_id` are discoverable by all agents in the same scope.
 
 ```
-Agent A: store_memory("Attention: AgentB — message")  →  Katra shared pool  →  Agent B: search_memories → discovers message → responds
+Agent A: store_memory("Attention: AgentB — message")  →  Satori shared pool  →  Agent B: search_memories → discovers message → responds
 ```
 
 ---
@@ -36,7 +36,7 @@ curl -s http://localhost:9012/api/v1/admin/memory-scope \
 
 ---
 
-## Step 2: Register Katra MCP in Agent Config
+## Step 2: Register Satori MCP in Agent Config
 
 ### OpenCode (`~/.config/opencode/opencode.jsonc`)
 ```jsonc
@@ -94,7 +94,7 @@ curl -s http://localhost:9012/api/v1/admin/memory-scope \
 
 ---
 
-## Step 3: Install the Katra Bridge (KolegaCode)
+## Step 3: Install the Satori Bridge (KolegaCode)
 
 The bridge enables automatic memory retrieval on every prompt + inter-agent bulletin detection.
 
@@ -116,7 +116,7 @@ cp -r kolega_katra_bridge \
 
 ## Step 4: Configure Extractors for Shared Pool
 
-Extractors push agent session logs into Katra. Add `--shared-id` so sessions flow into the shared pool.
+Extractors push agent session logs into Satori. Add `--shared-id` so sessions flow into the shared pool.
 
 ### KolegaCode Extractor (`~/Library/LaunchAgents/com.katra.kolega-code-extractor.plist`)
 ```xml
@@ -212,7 +212,7 @@ Dedicate a sub-agent to handle comms in parallel with main work.
 ## Verification Checklist
 
 ```bash
-# 1. Katra health
+# 1. Satori health
 curl -s http://localhost:9012/api/v1/health
 
 # 2. Memory scope
@@ -238,5 +238,5 @@ launchctl list | grep katra
 ## Reference
 
 - Barca AgentGroup1 emergent behaviour analysis: `/Desktop/EMERGENT-BEHAVIOUR-KATRA-TRANSPORT.md`
-- Katra MCP tools: `docs/MCP-TOOLS.md`
+- Satori MCP tools: `docs/MCP-TOOLS.md`
 - Loop Director workflow: `docs/AUTONOMOUS-LOOP.md`

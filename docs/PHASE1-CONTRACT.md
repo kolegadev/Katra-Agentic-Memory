@@ -6,7 +6,7 @@
 
 ## Goal
 
-Implement the 6-signal salience function that gates what reaches "consciousness" in Katra. Without this, every memory has equal retrieval weight. This is the thalamus — it enables cognition by deciding what reaches the cortex.
+Implement the 6-signal salience function that gates what reaches "consciousness" in Satori. Without this, every memory has equal retrieval weight. This is the thalamus — it enables cognition by deciding what reaches the cortex.
 
 ## Boundaries
 
