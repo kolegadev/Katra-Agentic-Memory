@@ -81,6 +81,9 @@ export class BackgroundProcessor {
     this.processing = true;
 
     try {
+      // ── Approval auto-triage (runs every cycle) ──────────────────
+      await this.autoTriageHeartbeatApprovals();
+
       const SYSTEM_EVENT_TYPES = new Set([
         'heartbeat_action',
         'task_execution',
@@ -579,6 +582,49 @@ export class BackgroundProcessor {
         1.0
       );
     } catch { /* non-critical */ }
+  }
+
+  /**
+   * Auto-triage heartbeat approvals.
+   *
+   * The external adaptive heartbeat writes records of its own completed
+   * investigations as episodic events with metadata.status =
+   * 'pending_approval' — but the bulletin content already says
+   * "Status: completed". These are read-only, already-executed
+   * investigations; they never needed human approval, and the pile-up
+   * (180+ since July) created a false impression of self-blocking and
+   * a dashboard approval queue that could never actually be cleared.
+   * This closes them as Scope A so the queue only ever holds genuine,
+   * un-executed proposals.
+   */
+  private async autoTriageHeartbeatApprovals(): Promise<void> {
+    try {
+      const { get_database } = await import('../../database/connection.js');
+      const db = get_database();
+      const now = new Date();
+      const res = await db.collection('episodic_events').updateMany(
+        {
+          'metadata.status': 'pending_approval',
+          event_type: 'heartbeat_action',
+        },
+        {
+          $set: {
+            'metadata.status': 'completed',
+            'metadata.task_status': 'completed',
+            'metadata.scope': 'A',
+            'metadata.auto_triaged': true,
+            'metadata.auto_triaged_at': now,
+            'metadata.auto_triage_reason':
+              'heartbeat_action records an already-completed investigation (content Status: completed) — approval not applicable',
+          },
+        },
+      );
+      if (res.modifiedCount > 0) {
+        console.log(`⚖️ Auto-triaged ${res.modifiedCount} heartbeat_action approvals → Scope A (already completed, no approval needed)`);
+      }
+    } catch (e: any) {
+      console.warn('⚠️ Auto-triage of heartbeat approvals failed:', e.message);
+    }
   }
 
   /**

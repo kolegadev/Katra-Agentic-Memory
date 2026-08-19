@@ -257,7 +257,11 @@ export const create_admin_routes = (): Hono => {
           entity: (p.content?.message || '').match(/Entity: (.+)/)?.[1] || 'unknown',
           assigned_agent: p.metadata?.assigned_agent || '',
           confidence: p.metadata?.confidence || 0,
-          scope: 'B',
+          // Never hardcode scope — read the stored classification. The
+          // heartbeat writes completed investigations as pending_approval;
+          // the auto-triage closes those as Scope A within one cycle, so
+          // anything still listed here is a genuine review item.
+          scope: p.metadata?.scope || (p.event_type === 'heartbeat_action' ? 'A' : '—'),
           action: (p.content?.message || '').match(/Output: (.+)/)?.[1] || '',
           status: p.metadata?.status || 'pending_approval',
         })),
