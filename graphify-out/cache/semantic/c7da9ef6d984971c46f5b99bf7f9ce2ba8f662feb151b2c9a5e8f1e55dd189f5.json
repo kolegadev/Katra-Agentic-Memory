@@ -1,1 +1,0 @@
-{"nodes": [{"id": "agent_pubsub_guide", "label": "Agent Pub-Sub Guide", "file_type": "document", "source_file": "docs/AGENT-PUBSUB-GUIDE.md"}], "edges": [{"source": "agent_pubsub_guide", "target": "agent_bus_redis", "relation": "references", "confidence": "EXTRACTED", "confidence_score": 1.0, "source_file": "docs/AGENT-PUBSUB-GUIDE.md"}], "hyperedges": []}

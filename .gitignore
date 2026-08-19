@@ -23,3 +23,5 @@ terraform/aws/.terraform.lock.hcl
 # Helm chart dependencies (already in Chart.lock)
 helm/katra/charts/
 server/src/graphify-out/
+graphify-out/
+**/SKILL.md.bak

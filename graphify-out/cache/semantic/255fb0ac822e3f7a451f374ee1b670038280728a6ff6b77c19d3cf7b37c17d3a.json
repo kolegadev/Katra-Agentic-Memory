@@ -1,1 +1,0 @@
-{"nodes": [{"id": "migration_md", "label": "Migration Guide", "file_type": "document", "source_file": "docs/MIGRATION.md"}], "edges": [{"source": "migration_md", "target": "katra_server", "relation": "references", "confidence": "EXTRACTED", "confidence_score": 1.0, "source_file": "docs/MIGRATION.md"}], "hyperedges": []}
