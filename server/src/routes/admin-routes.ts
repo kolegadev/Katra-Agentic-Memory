@@ -10,6 +10,7 @@ import { getMemoryScope, invalidateScopeCache, DEFAULT_USER_ID } from '../servic
 import { get_llm_config_from_db, save_llm_config_to_db, type LLMConfig } from '../services/infrastructure/llm-service.js';
 import { entityResolver } from '../services/integration/entity-resolver.js';
 import { create_rate_limiter } from '../middleware/rate-limit.js';
+import { getAgentIdentity, setAgentIdentity } from '../services/infrastructure/agent-identity.js';
 import { validateKatraKey } from '../utils/api-key-manager.js';
 import { SleepConsolidationService } from '../services/processing/sleep-consolidation-service.js';
 import { escape_regex } from '../utils/regex-escape.js';
@@ -32,6 +33,7 @@ export const create_admin_routes = (): Hono => {
       '/admin/pubsub/muted', '/api/v1/admin/pubsub/muted',
       '/admin/personality', '/api/v1/admin/personality',
       '/admin/personality/profiles', '/api/v1/admin/personality/profiles',
+      '/admin/identity', '/api/v1/admin/identity',
     ];
     if (readOnlyPaths.includes(c.req.path)) {
       return next();
@@ -1594,6 +1596,48 @@ export const create_admin_routes = (): Hono => {
     } catch (error: any) {
       console.error('Personality put error:', error.message);
       return c.json({ success: false, error: 'Internal server error' }, 500);
+    }
+  });
+
+  /**
+   * GET /api/v1/admin/identity
+   * The name the memory holds for its own inhabitant. Read-only, no auth
+   * required — the dashboard reads it on load to title the page.
+   */
+  router.get('/identity', async (c) => {
+    try {
+      const identity = await getAgentIdentity();
+      return c.json({ success: true, identity });
+    } catch (error: any) {
+      console.error('Identity get error:', error.message);
+      return c.json({ success: false, error: 'Internal server error' }, 500);
+    }
+  });
+
+  /**
+   * PUT /api/v1/admin/identity
+   * Set the agent identity name. Requires admin auth.
+   * Body: { name: string, chosen_by?: string, confirmed_by?: string,
+   *         rationale?: string, established?: string }
+   */
+  router.put('/identity', async (c) => {
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      const name = String(body?.name || '').trim();
+      if (!name || name.length > 80) {
+        return c.json({ success: false, error: 'name required (max 80 chars)' }, 400);
+      }
+      const identity = await setAgentIdentity({
+        name,
+        chosen_by: String(body?.chosen_by || 'dashboard'),
+        confirmed_by: body?.confirmed_by ? String(body.confirmed_by) : undefined,
+        rationale: body?.rationale ? String(body.rationale) : undefined,
+        established: body?.established || new Date().toISOString().slice(0, 10),
+      });
+      return c.json({ success: true, identity });
+    } catch (error: any) {
+      console.error('Identity put error:', error.message);
+      return c.json({ success: false, error: error.message || 'Internal server error' }, 500);
     }
   });
 

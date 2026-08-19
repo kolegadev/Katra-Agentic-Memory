@@ -37,6 +37,7 @@ import { startMcpServer } from './mcp-server.js';
 import { isMultiTenant, runWithTenant } from './database/tenant-context.js';
 import { resolveTenant, initTenantSystem } from './services/integration/tenant-service.js';
 import { ensureApiKeys, logGeneratedKeys, validateKatraKey, isKatraAuthConfigured } from './utils/api-key-manager.js';
+import { getAgentIdentityName } from './services/infrastructure/agent-identity.js';
 
 dotenv.config();
 
@@ -45,10 +46,6 @@ const MCP_PORT = parseInt(process.env.MCP_PORT || '3100');
 const HOST = process.env.HOST || '0.0.0.0';
 
 async function main() {
-  console.log('═══════════════════════════════════════════');
-  console.log('  Katra — Cognitive Memory as a Service');
-  console.log('═══════════════════════════════════════════');
-
   // Connect to MongoDB with retry (handles Pi5 cold-start race where
   // Mongo auth takes longer than docker-compose healthcheck allows)
   const maxRetries = 5;
@@ -63,6 +60,13 @@ async function main() {
     }
   }
   console.log(`  MongoDB: ${mongoOk ? '✅ connected' : '⚠️ offline mode'}`);
+
+  // The banner asks the memory who it is — printed after the connection
+  // so the stored identity name is available.
+  const identityName = await getAgentIdentityName();
+  console.log('═══════════════════════════════════════════');
+  console.log(`  ${identityName} — Cognitive Memory as a Service`);
+  console.log('═══════════════════════════════════════════');
 
   // Ensure API keys are available (generate + persist if missing).
   // validateKatraKey() / validateMcpKey() are now the authoritative validators;
@@ -151,7 +155,8 @@ async function main() {
         c.req.path === '/api/v1/admin/pubsub/topics' ||
         c.req.path === '/api/v1/admin/pubsub/muted' ||
         c.req.path === '/api/v1/admin/personality' ||
-        c.req.path === '/api/v1/admin/personality/profiles') {
+        c.req.path === '/api/v1/admin/personality/profiles' ||
+        c.req.path === '/api/v1/admin/identity') {
       return next();
     }
 

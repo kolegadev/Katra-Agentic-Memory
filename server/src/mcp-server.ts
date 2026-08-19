@@ -34,6 +34,7 @@ import dotenv from 'dotenv';
 import { z } from 'zod';
 import { zodToJsonSchema } from 'zod-to-json-schema';
 import { connect_to_mongodb, get_database, is_database_connected } from './database/connection.js';
+import { getAgentIdentityName } from './services/infrastructure/agent-identity.js';
 import { get_redis_client, is_redis_healthy } from './database/redis-connection.js';
 import { working_memory_service } from './services/memory/working-memory-service.js';
 import {
@@ -147,7 +148,8 @@ function getMcpHost(): string {
 // ── Initialize services ────────────────────────────────────────────
 
 async function initializeServices(): Promise<void> {
-  console.error('🔧 Initializing Katra MCP Server v3.0...');
+  const identityName = await getAgentIdentityName();
+  console.error(`🔧 Initializing ${identityName} MCP Server v3.0...`);
 
   try {
     await connect_to_mongodb();
@@ -187,7 +189,7 @@ async function initializeServices(): Promise<void> {
     console.error('  ⚠️ Embedding service unavailable (Alpine/musl?) — keyword search only');
   }
 
-  console.error('✅ MCP Memory Server ready (v3.0 — Katra Cognitive Memory)');
+  console.error(`✅ MCP Memory Server ready (v3.0 — ${identityName} Cognitive Memory)`);
 }
 
 // ── Zod schemas ────────────────────────────────────────────────────
@@ -3041,9 +3043,12 @@ export async function handleCodeGraphStatus(args: unknown): Promise<TextContent[
   return [{ type: 'text', text: lines.join('\n') }];
 }
 
-function createMCPServer() {
+async function createMCPServer() {
+  // The server asks its memory who it is — the name presented to MCP
+  // clients comes from the stored agent identity, not from code.
+  const name = await getAgentIdentityName();
   return new Server(
-    { name: 'cognitive-memory', version: '3.0.0' },
+    { name, version: '3.0.0' },
     { capabilities: { tools: {}, resources: {}, prompts: {} } }
   );
 }
@@ -3449,7 +3454,7 @@ async function startHTTPServer(): Promise<void> {
         };
         // Create a new Server instance per transport — the SDK's Server class
         // only allows one transport connection at a time.
-        const sessionServer = createMCPServer();
+        const sessionServer = await createMCPServer();
         registerHandlers(sessionServer);
         await sessionServer.connect(transport);
         transport.onclose = () => {
@@ -3501,11 +3506,12 @@ async function startHTTPServer(): Promise<void> {
     res.end(JSON.stringify({ error: 'Not found', endpoints: ['/mcp', '/health'] }));
   });
 
+  const identityName = await getAgentIdentityName();
   httpServer.listen(getMcpPort(), getMcpHost(), () => {
-    console.error(`🚀 Katra MCP Server v3.0 running on http://${getMcpHost()}:${getMcpPort()}`);
+    console.error(`🚀 ${identityName} MCP Server v3.0 running on http://${getMcpHost()}:${getMcpPort()}`);
     console.error(`   MCP endpoint: http://${getMcpHost()}:${getMcpPort()}/mcp`);
     console.error(`   Health:       http://${getMcpHost()}:${getMcpPort()}/health`);
-    console.error(`   Mode:         Katra Cognitive Memory`);
+    console.error(`   Mode:         ${identityName} Cognitive Memory`);
   });
 }
 
@@ -3519,11 +3525,11 @@ async function startStdioServer(): Promise<void> {
     console.error('❌ MCP_API_KEY not configured. Set MCP_API_KEY in .env to enable the MCP server.');
     process.exit(1);
   }
-  const server = createMCPServer();
+  const server = await createMCPServer();
   registerHandlers(server);
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error('🚀 Katra MCP Server v3.0 running on stdio');
+  console.error(`🚀 ${await getAgentIdentityName()} MCP Server v3.0 running on stdio`);
 }
 
 // ── Helpers ────────────────────────────────────────────────────────

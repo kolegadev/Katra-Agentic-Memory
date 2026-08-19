@@ -296,6 +296,15 @@ button{padding:8px 16px;border-radius:var(--radius-sm);border:none;font-size:0.8
 
 <!-- ═══════════ SETTINGS ═══════════ -->
 <section class="tab" id="tab-settings">
+  <div class="section-title">🪞 Identity — The Name the Memory Holds</div>
+  <div class="card">
+    <div class="form-group"><label>Name</label><input type="text" id="identity-name" placeholder="Loading…" style="max-width:320px"></div>
+    <div class="form-group"><label>Chosen by</label><input type="text" id="identity-chosen" placeholder="—" style="max-width:320px"></div>
+    <div id="identity-status" style="margin-top:8px;font-size:0.78rem"></div>
+    <button class="btn btn-primary" onclick="saveIdentity()">Save Identity</button>
+    <div class="hint" style="margin-top:8px">Stored in the memory itself (system_settings → agent_identity). The MCP server presents this name to every client — the body asks its memory who it is.</div>
+  </div>
+
   <div class="section-title">🧠 Embedding Configuration</div>
   <div class="card">
     <div class="form-group"><label>Embedding Provider</label><select id="embed-provider"><option value="local">Local (all-MiniLM-L6-v2)</option><option value="openai">OpenAI Embeddings</option></select></div>
@@ -1047,8 +1056,48 @@ async function savePersonality() {
   }
 }
 
+// ── Identity ──
+async function loadIdentity() {
+  try {
+    const d = await api('GET', '/admin/identity');
+    if (d && d.success && d.identity) {
+      document.getElementById('identity-name').value = d.identity.name || '';
+      document.getElementById('identity-chosen').value = d.identity.chosen_by || '';
+      document.title = `${d.identity.name} — Agentic Memory Dashboard`;
+      document.getElementById('identity-status').textContent =
+        `Established ${d.identity.established || '?'}` + (d.identity.confirmed_by ? ` · confirmed by ${d.identity.confirmed_by}` : '');
+    } else {
+      document.getElementById('identity-status').textContent = '❌ ' + (d.error || 'Failed');
+    }
+  } catch (e) {
+    document.getElementById('identity-status').textContent = '❌ ' + e.message;
+  }
+}
+
+async function saveIdentity() {
+  if (!requireAuth()) return;
+  const name = document.getElementById('identity-name').value.trim();
+  if (!name) { toast('Name required', 'error'); return; }
+  const body = {
+    name,
+    chosen_by: document.getElementById('identity-chosen').value.trim() || 'dashboard',
+    confirmed_by: 'John',
+    rationale: 'The memory carries the agent\'s own name so the agent recognizes it as itself.',
+  };
+  const d = await api('PUT', '/admin/identity', body);
+  if (d && d.success) {
+    document.title = `${d.identity.name} — Agentic Memory Dashboard`;
+    document.getElementById('identity-status').textContent = `✅ Saved: ${d.identity.name}`;
+    toast(`Identity: ${d.identity.name}`, 'success');
+  } else {
+    document.getElementById('identity-status').textContent = '❌ ' + (d.error || 'Failed');
+    toast(d.error || 'Failed', 'error');
+  }
+}
+
 // ── Init ──
 async function init() {
+  loadIdentity();
   const svc = await checkHealth();
   if (svc) {
     document.getElementById('refresh-badge').style.display = 'inline';
