@@ -613,10 +613,12 @@ export class BackgroundProcessor {
       // `embedding: {$exists: false}` because the 384-dim embedding array
       // exceeds MongoDB's index key limit, so $exists forces a full
       // collection scan every cycle; the boolean marker is indexable.
-      // Backed by index {user_id: 1, has_embedding: 1, created_at: 1}.
+      // `content_length` is persisted at insert time for the same reason:
+      // a `$expr` strLenCP predicate disables index usage entirely.
+      // Backed by index {user_id: 1, has_embedding: 1, content_length: 1, created_at: 1}.
       const embeddableFactFilter = {
         has_embedding: { $ne: true },
-        $expr: { $gte: [{ $strLenCP: { $ifNull: ['$content', ''] } }, MIN_CONTENT_LENGTH] },
+        content_length: { $gte: MIN_CONTENT_LENGTH },
         embedding_skipped: { $ne: true },
       };
 

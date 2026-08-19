@@ -385,6 +385,7 @@ export class ReflectionStore {
     await db.collection('semantic_facts').insertOne({
       user_id: userId,
       content: 'RESOLVED THREAD: ' + threadText,
+      content_length: [...('RESOLVED THREAD: ' + threadText)].length,
       category: 'fact',
       source: 'resolve_thread_tool',
       confidence: 1.0,

@@ -728,6 +728,7 @@ export class LearningFeedbackService {
                 semantic_facts.push({
                     id: uuidv4(),
                     content: `Consolidated knowledge about ${theme}`,
+                    content_length: [...`Consolidated knowledge about ${theme}`].length,
                     confidence: group_memories.reduce((sum, m) => sum + m.composite_quality_score, 0) / group_memories.length,
                     source_memories: group_memories.map(m => m.memory_id),
                     created_at: new Date(),

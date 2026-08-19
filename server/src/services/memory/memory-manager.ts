@@ -270,6 +270,10 @@ export class MemoryManager {
         ...factFields,
         user_id: userId,
         content_hash: contentHash,
+        // Persisted content length (code points) so hot-path queries
+        // (embed-candidate selection, memory-integrity checks) can filter by
+        // it with an index instead of a $expr strLenCP full-collection scan.
+        content_length: [...(fact.content || '')].length,
         updated_at: new Date(),
       };
 

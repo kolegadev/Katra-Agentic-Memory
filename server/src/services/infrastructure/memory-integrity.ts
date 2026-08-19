@@ -71,21 +71,21 @@ export class MemoryIntegrityService {
       const staleDate = new Date();
       staleDate.setDate(staleDate.getDate() - STALE_THRESHOLD_DAYS);
 
+      // 2a. Stale facts: no embeddings AND last_accessed older than threshold.
+      // `has_embedding: {$ne: true}` (indexed) replaces the `embedding`
+      // $exists/$size checks: the 384-dim embedding array cannot be indexed,
+      // and those checks forced a ~575k-doc COLLSCAN with a $expr per doc on
+      // EVERY health call — measured at ~10s of query time per 2 minutes,
+      // keeping mongod pinned. The marker narrows the candidate set to the
+      // few hundred genuinely un-embedded facts before the $expr applies.
       const staleCount = await semanticCollection.countDocuments({
-        $or: [
-          { embedding: { $exists: false } },
-          { embedding: { $size: 0 } },
-        ],
+        has_embedding: { $ne: true },
         // Only count facts long enough to warrant embedding;
         // short facts are intentionally not embedded per embedding policy.
-        $expr: { $gte: [{ $strLenCP: { $ifNull: ['$content', ''] } }, MIN_CONTENT_LENGTH_FOR_EMBEDDING] },
-        $and: [
-          {
-            $or: [
-              { last_accessed: { $lt: staleDate } },
-              { last_accessed: { $exists: false } },
-            ],
-          },
+        content_length: { $gte: MIN_CONTENT_LENGTH_FOR_EMBEDDING },
+        $or: [
+          { last_accessed: { $lt: staleDate } },
+          { last_accessed: { $exists: false } },
         ],
       });
       report.semantic_facts.stale = staleCount;
@@ -93,12 +93,8 @@ export class MemoryIntegrityService {
       // 2b. Missing embeddings for substantive content
       const missingEmbeddings = await semanticCollection.countDocuments({
         content: { $exists: true },
-        $expr: { $gte: [{ $strLenCP: '$content' }, MIN_CONTENT_LENGTH_FOR_EMBEDDING] },
-        $or: [
-          { embedding: { $exists: false } },
-          { embedding: { $size: 0 } },
-          { embedding_model: { $exists: false } },
-        ],
+        has_embedding: { $ne: true },
+        content_length: { $gte: MIN_CONTENT_LENGTH_FOR_EMBEDDING },
         // Not recently created (give them time to process)
         created_at: { $lt: new Date(Date.now() - 3600000) },
       });
@@ -152,8 +148,24 @@ export class MemoryIntegrityService {
     return report;
   }
 
-  /** Get the most recent integrity report (or run a fresh one). */
+  /**
+   * Get the most recent integrity report, cached for a short TTL.
+   *
+   * The Docker healthcheck, the MCP get_health tool, and external watchers
+   * all call this every few seconds — profiling showed the raw checks
+   * scanning ~25M docs per 2 minutes and pinning mongod. One computation
+   * per minute serves all callers; the checks are counters, not events,
+   * so a 60s staleness window is safe.
+   */
+  private static readonly CACHE_TTL_MS = 60_000;
+  private lastComputedAt = 0;
+
   async getIntegrityReport(): Promise<IntegrityReport> {
+    const now = Date.now();
+    if (this.lastReport && now - this.lastComputedAt < MemoryIntegrityService.CACHE_TTL_MS) {
+      return this.lastReport;
+    }
+    this.lastComputedAt = now;
     return await this.runIntegrityCheck();
   }
 

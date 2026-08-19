@@ -109,9 +109,11 @@ export class ConsolidationOutputBus {
         consolidation_run_at: new Date().toISOString(),
       };
 
+      const factContent = `Consolidation run for ${profile.userId}: ${(summary.expertise_domains as any[]).length} expertise areas, ${(summary.interest_areas as any[]).length} interests, ${(summary.top_entities as any[]).length} key entities. Knowledge depth trend: ${summary.knowledge_depth_trend}.`;
       await db.collection('semantic_facts').insertOne({
         ...summary,
-        content: `Consolidation run for ${profile.userId}: ${(summary.expertise_domains as any[]).length} expertise areas, ${(summary.interest_areas as any[]).length} interests, ${(summary.top_entities as any[]).length} key entities. Knowledge depth trend: ${summary.knowledge_depth_trend}.`,
+        content: factContent,
+        content_length: [...factContent].length,
         category: 'fact',
         source: 'consolidation-output-bus',
         confidence: 0.9,

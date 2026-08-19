@@ -377,6 +377,7 @@ SUMMARY:`;
       user_id: summary.user_id,
       fact_type: 'time_block_summary',
       content: summary.summary,
+      content_length: [...(summary.summary || '')].length,
       topic: `time_block_${summary.block_type}`,
       confidence: 0.7,
       metadata: {

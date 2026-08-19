@@ -35,7 +35,7 @@ async function main() {
 
   const filter = {
     has_embedding: { $ne: true },
-    $expr: { $gte: [{ $strLenCP: { $ifNull: ['$content', ''] } }, MIN_LEN] },
+    content_length: { $gte: MIN_LEN },
   };
   if (USER_ID) filter.user_id = USER_ID;
 
