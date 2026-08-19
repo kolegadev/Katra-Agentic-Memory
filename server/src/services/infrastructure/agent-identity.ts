@@ -22,9 +22,16 @@ export interface AgentIdentity {
   established: string;
   rationale?: string;
   updated_at?: string;
+  /**
+   * True while the identity is still the built-in fallback — i.e. the
+   * memory has never been named by its owner. The dashboard uses this to
+   * show the first-run onboarding prompt; a fresh install names itself
+   * instead of inheriting anyone else's name.
+   */
+  is_default?: boolean;
 }
 
-const LEGACY_DEFAULT_NAME = 'Katra';
+const LEGACY_DEFAULT_NAME = 'Unnamed Memory';
 
 async function getStoredIdentity(): Promise<AgentIdentity | null> {
   try {
@@ -48,13 +55,16 @@ export async function getAgentIdentity(): Promise<AgentIdentity> {
       name: envName,
       chosen_by: 'environment (AGENT_IDENTITY_NAME)',
       established: new Date().toISOString().slice(0, 10),
+      is_default: false,
     };
   }
   return {
     name: LEGACY_DEFAULT_NAME,
-    chosen_by: 'legacy default',
-    established: '2025-01-01',
-    rationale: 'No identity record stored yet — set one via the dashboard Identity settings or PUT /api/v1/admin/identity.',
+    chosen_by: 'not yet named',
+    established: 'not established',
+    rationale:
+      'This memory has not been named yet. The dashboard onboarding will ask its owner to give it a name — the identity every MCP client will see.',
+    is_default: true,
   };
 }
 

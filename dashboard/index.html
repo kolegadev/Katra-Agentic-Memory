@@ -111,7 +111,7 @@ button{padding:8px 16px;border-radius:var(--radius-sm);border:none;font-size:0.8
 <div class="app">
   <aside class="sidebar">
     <div class="sidebar-brand">
-      <h1>Katra</h1>
+      <h1 id="brand-name">…</h1>
       <span>Agentic Memory Dashboard</span>
     </div>
     <nav class="sidebar-nav" id="nav">
@@ -140,6 +140,15 @@ button{padding:8px 16px;border-radius:var(--radius-sm);border:none;font-size:0.8
 
 <!-- ═══════════ OVERVIEW ═══════════ -->
 <section class="tab active" id="tab-overview">
+  <div class="card" id="identity-onboarding" style="display:none;border-color:var(--amber);margin-bottom:14px">
+    <div class="card-title">🪞 This memory system has no name yet</div>
+    <p style="color:var(--text2);margin:4px 0 12px">Give it a name — this is the identity your agents will see and carry. Choose something that means something to you.</p>
+    <div class="input-row">
+      <input type="text" id="onboarding-name" placeholder="e.g. Atlas, Juno, Quill…" style="flex:1;max-width:320px">
+      <button class="btn btn-primary" onclick="nameOnboarding()">Name it</button>
+    </div>
+    <div class="hint" style="margin-top:8px">Stored in the memory itself — every MCP handshake will present this name.</div>
+  </div>
   <div class="cards cols-4" id="overview-cards"></div>
   <div class="cards cols-2" id="service-cards"></div>
   <div class="card" style="margin-top:14px" id="pending-approvals-card">
@@ -1064,6 +1073,10 @@ async function loadIdentity() {
       document.getElementById('identity-name').value = d.identity.name || '';
       document.getElementById('identity-chosen').value = d.identity.chosen_by || '';
       document.title = `${d.identity.name} — Agentic Memory Dashboard`;
+      const brand = document.getElementById('brand-name');
+      if (brand) brand.textContent = d.identity.is_default ? 'Unnamed Memory' : (d.identity.name || '…');
+      const onboarding = document.getElementById('identity-onboarding');
+      if (onboarding) onboarding.style.display = d.identity.is_default ? 'block' : 'none';
       document.getElementById('identity-status').textContent =
         `Established ${d.identity.established || '?'}` + (d.identity.confirmed_by ? ` · confirmed by ${d.identity.confirmed_by}` : '');
     } else {
@@ -1086,13 +1099,41 @@ async function saveIdentity() {
   };
   const d = await api('PUT', '/admin/identity', body);
   if (d && d.success) {
-    document.title = `${d.identity.name} — Agentic Memory Dashboard`;
-    document.getElementById('identity-status').textContent = `✅ Saved: ${d.identity.name}`;
+    applyIdentity(d.identity);
     toast(`Identity: ${d.identity.name}`, 'success');
   } else {
     document.getElementById('identity-status').textContent = '❌ ' + (d.error || 'Failed');
     toast(d.error || 'Failed', 'error');
   }
+}
+
+async function nameOnboarding() {
+  if (!requireAuth()) return;
+  const name = document.getElementById('onboarding-name').value.trim();
+  if (!name) { toast('Name required', 'error'); return; }
+  const d = await api('PUT', '/admin/identity', {
+    name,
+    chosen_by: 'owner (first-run onboarding)',
+    rationale: 'Named by its owner on first run — the identity every agent will carry.',
+  });
+  if (d && d.success) {
+    applyIdentity(d.identity);
+    const onboarding = document.getElementById('identity-onboarding');
+    if (onboarding) onboarding.style.display = 'none';
+    toast(`Welcome, ${d.identity.name}`, 'success');
+  } else {
+    toast(d.error || 'Failed', 'error');
+  }
+}
+
+function applyIdentity(identity) {
+  document.title = `${identity.name} — Agentic Memory Dashboard`;
+  const brand = document.getElementById('brand-name');
+  if (brand) brand.textContent = identity.name;
+  document.getElementById('identity-name').value = identity.name || '';
+  document.getElementById('identity-chosen').value = identity.chosen_by || '';
+  document.getElementById('identity-status').textContent =
+    `Established ${identity.established || '?'}` + (identity.confirmed_by ? ` · confirmed by ${identity.confirmed_by}` : '');
 }
 
 // ── Init ──

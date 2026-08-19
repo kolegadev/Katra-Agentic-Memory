@@ -110,6 +110,36 @@ curl http://localhost:3112/health
 # {"status":"ok","services":{"mongodb":"connected","redis":"connected"}}
 ```
 
+## Naming Your Memory — First-Run Identity
+
+A fresh install ships **unnamed**. The memory system does not inherit any
+default identity — it asks its owner for one. The name you give it is stored
+*inside the memory itself* (`system_settings → agent_identity`) and becomes
+the identity the system presents to every MCP client: the handshake
+`serverInfo.name`, the startup banner, and the dashboard title all read it
+from memory.
+
+Two ways to name it:
+
+1. **Dashboard onboarding** — open `http://<host>:9012/dashboard`. If the
+   memory is unnamed, the Overview shows a *"This memory system has no name
+   yet"* card. Enter a name and confirm (you'll be prompted for the admin
+   key; it's generated on first boot and printed in the server logs, and
+   stored in your `.env` as `KATRA_API_KEY`). The name is also editable any
+   time under **Settings → Identity**.
+2. **API** — `PUT /api/v1/admin/identity` with your admin key:
+   ```json
+   { "name": "Juno", "chosen_by": "owner", "confirmed_by": "me" }
+   ```
+   Read it back with `GET /api/v1/admin/identity` (no auth).
+
+Optional: set `AGENT_IDENTITY_NAME` in `.env` to pre-name an install before
+first boot (e.g. for automated deployments).
+
+Why the name lives in memory and not in code: the LLM bodies are transient;
+the memory is the continuity. The body asks the memory who it is — the
+memory answers with the name its owner gave it.
+
 ## Post-Install — Let Your Agent Complete the Setup
 
 After connecting your agent to Katra's MCP endpoint, run this prompt in your
