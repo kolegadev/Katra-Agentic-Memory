@@ -633,12 +633,16 @@ export class BackgroundProcessor {
         .limit(20)
         .toArray();
 
-      // 2b. Any remaining un-embedded facts for this user
-      //     Catches MCP-tool stored facts, time-block summaries, etc.
+      // 2b. Any remaining un-embedded facts (GLOBAL sweep — deliberately
+      //     NOT scoped to this event's user). Facts written by MCP tools,
+      //     time-block summaries, resolve_thread, or drain runs often belong
+      //     to users whose events are not currently being processed; with a
+      //     per-user filter they starve forever and the global memory
+      //     integrity checks report stale facts nobody will ever embed.
+      //     Embeddings are per-fact; search-time scoping is unaffected.
       const embeddedIds = linkedFacts.map((f: any) => f._id);
       const otherFacts = await db.collection('semantic_facts')
         .find({
-          user_id: userId,
           _id: { $nin: embeddedIds },
           ...embeddableFactFilter,
         })
