@@ -100,6 +100,7 @@ services:
       # must be mounted; use the container paths (/repos/...) as scan roots.
       - ./server:/repos/katra-server:ro
       - ../RankPilot:/repos/rankpilot:ro
+      - ../sweet-moments:/repos/sweet-moments:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
