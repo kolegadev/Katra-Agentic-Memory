@@ -18,6 +18,7 @@ import { SelfModelService } from './self-model-service.js';
 import { DecisionActionService } from './decision-action-service.js';
 import { get_database } from '../../database/connection.js';
 import { DEFAULT_USER_ID } from '../memory/memory-scope-service.js';
+import { MIN_CONTENT_LENGTH } from '../infrastructure/embedding-service.js';
 import { autonomousActionPipeline } from '../orchestration/autonomous-action-pipeline.js';
 
 // Adaptive cadence — like a biological heart:
@@ -34,6 +35,16 @@ const CADENCE_REST_MS       = 60 * 60 * 1000;  // 60 minutes — resting
 
 const DEFICIT_THRESHOLD = 0.3;
 const SURVIVAL_URGENCY_THRESHOLD = 0.2; // survival deficit > 0.2 → adrenaline mode
+
+// Embedding-policy filter, kept in sync with background-processor.ts and
+// memory-integrity.ts. Facts below MIN_CONTENT_LENGTH or quality-skipped
+// are intentionally never embedded — counting them as "missing" produces
+// false pipeline-failure alarms (health-check-persistent-fail livelock).
+const EMBEDDABLE_FACT_FILTER = {
+  has_embedding: { $ne: true },
+  content_length: { $gte: MIN_CONTENT_LENGTH },
+  embedding_skipped: { $ne: true },
+};
 
 const DEFICIT_GOAL_TEMPLATES: Record<DriveName, string[]> = {
   coherence: [
@@ -109,31 +120,41 @@ const REMEDIATIONS: Remediation[] = [
     scope: 'autonomous',
     condition: async () => {
       const db = get_database();
-      const missing = await db.collection('semantic_facts').countDocuments({
-        embedding: { $exists: false },
-      });
-      return { needed: missing > 10, detail: missing + ' facts missing embeddings' };
+      // Policy-aligned filter (mirrors background-processor.ts): only
+      // count facts the embedding policy actually permits — substantive
+      // content, not quality-skipped, no vector yet. Counting raw
+      // `embedding: {$exists: false}` drags in legacy junk facts the
+      // policy deliberately never embeds and keeps this action
+      // livelocked at "Embedded 0/20".
+      const missing = await db.collection('semantic_facts').countDocuments(EMBEDDABLE_FACT_FILTER);
+      return { needed: missing > 10, detail: missing + ' embeddable facts missing embeddings' };
     },
     remediate: async () => {
       try {
         const { embeddingService } = await import('../infrastructure/embedding-service.js');
         const db = get_database();
         const facts = await db.collection('semantic_facts')
-          .find({ embedding: { $exists: false } })
+          .find(EMBEDDABLE_FACT_FILTER)
+          .sort({ created_at: 1 })
           .limit(20)
           .toArray();
-        if (facts.length === 0) return { success: true, summary: 'No facts to embed' };
+        if (facts.length === 0) return { success: true, summary: 'No embeddable facts to embed' };
         const texts = facts.map((f: any) => ({ text: f.content || '', eventType: 'semantic_fact' }));
         const embeddings = await embeddingService.encodeBatch(texts);
         let count = 0;
         for (let i = 0; i < facts.length; i++) {
           if (embeddings[i]) {
-            await db.collection('semantic_facts').updateOne(
-              { _id: facts[i]._id },
-              { $set: { embedding: Array.from(embeddings[i]) } }
-            );
+            // storeEmbedding writes the vector AND the has_embedding
+            // marker, so the fact leaves the candidate queue for good.
+            await embeddingService.storeEmbedding('semantic_facts', facts[i]._id, embeddings[i]);
             count++;
           }
+        }
+        if (count === 0 && facts.length > 0) {
+          // Zero accepted candidates is the livelock signature, not a
+          // success. Surface it as a failure so the executive does not
+          // keep retrying the same rejected queue forever.
+          return { success: false, summary: 'Embedded 0/' + facts.length + ' — candidates rejected by quality filter; mark as embedding_skipped or purge junk' };
         }
         return { success: true, summary: 'Embedded ' + count + '/' + facts.length + ' facts' };
       } catch (e: any) {
@@ -229,19 +250,21 @@ const REMEDIATIONS: Remediation[] = [
     condition: async () => {
       const db = get_database();
       const sixHoursAgo = new Date(Date.now() - 6 * 60 * 60 * 1000);
+      // Policy-aligned: raw `embedding: {$exists: false}` counts legacy
+      // junk facts the policy never embeds, which made this check fire
+      // forever even though the pipeline was healthy (see 2026-08-20
+      // "auto-fix embedded 0 of 20" false alarm).
       const staleFacts = await db.collection('semantic_facts').countDocuments({
-        embedding: { $exists: false },
+        ...EMBEDDABLE_FACT_FILTER,
         created_at: { $lt: sixHoursAgo },
       });
-      const missingEmbeddings = await db.collection('semantic_facts').countDocuments({
-        embedding: { $exists: false },
-      });
+      const missingEmbeddings = await db.collection('semantic_facts').countDocuments(EMBEDDABLE_FACT_FILTER);
       // Only flag if there are many missing embeddings AND they're old (not just cold-start backlog)
-      if (missingEmbeddings < 20) return { needed: false, detail: missingEmbeddings + ' facts pending embedding (normal)' };
+      if (missingEmbeddings < 20) return { needed: false, detail: missingEmbeddings + ' embeddable facts pending embedding (normal)' };
       if (staleFacts > 10) {
-        return { needed: true, detail: staleFacts + ' facts stale > 6h without embeddings — possible embedding pipeline failure' };
+        return { needed: true, detail: staleFacts + ' embeddable facts stale > 6h without embeddings — possible embedding pipeline failure' };
       }
-      return { needed: false, detail: missingEmbeddings + ' facts pending embedding (recent)' };
+      return { needed: false, detail: missingEmbeddings + ' embeddable facts pending embedding (recent)' };
     },
     remediate: async () => {
       return { success: false, summary: 'Code remediation required: embedding pipeline may need investigation' };
