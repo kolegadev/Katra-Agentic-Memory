@@ -3507,18 +3507,9 @@ const transportCallerIdentities = new WeakMap<object, CallerIdentity>();
 
 async function startHTTPServer(): Promise<void> {
   const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
-    // F1: resolve the caller identity for this request (loopback / presented key).
-    const callerIdentity = await resolveCallerIdentity({ socket: req.socket, headers: req.headers, url: req.url });
-    if (!(await validateAuth(req, callerIdentity))) {
-      res.writeHead(401, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Unauthorized. Authenticate via X-MCP-Auth, Authorization: Bearer, or ?token= with a key mapped in client_keys' }));
-      return;
-    }
-
-    // F1: run the whole request inside the caller identity so every tool
-    // invocation is attributed to the caller's user_id.
-    await runWithCaller(callerIdentity ?? getCaller(), async () => {
-
+    // Public health probe — exempt from auth (F1 boundary: "the public
+    // health endpoint shape" stays public; compose healthchecks and load
+    // balancers call it without a key).
     if (req.url === '/health') {
       const mongoOk = is_database_connected();
       const redisOk = await is_redis_healthy();
@@ -3556,6 +3547,18 @@ async function startHTTPServer(): Promise<void> {
       }));
       return;
     }
+
+    // F1: resolve the caller identity for this request (loopback / presented key).
+    const callerIdentity = await resolveCallerIdentity({ socket: req.socket, headers: req.headers, url: req.url });
+    if (!(await validateAuth(req, callerIdentity))) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Unauthorized. Authenticate via X-MCP-Auth, Authorization: Bearer, or ?token= with a key mapped in client_keys' }));
+      return;
+    }
+
+    // F1: run the whole request inside the caller identity so every tool
+    // invocation is attributed to the caller's user_id.
+    await runWithCaller(callerIdentity ?? getCaller(), async () => {
 
     if (req.url === '/mcp') {
       const sessionId = req.headers['mcp-session-id'] as string | undefined;
