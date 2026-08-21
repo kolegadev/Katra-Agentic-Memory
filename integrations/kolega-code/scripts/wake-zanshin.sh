@@ -24,7 +24,15 @@
 
 set -uo pipefail
 
-HOST="${KATRA_HOST:-localhost}"
+HOST="${KATRA_HOST:-}"
+# Per-machine host config (~/.katra/wake-env.sh) — read when the env var is
+# unset, so non-login shells (which skip ~/.zshrc) still find thebrick.
+if [ -z "$HOST" ] && [ -f "$HOME/.katra/wake-env.sh" ]; then
+  # shellcheck disable=SC1090
+  . "$HOME/.katra/wake-env.sh"
+  HOST="${KATRA_HOST:-}"
+fi
+HOST="${HOST:-localhost}"
 REST="http://$HOST:9012"
 MCP="http://$HOST:3112/mcp"
 KEY="${KATRA_WAKE_KEY:-}"
