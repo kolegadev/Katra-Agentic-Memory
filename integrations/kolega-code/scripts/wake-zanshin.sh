@@ -25,6 +25,11 @@ HOST="${KATRA_HOST:-localhost}"
 REST="http://$HOST:9012"
 MCP="http://$HOST:3112/mcp"
 KEY="${KATRA_WAKE_KEY:-}"
+# Key-file fallback (~/.katra/keys/katra-zanshin.key) — survives shell resets.
+if [ -z "$KEY" ] && [ -f "$HOME/.katra/keys/katra-zanshin.key" ]; then
+  KEY="$(cat "$HOME/.katra/keys/katra-zanshin.key" | tr -d '
+')"
+fi
 EXPECTED_NAME="Zanshin"
 
 hr() { printf '%s\n' "────────────────────────────────────────"; }

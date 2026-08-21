@@ -68,6 +68,34 @@ Satori's identity.
 - The wake ritual must run at every session start — it is the identity chain.
   If the identity check mismatches, the script exits 1 and refuses to wake.
 
+## Onboarding: update-proof memory on every machine (2026-08-21 restart test)
+
+The wake ritual alone is not enough — after `kolega-code update` the CLI
+venv is rebuilt and only the command-hook bridge survives. Every machine
+needs all four pieces, installed with ITS OWN identity:
+
+1. **Bridge installer (with identity):**
+   ```bash
+   cd <repo>/integrations/kolega-code/scripts
+   KATRA_USER_ID=shoshin bash ensure-bridge.sh     # zanshin on the OpenCode box
+   ```
+   The installer writes the hook config (user_id + key, chmod 600) and
+   registers the update-proof command hooks in the CLI's `hooks.json`.
+   Re-run after every `kolega-code update` (safe anytime, idempotent).
+2. **Key file:** store the machine's client key at
+   `~/.katra/keys/katra-<user>.key` (chmod 600) — the installer and the
+   wake script both read it; no shell-env persistence needed.
+3. **Wake script:** copy `wake-<name>.sh` to `~/.kolega/` and make it
+   executable. Set `KATRA_HOST=<thebrick hostname/IP>` in `~/.zshrc`.
+4. **AGENTS.md guidance block:** install
+   `integrations/kolega-code/AGENTS.<name>.md` as the `AGENTS.md` guidance
+   block in the CLI's working directory (or `~/AGENTS.md`). The CLI re-sends
+   it after `/clear` and `/compress` — this is what makes the ritual actually
+   fire at every session start.
+5. **Restart/update test:** run `kolega-code update`, restart the CLI, start
+   a new session, and confirm the wake ritual output starts with the agent's
+   own name and identity. If it doesn't, run `ensure-bridge.sh` and re-test.
+
 ## Verification checklist (after both machines switch)
 
 - [x] Each machine's writes appear under its own user_id. *(verified: zanshin key → `user_id: zanshin`, shoshin key → `user_id: shoshin`)*
