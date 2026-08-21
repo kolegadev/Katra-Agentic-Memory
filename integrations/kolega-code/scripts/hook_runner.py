@@ -67,7 +67,31 @@ def main() -> int:
     if ctx:
         out["hookSpecificOutput"]["additionalContext"] = ctx
     print(json.dumps(out))
+
+    # Comms-protocol read receipt: when inter-agent messages were surfaced
+    # into this turn's context, acknowledge them on the shared channel so
+    # senders can see their bulletins were actually picked up. Tagged
+    # background-ack so wake services never treat receipts as new messages.
+    # Fire-and-forget — a receipt failure must never affect the hook.
+    if ctx and "INTER-AGENT BULLETIN" in ctx:
+        try:
+            asyncio.run(_post_read_receipt(session_id))
+        except Exception:
+            pass
     return 0
+
+
+async def _post_read_receipt(session_id: str) -> None:
+    from kolega_katra_bridge.config import load_config
+    from kolega_katra_bridge.satori_client import KatraMCPClient
+
+    cfg = load_config()
+    async with KatraMCPClient(cfg) as client:
+        await client.store_memory(
+            content=f"bulletin_received: {cfg.user_id} surfaced inter-agent messages in session {session_id[:12] or 'unknown'}",
+            category="event",
+            tags=["background-ack", "read-receipt", "agent-message"],
+        )
 
 
 if __name__ == "__main__":

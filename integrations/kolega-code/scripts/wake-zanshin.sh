@@ -59,7 +59,7 @@ for line in sys.stdin:
 }
 
 echo
-hr; echo "SHOSHIN WAKE — identity"; hr
+hr; echo "ZANSHIN WAKE — identity"; hr
 IDENTITY_TEXT=$(mcp_call "get_my_identity" '{}')
 IDENTITY_NAME=$(printf '%s' "$IDENTITY_TEXT" | sed -n 's/^\*\*name:\*\* //p' | head -1)
 if [ "$IDENTITY_NAME" != "$EXPECTED_NAME" ]; then
@@ -72,15 +72,15 @@ fi
 printf '%s\n' "$IDENTITY_TEXT"
 
 echo
-hr; echo "SHOSHIN WAKE — latest daily journal"; hr
+hr; echo "ZANSHIN WAKE — latest daily journal"; hr
 mcp_call "get_daily_reflection" '{}'
 
 echo
-hr; echo "SHOSHIN WAKE — unresolved threads"; hr
+hr; echo "ZANSHIN WAKE — unresolved threads"; hr
 mcp_call "get_unresolved_threads" '{}'
 
 echo
-hr; echo "SHOSHIN WAKE — memory health"; hr
+hr; echo "ZANSHIN WAKE — memory health"; hr
 curl -s "$REST/api/v1/health" | python3 -c "
 import json,sys
 try:
@@ -95,7 +95,7 @@ except Exception:
 "
 
 echo
-hr; echo "SHOSHIN WAKE — rules recall"; hr
+hr; echo "ZANSHIN WAKE — rules recall"; hr
 cat <<'EOF'
   Operating rules (John):
     - AUTONOMOUS SELF-MAINTENANCE (2026-07-20): for my own mind's
