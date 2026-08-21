@@ -5,9 +5,9 @@
  * Implements connection pooling, health checks, and automatic reconnection.
  */
 
-import { createClient, RedisClientType } from 'redis';
+import { createClient } from 'redis';
 
-let redis_client: RedisClientType | null = null;
+let redis_client: ReturnType<typeof createClient> | null = null;
 let connection_attempts = 0;
 let last_failed_attempt = 0;
 const COOLDOWN_MS = 30_000;
@@ -65,7 +65,7 @@ const redis_config = {
 /**
  * Initialize Redis client with connection handling
  */
-async function initialize_redis_client(): Promise<RedisClientType> {
+async function initialize_redis_client(): Promise<ReturnType<typeof createClient>> {
     if (redis_client && redis_client.isReady) {
         return redis_client;
     }
@@ -181,7 +181,7 @@ async function initialize_redis_client(): Promise<RedisClientType> {
  * Get Redis client instance
  * @returns Redis client or null if connection failed
  */
-export async function get_redis_client(): Promise<RedisClientType | null> {
+export async function get_redis_client(): Promise<ReturnType<typeof createClient> | null> {
     try {
         if (redis_client && redis_client.isReady) {
             return redis_client;

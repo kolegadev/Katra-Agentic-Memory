@@ -442,7 +442,7 @@ export class DecisionActionService {
         if (isSurprise) this.surpriseCount++;
       }
       if (recent.length > 0) {
-        console.log('Restored ' + str(recent.length) + ' outcomes from DB');
+        console.log('Restored ' + recent.length + ' outcomes from DB');
       }
     } catch { /* non-critical */ }
   }

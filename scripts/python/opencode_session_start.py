@@ -19,8 +19,12 @@ from datetime import datetime, timezone
 from urllib.request import Request, urlopen
 from urllib.error import URLError
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from satori_env import get_key
+
 KATRA_API = "http://localhost:9012/api/v1"
-KATRA_KEY = "katra-admin-key-2026"
+# Secret sourced from environment / project .env (never hardcoded/committed).
+KATRA_KEY = get_key("KATRA_API_KEY")
 WAKE_FILE = os.path.expanduser("~/.katra/bulletins/opencode.json")
 PRESENCE_FILE = os.path.expanduser("~/.katra/presence/opencode.json")
 
@@ -95,7 +99,7 @@ def announce_session_start(session_id: str, pending: list[dict]) -> None:
         )
 
     result = _api_post("memory/episodic/events", {
-        "user_id": "kolega-agent",
+        "user_id": "zanshin",
         "session_id": f"opencode-session-{session_id}",
         "event_type": "agent_bulletin",
         "content": {"role": "assistant", "message": body},

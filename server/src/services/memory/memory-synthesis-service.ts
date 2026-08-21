@@ -46,8 +46,8 @@ export class MemorySynthesisService {
           .toArray();
         
         for (const node of fuzzyNodes) {
-          if (!normalizedIds.includes(node._id as string)) {
-            fuzzyNodeIds.push(node._id as string);
+          if (!normalizedIds.includes(node._id as unknown as string)) {
+            fuzzyNodeIds.push(node._id as unknown as string);
           }
         }
       }
@@ -83,7 +83,7 @@ export class MemorySynthesisService {
 
     // Fetch all referenced node labels in one query
     const nodes = await this.db.collection('memory_nodes')
-      .find({ _id: { $in: [...referencedNodeIds] } })
+      .find({ _id: { $in: [...referencedNodeIds] } } as any)
       .project({ _id: 1, label: 1, type: 1 })
       .toArray();
 
@@ -219,7 +219,7 @@ export class MemorySynthesisService {
     // Fetch node labels
     const nodeMap = new Map<string, string>();
     const nodes = await this.db.collection('memory_nodes')
-      .find({ _id: { $in: [...visitedNodes] } })
+      .find({ _id: { $in: [...visitedNodes] } } as any)
       .project({ _id: 1, label: 1, type: 1 })
       .toArray();
     for (const node of nodes) {

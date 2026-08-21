@@ -34,9 +34,11 @@ import { create_reflection_routes } from './routes/reflection-routes.js';
 
 // MCP server
 import { startMcpServer } from './mcp-server.js';
-import { isMultiTenant, runWithTenant } from './database/tenant-context.js';
-import { resolveTenant, initTenantSystem } from './services/integration/tenant-service.js';
-import { ensureApiKeys, logGeneratedKeys, validateKatraKey, isKatraAuthConfigured } from './utils/api-key-manager.js';
+import { isMultiTenant } from './database/tenant-context.js';
+import { initTenantSystem } from './services/integration/tenant-service.js';
+import { ensureApiKeys, ensureClientKeys, logGeneratedKeys } from './utils/api-key-manager.js';
+import { ensureMemoryScopePrivateVisibleIds } from './services/memory/write-scope-policy.js';
+import { createCallerAuthMiddleware } from './middleware/caller-auth.js';
 import { getAgentIdentityName } from './services/infrastructure/agent-identity.js';
 
 dotenv.config();
@@ -77,6 +79,13 @@ async function main() {
   if (keysGenerated) {
     logGeneratedKeys(mcpApiKey, katraApiKey);
   }
+  // F1: provision system_settings.client_keys (satori → legacy key hash;
+  // shoshin/zanshin → freshly generated once, printed once). Idempotent.
+  await ensureClientKeys();
+
+  // F2: pin memory_scope.hybrid_visible_user_ids to [] (idempotent, only
+  // when the key exists) — hybrid reads stay caller-private + my-team only.
+  await ensureMemoryScopePrivateVisibleIds();
 
   // Initialize Redis (non-blocking — services degrade gracefully)
   console.log(`  Redis: connecting...`);
@@ -145,60 +154,11 @@ async function main() {
     allowHeaders: ['Content-Type', 'Authorization'],
   }));
 
-  // Simple API key auth (skip for health endpoints)
-  app.use('/api/*', async (c, next) => {
-    // Skip auth for health checks, read-only dashboard/API data
-    if (c.req.path === '/api/v1/health' ||
-        c.req.path === '/api/v1/admin/dashboard-stats' ||
-        c.req.path === '/api/v1/admin/memory-search' ||
-        c.req.path === '/api/v1/admin/pubsub/presence' ||
-        c.req.path === '/api/v1/admin/pubsub/topics' ||
-        c.req.path === '/api/v1/admin/pubsub/muted' ||
-        c.req.path === '/api/v1/admin/personality' ||
-        c.req.path === '/api/v1/admin/personality/profiles' ||
-        c.req.path === '/api/v1/admin/identity') {
-      return next();
-    }
-
-    // Multi-tenant mode: resolve API key to tenant
-    if (isMultiTenant()) {
-      const auth = c.req.header('Authorization');
-      const token = auth?.startsWith('Bearer ') ? auth.slice(7) : null;
-      if (!token) {
-        return c.json({ error: 'Unauthorized', message: 'API key required' }, 401);
-      }
-
-      // Admin key gets full access (including tenant management)
-      if (validateKatraKey(token)) {
-        return next();
-      }
-
-      // Resolve tenant
-      const tenant = await resolveTenant(token);
-      if (!tenant) {
-        return c.json({ error: 'Unauthorized', message: 'Invalid API key' }, 401);
-      }
-
-      // Set tenant context for downstream handlers
-      return runWithTenant(
-        { tenant_id: tenant.tenant_id, database_name: tenant.database_name, plan: tenant.plan },
-        () => next()
-      );
-    }
-
-    // Single-tenant mode (default): open access when no key is configured.
-    if (!isKatraAuthConfigured()) {
-      return next();
-    }
-
-    const auth = c.req.header('Authorization');
-    const token = auth?.startsWith('Bearer ') ? auth.slice(7) : '';
-    if (token && validateKatraKey(token)) {
-      return next();
-    }
-
-    return c.json({ error: 'Unauthorized', message: 'Invalid or missing API key' }, 401);
-  });
+  // F1: resolve the REST caller from loopback / the presented API key
+  // (admin key = trusted satori; client_keys-mapped keys = untrusted caller;
+  // valid-but-unmapped keys are rejected with 401). The resolved identity is
+  // propagated to every route handler via AsyncLocalStorage.
+  app.use('/api/*', createCallerAuthMiddleware());
 
   // Mount routes
   app.route('/api/v1/memory', create_memory_routes());

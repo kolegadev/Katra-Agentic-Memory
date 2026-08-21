@@ -84,7 +84,7 @@ export class SemanticMemoryService {
 
     // 1. Upsert Source Node
     await this.db.collection('memory_nodes').updateOne(
-      { _id: sourceId },
+      { _id: sourceId } as any,
       {
         $set: { label: triplet.source, type: triplet.sourceType, updated_at: now },
         $setOnInsert: { user_id: userId, created_at: now, attributes: {} },
@@ -94,7 +94,7 @@ export class SemanticMemoryService {
 
     // 2. Upsert Target Node
     await this.db.collection('memory_nodes').updateOne(
-      { _id: targetId },
+      { _id: targetId } as any,
       {
         $set: { label: triplet.target, type: triplet.targetType, updated_at: now },
         $setOnInsert: { user_id: userId, created_at: now, attributes: {} },
@@ -105,7 +105,7 @@ export class SemanticMemoryService {
     // 3. Upsert Edge with Memory Reinforcement (Increment Weight)
     const edgeId = this.buildEdgeId(sourceId, triplet.relationship, targetId);
     await this.db.collection('memory_edges').updateOne(
-      { _id: edgeId },
+      { _id: edgeId } as any,
       {
         $set: {
           source: sourceId,
@@ -190,7 +190,7 @@ Start with { and end with }. Nothing before or after.`;
    */
   public async getAllNodes(userId: string): Promise<MemoryNode[]> {
     assertUserId(userId);
-    return this.db.collection('memory_nodes').find({ user_id: userId }).sort({ updated_at: -1 }).limit(100).toArray() as Promise<MemoryNode[]>;
+    return this.db.collection('memory_nodes').find({ user_id: userId }).sort({ updated_at: -1 }).limit(100).toArray() as unknown as Promise<MemoryNode[]>;
   }
 
   /**
@@ -201,7 +201,7 @@ Start with { and end with }. Nothing before or after.`;
     return this.db.collection('memory_edges').find({ user_id: userId })
       .sort({ weight: -1 })
       .limit(limit)
-      .toArray() as Promise<MemoryEdge[]>;
+      .toArray() as unknown as Promise<MemoryEdge[]>;
   }
 }
 

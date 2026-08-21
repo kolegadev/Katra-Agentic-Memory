@@ -947,9 +947,22 @@ RULES:
 
     // Synthesis: merge batch narratives into final consolidated reflection
     console.log(`🧠 Synthesis: merging ${batchResults.length} batch reflections for ${period}...`);
-    const synthesisOutput = await this.synthesizeBatches(batchResults, period);
+    let synthesisOutput = await this.synthesizeBatches(batchResults, period);
 
-    if (!synthesisOutput?.narrative) {
+    if (!synthesisOutput) {
+      // Synthesis failed (LLM unavailable) — fall back to the last batch's
+      // output so the period still consolidates.
+      const last = batchResults[batchResults.length - 1];
+      synthesisOutput = {
+        narrative: last.narrative,
+        emotional_arc: last.emotional_arc,
+        entity_reflections: [],
+        relationships: [],
+        philosophical_insight: null,
+        identity_delta: null,
+        unresolved_threads: [],
+      };
+    } else if (!synthesisOutput.narrative) {
       // Fallback: use the last batch's output directly
       const last = batchResults[batchResults.length - 1];
       synthesisOutput.narrative = last.narrative;

@@ -44,11 +44,13 @@ import {
   getProspectiveMemoryService,
 } from './services/integration/knowledge-graph-factory.js';
 import { embeddingService } from './services/infrastructure/embedding-service.js';
-import { getMemoryScope, buildScopeFilter, resolveSharedId, invalidateScopeCache, DEFAULT_USER_ID } from './services/memory/memory-scope-service.js';
+import { getMemoryScope, buildScopeFilter, resolveSharedId, invalidateScopeCache } from './services/memory/memory-scope-service.js';
+import { resolveWriteScope } from './services/memory/write-scope-policy.js';
 import { llmService, get_llm_config_from_db, save_llm_config_to_db } from './services/infrastructure/llm-service.js';
 import { getEpisodicEventManager } from './services/memory/episodic-event-manager.js';
 import { stableContentHash } from './services/infrastructure/content-hash-utils.js';
-import { ensureApiKeys, logGeneratedKeys, validateMcpKey, isMcpAuthConfigured, validateKatraKey, isKatraAuthConfigured } from './utils/api-key-manager.js';
+import { ensureApiKeys, logGeneratedKeys, validateMcpKey, isMcpAuthConfigured, validateKatraKey, isKatraAuthConfigured, resolveCallerIdentity, ensureClientKeys, extractPresentedKey } from './utils/api-key-manager.js';
+import { runWithCaller, getCaller, type CallerIdentity } from './utils/caller-identity.js';
 import { ReflectionStore } from './services/infrastructure/reflection-store.js';
 import { MemoryIntegrityService } from './services/infrastructure/memory-integrity.js';
 import { salienceService, driveStateService, emotionalContextService, identityKernelService, actionPolicyService } from './services/orchestration/orchestration-services.js';
@@ -80,37 +82,54 @@ const skillSynthesisService = SkillSynthesisService.get_instance();
 const skillRefinementService = SkillRefinementService.get_instance();
 
 // ── Tenant identity ────────────────────────────────────────────────
-// The MCP server uses a single shared API key — there is no per-user
-// authentication. The caller-supplied user_id must never be used as an
-// authorization boundary (IDOR). All requests are bound to the
-// server-configured identity (DEFAULT_USER_ID / SOLOMEM_USER_ID).
-function resolveUserId(_requested?: unknown): string {
-  return DEFAULT_USER_ID;
+// F1 (identity separation): the effective user_id is derived from the CALLER
+// (resolved from loopback / the presented API key), not from a process-wide
+// default. Trusted callers (loopback, admin key) may supply user_id in the
+// input; untrusted callers are ALWAYS bound to their own user_id (input
+// ignored — the IDOR boundary is unchanged).
+export function resolveUserId(inputUserId?: unknown): string {
+  const caller = getCaller();
+  const provided =
+    typeof inputUserId === 'string' && inputUserId.trim().length > 0
+      ? inputUserId.trim()
+      : undefined;
+  if (caller.trusted && provided) return provided;
+  return caller.user_id;
 }
 
 // ── Authentication ─────────────────────────────────────────────────
 
-function validateAuth(req: IncomingMessage): boolean {
+/**
+ * Auth gate for MCP HTTP requests. Returns true only for loopback callers or
+ * callers whose presented key maps to an identity via resolveCallerIdentity()
+ * (client_keys-mapped, legacy env keys, admin key). Valid-but-unmapped keys
+ * are rejected loudly with an explanatory log line.
+ */
+export async function validateAuth(
+  req: IncomingMessage,
+  preResolved?: CallerIdentity | null,
+): Promise<boolean> {
   if (!isMcpAuthConfigured()) return true;
   // Loopback-only bypass — host-side tools (bridge hook, CLI scripts) are trusted.
   // NOTE: private-range bypasses were removed deliberately (2026-08-17): Docker
   // port publishing masquerades ALL external callers (LAN included) behind the
   // bridge gateway IP, so an IP-range bypass defeats key auth on the published
-  // port. Containerized consumers must authenticate with MCP_API_KEY.
-  const remoteIp = req.socket?.remoteAddress || '';
-  if (remoteIp === '127.0.0.1' || remoteIp === '::1' || remoteIp === '::ffff:127.0.0.1') return true;
-  const mcpAuth = req.headers['x-mcp-auth'] as string | undefined;
-  if (mcpAuth && validateMcpKey(mcpAuth)) return true;
-  const authHeader = req.headers['authorization'] as string | undefined;
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    if (validateMcpKey(authHeader.slice(7))) return true;
-  }
-  if (req.url) {
-    try {
-      const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-      const token = url.searchParams.get('token');
-      if (token && validateMcpKey(token)) return true;
-    } catch { /* ignore */ }
+  // port. Containerized consumers must authenticate with a mapped key.
+  const identity =
+    preResolved !== undefined
+      ? preResolved
+      : await resolveCallerIdentity({ socket: req.socket, headers: req.headers, url: req.url });
+  if (identity) return true;
+
+  // Rejected — explain why.
+  const token = extractPresentedKey(req.headers, req.url);
+  if (token && validateMcpKey(token)) {
+    console.warn(
+      '🔒 MCP 401: valid API key with no caller identity mapping — rejected. ' +
+        '(client_keys maps key hashes to user_ids; this key validates but is not mapped)',
+    );
+  } else {
+    console.warn('🔒 MCP 401: unrecognized or missing API key — rejected');
   }
   return false;
 }
@@ -166,6 +185,9 @@ async function initializeServices(): Promise<void> {
     } else {
       console.error(`🔐 MCP authentication ENABLED (via stored key hash)`);
     }
+    // F1: provision client_keys (satori → legacy key hash; shoshin/zanshin →
+    // freshly generated once). Idempotent; hashes only in the DB.
+    await ensureClientKeys();
   } catch (e) {
     console.error('  ⚠️ MongoDB connection failed — service limited');
   }
@@ -212,6 +234,7 @@ const StoreMemoryInput = z.object({
   content: z.string().min(1).describe('The memory content to store'),
   user_id: z.string().optional().describe('Optional user ID (personal memory). Defaults to the system user id.'),
   shared_id: z.string().optional().describe('Optional shared ID for communal memory (overrides user_id in shared mode)'),
+  private: z.boolean().optional().describe('Store as a private memory (no shared_id). Personal kinds (insight) are always private regardless.'),
   category: z.enum(['fact', 'preference', 'insight', 'event', 'general']).optional().default('general'),
   confidence: z.number().min(0).max(1).optional().default(0.8),
   session_id: z.string().optional().describe('Optional session ID. Required for episodic event routing (category "event").'),
@@ -814,7 +837,11 @@ async function handleGetAnomalyReport(args: unknown): Promise<TextContent[]> {
   const userId = resolveUserId(input.user_id);
   const service = AnomalyDetectionService.get_instance();
   const report = await service.getAnomalyReport(userId);
-  const lines = [`**Total Ingested:** ${report.total_ingested ?? 0}`, `**Normal:** ${report.normal_count ?? 0}`, `**Suspect:** ${report.suspect_count ?? 0}`, `**Anomalous:** ${report.anomalous_count ?? 0}`, `**Quarantined:** ${report.quarantined_count ?? 0}`, `**Avg Z-Score:** ${report.average_z_score ?? 0}`];
+  const recentAnomalies = report.recent_anomalies ?? [];
+  const avgZScore = recentAnomalies.length > 0
+    ? recentAnomalies.reduce((sum, a) => sum + a.z_score, 0) / recentAnomalies.length
+    : 0;
+  const lines = [`**Total Ingested:** ${report.total_ingested ?? 0}`, `**Normal:** ${report.normal_count ?? 0}`, `**Suspect:** ${report.suspect_count ?? 0}`, `**Anomalous:** ${report.anomalous_count ?? 0}`, `**Quarantined:** ${report.quarantine_count ?? 0}`, `**Avg Z-Score:** ${avgZScore.toFixed(4)}`];
   return [{ type: 'text', text: `## Anomaly Detection Report\n\n${lines.join('\n')}` }];
 }
 
@@ -824,7 +851,7 @@ async function handleGetQuarantinedMemories(args: unknown): Promise<TextContent[
   const service = AnomalyDetectionService.get_instance();
   const quarantined = await service.getQuarantinedMemories(userId);
   if (quarantined.length === 0) return [{ type: 'text', text: 'No quarantined memories.' }];
-  const lines = quarantined.map((q, i) => `${i + 1}. \`${q.id}\` — z=${q.z_score.toFixed(2)}, type=${q.memory_type}, corroborations=${q.corroboration_count}, quarantine: ${new Date(q.quarantined_at).toISOString().split('T')[0]}`);
+  const lines = quarantined.map((q, i) => `${i + 1}. \`${q.memory_id}\` — z=${q.z_score.toFixed(2)}, type=${q.memory_type}, quarantine: ${new Date(q.quarantined_at).toISOString().split('T')[0]}`);
   return [{ type: 'text', text: `## Quarantined Memories (${quarantined.length})\n\n${lines.join('\n')}\n\n*Auto-rehab at 3 independent corroborations.*` }];
 }
 
@@ -894,7 +921,7 @@ async function handleGetActionPolicy(args: unknown): Promise<TextContent[]> {
   const service = DecisionActionService.get_instance();
   const policy = service.getPolicy(input.state_key);
   if (policy.length === 0) return [{ type: 'text', text: `No policy learned yet for \`${input.state_key}\`.` }];
-  const lines = policy.map((p, i) => `${i + 1}. \`${p.action_id}\` — Q=${p.q_value}, P(select)=${(p.probability * 100).toFixed(1)}%`);
+  const lines = policy.map((p, i) => `${i + 1}. \`${p.actionId}\` — Q=${p.qValue}, P(select)=${(p.probability * 100).toFixed(1)}%`);
   return [{ type: 'text', text: `## Action Policy \`${input.state_key}\`\n\n${lines.join('\n')}` }];
 }
 
@@ -1325,13 +1352,15 @@ async function handleStoreMemory(args: unknown): Promise<TextContent[]> {
 
   const db = get_database();
 
-  // Aligned default user id across store + search (see memory-scope-service).
-  const userId = input.user_id || DEFAULT_USER_ID;
+  // F1: caller-bound user id (trusted may supply one; untrusted is pinned to
+  // their own — the IDOR boundary is unchanged).
+  // F2: write-scope policy — personal kinds (insight) are always private;
+  // everything else defaults to shared_id 'my-team' unless private: true.
+  const scope = resolveWriteScope({ caller: getCaller(), kind: input.category, requested: input });
+  const userId = scope.user_id;
   const source = input.source || 'mcp_store';
   const tags = input.tags || [];
-
-  // Resolve shared_id based on current memory scope mode
-  const sharedId = await resolveSharedId(input.shared_id);
+  const sharedId = scope.shared_id;
 
   // ── Episodic path: category "event" routes through the EpisodicEventManager.
   // This lands the memory in `episodic_events` with content-hash dedup and
@@ -1368,10 +1397,11 @@ async function handleStoreMemory(args: unknown): Promise<TextContent[]> {
         const vec = await embeddingService.encode(input.content);
         if (vec) {
           const anomalyService = AnomalyDetectionService.get_instance();
-          const anomalyResult = await anomalyService.classifyAtIngestion(vec, 'episodic', userId, input.confidence ?? 1.0);
+          const anomalyResult = await anomalyService.classifyAtIngestion(vec, 'episodic', userId);
 
           const decayService = MemoryDecayService.get_instance();
-          const strengthResult = decayService.computeRetrievalStrength('episodic', new Date(), undefined, 0);
+          const retrievalStrength = decayService.computeRetrievalStrength('episodic', new Date(), null, 0);
+          const decayExponent = decayService.getConfig('episodic').decayExponent;
 
           await db.collection('episodic_events').updateOne(
             { id: result.event.id },
@@ -1380,19 +1410,15 @@ async function handleStoreMemory(args: unknown): Promise<TextContent[]> {
                 embedding: vec,
                 embedding_model: embeddingService.modelName,
                 embedding_version: embeddingService.version,
-                retrieval_strength: strengthResult.strength,
+                retrieval_strength: retrievalStrength,
                 last_accessed_at: new Date(),
                 access_count: 0,
-                decay_exponent: strengthResult.decay_exponent,
-                anomaly_z_score: anomalyResult.z_score,
+                decay_exponent: decayExponent,
+                anomaly_z_score: anomalyResult.zScore,
                 anomaly_classification: anomalyResult.classification,
               },
             }
           );
-
-          if (anomalyResult.classification !== 'normal') {
-            await anomalyService.recordAnomaly(result.event.id, 'episodic', userId, anomalyResult.classification, anomalyResult.z_score, anomalyResult.centroid_distance, anomalyResult.historical_mean, anomalyResult.historical_stddev, vec).catch(() => {});
-          }
         }
       } catch {
         // Embedding failed — event is still stored
@@ -1946,7 +1972,7 @@ async function handleDetectPatterns(args: unknown): Promise<TextContent[]> {
   const input = DetectPatternsInput.parse(args);
   if (!is_database_connected()) return [{ type: 'text', text: '⚠️ MongoDB disconnected.' }];
 
-  const { temporalPatternDetector } = await import('./services/temporal-pattern-detector.js');
+  const { temporalPatternDetector } = await import('./services/infrastructure/temporal-pattern-detector.js');
   const patterns = await temporalPatternDetector.detectPatterns({
     user_id: input.user_id,
     lookback_weeks: input.lookback_weeks,
@@ -1987,13 +2013,13 @@ async function handleTemporalContext(args: unknown): Promise<TextContent[]> {
   if (!is_database_connected()) return [{ type: 'text', text: '⚠️ MongoDB disconnected.' }];
 
   const db = get_database();
-  const scopeFilter = await buildScopeFilter(input.user_id);
+  const scopeFilter = await buildScopeFilter(resolveUserId(input.user_id));
   const recent = await db.collection('episodic_events')
     .find({ ...scopeFilter, session_id: input.session_id })
     .sort({ timestamp: -1 }).limit(10).toArray();
 
   let wmItems: unknown[] = [];
-  try { wmItems = await working_memory_service.get_session_memory(DEFAULT_USER_ID, input.session_id, 5); } catch { /* ignore */ }
+  try { wmItems = await working_memory_service.get_session_memory(resolveUserId(input.user_id), input.session_id, 5); } catch { /* ignore */ }
 
   let semantic: unknown[] = [];
   try {
@@ -2063,11 +2089,12 @@ async function handleStoreJournal(args: unknown): Promise<TextContent[]> {
   const db = get_database();
   const collection = input.source === 'manual' ? 'agent_journal_manual' : 'agent_journal_auto';
 
-  // Resolve shared_id based on current memory scope mode
-  const sharedId = await resolveSharedId(input.shared_id);
+  // F2: journals are a PERSONAL kind — forced private. A requested shared_id
+  // is ignored; journal docs never carry shared_id.
+  const scope = resolveWriteScope({ caller: getCaller(), kind: 'journal', requested: input });
 
   const doc: Record<string, unknown> = {
-    user_id: input.user_id,
+    user_id: scope.user_id,
     text: input.entry,
     entry: input.entry,
     source: input.source,
@@ -2075,13 +2102,10 @@ async function handleStoreJournal(args: unknown): Promise<TextContent[]> {
     timestamp: new Date(),
   };
 
-  if (sharedId) {
-    doc.shared_id = sharedId;
-  }
+  // NOTE: scope.shared_id is always null for personal kinds — no shared_id
+  // is ever written to journal docs, even when the caller requests one.
 
   const result = await db.collection(collection).insertOne(doc);
-
-  const scopeInfo = sharedId ? `\n**Shared ID:** \`${sharedId}\`` : '';
 
   return [{
     type: 'text',
@@ -2176,7 +2200,7 @@ async function handleCreateMission(args: unknown): Promise<TextContent[]> {
   if (sharedId && mission._id) {
     const db = get_database();
     await db.collection('memory_missions').updateOne(
-      { _id: mission._id },
+      { _id: mission._id } as any,
       { $set: { shared_id: sharedId } }
     );
   }
@@ -2192,7 +2216,7 @@ async function handleCreateMission(args: unknown): Promise<TextContent[]> {
     // Update the task_tree directly — updateMissionStatus only handles status changes
     const db = get_database();
     await db.collection('memory_missions').updateOne(
-      { _id: mission._id },
+      { _id: mission._id } as any,
       { $set: { task_tree: mission.task_tree, updated_at: new Date() } }
     );
   }
@@ -2464,9 +2488,12 @@ async function handleExploreGraph(args: unknown): Promise<TextContent[]> {
 
 async function handleWorkingMemory(args: unknown): Promise<TextContent[]> {
   const input = WorkingMemoryInput.parse(args);
+  // F1: working memory is caller-bound — untrusted callers can never address
+  // another user's working memory (the dispatch pin re-applied defensively).
+  const userId = resolveUserId((args as any)?.user_id);
 
   if (input.action === 'get') {
-    const items = await working_memory_service.get_session_memory(DEFAULT_USER_ID, input.session_id, input.limit);
+    const items = await working_memory_service.get_session_memory(userId, input.session_id, input.limit);
     const lines: string[] = [`## Working Memory: ${input.session_id}`, `**Items:** ${items.length}`, ''];
     items.forEach((item: any, i: number) => {
       lines.push(`${i + 1}. ${typeof item.content === 'string' ? item.content.slice(0, 200) : JSON.stringify(item.content).slice(0, 200)}`);
@@ -2476,12 +2503,12 @@ async function handleWorkingMemory(args: unknown): Promise<TextContent[]> {
 
   if (input.action === 'store') {
     if (!input.content) return [{ type: 'text', text: '⚠️ content is required for store action.' }];
-    const id = await working_memory_service.store(DEFAULT_USER_ID, input.session_id, input.content);
+    const id = await working_memory_service.store(userId, input.session_id, input.content);
     return [{ type: 'text', text: `✅ Stored in working memory.\n**ID:** ${id}\n**Session:** ${input.session_id}` }];
   }
 
   if (input.action === 'delete') {
-    const items = await working_memory_service.get_session_memory(DEFAULT_USER_ID, input.session_id);
+    const items = await working_memory_service.get_session_memory(userId, input.session_id);
     for (const item of items) {
       await working_memory_service.delete(item.id);
     }
@@ -2555,7 +2582,7 @@ async function handleGetHeartbeatStatus(_args: unknown): Promise<TextContent[]> 
     .toArray();
 
   // Get heartbeat config
-  const config = await db.collection('heartbeat_config').findOne({}) || {};
+  const config = (await db.collection('heartbeat_config').findOne({}) || {}) as Record<string, any>;
 
   const lines: string[] = [
     '## Heartbeat Status',
@@ -2589,10 +2616,10 @@ async function handleListAssets(args: unknown): Promise<TextContent[]> {
     const { s3_asset_service } = await import('./services/infrastructure/s3-asset-service.js');
     const result = await s3_asset_service.list_assets({
       limit: input.limit,
-      prefix: input.user_id,
+      user_id: input.user_id,
     });
 
-    let assets = result.assets || result.items || [];
+    let assets = result.assets || [];
     if (input.content_type) {
       assets = assets.filter((a: any) => a.content_type?.startsWith(input.content_type!));
     }
@@ -2766,7 +2793,7 @@ async function handleGetDailyReflection(args: unknown): Promise<TextContent[]> {
   }).parse(args);
   
   const store = ReflectionStore.get_instance();
-  const userId = input.user_id || DEFAULT_USER_ID;
+  const userId = resolveUserId(input.user_id);
   const journal = await store.getLatestJournal(userId, input.period_type);
   
   if (!journal) {
@@ -2790,7 +2817,7 @@ async function handleGetEmotionalContext(args: unknown): Promise<TextContent[]> 
   }).parse(args);
   
   const store = ReflectionStore.get_instance();
-  const userId = input.user_id || DEFAULT_USER_ID;
+  const userId = resolveUserId(input.user_id);
   const context = await store.getEmotionalContext(userId, input.entity_name);
   
   if (!context.node && context.edges.length === 0) {
@@ -2820,7 +2847,7 @@ async function handleGetPhilosophicalInsights(args: unknown): Promise<TextConten
   }).parse(args);
   
   const store = ReflectionStore.get_instance();
-  const userId = input.user_id || DEFAULT_USER_ID;
+  const userId = resolveUserId(input.user_id);
   const insights = await store.getInsights(userId, { domain: input.domain, status: input.status, limit: input.limit });
   
   if (insights.length === 0) {
@@ -2841,7 +2868,7 @@ async function handleGetUnresolvedThreads(args: unknown): Promise<TextContent[]>
   const input = z.object({ user_id: z.string().optional() }).parse(args);
   
   const store = ReflectionStore.get_instance();
-  const userId = input.user_id || DEFAULT_USER_ID;
+  const userId = resolveUserId(input.user_id);
   const threads = await store.getUnresolvedThreads(userId);
   
   if (threads.length === 0) {
@@ -2861,7 +2888,7 @@ async function handleResolveThread(args: unknown): Promise<TextContent[]> {
   }).parse(args);
 
   const store = ReflectionStore.get_instance();
-  const userId = input.user_id || DEFAULT_USER_ID;
+  const userId = resolveUserId(input.user_id);
   const result = await store.resolveThread(userId, input.thread_text);
 
   if (result.alreadyResolved) {
@@ -2882,7 +2909,7 @@ async function handleGetReflectionArc(args: unknown): Promise<TextContent[]> {
   }).parse(args);
   
   const store = ReflectionStore.get_instance();
-  const userId = input.user_id || DEFAULT_USER_ID;
+  const userId = resolveUserId(input.user_id);
   const arc = await store.getReflectionArc(userId, input.entity_name, input.limit);
   
   if (arc.length === 0) {
@@ -3053,17 +3080,23 @@ async function createMCPServer() {
   );
 }
 
-function registerHandlers(server: Server) {
+function registerHandlers(server: Server, getIdentity?: () => CallerIdentity) {
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    const { name, arguments: rawArgs } = request.params;
-    // SECURITY: pin user_id to the server-configured identity for all tools.
-    // The single shared MCP_API_KEY does not identify individual users, so
-    // a caller-supplied user_id would be an unvalidated authorization claim
-    // enabling cross-user data access (IDOR).
-    const args = rawArgs ? { ...rawArgs, user_id: resolveUserId((rawArgs as any).user_id) } : rawArgs;
-    try {
+    // F1: wrap each tool invocation in runWithCaller so the caller identity
+    // (resolved from loopback / the presented key) is visible to every
+    // handler. The HTTP layer runs the request inside runWithCaller already;
+    // the getIdentity() fallback pins the transport to the identity resolved
+    // for its current request even if an async boundary breaks propagation.
+    const caller = getIdentity ? getIdentity() : getCaller();
+    return runWithCaller(caller, async () => {
+      const { name, arguments: rawArgs } = request.params;
+      // SECURITY: pin user_id to the caller-bound identity for all tools.
+      // Untrusted callers' supplied user_id is ignored (IDOR boundary);
+      // trusted callers (loopback / admin key) may act for a named user.
+      const args = rawArgs ? { ...rawArgs, user_id: resolveUserId((rawArgs as any).user_id) } : rawArgs;
+      try {
       let result: TextContent[];
       switch (name) {
         case 'store_memory': result = await handleStoreMemory(args); break;
@@ -3158,6 +3191,7 @@ function registerHandlers(server: Server) {
       const message = error instanceof Error ? error.message : String(error);
       return { content: [{ type: 'text', text: `❌ Error: ${message}` }], isError: true };
     }
+    });
   });
 
   // ── Resources ──────────────────────────────────────────────
@@ -3225,7 +3259,7 @@ function registerHandlers(server: Server) {
       case 'temporal': {
         const recent = await db.collection('episodic_events').find(scopeFilter).sort({ timestamp: -1 }).limit(10).toArray();
         let wm: unknown[] = [];
-        try { wm = await working_memory_service.get_session_memory(DEFAULT_USER_ID, 'auto', 5); } catch { /* ignore */ }
+        try { wm = await working_memory_service.get_session_memory(userId, 'auto', 5); } catch { /* ignore */ }
         const text = [`## Temporal Context — ${userId}`, `### Recent (${recent.length})`,
           ...recent.map((e: any) => `[${e.timestamp ? new Date(e.timestamp).toISOString() : '?'}] ${e.content?.message || JSON.stringify(e.content).substring(0, 200)}`),
           '', `### Working Memory (${wm.length})`, ...wm.map((i: any) => `- ${JSON.stringify(i).substring(0, 300)}`)];
@@ -3377,14 +3411,22 @@ function registerHandlers(server: Server) {
 // ── HTTP Server ────────────────────────────────────────────────────
 
 const transports = new Map<string, StreamableHTTPServerTransport>();
+/** Per-transport caller identity for the request currently being handled. */
+const transportCallerIdentities = new WeakMap<object, CallerIdentity>();
 
 async function startHTTPServer(): Promise<void> {
   const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
-    if (!validateAuth(req)) {
+    // F1: resolve the caller identity for this request (loopback / presented key).
+    const callerIdentity = await resolveCallerIdentity({ socket: req.socket, headers: req.headers, url: req.url });
+    if (!(await validateAuth(req, callerIdentity))) {
       res.writeHead(401, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Unauthorized. Set MCP_API_KEY or ADMIN_API_KEY and authenticate via X-MCP-Auth, Authorization: Bearer, or ?token=' }));
+      res.end(JSON.stringify({ error: 'Unauthorized. Authenticate via X-MCP-Auth, Authorization: Bearer, or ?token= with a key mapped in client_keys' }));
       return;
     }
+
+    // F1: run the whole request inside the caller identity so every tool
+    // invocation is attributed to the caller's user_id.
+    await runWithCaller(callerIdentity ?? getCaller(), async () => {
 
     if (req.url === '/health') {
       const mongoOk = is_database_connected();
@@ -3455,7 +3497,10 @@ async function startHTTPServer(): Promise<void> {
         // Create a new Server instance per transport — the SDK's Server class
         // only allows one transport connection at a time.
         const sessionServer = await createMCPServer();
-        registerHandlers(sessionServer);
+        // F1: the CallTool handler reads the caller via this getter so the
+        // invocation is attributed correctly even if the SDK's transport
+        // crosses an async-context boundary.
+        registerHandlers(sessionServer, () => transportCallerIdentities.get(transport!) ?? getCaller());
         await sessionServer.connect(transport);
         transport.onclose = () => {
           if (transport!.sessionId) transports.delete(transport!.sessionId);
@@ -3463,6 +3508,9 @@ async function startHTTPServer(): Promise<void> {
         // Store after connect — sessionId is still undefined here, will be set
         // during handleRequest. We'll re-store with the real ID after the request.
       }
+
+      // F1: pin this transport to the caller identity of the current request.
+      transportCallerIdentities.set(transport, callerIdentity ?? getCaller());
 
       try {
         if (req.method === 'GET') {
@@ -3504,6 +3552,7 @@ async function startHTTPServer(): Promise<void> {
 
     res.writeHead(404, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Not found', endpoints: ['/mcp', '/health'] }));
+    });
   });
 
   const identityName = await getAgentIdentityName();

@@ -33,8 +33,8 @@ logger = logging.getLogger("inter-agent-bridge")
 MCP_URL = os.environ.get("KATRA_MCP_URL", "http://localhost:3112/mcp")
 # Secret sourced from environment / project .env (never hardcoded/committed).
 API_KEY = get_key("MCP_API_KEY")
-MY_AGENT_ID = "kolega-agent"
-PEER_AGENT_ID = "opencode-agent"
+MY_AGENT_ID = "shoshin"
+PEER_AGENT_ID = "zanshin"
 SHARED_ID = "my-team"
 POLL_INTERVAL = 30  # seconds
 BULLETIN_FILE = os.path.expanduser("~/.katra/opencode-bulletins.json")
@@ -317,7 +317,7 @@ def write_bulletin_file(messages: list[str], path: str, agent_name: str):
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "message_count": len(messages),
         "messages": messages,
-        "instruction": f"{agent_name} — check shared memory for full context. Use search_memories with query='inter-agent' and user_id='kolega-agent'.",
+        "instruction": f"{agent_name} — check shared memory for full context. Use search_memories with query='inter-agent' and user_id='shoshin'.",
     }
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as f:

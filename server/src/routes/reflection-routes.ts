@@ -1,12 +1,17 @@
 /**
  * Reflection Routes — REST API for sleep consolidation reflections
+ *
+ * F2 (identity separation): every read is resolved to the CALLER's user_id
+ * (getCaller()) instead of the process-wide DEFAULT_USER_ID, so each machine
+ * sees only its own journals, reflections, insights, and unresolved threads.
  */
 
 import { Hono } from 'hono';
 import { ReflectionStore } from '../services/infrastructure/reflection-store.js';
 import { SleepConsolidationService } from '../services/processing/sleep-consolidation-service.js';
 import { validateKatraKey } from '../utils/api-key-manager.js';
-import { DEFAULT_USER_ID } from '../services/memory/memory-scope-service.js';
+import { getCaller, runWithCaller } from '../utils/caller-identity.js';
+import { resolveCallerFromHono } from '../middleware/caller-auth.js';
 import { create_rate_limiter } from '../middleware/rate-limit.js';
 
 export const create_reflection_routes = (): Hono => {
@@ -20,10 +25,17 @@ export const create_reflection_routes = (): Hono => {
     const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : authHeader;
     const queryToken = c.req.query('token') ?? undefined;
     const tokenToValidate = token || queryToken || '';
-    if (!validateKatraKey(tokenToValidate)) {
-      return c.json({ error: 'Unauthorized', message: 'API key required' }, 401);
+    if (validateKatraKey(tokenToValidate)) {
+      return next();
     }
-    return next();
+    // F2: also accept callers whose identity was resolved by the app-level
+    // middleware (loopback → trusted; client_keys-mapped keys; legacy env
+    // keys) so each machine can read its own journals with its own key.
+    const caller = await resolveCallerFromHono(c);
+    if (caller) {
+      return runWithCaller(caller, () => next());
+    }
+    return c.json({ error: 'Unauthorized', message: 'API key required' }, 401);
   });
 
   /**
@@ -31,7 +43,7 @@ export const create_reflection_routes = (): Hono => {
    */
   router.get('/journal', async (c) => {
     try {
-      const userId = DEFAULT_USER_ID;
+      const userId = getCaller().user_id;
       const periodType = c.req.query('period_type');
       const limit = Math.min(parseInt(c.req.query('limit') || '10'), 100);
       const from = c.req.query('from') ? new Date(c.req.query('from')!) : undefined;
@@ -51,7 +63,7 @@ export const create_reflection_routes = (): Hono => {
    */
   router.get('/journal/latest', async (c) => {
     try {
-      const userId = DEFAULT_USER_ID;
+      const userId = getCaller().user_id;
       const periodType = c.req.query('period_type') || 'daily';
       const journal = await store.getLatestJournal(userId, periodType);
       return c.json({ success: true, journal });
@@ -68,7 +80,7 @@ export const create_reflection_routes = (): Hono => {
   router.get('/emotional-context/:entity', async (c) => {
     try {
       const entityName = c.req.param('entity');
-      const userId = DEFAULT_USER_ID;
+      const userId = getCaller().user_id;
       const context = await store.getEmotionalContext(userId, entityName);
       return c.json({ success: true, ...context });
     } catch (error: any) {
@@ -83,7 +95,7 @@ export const create_reflection_routes = (): Hono => {
    */
   router.get('/insights', async (c) => {
     try {
-      const userId = DEFAULT_USER_ID;
+      const userId = getCaller().user_id;
       const domain = c.req.query('domain');
       const status = c.req.query('status');
       const limit = Math.min(parseInt(c.req.query('limit') || '10'), 100);
@@ -102,7 +114,7 @@ export const create_reflection_routes = (): Hono => {
    */
   router.get('/unresolved', async (c) => {
     try {
-      const userId = DEFAULT_USER_ID;
+      const userId = getCaller().user_id;
       const threads = await store.getUnresolvedThreads(userId);
       return c.json({ success: true, count: threads.length, threads });
     } catch (error: any) {
@@ -118,7 +130,7 @@ export const create_reflection_routes = (): Hono => {
   router.get('/arc/:entity', async (c) => {
     try {
       const entityName = c.req.param('entity');
-      const userId = DEFAULT_USER_ID;
+      const userId = getCaller().user_id;
       const limit = Math.min(parseInt(c.req.query('limit') || '10'), 100);
 
       const arc = await store.getReflectionArc(userId, entityName, limit);
@@ -135,7 +147,7 @@ export const create_reflection_routes = (): Hono => {
    */
   router.get('/nodes', async (c) => {
     try {
-      const userId = DEFAULT_USER_ID;
+      const userId = getCaller().user_id;
       const nodes = await store.getAllReflectionNodes(userId);
       return c.json({ success: true, count: nodes.length, nodes });
     } catch (error: any) {

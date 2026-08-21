@@ -308,6 +308,8 @@ export class EmotionalContextService {
             'properties.updated_at': new Date().toISOString(),
           },
           $inc: { 'properties.event_count': 1 },
+          // F2: emotional-context docs are personal — forced private.
+          $unset: { shared_id: '' },
         },
         { upsert: true }
       );

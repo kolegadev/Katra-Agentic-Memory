@@ -7,6 +7,7 @@
  */
 
 import { get_database } from '../../database/connection.js';
+import { stripSharedId } from '../memory/write-scope-policy.js';
 import type {
   ReflectiveJournal,
   ReflectionNode,
@@ -32,7 +33,9 @@ export class ReflectionStore {
   async upsertJournal(journal: ReflectiveJournal): Promise<string> {
     const db = get_database();
     const now = new Date();
-    const doc = { ...journal, created_at: journal.created_at || now };
+    // F2: journals are personal — forced private. A shared_id smuggled into
+    // the journal object is stripped so reflective_journals docs never carry one.
+    const doc = stripSharedId({ ...journal, created_at: journal.created_at || now });
     const result = await db.collection('reflective_journals').insertOne(doc);
     return result.insertedId.toString();
   }
@@ -95,6 +98,8 @@ export class ReflectionStore {
           first_observed: node.first_observed || now,
           created_at: now,
         },
+        // F2: reflection nodes are personal — forced private.
+        $unset: { shared_id: '' },
       },
       { upsert: true }
     );
@@ -184,6 +189,8 @@ export class ReflectionStore {
           first_observed: edge.first_observed || now,
           created_at: now,
         },
+        // F2: reflection edges are personal — forced private.
+        $unset: { shared_id: '' },
       },
       { upsert: true }
     );
@@ -242,11 +249,14 @@ export class ReflectionStore {
           $push: {
             source_journal_ids: insight.source_journal_ids?.[0],
           } as any,
+          // F2: philosophical insights are personal — forced private.
+          $unset: { shared_id: '' },
         }
       );
     } else {
       await db.collection('philosophical_insights').insertOne({
-        ...insight,
+        // F2: insights are personal — forced private (shared_id stripped).
+        ...stripSharedId(insight),
         evidence_count: 1,
         first_observed: insight.first_observed || now,
         last_reinforced: insight.last_reinforced || now,

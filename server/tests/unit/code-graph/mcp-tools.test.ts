@@ -33,6 +33,7 @@ import {
   get_database,
   is_database_connected,
 } from '../../../src/database/connection.js';
+import { DEFAULT_USER_ID } from '../../../src/services/memory/memory-scope-service.js';
 
 const MONGO_URI =
   process.env.MONGODB_URI ||
@@ -315,7 +316,7 @@ describe.skipIf(!mongoAvailable)('code-graph MCP handlers — connected flow', (
       expect(kinds.has('method')).toBe(true);
       for (const n of nodes) {
         expect(n.source).toBe('katra-code');
-        expect(n.user_id).toBe('kolega-agent');
+        expect(n.user_id).toBe(DEFAULT_USER_ID);
       }
 
       const edges = await db

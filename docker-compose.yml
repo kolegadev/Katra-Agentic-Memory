@@ -91,6 +91,7 @@ services:
     env_file:
       - .env
     environment:
+      - SOLOMEM_USER_ID=satori
       - KATRA_DISABLE_BACKGROUND_PROCESSOR=${KATRA_DISABLE_BACKGROUND_PROCESSOR:-false}
       - KATRA_SKILLS_DIR=/app/skills
     volumes:

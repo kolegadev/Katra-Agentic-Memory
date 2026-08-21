@@ -192,8 +192,8 @@ export class BackgroundProcessor {
               lookback_days: 7,
               max_blocks: 5,
             });
-            if (result.summaries_created > 0) {
-              console.log(`⏰ Time blocks summarized for ${userId}: ${result.summaries_created} created`);
+            if (result.summaries_generated > 0) {
+              console.log(`⏰ Time blocks summarized for ${userId}: ${result.summaries_generated} created`);
             }
           }
         } catch (tsErr) {

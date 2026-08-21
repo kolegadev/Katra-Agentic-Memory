@@ -5,8 +5,8 @@ Subscribes to Redis pub-sub channel katra:events:{shared_id}.
 On inter-agent message, determines the target agent and:
   1. Stores in Katra working_memory for the target agent
   2. Writes to a wake file the agent's hook checks
-  3. For OpenCode: writes to ~/.katra/bulletins/opencode.json
-  4. For KolegaCode: writes to ~/.katra/bulletins/kolegacode.json
+  3. For Satori/Shoshin/Zanshin: writes to ~/.katra/bulletins/<name>.json
+  4. Legacy aliases: OpenCode → opencode.json, KolegaCode → kolegacode.json
 
 Runs as a launchctl service.
 """
@@ -43,9 +43,17 @@ KATRA_KEY = get_key("KATRA_API_KEY")
 WAKE_DIR = os.path.expanduser("~/.katra/bulletins")
 
 # Attention pattern: "Attention: AgentName — ..." or "Attention: AgentName\n..."
-ATTN_PATTERN = re.compile(r"Attention:\s*(OpenCoder|OpenCode|KolegaCoder|KolegaCode)", re.IGNORECASE)
+# F3 (identity separation): the three identities first; legacy aliases
+# (OpenCoder/OpenCode/KolegaCoder/KolegaCode) kept for old messages.
+ATTN_PATTERN = re.compile(
+    r"Attention:\s*(Satori|Shoshin|Zanshin|OpenCoder|OpenCode|KolegaCoder|KolegaCode)",
+    re.IGNORECASE,
+)
 
 AGENT_WAKE_FILES = {
+    "Satori": os.path.expanduser("~/.katra/bulletins/satori.json"),
+    "Shoshin": os.path.expanduser("~/.katra/bulletins/shoshin.json"),
+    "Zanshin": os.path.expanduser("~/.katra/bulletins/zanshin.json"),
     "OpenCoder": os.path.expanduser("~/.katra/bulletins/opencode.json"),
     "OpenCode": os.path.expanduser("~/.katra/bulletins/opencode.json"),
     "KolegaCoder": os.path.expanduser("~/.katra/bulletins/kolegacode.json"),
@@ -78,7 +86,7 @@ def store_wake_memory(agent: str, content_preview: str, event_id: str) -> None:
     _api_post("memory/working", {
         "session_id": f"wake-{agent.lower()}",
         "action": "store",
-        "user_id": "kolega-agent",
+        "user_id": "satori",
         "content": json.dumps({
             "type": "inter-agent-wake",
             "from": "wake-service",
@@ -135,6 +143,12 @@ def determine_target(content_preview: str) -> Optional[str]:
     if match:
         agent = match.group(1)
         # Normalize names
+        if agent.lower() == "satori":
+            return "Satori"
+        if agent.lower() == "shoshin":
+            return "Shoshin"
+        if agent.lower() == "zanshin":
+            return "Zanshin"
         if agent.lower() in ("opencoder", "opencode"):
             return "OpenCode"
         if agent.lower() in ("kolegacoder", "kolegacode"):

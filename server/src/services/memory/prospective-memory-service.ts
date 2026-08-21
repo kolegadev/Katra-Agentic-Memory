@@ -131,7 +131,7 @@ export class ProspectiveMemoryService {
 
     // Deactivate any other active missions (one at a time)
     await this.db.collection('memory_missions').updateMany(
-      { user_id, status: 'ACTIVE', _id: { $ne: missionId } },
+      { user_id, status: 'ACTIVE', _id: { $ne: missionId } } as any,
       { $set: { status: 'PAUSED', pause_reason: 'New mission started', updated_at: new Date() } }
     );
 
@@ -176,7 +176,7 @@ export class ProspectiveMemoryService {
       .find({ user_id })
       .sort({ updated_at: -1 })
       .limit(limit)
-      .toArray() as Promise<Mission[]>;
+      .toArray() as unknown as Promise<Mission[]>;
   }
 
   /**
@@ -188,7 +188,7 @@ export class ProspectiveMemoryService {
     reason?: string
   ): Promise<void> {
     await this.db.collection('memory_missions').updateOne(
-      { _id: missionId },
+      { _id: missionId } as any,
       { $set: { status, pause_reason: reason, updated_at: new Date() } }
     );
     console.log(`🎯 Mission ${missionId} → ${status}${reason ? ` (${reason})` : ''}`);
@@ -200,7 +200,7 @@ export class ProspectiveMemoryService {
    */
   public async reactivateMission(missionId: string): Promise<Mission | null> {
     const result = await this.db.collection('memory_missions').findOneAndUpdate(
-      { _id: missionId, status: { $in: ['COMPLETED', 'ABANDONED'] } },
+      { _id: missionId, status: { $in: ['COMPLETED', 'ABANDONED'] } } as any,
       {
         $set: {
           status: 'ACTIVE',
@@ -213,7 +213,7 @@ export class ProspectiveMemoryService {
     if (result) {
       console.log(`🔄 Mission ${missionId} reactivated → ACTIVE`);
     }
-    return result as Mission | null;
+    return result as unknown as Mission | null;
   }
 
   /**
@@ -337,7 +337,7 @@ export class ProspectiveMemoryService {
     status: MissionTask['status']
   ): Promise<void> {
     await this.db.collection('memory_missions').updateOne(
-      { _id: missionId, 'task_tree.id': taskId },
+      { _id: missionId, 'task_tree.id': taskId } as any,
       {
         $set: { 'task_tree.$.status': status, updated_at: new Date() },
       }
@@ -441,7 +441,7 @@ export class ProspectiveMemoryService {
     return this.db.collection('agent_journal_manual')
       .find({ user_id, deprecated: { $ne: true }, source: { $in: ['manual', 'correction'] } })
       .sort({ timestamp: -1 })
-      .toArray() as Promise<JournalEntry[]>;
+      .toArray() as unknown as Promise<JournalEntry[]>;
   }
 
   /**
@@ -485,7 +485,7 @@ export class ProspectiveMemoryService {
             // Also push to active mission's self_journal (mission-scoped journaling)
             if (mission) {
               await this.db.collection('memory_missions').updateOne(
-                { _id: mission._id },
+                { _id: mission._id } as any,
                 {
                   $push: {
                     self_journal: {
@@ -494,7 +494,7 @@ export class ProspectiveMemoryService {
                       source: 'manual',
                     },
                   },
-                }
+                } as any
               );
             }
           }
@@ -554,11 +554,11 @@ export class ProspectiveMemoryService {
           const currentTasks = mission.task_tree as MissionTask[];
           const newId = `t${currentTasks.length + 1 + actions.filter(a => a.startsWith('Added')).length}`;
           await this.db.collection('memory_missions').updateOne(
-            { _id: mission._id },
+            { _id: mission._id } as any,
             {
               $push: { task_tree: { id: newId, description: desc, status: 'PENDING' } },
               $set: { updated_at: new Date() },
-            }
+            } as any
           );
           actions.push(`Added task ${newId}: ${desc}`);
         }
@@ -646,7 +646,7 @@ export class ProspectiveMemoryService {
   ): Promise<void> {
     // Skip auto-journaling if the turn contains an explicit manual JOURNAL directive
     const hasManualJournal = /JOURNAL:\s*.+/i.test(conversationTurn);
-    const mission = await this.db.collection('memory_missions').findOne({ _id: missionId });
+    const mission = await this.db.collection('memory_missions').findOne({ _id: missionId } as any);
     if (!mission || mission.status !== 'ACTIVE') return;
 
     try {
@@ -682,7 +682,7 @@ Return ONLY JSON:
       if (update.task_updates && update.task_updates.length > 0) {
         for (const tu of update.task_updates) {
           await this.db.collection('memory_missions').updateOne(
-            { _id: missionId, 'task_tree.id': tu.id },
+            { _id: missionId, 'task_tree.id': tu.id } as any,
             { $set: { 'task_tree.$.status': tu.status } }
           );
         }
@@ -698,14 +698,14 @@ Return ONLY JSON:
           status: 'PENDING' as const,
         }));
         await this.db.collection('memory_missions').updateOne(
-          { _id: missionId },
-          { $push: { task_tree: { $each: newTasks } } }
+          { _id: missionId } as any,
+          { $push: { task_tree: { $each: newTasks } } } as any
         );
       }
 
       // Update internal monologue
       await this.db.collection('memory_missions').updateOne(
-        { _id: missionId },
+        { _id: missionId } as any,
         { $set: { internal_monologue: update.internal_monologue, updated_at: new Date() } }
       );
 
@@ -769,7 +769,7 @@ Return ONLY JSON:
     if (activeJournal.length > 0) {
       context += `\nRecent journal entries (newest first, corrections marked):\n`;
       for (const entry of activeJournal.slice(0, 6)) {
-        const prefix = entry.corrected ? '✏️[CORRECTION]' : entry.source === 'auto' ? '🤖' : '📝';
+        const prefix = entry.source === 'correction' ? '✏️[CORRECTION]' : entry.source === 'auto' ? '🤖' : '📝';
         context += `  ${prefix} ${entry.entry.slice(0, 150)}${entry.entry.length > 150 ? '...' : ''}\n`;
       }
     }
@@ -786,7 +786,7 @@ Return ONLY JSON:
     description: string
   ): Promise<void> {
     await this.db.collection('memory_missions').updateOne(
-      { _id: missionId, 'task_tree.id': taskId },
+      { _id: missionId, 'task_tree.id': taskId } as any,
       {
         $set: { 'task_tree.$.description': description, updated_at: new Date() },
       }
@@ -801,11 +801,11 @@ Return ONLY JSON:
     taskId: string
   ): Promise<void> {
     await this.db.collection('memory_missions').updateOne(
-      { _id: missionId },
+      { _id: missionId } as any,
       {
         $pull: { task_tree: { id: taskId } },
         $set: { updated_at: new Date() },
-      }
+      } as any
     );
   }
 
@@ -823,11 +823,11 @@ Return ONLY JSON:
       status,
     };
     await this.db.collection('memory_missions').updateOne(
-      { _id: missionId },
+      { _id: missionId } as any,
       {
         $push: { task_tree: newTask },
         $set: { updated_at: new Date() },
-      }
+      } as any
     );
   }
 
@@ -839,7 +839,7 @@ Return ONLY JSON:
     meta_goal: string
   ): Promise<void> {
     await this.db.collection('memory_missions').updateOne(
-      { _id: missionId },
+      { _id: missionId } as any,
       {
         $set: { meta_goal, updated_at: new Date() },
       }
@@ -1054,7 +1054,7 @@ Return ONLY JSON:
       .find({ user_id })
       .sort({ timestamp: -1 })
       .limit(200)
-      .toArray() as AutoJournalEntry[];
+      .toArray() as unknown as AutoJournalEntry[];
 
     const scored = entries.map(e => {
       const text = (e.entry || '').toLowerCase();
@@ -1129,7 +1129,7 @@ Assistant: ${assistantResponse.slice(0, 500)}`;
       .find({ user_id })
       .sort({ timestamp: -1 })
       .limit(limit)
-      .toArray() as Promise<AutoJournalEntry[]>;
+      .toArray() as unknown as Promise<AutoJournalEntry[]>;
   }
 
   /**
@@ -1166,6 +1166,6 @@ Assistant: ${assistantResponse.slice(0, 500)}`;
       .find({ user_id })
       .sort({ timestamp: -1 })
       .limit(limit)
-      .toArray() as Promise<HeartbeatJournalEntry[]>;
+      .toArray() as unknown as Promise<HeartbeatJournalEntry[]>;
   }
 }
