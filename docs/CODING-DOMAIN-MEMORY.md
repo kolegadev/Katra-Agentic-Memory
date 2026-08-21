@@ -22,6 +22,10 @@ Explicitly *out of scope for v1*: a rules engine, per-language config matrices, 
 
 Distillation is the layer that turns raw episodic events into structured, reusable knowledge. Everything downstream — the knowledge graph, time-block summaries, recall, reflection — inherits whatever distillation captures. Biasing it toward code facts is therefore the **smallest change with the widest reach**, which is exactly what "start at distillation" points to.
 
+### Current-system note (2026-08-21)
+
+Since this note was written, Katra shipped a native code graph — the Satori Graph MCP tools `scan_codebase`, `sync_code_graph`, and `code_graph_status` (documented in `scripts/README-code-graph.md`). They capture code structure directly rather than through conversation distillation, so they complement the distillation bias proposed here: the graph maps the codebase, while distillation decides which code-domain facts are worth remembering. The plan below (Phases 1-3) is unchanged by this.
+
 ## Integration points (where to add in)
 
 | Concern | File / component | Change |

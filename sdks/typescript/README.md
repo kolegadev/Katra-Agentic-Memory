@@ -1,10 +1,31 @@
 # @satori/sdk
 
-TypeScript SDK for [Satori](https://github.com/katra-ai/katra) — Cognitive Memory as a Service.
+TypeScript SDK for [Satori](../../README.md) — the Katra memory system's
+founding identity name — Cognitive Memory as a Service.
 
-Access all 29 Satori memory tools with a fully-typed async API. Built on the
-MCP (Model Context Protocol) Streamable HTTP transport with automatic session
-handling.
+Typed async API for the core Satori memory tools, built on the MCP (Model
+Context Protocol) Streamable HTTP transport with automatic session
+handling. The current Katra server registers 66 MCP tools; this SDK wraps
+the core memory subset listed below, and any registered tool is reachable
+through the low-level `MCPClient`.
+
+## Identity & auth
+
+- Katra resolves the calling identity from the API key presented on each
+  request (`X-MCP-Auth` header, `Authorization: Bearer`, or `?token=` URL
+  param) — never from a client-declared `user_id`. The SDK sends
+  `Authorization: Bearer <apiKey>`.
+- The key must be a valid client key provisioned by the server (the admin
+  `KATRA_API_KEY` authenticates as the trusted `satori` identity; per-agent
+  keys exist for `shoshin` and `zanshin`). A valid-but-unmapped key is
+  rejected with 401 — no silent fallback. The legacy `MCP_API_KEY` /
+  `BACKUP_MCP_KEYS` env keys no longer authenticate.
+- `user_id` fields are scoping hints within what your identity may see:
+  Katra runs in hybrid mode (`shared_id` `my-team`), reads return your own
+  private memories plus the shared team scope, and personal kinds (journal,
+  reflection, emotional, insight) are always private. Use a named identity
+  (`'satori'`, `'shoshin'`, `'zanshin'`) to address that identity's slice
+  of the shared scope.
 
 ## Quick Start
 
@@ -16,8 +37,8 @@ npm install @satori/sdk
 import { SatoriClient } from '@satori/sdk';
 
 const katra = new SatoriClient({
-  url: 'http://localhost:3112',
-  apiKey: process.env.KATRA_API_KEY, // optional if server allows unauthenticated
+  url: 'http://localhost:3112', // the SDK appends /mcp
+  apiKey: process.env.KATRA_API_KEY, // a valid client key; identity is resolved from it
 });
 
 // Store a memory
@@ -31,7 +52,7 @@ console.log(`Stored: ${result.insertedId}`);
 // Search memories
 const hits = await katra.searchMemories({
   query: 'Bun API',
-  user_id: 'alice',
+  user_id: 'satori',
 });
 console.log(`${hits.episodic.length} events, ${hits.semantic.length} facts`);
 
@@ -43,7 +64,7 @@ const similar = await katra.vectorSearch({
 
 // Create a mission with tasks
 const mission = await katra.createMission({
-  user_id: 'alice',
+  user_id: 'satori',
   goal: 'Migrate to Bun',
   title: 'Bun Migration',
   tasks: ['Benchmark', 'Write tests', 'Deploy'],
@@ -143,7 +164,7 @@ await mcp.close();
 ## Requirements
 
 - Node.js ≥ 20.0.0 (uses native `fetch` and `AbortSignal.timeout`)
-- TypeScript ≥ 5.5 (for development / type checking)
+- TypeScript ≥ 5.9 (dev dependency, for development / type checking)
 
 ## License
 
@@ -151,5 +172,5 @@ MIT — see the [LICENSE](../../LICENSE) file.
 
 ## Related
 
-- [Satori Documentation](https://github.com/katra-ai/katra)
+- [Katra repository](../../README.md)
 - [MCP Specification](https://spec.modelcontextprotocol.io/)

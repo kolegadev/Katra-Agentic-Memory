@@ -2,6 +2,11 @@
 
 [Cognitive Memory as a Service](https://github.com/openclaw/katra) — a standalone memory server for AI agents, exposing a REST API and an MCP (Model Context Protocol) endpoint.
 
+This chart lives in `helm/satori/` (chart name `satori`, appVersion `1.0.0`).
+The server container exposes two ports: REST `9002` and MCP `3100`; when
+deployed in Kubernetes you reach them through the Service's `rest` and `mcp`
+ports.
+
 ## Prerequisites
 
 - **Kubernetes 1.24+**
@@ -13,13 +18,14 @@
 
 ```bash
 # Install with bundled MongoDB + Redis (local dev / quickstart)
-helm install katra ./helm/katra \
+helm install katra ./helm/satori \
   --namespace katra --create-namespace \
   --set secrets.KATRA_API_KEY=your-secure-api-key
 
-# Port-forward to access locally
-kubectl port-forward svc/katra 9002:9002 -n katra &
-kubectl port-forward svc/katra 3100:3100 -n katra &
+# Port-forward to access locally (resource names follow the chart's fullname
+# helper: <release>-satori unless the release name already contains "satori")
+kubectl port-forward svc/katra-satori 9002:9002 -n katra &
+kubectl port-forward svc/katra-satori 3100:3100 -n katra &
 ```
 
 ## Installation
@@ -32,7 +38,7 @@ helm repo add bitnami https://charts.bitnami.com/bitnami
 helm repo update
 
 # Install Katra with bundled MongoDB + Redis
-helm install katra ./helm/katra \
+helm install katra ./helm/satori \
   --namespace katra --create-namespace \
   --set secrets.KATRA_API_KEY=$(openssl rand -hex 16)
 ```
@@ -40,7 +46,7 @@ helm install katra ./helm/katra \
 ### With External MongoDB / Redis
 
 ```bash
-helm install katra ./helm/katra \
+helm install katra ./helm/satori \
   --namespace katra --create-namespace \
   --set mongodb.enabled=false \
   --set redis.enabled=false \
@@ -52,7 +58,7 @@ helm install katra ./helm/katra \
 ### With Ingress
 
 ```bash
-helm install katra ./helm/katra \
+helm install katra ./helm/satori \
   --namespace katra --create-namespace \
   --set ingress.enabled=true \
   --set ingress.hosts[0].host=katra.example.com \
@@ -122,7 +128,9 @@ secrets:
 
 config:
   LLM_PROVIDER: "openai"
-  EMBEDDING_PROVIDER: "openai"
+  # Embeddings are always local in the current Katra server
+  # (Xenova/all-MiniLM-L6-v2 via Transformers.js ONNX) — keep this "local".
+  EMBEDDING_PROVIDER: "local"
   S3_ENDPOINT: "https://s3.amazonaws.com"
   S3_REGION: "us-east-1"
   S3_BUCKET_NAME: "katra-production"
@@ -131,7 +139,7 @@ config:
 Then install:
 
 ```bash
-helm install katra ./helm/katra -f production.yaml -n katra --create-namespace
+helm install katra ./helm/satori -f production.yaml -n katra --create-namespace
 ```
 
 ## Configuration
@@ -142,7 +150,7 @@ helm install katra ./helm/katra -f production.yaml -n katra --create-namespace
 |-----|------|---------|-------------|
 | `replicaCount` | int | `1` | Number of Katra server replicas |
 | `image.repository` | string | `openclaw/katra` | Container image repository |
-| `image.tag` | string | `""` (chart appVersion) | Image tag override |
+| `image.tag` | string | `""` (chart appVersion `1.0.0`) | Image tag override |
 | `image.pullPolicy` | string | `IfNotPresent` | Image pull policy |
 | `service.type` | string | `ClusterIP` | Service type (ClusterIP, NodePort, LoadBalancer) |
 | `service.ports.rest` | int | `9002` | REST API port |
@@ -154,7 +162,7 @@ helm install katra ./helm/katra -f production.yaml -n katra --create-namespace
 |-----|------|---------|-------------|
 | `ingress.enabled` | bool | `false` | Enable ingress |
 | `ingress.className` | string | `""` | Ingress class (e.g., nginx) |
-| `ingress.hosts` | list | `[host: katra.local]` | Host rules |
+| `ingress.hosts` | list | `[host: katra.local]` | Host rules (default paths: `/api` → `rest`, `/mcp` → `mcp`) |
 | `ingress.tls` | list | `[]` | TLS configuration |
 
 ### Resources & Scaling
@@ -178,7 +186,7 @@ helm install katra ./helm/katra -f production.yaml -n katra --create-namespace
 | `config.MCP_PORT` | string | `3100` | MCP endpoint listen port |
 | `config.HOST` | string | `0.0.0.0` | Bind address |
 | `config.DATABASE_NAME` | string | `katra` | MongoDB database name |
-| `config.LLM_PROVIDER` | string | `local` | LLM backend (local, openai, anthropic, deepseek, google, custom) |
+| `config.LLM_PROVIDER` | string | `local` | LLM backend (chart accepts: local, openai, anthropic, deepseek, google, custom) |
 | `config.LLM_MODEL` | string | `""` | Model to use |
 | `config.LLM_BASE_URL` | string | `""` | Custom LLM endpoint (OpenAI-compatible) |
 | `config.EMBEDDING_PROVIDER` | string | `local` | Embeddings backend (local, openai, custom) |
@@ -188,11 +196,22 @@ helm install katra ./helm/katra -f production.yaml -n katra --create-namespace
 | `config.MULTI_TENANT` | string | `""` | Enable multi-tenancy |
 | `config.TENANT_ISOLATION` | string | `""` | Tenant isolation mode |
 
+Current-system notes:
+
+- `LLM_PROVIDER` is passed through to the server verbatim. The current Katra
+  server supports DeepSeek, OpenAI, Moonshot, Ollama, and custom
+  OpenAI-compatible providers (via `LLM_BASE_URL`).
+- Embeddings are always local in the current server
+  (Xenova/all-MiniLM-L6-v2, Transformers.js ONNX) — leave
+  `EMBEDDING_PROVIDER` at `local`.
+- Liveness/readiness probes hit `GET /api/v1/health` on the `rest` port
+  (`livenessProbe`, `readinessProbe`, optional `startupProbe` in values).
+
 ### Secrets
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `secrets.KATRA_API_KEY` | string | `""` (auto-generated) | API key for agent auth |
+| `secrets.KATRA_API_KEY` | string | `""` (auto-generated, 32 chars) | Admin API key — authenticates the trusted `satori` identity |
 | `secrets.MONGODB_URI` | string | `""` (auto from subchart) | MongoDB connection string |
 | `secrets.REDIS_URL` | string | `""` (auto from subchart) | Redis connection URL |
 | `secrets.LLM_API_KEY` | string | `""` | LLM provider API key |
@@ -200,6 +219,12 @@ helm install katra ./helm/katra -f production.yaml -n katra --create-namespace
 | `secrets.AWS_ACCESS_KEY_ID` | string | `""` | S3 access key |
 | `secrets.AWS_SECRET_ACCESS_KEY` | string | `""` | S3 secret key |
 | `secrets.JWT_SECRET` | string | `""` | JWT signing secret (SaaS) |
+
+Identity separation: the server resolves the calling identity from the API
+key presented on each request (`X-MCP-Auth` header, `Authorization: Bearer`,
+or `?token=` URL param). `KATRA_API_KEY` authenticates as the trusted satori
+identity; additional per-identity client keys (shoshin, zanshin) are
+provisioned by the server itself at boot — you do not set them here.
 
 ### External Secret
 
@@ -211,13 +236,14 @@ helm install katra ./helm/katra -f production.yaml -n katra --create-namespace
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `mongodb.enabled` | bool | `true` | Deploy Bitnami MongoDB |
+| `mongodb.enabled` | bool | `true` | Deploy Bitnami MongoDB (chart `~15.6`) |
 | `mongodb.auth.rootUser` | string | `admin` | MongoDB root user |
 | `mongodb.auth.rootPassword` | string | `""` (auto) | MongoDB root password |
 | `mongodb.persistence.size` | string | `8Gi` | MongoDB PVC size |
-| `redis.enabled` | bool | `true` | Deploy Bitnami Redis |
+| `redis.enabled` | bool | `true` | Deploy Bitnami Redis (chart `~19.6`) |
 | `redis.auth.enabled` | bool | `false` | Enable Redis auth |
 | `redis.master.persistence.size` | string | `8Gi` | Redis PVC size |
+| `minio.enabled` | bool | `false` | MinIO is **not** bundled as a subchart — point `config.S3_ENDPOINT` at your own S3 provider |
 
 ## Using External MongoDB/Redis
 
@@ -243,17 +269,17 @@ kubectl create secret generic katra-env \
   -n katra
 
 # Install referencing it
-helm install katra ./helm/katra --set envFromSecret=katra-env -n katra --create-namespace
+helm install katra ./helm/satori --set envFromSecret=katra-env -n katra --create-namespace
 ```
 
 ## Upgrading
 
 ```bash
 # Update dependencies (if mongodb/redis charts updated)
-helm dependency update ./helm/katra
+helm dependency update ./helm/satori
 
 # Upgrade the release
-helm upgrade katra ./helm/katra \
+helm upgrade katra ./helm/satori \
   --namespace katra \
   -f production.yaml
 ```
@@ -279,7 +305,7 @@ kubectl delete pvc -n katra -l app.kubernetes.io/instance=katra
 ```
 ┌──────────────────────────────────────────────┐
 │                    Ingress                    │
-│  /api → katra:9002   /mcp → katra:3100       │
+│  /api → rest:9002      /mcp → mcp:3100       │
 └──────────────────┬───────────────────────────┘
                    │
               ┌────▼────┐
@@ -288,7 +314,7 @@ kubectl delete pvc -n katra -l app.kubernetes.io/instance=katra
                  │   │
       ┌──────────▼┐ ┌▼──────────┐
       │  MongoDB   │ │   Redis    │  Bitnami subcharts
-      │  (7.0)     │ │  (7-alpine)│
+      │  (15.6.x)  │ │  (19.6.x)  │
       └────────────┘ └────────────┘
 ```
 

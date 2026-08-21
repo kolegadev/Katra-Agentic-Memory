@@ -7,9 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Agent identity separation** — one Katra serves three named identities (`satori` / `shoshin` / `zanshin`) plus the `gas-law-watcher` tool actor. Identity is resolved from the presented API key (loopback/admin key → trusted Satori; client keys → their identity); valid-but-unmapped keys are rejected with a loud 401. `get_my_identity` MCP tool; per-user `agent_identity:<user_id>` records; `GET /api/v1/admin/identity?user_id=` for per-identity records
+- **Hybrid scope policy** — personal kinds (journal, reflection, emotional, insight) are always private; all other writes default to `my-team` (`private: true` opts out); reads return the caller's private memories plus the team scope
+- **Inter-agent message bus** — `Attention: <Agent>` messages through shared memory, surfaced by wake rituals and the Kolega Code bridge, with read receipts tagged `background-ack` / `read-receipt` (wake services skip them)
+- **Per-agent wake rituals** — `satori-wake.sh`, `wake-shoshin.sh`, `wake-zanshin.sh`: identity, latest journal, unresolved threads, memory health, rules recall, messages from the team; identity retry ×3 with a fix checklist; per-machine `~/.katra/wake-env.sh`
+- **Satori Graph code tools** — `sync_code_graph`, `scan_codebase`, `code_graph_status` (replaces the Graphify toolchain in the bug-fix and loop-director skills)
+- **Client key provisioning** — `ensureClientKeys()` generates Shoshin/Zanshin keys at boot, printed once, stored as sha256 hashes only; `resolveCallerIdentity` pins every write to the caller
+
 ### Changed
-- Updated clone URL in README to match repo name
-- Cleaned up 29 stale `kolega/*` branches fully merged into main
+- **README + documentation overhaul** — identity separation, message bus, wake rituals, 66-tool reference, retired legacy keys, license section cleanup
+- Legacy `MCP_API_KEY` / `BACKUP_MCP_KEYS` environment keys retired — they no longer authenticate
+- `kolega-agent` / `opencode-agent` user ids rekeyed to the named identities; ~1.3M documents migrated
+- Kolega Code bridge: per-machine `KATRA_USER_ID`, platform-aware state dir, `mcp_url` vs `KATRA_HOST` self-healing, key-file fallback
+- Helm chart directory `helm/katra/` → `helm/satori/`
+
+### Fixed
+- `ensure-bridge.sh` step-3 rewrite condition now also compares `mcp_url` against `KATRA_HOST` (a non-login run could pin `localhost` permanently)
+- Cross-identity semantic leak in `search_memories` — vector pass scoped to the caller's view
+- Hybrid scope regression in `search_memories` keyword pass — `$or` nested under `$and`
+- Agent-message pickup missed the new attention names (Satori/Shoshin/Zanshin); OR-aware search + vector fallback
+- Wake scripts now handle missing `KATRA_HOST`, legacy keys, and whitespace-padded config values
 
 ## [0.1.0] — 2026-06-26
 

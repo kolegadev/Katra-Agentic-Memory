@@ -36,6 +36,18 @@ KATRA (subconscious)              BRIDGE (brainstem)              AGENT (conscio
 4. The agent's SessionStart hook finds the action cards and presents them as a bulletin
 5. The Katra session extractor feeds the agent's actions back into the subconscious
 
+## Identity & Scope
+
+The bridge authenticates with a single Katra client key (`KATRA_TOKEN`).
+Katra resolves the bridge's identity from that key — there is no
+client-declared identity, and a valid-but-unmapped key is rejected with 401
+rather than falling back to a default. Action cards are written with
+`store_memory` (category `fact`, no `private` flag), so under Katra's hybrid
+scope policy they land in the shared `my-team` scope: every team identity
+(Satori, Shoshin, Zanshin) can see them, while personal kinds would stay
+private to the writer. The conscious agent reads the same shared cards
+through its own identity's key via its session hook.
+
 ## Thresholds
 
 | Severity | Drive Deficit | Auto-Start |
@@ -64,9 +76,10 @@ systemctl --user start bridge-drive-to-action
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `KATRA_URL` | `http://localhost:3112/mcp` | Katra MCP endpoint |
-| `KATRA_TOKEN` | (required) | Katra auth token |
+| `KATRA_TOKEN` | (required) | Katra auth token — a valid client key; Katra resolves the bridge's identity from it |
 | `POLL_INTERVAL` | `900` | Seconds between polls |
 | `DRIVE_DEFICIT_THRESHOLD` | `40` | Percentage for urgent flag |
+| `WORRY_CYCLE_THRESHOLD` | `2` | Reflection cycles before a repeated regret escalates |
 | `AUTO_START` | `true` | Enable self-initiation |
 | `KOLEGA_BIN` | `kolega-code` | Path to agent binary |
 

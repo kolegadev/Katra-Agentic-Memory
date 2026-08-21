@@ -8,6 +8,18 @@ Sleep Consolidation is Satori's reflective memory layer — a scheduled process 
 
 Unlike the factual memory pipeline (which answers "what happened"), sleep consolidation answers "what did it *mean*, how did it *feel*, and who am I *becoming*."
 
+### Per-Identity Reflections
+
+Consolidation runs **per identity** — `satori`, `shoshin`, and `zanshin` each
+distill their own experience. Every artifact it writes (reflective journals,
+reflection nodes and edges, philosophical insights, unresolved threads) is a
+personal kind — `journal`, `reflection`, `emotional`, `insight` — which the
+write scope policy forces private to the writer's identity: they carry the
+writer's `user_id` and are never written to the shared `my-team` scope, so no
+other identity ever sees them. What one identity consolidates is its own
+experience, not the team's. (Enforced in
+`server/src/services/memory/write-scope-policy.ts`.)
+
 ## Why Sleep Consolidation?
 
 ### The Gap in AI Memory
@@ -280,11 +292,11 @@ sleepService.schedule({
 
 To adjust the schedule, modify these values and rebuild the Docker image. To disable, comment out the `sleepService.schedule()` call.
 
-The LLM prompt is defined in `server/src/services/sleep-consolidation-service.ts` in the `buildReflectionPrompt()` method. The prompt can be tuned to emphasize different aspects of reflection (more philosophical, more emotional, more practical) depending on the use case.
+The LLM prompt is defined in `server/src/services/processing/sleep-consolidation-service.ts` in the `buildReflectionPrompt()` method. The prompt can be tuned to emphasize different aspects of reflection (more philosophical, more emotional, more practical) depending on the use case.
 
 ## Future Directions
 
 - **Dream recombination**: Randomly recombining entities and concepts from different periods to generate novel associations, mimicking REM sleep's role in creativity.
 - **Emotional forecasting**: Using the reflection graph to predict how the agent is likely to feel about upcoming projects or decisions based on historical emotional signatures.
 - **Relationship health monitoring**: Detecting when an entity's emotional signature is trending negatively (fading, increasing frustration) and surfacing it as an unresolved thread.
-- **Cross-agent reflection sharing**: In hybrid/shared identity mode, agents could read each other's reflections to build empathy and shared understanding.
+- **Cross-agent reflection sharing**: not possible under the current scope policy — reflections are personal kinds and are always private per identity. Sharing them would require a deliberate change to the write scope policy plus an explicit shared-reflection mechanism, not just hybrid mode.

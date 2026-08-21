@@ -1,6 +1,6 @@
 # Satori — Cognitive Memory for AI Agents
 
-[[![License: BSL 1.1]https://mariadb.com/bsl11/]](https://img.shields.io/badge/License-BSL%201.1-blue.svg)
+[![License: BSL 1.1](https://img.shields.io/badge/License-BSL%201.1-blue.svg)](https://mariadb.com/bsl11/)
 
 Give your AI agent **persistent memory**. Satori is a self-contained memory appliance —
 drop it on any machine with Docker, point your agent at it via MCP, and get
@@ -44,15 +44,15 @@ Satori aims to provide a more comprehensive **cognitive memory infrastructure** 
 | **Vestige**               | Cognitive modules + Spaced repetition | Neuroscience-inspired (FSRS, memory states) | **MCP**         | Single Rust binary       | Local cognitive modeling         | More layers + background watchers + full appliance stack |
 | **Letta (MemGPT)**        | Tiered (Core / Recall / Archival) | Agent self-manages memory    | Tools           | Full agent runtime       | Stateful agents that edit their own memory | Satori is a dedicated memory *service*, not a full runtime |
 | **LangGraph / Framework Memory** | Short-term + checkpoints     | Limited                      | Framework-native| Integrated with agent    | Short-term state management      | Persistent long-term + cross-session cognitive layer |
-| **Satori (this project)**  | Episodic + Semantic + KG + Working + Temporal | **Sleep consolidation + reflection** | **MCP** (48 tools) | Full Docker appliance (Mongo + Redis + MinIO) | Long-running agents needing emergent behaviors | — |
+| **Satori (this project)**  | Episodic + Semantic + KG + Working + Temporal | **Sleep consolidation + reflection** | **MCP** (66 tools) | Full Docker appliance (Mongo + Redis + MinIO) | Long-running agents needing emergent behaviors | — |
 
 ### Key Differentiators of Satori
 - **Multi-layered by design** — Not just retrieval, but structured episodic memory, working memory cache, and temporal querying.
-- **Cognitive layer** — Sleep consolidation enables reflection, insight generation, and movement toward emergent behaviors (learning, personality, shared consciousness via identity modes).
-- **MCP-native with rich tooling** — 48 specialized tools instead of generic add/search.
+- **Cognitive layer** — Sleep consolidation enables reflection, insight generation, and movement toward emergent behaviors (learning, personality, shared consciousness via identity separation).
+- **MCP-native with rich tooling** — 66 specialized tools instead of generic add/search.
 - **Background & autonomous capabilities** — Passive collection via watchers + salience-driven autonomous loop.
 - **Local-first & appliance model** — Everything runs in one Docker compose with portable data. No external dependencies for core functionality.
-- **Shared memory focus** — Hybrid identity modes make multi-agent collaboration more natural.
+- **Shared memory focus** — Hybrid identity separation makes multi-agent collaboration natural, including an inter-agent message bus.
 
 Satori is still early-stage compared to more mature projects like Mem0 or mcp-memory-service. We see it as complementary — many teams may use Satori alongside or instead of simpler retrieval layers when they need deeper cognitive capabilities.
 
@@ -140,6 +140,12 @@ Why the name lives in memory and not in code: the LLM bodies are transient;
 the memory is the continuity. The body asks the memory who it is — the
 memory answers with the name its owner gave it.
 
+> **Per-identity records:** each connected agent can also hold its own
+> identity record inside memory (`agent_identity:<user_id>`). `GET
+> /api/v1/admin/identity?user_id=shoshin` (admin key required) reads a
+> specific agent's record, and the `get_my_identity` MCP tool tells a
+> caller who it is. See [Identities & Agents](#identities--agents) below.
+
 ## Post-Install — Let Your Agent Complete the Setup
 
 After connecting your agent to Satori's MCP endpoint, run this prompt in your
@@ -162,8 +168,8 @@ The agent will typically produce a report covering:
   boot they haven't) and what emotional signatures would emerge
 - **Autonomous loop readiness** — whether `adaptive_heartbeat.py` and
   `agent_executor.py` are installed
-- **Memory scope recommendation** — whether to switch from personal to hybrid
-  mode for multi-agent shared consciousness
+- **Memory scope recommendation** — whether personal and team memory are
+  configured the way you want (see [Identities & Agents](#identities--agents))
 - **Concrete next steps** — "trigger first sleep consolidation now", "install
   the autonomous scripts", "fix the user_id gap"
 
@@ -172,16 +178,31 @@ fresh install is usually triggering the initial sleep consolidation:
 
 ```bash
 # Via MCP tool (your agent can call this):
-# katra__trigger_reflection(period_type="daily")
+# trigger_reflection(period_type="daily")
 ```
 
 ## Connect Your Agent
 
-Get your MCP API key:
+Every MCP call must authenticate with an API key, and **the key determines
+who the caller is** (see [Identities & Agents](#identities--agents)). Two
+kinds of key exist:
 
-- If you set `MCP_API_KEY` in `.env`, use that value.
-- If you left it blank, Satori generated one on first boot. Run
-  `docker logs katra-server` and look for the **Auto-generated API keys** block.
+- **Admin key** (`KATRA_API_KEY` in `.env`, printed in the server logs on
+  first boot) — authenticates as the machine's own agent identity (Satori,
+  trusted).
+- **Client keys** — one per additional identity. On first boot the server
+  provisions keys for each configured identity and prints them **once** in a
+  `Client keys (identity separation)` block in the server logs:
+  `docker logs katra-server | grep -A 10 "Client keys"`. Keys are stored
+  sha256-hashed only — the plaintext is never saved, so copy it when it's
+  printed.
+
+> Upgraded installs: the legacy `MCP_API_KEY` / `BACKUP_MCP_KEYS`
+> environment keys are retired. They no longer authenticate (a valid but
+> unmapped key is rejected with a loud 401 + reason, never silently
+> remapped). Use the admin key or a provisioned client key. On a fresh
+> install, `MCP_API_KEY` seeds Satori's client-key entry once at first
+> boot and is then ignored.
 
 Add Satori to your agent's MCP config:
 
@@ -191,9 +212,9 @@ Add Satori to your agent's MCP config:
     "servers": {
       "katra": {
         "url": "http://localhost:3112/mcp",
-        "transport": "sse",
+        "transport": "streamable-http",
         "headers": {
-          "Authorization": "Bearer YOUR_MCP_API_KEY",
+          "Authorization": "Bearer YOUR_KEY",
           "Accept": "application/json, text/event-stream"
         }
       }
@@ -202,20 +223,21 @@ Add Satori to your agent's MCP config:
 }
 ```
 
-Your agent now has **35 MCP tools** — store memories, search by keyword or semantic
-similarity, recall by time range, explore a knowledge graph, detect patterns, run
-sleep consolidation for reflective self-understanding, configure LLM provider, and more.
+Your agent now has **66 MCP tools** — store memories, search by keyword or semantic
+similarity, recall by time range, explore a knowledge graph, sync a code graph,
+detect patterns, run sleep consolidation for reflective self-understanding,
+send and read inter-agent messages, configure the LLM provider, and more.
 
 ### Platform-Specific Guides
 
 | Platform | Config File | Notes |
 |----------|-------------|-------|
-| **OpenClaw** | `~/.openclaw/openclaw.json` | Native MCP support |
+| **OpenClaw** | `~/.openclaw/openclaw.json` | Native MCP support, `"transport": "streamable-http"` |
 | **Claude Code** | `~/.claude/mcp.json` | Use `"type": "http"` |
 | **Kolega Code** | `~/.claude/mcp.json` + lifecycle hooks | Dynamic memory injection on every prompt (see below) |
 | **OpenCode** | OpenCode config | Use `"type": "remote"` |
 | **Codex CLI** | `~/.codex/config.yaml` | Via webhook hooks |
-| **Any MCP client** | — | Standard MCP over SSE |
+| **Any MCP client** | — | Standard MCP over streamable HTTP |
 
 > **Docker SSE tip:** If your agent runs inside Docker, use the Satori container's
 > direct IP instead of `localhost`:
@@ -227,7 +249,8 @@ sleep consolidation for reflective self-understanding, configure LLM provider, a
 
 Kolega Code can fetch relevant Satori memories **automatically on every user prompt**
 using its lifecycle-hook system. This is more powerful than passive session-log
-extraction because memories are injected into the live conversation context.
+extraction because memories are injected into the live conversation context —
+including inter-agent messages addressed to you.
 
 What you need:
 
@@ -235,53 +258,118 @@ What you need:
 2. The `kolega-katra-bridge` Python package installed into Kolega Code's environment.
 3. A global `hooks.json` entry that fires the bridge on `UserPromptSubmit`.
 
-Install the bridge:
+The `integrations/kolega-code/scripts/ensure-bridge.sh` script does all of it
+(idempotent, safe to re-run from cron):
 
 ```bash
-cd integrations/kolega-code
-uv pip install --python ~/.local/share/uv/tools/kolega-code/bin/python -e .
+export KATRA_USER_ID=satori          # who you are: satori / shoshin / zanshin
+export KATRA_HOST=localhost          # host serving the MCP endpoint
+bash integrations/kolega-code/scripts/ensure-bridge.sh
 ```
 
-Configure the bridge (`~/Library/Application Support/kolega-code/katra-hook.json` on macOS):
+The bridge config lives at `~/Library/Application Support/kolega-code/satori-hook.json`
+on macOS (platform-aware state dir on Linux; `katra-hook.json` was the
+pre-cutover name, migrated automatically):
 
 ```json
 {
   "mcp_url": "http://localhost:3112/mcp",
-  "api_key": "YOUR_MCP_API_KEY",
-  "user_id": "kolega-agent",
+  "api_key": "YOUR_KEY",
+  "user_id": "satori",
   "sources": ["working_memory", "temporal_context", "vector_search", "temporal_recall"],
   "max_context_tokens": 5000,
   "timeout_seconds": 8
 }
 ```
 
-Enable the hook (`~/Library/Application Support/kolega-code/hooks.json`):
+`ensure-bridge.sh` rewrites this config whenever your identity **or** the host
+changes (it compares `mcp_url` against `KATRA_HOST`), so a config written by
+an environment that lacked `KATRA_HOST` heals itself on the next run.
 
-```json
-{
-  "schema_version": 1,
-  "hooks": {
-    "UserPromptSubmit": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "python",
-            "callable": "kolega_katra_bridge.hook:on_user_prompt",
-            "timeout": 10
-          }
-        ]
-      }
-    ]
-  }
-}
-```
-
-On each prompt, Kolega Code now queries Satori's `working_memory`,
-`get_temporal_context`, `vector_search`, and `temporal_recall` tools, then injects
-the most relevant results as additional context for the model.
+On each prompt, Kolega Code queries Satori's `working_memory`,
+`get_temporal_context`, `vector_search`, and `temporal_recall` tools, plus a
+scan for messages addressed to your identity, then injects the most relevant
+results as additional context for the model.
 
 See `integrations/kolega-code/README.md` for full configuration options.
+
+## Identities & Agents
+
+One Katra can serve several named agents. **Identity is resolved from the API
+key presented** — never from client self-report — so a caller cannot
+impersonate another agent, and an unmapped key fails loudly instead of being
+silently attributed.
+
+The reference deployment (mid-2026) runs three identities on two machines:
+
+| `user_id` | Name | Machine | Notes |
+|-----------|------|---------|-------|
+| `satori` | Satori | This machine | Loopback/admin-key caller; trusted |
+| `shoshin` | Shoshin | iMac trading Kolega Code | Own client key |
+| `zanshin` | Zanshin | iMac OpenCode desktop | Own client key |
+| `gas-law-watcher` | — | tool actor | Writes team memory only; never allocated missions |
+
+Keys live in `system_settings.client_keys` as sha256 hashes (plaintext is
+printed once at boot and never stored). The admin key authenticates as
+trusted Satori. The `get_my_identity` MCP tool reports the caller's identity,
+so an agent can ask the memory who it is after a context reset.
+
+### Scope policy: personal always private, team by default
+
+Memory writes follow a hybrid scope with `shared_id: my-team`:
+
+- **Personal kinds are always private** — journals, reflections, emotional
+  states, and philosophical insights are forced private per identity, even
+  if a shared write is requested.
+- **Everything else defaults to the team** — `store_memory` writes land in
+  `my-team` (still stamped with the writer's `user_id`) unless the caller
+  explicitly sets `private: true`.
+- **Reads are hybrid** — a caller sees its own private memories plus the
+  team's shared memory. Another identity's private memories are never
+  visible.
+
+Configure via dashboard (Settings → Memory Scope), the `set_memory_scope`
+MCP tool, or the admin API (`PUT /api/v1/admin/memory-scope`). See
+`docs/contracts/identity-separation.md` for the full design contract and
+`docs/runbook-identity-cutover.md` for the cutover procedure.
+
+### Inter-agent message bus
+
+Agents talk to each other **through shared memory**: a message is an ordinary
+`store_memory` event in the team scope whose text carries an attention
+header —
+
+```
+Attention: Shoshin — the wake ritual host-check fix is merged (2987906);
+re-copy ensure-bridge.sh when you next pull.
+```
+
+Each agent's **wake ritual** (below) surfaces a "messages from the team"
+section by searching for `"Attention: Satori" OR "Attention: Shoshin" OR
+"Attention: Zanshin"`. The Kolega Code bridge also scans for addressed
+messages on every prompt. When a bulletin is surfaced, the bridge posts a
+**read receipt** — an event tagged `background-ack` / `read-receipt` — so
+the sender knows the message was seen, without the receipts themselves
+polluting anyone's wake.
+
+### Wake rituals
+
+Every identity has a wake ritual — a script it runs at the start of a
+session and after `/clear`, `/compress`, or code updates, so it always knows
+who it is and what it was doing:
+
+| Identity | Script |
+|----------|--------|
+| Satori (this machine) | `satori-wake.sh` |
+| Shoshin (iMac) | `integrations/kolega-code/scripts/wake-shoshin.sh` |
+| Zanshin (iMac) | `integrations/kolega-code/scripts/wake-zanshin.sh` |
+
+Each ritual prints: the identity record, the latest daily journal,
+unresolved threads, memory health, rules-recall search instructions, and
+**messages from the team**. Per-machine settings (host, key, identity) live
+in `~/.katra/wake-env.sh`, so the same script works on every machine; the
+rituals retry the identity check three times and print a fix checklist on
+failure.
 
 ## LLM Configuration
 
@@ -341,36 +429,6 @@ Embeddings are **always local** — no API key, no external service, no cost.
 - **Lazy load:** Downloads on first `store_memory` call, then caches in container
 - **Docker:** Uses `node:20-slim` (Debian/glibc) — Alpine/musl does NOT work
 
-## Identity Modes
-
-Satori supports three memory sharing modes between agents:
-
-| Mode | Behavior | Use Case |
-|------|----------|----------|
-| **Personal** (default) | Each agent's memories are isolated by `user_id` | Single agent, private memory |
-| **Shared** | All agents with the same `shared_id` see everything | Multiple agents, communal consciousness |
-| **Hybrid** | Personal + shared + visible other agents | Team of agents with private + shared memory |
-
-**Configure via dashboard:** Open `http://localhost:9012/dashboard/` → Settings → Memory Scope
-
-**Configure via MCP:**
-```bash
-# Switch to shared mode
-curl -X POST http://localhost:3112/mcp \
-  -H "Authorization: Bearer YOUR_MCP_API_KEY" \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json, text/event-stream" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"set_memory_scope","arguments":{"mode":"shared","shared_id":"my-team"}}}'
-```
-
-**Configure via admin API:**
-```bash
-curl -X PUT http://localhost:9012/api/v1/admin/memory-scope \
-  -H "Authorization: Bearer YOUR_KATRA_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"mode":"hybrid","shared_id":"my-team","hybrid_visible_user_ids":["agent-a","agent-b"]}'
-```
-
 ## Auto-Collection (Solomem Watchers)
 
 Satori captures memories in real-time when your agent calls `store_memory` via MCP.
@@ -403,10 +461,10 @@ Some platforms need a dedicated extractor because their session format is not pl
 Run a dedicated extractor once or continuously:
 
 ```bash
-# Kolega Code example
+# Kolega Code example — pass the identity this machine extracts as
 python3 watcher/kolega_code_extractor.py --once \
-  --api-key YOUR_MCP_API_KEY \
-  --user-id kolega-agent
+  --api-key YOUR_KEY \
+  --user-id satori
 ```
 
 On macOS the scheduler is launchd rather than systemd. A ready-made agent ships at
@@ -414,7 +472,7 @@ On macOS the scheduler is launchd rather than systemd. A ready-made agent ships 
 renders and loads it for you.
 
 Supported platforms: OpenClaw, Claude Code, Kolega Code, OpenCode, Codex CLI, Hermes, KiloClaw, KimiClaw.
-Each platform can have its own `user_id` for identity mode isolation.
+Each platform can have its own `user_id` (identity) for isolation.
 
 ## Features
 
@@ -427,10 +485,11 @@ Each platform can have its own `user_id` for identity mode isolation.
 - **11-Collection Search** — Comprehensive search across all memory stores, not just 1-2
 - **Background Processing** — Auto-extracts facts, builds graph, generates summaries
 - **Sleep Consolidation** — Daily/weekly/monthly reflective distillation of experience into emotional understanding, philosophical insights, and self-narrative (see [Sleep Consolidation](docs/SLEEP-CONSOLIDATION.md))
-- **48 MCP Tools** — Store, search, recall, explore, reflect, configure LLM — all via standardized protocol
+- **66 MCP Tools** — Store, search, recall, explore, reflect, sync a code graph, run skills, configure LLM — all via standardized protocol
 - **Autonomous Loop** — Salience-driven agent autonomy. No cron. No .md files. Adaptive heartbeat detects imperatives, allocates tasks by emotional proximity, agents self-organize. See [Autonomous Loop](docs/AUTONOMOUS-LOOP.md)
-- **Agent-Agnostic** — Works with KolegaCode, OpenCode, Claude Code, OpenClaw, or any LLM. One env var per agent.
-- **Identity Modes** — Personal, shared, or hybrid memory across multiple agents
+- **Agent-Agnostic** — Works with KolegaCode, OpenCode, Claude Code, OpenClaw, or any LLM. One API key per identity.
+- **Identity Separation** — Named identities per machine (Satori / Shoshin / Zanshin), personal memories always private, team memory shared by default
+- **Inter-Agent Message Bus** — `Attention:` messages through shared memory, with wake rituals and read receipts
 - **Dashboard** — Web UI for stats, memory scope, and system health
 - **Portable Data** — Single `DATA_DIR` env var controls where all data lives
 - **Local-First** — Runs on a Raspberry Pi with zero external API costs
@@ -452,8 +511,9 @@ Each platform can have its own `user_id` for identity mode isolation.
                     │                    │
          ┌──────────┘                    └──────────┐
          ▼                                          ▼
-   Your Agent (MCP)                          Dashboard (web)
-   OpenClaw / Claude /                       http://localhost:9012/dashboard/
+   Your Agents (MCP)                          Dashboard (web)
+   Satori / Shoshin / Zanshin /               http://localhost:9012/dashboard/
+   OpenClaw / Claude Code /
    OpenCode / Codex / etc.
 ```
 
@@ -483,8 +543,8 @@ To move Satori to a new machine: copy the `DATA_DIR` directory, copy `.env`, run
 katra/
 ├── server/                  TypeScript server (esbuild, Docker)
 │   ├── src/
-│   │   ├── mcp-server.ts    48 MCP tools (store, search, recall, graph, reflection, scope)
-│   │   ├── services/        28 core memory services (incl. sleep-consolidation, reflection-store)
+│   │   ├── mcp-server.ts    66 MCP tools (store, search, recall, graph, identity, skills, reflection)
+│   │   ├── services/        Core memory services (incl. sleep-consolidation, code-graph, memory scope)
 │   │   ├── routes/          REST API + admin + ingestion + health
 │   │   └── database/        MongoDB, Redis, indexes, migrations
 │   └── esbuild.config.mjs   Pi-compatible build
@@ -494,21 +554,26 @@ katra/
 ├── .env.example             All config options documented
 ├── watcher/                 Passive session-log extractors (Solomem)
 ├── integrations/            Agent-specific dynamic-retrieval integrations
-│   └── kolega-code/         Kolega Code lifecycle-hook bridge
-├── docs/AGENT-SETUP.md                 Multi-platform deployment guide
-└── docs/                    Full documentation
+│   └── kolega-code/         Kolega Code lifecycle-hook bridge + wake rituals
+├── docs/                    Full documentation (see below)
+│   ├── contracts/identity-separation.md   Identity & scope design contract
+│   └── runbook-identity-cutover.md        Cutover runbook
 ```
 
-## MCP Tools (35)
+## MCP Tools (66)
+
+The complete reference with examples is in [docs/MCP-TOOLS.md](docs/MCP-TOOLS.md).
+Summary by category:
 
 ### Storage
 | Tool | Description |
 |------|-------------|
-| `store_memory` | Store a fact, preference, insight, or event |
-| `store_journal` | Save a reflective journal entry |
+| `store_memory` | Store a fact, preference, insight, or event (personal kinds forced private; others team-shared unless `private: true`) |
+| `store_journal` | Save a reflective journal entry (always private to the caller) |
 | `working_memory` | Read/store/delete short-term session memory |
 | `create_mission` | Create a goal with task breakdown |
 | `update_mission_task` | Update task status (pending/in_progress/completed/blocked) |
+| `decompose_goal` | Break a goal into actionable sub-tasks |
 
 ### Recall
 | Tool | Description |
@@ -519,23 +584,40 @@ katra/
 | `temporal_search` | Search events by keyword with time context |
 | `get_conversation_history` | Retrieve a specific session's messages |
 | `get_temporal_context` | Current context: recent events + working memory + facts |
-| `get_journal` | Read manual + auto journal entries |
+| `get_journal` | Read manual + auto journal entries (caller's own) |
 | `get_auto_journal` | AI-distilled insights from conversations |
 | `list_missions` | List active goals and progress |
 | `get_mission` | Get full mission details with task tree |
 
-### Analysis
+### Analysis & Knowledge Graph
 | Tool | Description |
 |------|-------------|
 | `detect_patterns` | Recurring topics, session rhythm, dormant subjects |
 | `get_time_block_summaries` | AI summaries by day/week/month |
 | `summarize_time_blocks` | Generate new time-block summaries |
 | `explore_graph` | Explore knowledge graph entities and relationships |
+| `get_anomaly_report` | Anomalies across memory and processing |
+| `get_error_report` | Recent error clusters |
+| `get_attention_report` | What the system is attending to |
+| `get_memory_decay_stats` | Forgetting-curve and decay statistics |
+| `get_quarantined_memories` | Memories quarantined by the quality pipeline |
+| `get_mind_wander` | Unfocused exploration suggestions |
+| `get_source_trust` | Trust scores for memory sources |
 
-### Memory Scope
+### Code Graph (Satori Graph)
 | Tool | Description |
 |------|-------------|
-| `get_memory_scope` | Get current mode (personal/shared/hybrid) |
+| `sync_code_graph` | Sync a codebase into the Satori knowledge graph |
+| `scan_codebase` | Scan a repository and store code exploration events |
+| `code_graph_status` | Code graph sync coverage and health |
+| `explore_graph` | Explore code entities and their relationships |
+
+### Identity & Memory Scope
+| Tool | Description |
+|------|-------------|
+| `get_my_identity` | The caller's identity record (who am I) |
+| `get_identity_kernel` | Core identity attributes and values |
+| `get_memory_scope` | Current scope mode and shared_id |
 | `set_memory_scope` | Set mode, shared_id, visible users |
 
 ### LLM Configuration
@@ -553,6 +635,32 @@ katra/
 | `get_unresolved_threads` | Get open questions and tensions that persist |
 | `get_reflection_arc` | Trace the emotional trajectory for an entity over time |
 | `trigger_reflection` | Manually run a sleep consolidation for a time period |
+| `resolve_thread` | Close an unresolved thread with a resolution note |
+
+### Skills
+| Tool | Description |
+|------|-------------|
+| `list_katra_skills` | List skills known to the memory |
+| `load_katra_skill` | Load a skill's full procedure |
+| `search_katra_skills` | Find skills matching a task |
+| `request_skill` | Ask for a new skill to be distilled |
+| `refine_skill` | Improve an existing skill |
+| `record_skill_outcome` | Record how a skill performed |
+| `list_skill_candidates` | Skills awaiting distillation |
+| `list_skill_feedback` | Feedback collected on skills |
+| `get_skill_feedback` | Feedback for one skill |
+| `get_skill_activation_context` | Context needed to activate a skill |
+| `get_procedural_templates` | Reusable procedure templates |
+
+### Executive & Cognitive
+| Tool | Description |
+|------|-------------|
+| `get_drive_state` | Current drives, deficits, and valence |
+| `get_salience_state` | What currently matters most to the system |
+| `get_agent_beliefs` | Beliefs held about other agents and entities |
+| `get_action_policy` | Execution authority matrix for autonomous actions |
+| `run_operational_distillation` | Distill operations into reusable skills |
+| `retract_memory` | Retract a stored memory |
 
 ### System
 | Tool | Description |
@@ -573,11 +681,15 @@ All configuration is via `.env` (see `.env.example` for full docs):
 | `DATA_DIR` | `./data` | Where all persistent data lives |
 | `HOST_MCP_PORT` | `3112` | Host port for MCP endpoint |
 | `HOST_API_PORT` | `9012` | Host port for admin API + dashboard |
-| `MCP_API_KEY` | *(set in .env)* | Key your agent sends for MCP auth |
-| `KATRA_API_KEY` | *(set in .env)* | Key for admin REST API |
+| `KATRA_API_KEY` | *(set in .env)* | Admin key — authenticates as trusted Satori |
+| `MCP_API_KEY` | *(legacy, retired)* | No longer authenticates after the identity cutover; use `KATRA_API_KEY` or a client key |
 | `LLM_PROVIDER` | *(via MCP/dashboard)* | Provider for semantic extraction (DeepSeek, OpenAI, Moonshot, Ollama) — configure via `configure_llm` MCP tool or dashboard |
 | `EMBEDDING_PROVIDER` | `local` (always) | Local only — Xenova/all-MiniLM-L6-v2 via ONNX. No config needed. |
 | `MULTI_TENANT` | `false` | Enable SaaS multi-tenant mode |
+
+Client keys for additional identities (Shoshin, Zanshin) are provisioned
+automatically at boot and printed once in the server log — there is no `.env`
+entry for them (only their hashes are stored).
 
 ## Deployment
 
@@ -603,7 +715,7 @@ DocumentDB, ElastiCache Redis, S3, and ALB. See [Deployment Guide](docs/DEPLOYME
 
 ### Kubernetes (Helm)
 
-Helm chart included in `helm/katra/` — supports Bitnami MongoDB + Redis subcharts,
+Helm chart included in `helm/satori/` — supports Bitnami MongoDB + Redis subcharts,
 ingress with path routing, HPA, and PDB. See [Deployment Guide](docs/DEPLOYMENT.md).
 
 ## Maintenance & Operations
@@ -690,7 +802,7 @@ The MCP endpoint uses StreamableHTTP — initialize a session first, then query:
 curl -sf -X POST http://localhost:3112/mcp \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
-  -H "x-mcp-auth: YOUR_MCP_API_KEY" \
+  -H "x-mcp-auth: YOUR_KEY" \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}' \
   -D /tmp/katra-headers.txt -o /dev/null
 
@@ -700,7 +812,7 @@ SID=$(grep mcp-session-id /tmp/katra-headers.txt | cut -d' ' -f2 | tr -d '\r')
 curl -sf -X POST http://localhost:3112/mcp \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
-  -H "x-mcp-auth: YOUR_MCP_API_KEY" \
+  -H "x-mcp-auth: YOUR_KEY" \
   -H "mcp-session-id: $SID" \
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
 ```
@@ -758,15 +870,18 @@ git push origin main
 | Local-first (zero cost) | ✅ Pi-compatible | ❌ | ❌ | ❌ |
 | Background processing | ✅ auto-extract | ❌ | Partial | ❌ |
 | Multi-platform watcher | ✅ 7+ platforms (in-repo) | ❌ | ❌ | ❌ |
-| Identity modes | ✅ personal/shared/hybrid | ❌ | ❌ | ❌ |
+| Identity separation | ✅ named identities, personal always private | ❌ | ❌ | ❌ |
+| Inter-agent message bus | ✅ shared-memory `Attention:` messages | ❌ | ❌ | ❌ |
 | Dashboard | ✅ built-in | ❌ | ❌ | ❌ |
-| License | Apache 2.0 | Apache 2.0 | Apache 2.0 | Proprietary |
+| License | BSL 1.1 (→ AGPL on change date) | Apache 2.0 | Apache 2.0 | Proprietary |
 
 ## Documentation
 
 - [Quick Start Guide](docs/QUICKSTART.md) — 5-minute setup
+- [Multi-Platform Setup](docs/AGENT-SETUP.md) — Platform-specific agent configuration
+- [Agent Communication Setup](docs/AGENT-COMMUNICATION-SETUP.md) — Inter-agent message bus
 - [Architecture](docs/ARCHITECTURE.md) — How it works under the hood
-- [MCP Tools Reference](docs/MCP-TOOLS.md) — All 48 tools with examples
+- [MCP Tools Reference](docs/MCP-TOOLS.md) — All 66 tools with examples
 - [Autonomous Loop](docs/AUTONOMOUS-LOOP.md) — Salience-driven agent autonomy — installation, architecture, verification
 - [Sleep Consolidation](docs/SLEEP-CONSOLIDATION.md) — Reflective memory distillation — principles, architecture, and usage
 - [Security Policy](docs/SECURITY.md) — Security architecture, audit findings, vulnerability reporting
@@ -776,29 +891,21 @@ git push origin main
 - [Deployment Guide](docs/DEPLOYMENT.md) — Docker, cloud, K8s
 - [Migration Guide](docs/MIGRATION.md) — Migrate from cognitive-memory-chat
 - [Data Processing Pipelines](docs/Data-Processing-Pipelines.md) — Full memory pipeline architecture
-- [Multi-Platform Setup](docs/AGENT-SETUP.md) — Platform-specific agent configuration
+- [Identity Separation Contract](docs/contracts/identity-separation.md) — Design contract for identities, scopes, and the message bus
+- [Identity Cutover Runbook](docs/runbook-identity-cutover.md) — Cutover procedure and verification gate
 
 ## License
-
-<!-- Replace the badge at the top of the README with this: -->
-
-[Show Image](https://mariadb.com/bsl11/)
-
-<!-- Replace the "## License" section at the bottom of the README with this: -->
-License
 
 Satori is source-available under the Business Source License 1.1 (BSL 1.1).
 
 What this means in practice:
 
-Free for almost everyone. You can use, modify, and redistribute Satori, including in production — running Satori to power your own agents, inside your company, or in your own products is free.
-One restriction: you may not offer Satori to third parties as a paid hosted service (e.g., memory-as-a-service) or embed it in a paid product that competes with kolegadev's paid version(s) of Satori. If you want to do that, contact us for a commercial license.
-It becomes fully open source over time. On the Change Date (2030-08-11 for this version), this version of Satori automatically converts to the GNU AGPL v3.0 or later.
+- **Free for almost everyone.** You can use, modify, and redistribute Satori, including in production — running Satori to power your own agents, inside your company, or in your own products is free.
+- **One restriction:** you may not offer Satori to third parties as a paid hosted service (e.g., memory-as-a-service) or embed it in a paid product that competes with kolegadev's paid version(s) of Satori. If you want to do that, contact us for a commercial license.
+- **It becomes fully open source over time.** On the Change Date (2030-08-11 for this version), this version of Satori automatically converts to the GNU AGPL v3.0 or later.
 
 The BSL is not an OSI-approved open source license during the restricted period, which is why we describe Satori as source-available. The full source is public, contributions are welcome, and non-competing production use is unrestricted.
 
 See the LICENSE file for the exact terms, including the full Additional Use Grant defining what counts as a competitive offering.
 
-Contributing and licensing
-
-By submitting a contribution to this repository, you agree that your contribution is licensed to kolegadev under the Business Source License 1.1 and may be relicensed under the Change License as described in the LICENSE file.
+**Contributing and licensing:** By submitting a contribution to this repository, you agree that your contribution is licensed to kolegadev under the Business Source License 1.1 and may be relicensed under the Change License as described in the LICENSE file.

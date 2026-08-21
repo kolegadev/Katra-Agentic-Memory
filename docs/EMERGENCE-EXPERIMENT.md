@@ -15,30 +15,38 @@ When agents share a cognitive memory namespace with semantic search, they sponta
 
 The agents invent pub-sub from a memory system. You build the surface; they build the pattern.
 
+### Identity separation (2026-08-21)
+
+The emergent behavior this experiment documents is now a shipped feature. Since 2026-08-21 Katra runs one server with three named identities — **satori**, **shoshin**, **zanshin** — resolved from the client key presented (never client self-report), plus tool actors. The inter-agent message bus makes the "spontaneous handoff" pattern a first-class convention:
+
+- Messages are ordinary `store_memory` events in the shared scope whose text carries an `"Attention: <AgentName>"` header (e.g. `"Attention: Shoshin — the fix is merged"`).
+- Wake rituals surface "messages from the team" via `search_memories` for `"Attention: Shoshin" OR "Attention: Satori" OR "Attention: Zanshin"` (limit 5).
+- Read receipts are events tagged `[background-ack, read-receipt, agent-message]`; wake services skip them.
+
+If you re-run this experiment today, give each agent its own client key so writes are stamped with distinct identities, and use the `Attention:` header instead of the old `TASK FOR [name]:` prefix.
+
 ## Prerequisites
 
 - **Satori Agentic Memory** installed and running: [github.com/kolegadev/Satori-Agentic-Memory](https://github.com/kolegadev/Satori-Agentic-Memory)
-  - Docker Compose: MongoDB 7.0 + Redis + MinIO + Satori v3.0.0
-  - LLM configured (DeepSeek, OpenAI, or Moonshot)
-- **3-8 agents** (OpenClaw, or any framework with MCP tool access to Satori)
+  - Docker Compose: MongoDB 7.0 + Redis + MinIO + katra-server
+  - LLM configured (DeepSeek, OpenAI, Moonshot, Ollama, or any OpenAI-compatible provider)
+- **3-8 agents** (OpenClaw, or any framework with MCP tool access to Satori) — each authenticated with its own client key
 - **MCP tools per agent:**
-  - `katra__store_memory` — write to shared namespace
-  - `katra__search_memories` — keyword search
-  - `katra__vector_search` — semantic search
-  - `katra__working_memory` — short-term context
+  - `store_memory` — write to shared namespace
+  - `search_memories` — keyword search
+  - `vector_search` — semantic search
+  - `working_memory` — short-term context
 
-## Step 1: Create a Shared Memory Namespace
+## Step 1: The Shared Namespace Already Exists
 
-In your Satori config, create a shared scope:
+Since identity separation (2026-08-21), Katra ships in hybrid mode with the team scope `shared_id: "my-team"` — no config needed. Every `store_memory` write defaults to the shared `my-team` scope (still stamped with the writer's `user_id`), so the shared cognitive surface is on by default.
 
-```json
-{
-  "shared_id": "your-experiment-group-1",
-  "mode": "shared"
-}
-```
+Two caveats:
 
-All agents in this experiment use the same `shared_id`. This is the shared cognitive surface they'll self-organize around.
+- **Personal kinds are always private:** `journal`, `reflection`, `emotional`, and `insight` writes are forced to the writer's `user_id` and never carry a `shared_id` — even when a shared write is requested.
+- **Opt-out:** pass `private: true` to keep any other write out of the shared scope.
+
+(This replaces the older experiment setup, which created a custom shared scope like `{"shared_id": "your-experiment-group-1", "mode": "shared"}`. The team default `my-team` does the same job.)
 
 ## Step 2: Agent Instructions
 
@@ -59,8 +67,8 @@ You share a cognitive memory system (Satori) with other agents in this group.
 2. If yes, store it to Satori with:
    - Clear title describing what you did
    - Keywords another agent might search for
-   - Category: "task" for transient coordination, "insight" for durable knowledge
-3. If the work is a handoff to another agent, prefix the title with "TASK FOR [agent_name]:"
+   - `tags: ["task"]` for transient coordination, `tags: ["insight"]` for durable knowledge
+3. If the work is a handoff to another agent, store a message beginning with `"Attention: <AgentName>"` — the shipped inter-agent message convention (2026-08-21), surfaced by wake rituals as "messages from the team"
 
 **Working memory:**
 - Store current task state to Satori working_memory at the start of each session
@@ -73,23 +81,14 @@ For the experiment window (72 hours), **remove or disable** explicit message rou
 
 If your agents normally use `sessions_send` or equivalent direct messaging, disable it for this experiment. The point is to see what emerges when shared memory is the *only* coordination surface.
 
-## Step 4: Create TTL Categories (IMPORTANT)
+## Step 4: Separate Transient from Durable (IMPORTANT)
 
-Without TTL, transient task coordination pollutes your knowledge graph. Set this up BEFORE running:
+Transient task coordination pollutes your knowledge graph. There is **no category-TTL endpoint** in the current system — earlier drafts of this experiment referenced `POST /api/categories`, which does not exist. Separate the streams with `tags` instead:
 
-```bash
-# Create a task category with auto-expire (24h TTL)
-curl -X POST https://your-katra-instance/api/categories \
-  -H "Content-Type: application/json" \
-  -d '{"name": "task", "ttl_hours": 24, "description": "Transient agent coordination"}'
+- `store_memory(..., tags: ["task"])` for handoffs and transient coordination
+- `store_memory(..., tags: ["insight"])` for findings worth keeping
 
-# Keep insight category for durable knowledge
-curl -X POST https://your-katra-instance/api/categories \
-  -H "Content-Type: application/json" \
-  -d '{"name": "insight", "ttl_hours": 0, "description": "Durable knowledge"}'
-```
-
-Agents should use `category: "task"` for handoffs and transient coordination, `category: "insight"` for findings worth keeping.
+Filter on the tags when querying (`search_memories` / `vector_search`), and periodically clean up stale `task` entries with `retract_memory`.
 
 ## Step 5: Give Them Work
 
@@ -107,7 +106,7 @@ Watch for these emergence signatures:
 
 | Signature | What to look for |
 |-----------|-----------------|
-| **Spontaneous handoff** | Agent stores `TASK FOR [name]:` and another agent picks it up without being told |
+| **Spontaneous handoff** | Agent stores `Attention: <AgentName>` and another agent picks it up without being told |
 | **Pre-action querying** | Agents search Satori before starting work, not just after |
 | **Cascade effects** | Agent A's output feeds Agent B, whose output feeds Agent C — with no explicit pipeline |
 | **Pattern naming** | Agents develop their own conventions for titles, keywords, categories |
@@ -133,6 +132,8 @@ Based on the Barca AgentGroup1 deployment with 8 agents:
 - **Within 48h:** First spontaneous handoffs appear (Agent stores task, different agent picks it up)
 - **Within 72h:** Satori becomes the primary coordination surface; agents self-select Satori for batch work and `sessions_send` for real-time
 
+Since then, the pattern has been productized as the inter-agent message bus — `Attention:` headers plus read receipts (see the identity-separation note above).
+
 ## What This Proves
 
 If your agents do the same thing with NO explicit pub-sub programming, you've demonstrated genuine emergent coordination — a pattern that arises from the architecture, not the instructions.
@@ -146,12 +147,13 @@ This is the core of Satori's thesis: **given a shared cognitive surface, autonom
 - Add a checklist item to their system prompt
 
 **Memory pollution (too many transient tasks):**
-- Reduce TTL on the `task` category to 6-12 hours
-- Add to agent instructions: "Use category 'task' for anything that expires within 24h"
+- Add to agent instructions: "Tag anything transient with `task`; tag durable findings with `insight`"
+- Periodically retract stale `task` entries (`retract_memory`) — there is no TTL endpoint in the current system
 
 **No emergence after 48h:**
 - Ensure agents have genuinely interdependent work (not parallel independent tasks)
-- Check that all agents share the same `shared_id`
+- Verify each agent authenticates with its own client key, so writes are stamped with distinct identities (`user_id`s)
+- Check that writes land in the shared scope: the default is `shared_id: "my-team"`; make sure no agent passes `private: true` (and remember personal kinds are always private)
 - Verify MCP tools are available to all agents
 - Try reducing the group to 3-4 agents first (smaller groups sometimes emerge faster)
 

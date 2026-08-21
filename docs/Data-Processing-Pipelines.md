@@ -9,7 +9,7 @@ Pi5 (Docker, aarch64)
 │ :27017   │  │ :6379    │  │ :9000    │  │ :3100 (MCP)  │
 └──────────┘  └──────────┘  └──────────┘  │ :9002 (API)  │
                                            └──────┬───────┘
-                                          memory_watcher.py
+                                          satori_watcher.py
                                           (host-side daemon)
 ```
 
@@ -18,7 +18,7 @@ Pi5 (Docker, aarch64)
 | File | Purpose |
 |------|---------|
 | `index.js` | Main entry; starts REST API, MCP server, background processor |
-| `mcp-server.js` | ~28 MCP tools for memory operations |
+| `mcp-server.js` | 66 MCP tools for memory operations (source: `server/src/mcp-server.ts`) |
 | `services/` | 30+ service modules forming the pipeline |
 
 ---
@@ -29,14 +29,14 @@ A conversation turn enters through one of:
 
 | Path | Source | Format |
 |------|--------|--------|
-| **A** — `memory_watcher.py` | Watches `.jsonl` files from OpenCode, Claude Code, OpenClaw, etc. | Batches per-session into `store_memory` MCP call |
+| **A** — `satori_watcher.py` | Watches `.jsonl` files from OpenCode, Claude Code, OpenClaw, etc. | Batches per-session into `store_memory` MCP call |
 | **B** — Session Ingestion Service | Reads `.jsonl` from `/sessions/` or `~/.katra/sessions/` | Per-message `createEvent()` |
 | **C** — REST API | `POST /api/v1/ingestion/ingest` | Direct message submission |
 
-**memory_watcher.py** (host-side Python daemon at `~/.katra/katra_watcher.py`):
+**satori_watcher.py** (host-side Python daemon at `watcher/satori_watcher.py`; autonomous loop scripts — `adaptive_heartbeat.py`, `agent_executor.py`, `wake_service.py`, `satori_pubsub.py`, `inter_agent_bridge.py` — live in `scripts/python/`):
 - Watches session directories for OpenClaw, Claude Code, OpenCode, Codex, KiloClaw, KimiClaw, Hermes
 - Parses `.jsonl` files extracting user/assistant turns
-- Batches each session's turns into a single `store_memory` MCP call to `http://katra:3112/mcp`
+- Batches each session's turns into a single `store_memory` MCP call to `http://localhost:3112/mcp` (configurable via `KATRA_MCP_URL`)
 - State tracked in `~/.katra/watcher-state.json` (file hashes for idempotency)
 
 ---
@@ -45,6 +45,8 @@ A conversation turn enters through one of:
 
 **File:** `services/episodic-event-manager.js`
 **Collection:** `episodic_events`
+
+**Write scope (identity separation, 2026-08-21):** the writer's `user_id` is resolved from the client key presented (satori / shoshin / zanshin) — never from client self-report. `resolveWriteScope()` (`services/memory/write-scope-policy.js`) stamps every event: personal kinds (`journal`, `reflection`, `emotional`, `insight`) are always private (`shared_id: null`), every other write defaults to `shared_id: "my-team"` unless `private: true` is passed.
 
 `EpisodicEventManager.createEvent()` for each message:
 
@@ -61,7 +63,7 @@ A conversation turn enters through one of:
 {
   "id": "uuid",
   "user_id": "user123",
-  "shared_id": null,
+  "shared_id": "my-team",
   "session_id": "session456",
   "event_type": "message",
   "content": { "role": "user", "message": "..." },

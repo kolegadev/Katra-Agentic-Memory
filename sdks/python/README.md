@@ -4,13 +4,34 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 **Katra** is a standalone cognitive memory server for agentic LLMs.  This
-SDK provides a clean, type-annotated Python interface to all 29 MCP memory
-tools plus REST API fallback endpoints.
+SDK provides a clean, type-annotated Python interface to the core MCP memory
+tools over the streamable-http MCP endpoint. The current Katra server
+registers 66 MCP tools; the SDK wraps the core memory subset listed below,
+and every registered tool is reachable through `list_tools()` /
+`call_tool()` on the low-level client.
+
+## Identity & auth
+
+- Katra resolves the calling identity from the API key presented on each
+  request (`X-MCP-Auth` header, `Authorization: Bearer`, or `?token=` URL
+  param) — never from a client-declared `user_id`. The SDK sends
+  `Authorization: Bearer <api_key>`.
+- `api_key` must be a valid client key provisioned by the server (the admin
+  `KATRA_API_KEY` authenticates as the trusted `satori` identity; per-agent
+  keys exist for `shoshin` and `zanshin`). A valid-but-unmapped key is
+  rejected with 401 — no silent fallback. The legacy `MCP_API_KEY` /
+  `BACKUP_MCP_KEYS` env keys no longer authenticate.
+- `user_id` arguments are scoping hints within what your identity may see:
+  Katra runs in hybrid mode (`shared_id` `my-team`), reads return your own
+  private memories plus the shared team scope, and personal kinds (journal,
+  reflection, emotional, insight) are always private. Pass a named identity
+  (`"satori"`, `"shoshin"`, `"zanshin"`) to query that identity's slice of
+  the shared scope.
 
 ## Installation
 
 ```bash
-pip install katra-sdk
+pip install satori-sdk
 ```
 
 For development:
@@ -22,10 +43,12 @@ pip install -e ".[dev]"
 ## Quick Start
 
 ```python
-from katra import KatraClient
+from satori import KatraClient
 
-# Connect to your Katra server (host-mapped MCP port)
-client = KatraClient("http://localhost:3112", api_key="your-api-key")
+# Connect to your Katra server (host-mapped MCP port). The api_key is this
+# identity's client key — Katra resolves the identity from the key, not from
+# the user_id arguments below.
+client = KatraClient("http://localhost:3112", api_key="<client-key-for-this-identity>")
 
 # ── Store & recall ─────────────────────────────────
 client.store_memory("User is a Python developer", category="fact")
@@ -35,22 +58,22 @@ results = client.search_memories("Python", limit=5)
 similar = client.vector_search("machine learning pipelines")
 
 # ── Temporal memory ────────────────────────────────
-history = client.temporal_recall("user-123", from_date="2026-05-01")
-ctx = client.get_temporal_context("user-123", "sess-456")
+history = client.temporal_recall("satori", from_date="2026-05-01")
+ctx = client.get_temporal_context("satori", "sess-456")
 
 # ── Patterns & summaries ───────────────────────────
-patterns = client.detect_patterns("user-123", lookback_weeks=4)
-blocks = client.get_time_block_summaries("user-123", block_type="week")
+patterns = client.detect_patterns("satori", lookback_weeks=4)
+blocks = client.get_time_block_summaries("satori", block_type="week")
 
 # ── Journal ────────────────────────────────────────
-client.store_journal("user-123", "Finished the API refactor",
+client.store_journal("satori", "Finished the API refactor",
                      tags=["coding", "milestone"])
-entries = client.get_journal("user-123", source="auto")
+entries = client.get_journal("satori", source="auto")
 
 # ── Missions ───────────────────────────────────────
-mission = client.create_mission("user-123", "Build a trading bot",
+mission = client.create_mission("satori", "Build a trading bot",
                                 tasks=["Research APIs", "Implement core"])
-client.update_mission_task("user-123", mission["id"], "task-1", "completed")
+client.update_mission_task("satori", mission["id"], "task-1", "completed")
 
 # ── Health ─────────────────────────────────────────
 health = client.get_health()

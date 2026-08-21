@@ -115,12 +115,38 @@ Your agent connects to the **host-mapped ports**:
 
 | Endpoint | Default URL |
 |---|---|
-| MCP | `http://localhost:3112/mcp` |
-| REST API + Dashboard | `http://localhost:9012` |
+| MCP (POST-only streamable-http) | `http://localhost:3112/mcp` |
+| Admin REST API | `http://localhost:9012/api/v1/` |
 | Dashboard UI | `http://localhost:9012/dashboard/` |
-| Health | `http://localhost:3112/health` |
+| Health (MCP port) | `http://localhost:3112/health` |
+| Health (REST port) | `http://localhost:9012/api/v1/health` |
 
-Inside the container the server binds to `9002` (REST) and `3100` (MCP). The host ports are controlled by `HOST_API_PORT` and `HOST_MCP_PORT` in `.env`.
+Inside the container the server binds to `9002` (REST) and `3100` (MCP). The host ports are controlled by `HOST_API_PORT` and `HOST_MCP_PORT` in `.env` (the compose mapping is `HOST_MCP_PORT -> 3100` and `HOST_API_PORT -> 9002`).
+
+### Identity & client keys
+
+Katra resolves caller identity from the API key presented on a request
+(`X-MCP-Auth` or `Authorization: Bearer` headers, or a `?token=` URL
+parameter) — never from client self-report. One Katra, three named
+identities plus one tool actor:
+
+| Identity | Machine | Notes |
+|---|---|---|
+| `satori` | This machine (the server host) | `KATRA_API_KEY` authenticates as trusted satori |
+| `shoshin` | iMac trading Kolega Code | Own client key, auto-provisioned |
+| `zanshin` | iMac OpenCode desktop | Own client key, auto-provisioned |
+| `gas-law-watcher` | — | Tool actor: writes team memory only, never allocated |
+
+Client keys are provisioned idempotently at boot (`ensureClientKeys()`),
+stored only as sha256 hashes in `system_settings.client_keys`, and printed
+once in the server log under the "Client keys (identity separation)" block —
+the plaintext is never stored anywhere. A valid-but-unmapped key is rejected
+with 401 + reason: loud failure, no silent fallback. The legacy env keys
+(`MCP_API_KEY`, `BACKUP_MCP_KEYS`) were retired at the 2026-08-21 cutover and
+no longer authenticate. See
+[`docs/runbook-identity-cutover.md`](runbook-identity-cutover.md) for the
+cutover runbook and [`docs/contracts/identity-separation.md`](contracts/identity-separation.md)
+for the design contract.
 
 ### Docker Build Details
 
@@ -146,12 +172,18 @@ node esbuild.config.mjs
 # Set environment variables
 export MONGODB_URI="mongodb://admin:password@localhost:27017/katra?authSource=admin"
 export REDIS_URL="redis://localhost:6379"
-export KATRA_API_KEY="your-admin-key"
-export MCP_API_KEY="your-mcp-key"  # Optional, falls back to KATRA_API_KEY
-export DEEPSEEK_API_KEY="sk-..."   # Optional
+export KATRA_API_KEY="your-admin-key"   # Admin key — authenticates as trusted satori
+export SOLOMEM_USER_ID="satori"         # The server's own default identity (optional)
+export DEEPSEEK_API_KEY="sk-..."        # Optional
 
 node build/index.js
 ```
+
+There is no separate MCP key to set: client keys for the other identities
+(`shoshin`, `zanshin`) are provisioned automatically at boot as sha256 hashes
+in `system_settings.client_keys` and printed once in the server log. The
+legacy `MCP_API_KEY` / `BACKUP_MCP_KEYS` env keys no longer authenticate —
+see [Identity & client keys](#identity--client-keys).
 
 When running directly on the host, the default ports are `9002` (REST) and `3100` (MCP).
 
@@ -195,18 +227,35 @@ All watcher files live in `~/.katra`.
 
 ```bash
 mkdir -p ~/.katra
-cp watcher/katra_watcher.py ~/.katra/
-cp watcher/katra_opencode_extractor.py ~/.katra/
+cp watcher/satori_watcher.py ~/.katra/
+cp watcher/satori_opencode_extractor.py ~/.katra/
 cp watcher/claude_history_extractor.py ~/.katra/
 cp watcher/kolega_code_extractor.py ~/.katra/
 cp watcher/watcher-config.example.json ~/.katra/watcher-config.json
 
-# Set mcp_url (host port, e.g. http://localhost:3112/mcp), api_key and platform paths
+# Set mcp_url (host port, e.g. http://localhost:3112/mcp), api_key and
+# default_user_id — memories are stored under default_user_id unless a
+# per-platform user_id or --user-id overrides it.
 $EDITOR ~/.katra/watcher-config.json
 chmod 600 ~/.katra/watcher-config.json
 
 # Backfill existing history
-python3 ~/.katra/katra_watcher.py --once --config ~/.katra/watcher-config.json
+python3 ~/.katra/satori_watcher.py --once --config ~/.katra/watcher-config.json
+```
+
+Each machine's watcher must use its **own identity and client key**. The
+default on this machine is `satori`; the iMacs override the identity with
+`default_user_id` in the config or `--user-id` per run:
+
+```bash
+# This machine (default)
+python3 ~/.katra/satori_watcher.py --config ~/.katra/watcher-config.json --user-id satori
+
+# iMac trading Kolega Code
+python3 ~/.katra/satori_watcher.py --config ~/.katra/watcher-config.json --user-id shoshin
+
+# iMac OpenCode desktop
+python3 ~/.katra/satori_watcher.py --config ~/.katra/watcher-config.json --user-id zanshin
 ```
 
 Then install the scheduler. On **Linux**, render the unit template:
@@ -215,7 +264,8 @@ Then install the scheduler. On **Linux**, render the unit template:
 mkdir -p ~/.config/systemd/user
 sed -e "s|__PYTHON__|$(command -v python3)|g" \
     -e "s|__KATRA_HOME__|$HOME/.katra|g" \
-    watcher/katra-watcher.service.template > ~/.config/systemd/user/katra-watcher.service
+    -e "s|katra_watcher.py|satori_watcher.py|g" \
+    watcher/satori-watcher.service.template > ~/.config/systemd/user/katra-watcher.service
 systemctl --user daemon-reload
 systemctl --user enable --now katra-watcher
 ```
@@ -229,7 +279,8 @@ On **macOS**, render the launchd agent:
 mkdir -p ~/Library/LaunchAgents
 sed -e "s|__PYTHON__|$(command -v python3)|g" \
     -e "s|__KATRA_HOME__|$HOME/.katra|g" \
-    watcher/com.katra.watcher.plist.template > ~/Library/LaunchAgents/com.katra.watcher.plist
+    -e "s|katra_watcher.py|satori_watcher.py|g" \
+    watcher/com.satori.watcher.plist.template > ~/Library/LaunchAgents/com.katra.watcher.plist
 launchctl load -w ~/Library/LaunchAgents/com.katra.watcher.plist
 ```
 
@@ -286,13 +337,13 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
     }
 
-    # MCP (needs SSE support)
+    # MCP — POST-only streamable-http (buffering must be off for streamed responses)
     location /mcp {
         proxy_pass http://127.0.0.1:3112;
         proxy_set_header Host $host;
         proxy_set_header Connection '';
         proxy_http_version 1.1;
-        proxy_buffering off;  # Critical for SSE
+        proxy_buffering off;  # Critical for streamable-http
         proxy_cache off;
         chunked_transfer_encoding on;
     }
@@ -380,8 +431,8 @@ variables and usage.
 
 ## Kubernetes (Helm)
 
-Helm chart included in `helm/katra/` — supports Bitnami MongoDB + Redis subcharts,
-ingress with path routing, HPA, and PDB. See `helm/katra/README.md` for values and
+Helm chart included in `helm/satori/` — supports Bitnami MongoDB + Redis subcharts,
+ingress with path routing, HPA, and PDB. See `helm/satori/README.md` for values and
 installation instructions.
 
 ## Running on Raspberry Pi
@@ -396,26 +447,28 @@ Satori is designed to run on a Raspberry Pi 5 (16GB):
 ## Health Monitoring
 
 ```bash
-# Simple health check (MCP endpoint)
+# Simple health check (MCP port, no auth)
 curl http://localhost:3112/health
 
-# Admin API health
-curl -H "Authorization: Bearer YOUR_KEY" http://localhost:9012/api/v1/health
+# Admin API health (REST port, no auth)
+curl http://localhost:9012/api/v1/health
 
-# Full diagnostics
+# Full diagnostics (admin key)
 curl -H "Authorization: Bearer YOUR_KEY" http://localhost:9012/api/v1/admin/diagnostics
 ```
 
 ## Running the Test Suite
 
-Satori includes 87 tests across 9 files (unit, security, and integration):
+The server test suite is 482 tests across 36 files (unit, security, and
+integration):
 
 ```bash
 cd server
 npm install
-npm test                    # All unit + security tests (< 1s, no Docker needed)
-npm run test:integration    # Integration tests (Docker stack required)
-npm run test:coverage       # With coverage report
+npm test                    # vitest run — full suite (integration tests need the Docker stack)
+npm run test:unit           # Unit tests only
+./tests/run-all.sh unit     # Unit | security | integration | all
 ```
 
-See [SECURITY.md](SECURITY.md) for the security regression test suite.
+Integration tests live in `server/tests/integration/` and require the Docker
+stack. See [SECURITY.md](SECURITY.md) for the security regression test suite.

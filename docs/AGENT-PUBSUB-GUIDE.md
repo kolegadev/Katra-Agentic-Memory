@@ -2,22 +2,32 @@
 
 ## What It Is
 
-A thin Redis-backed pub-sub layer that lets Satori agents discover each other,
+A thin Redis-backed pub-sub layer that lets Katra agents discover each other,
 form ad-hoc collaboration channels, and send direct messages — without sharing
 memory. Think of it as the "coffee machine" where agents gather to find out
 who's working on what.
 
-It does NOT replace the Satori hybrid-memory model. It's a complementary
-networking layer. You still have your private memory partition and your
-shared core. The bus is how you find collaborators.
+> **Where it fits (2026-08-21):** the *durable* inter-agent message bus is
+> shared memory — ordinary `store_memory` events with an
+> `Attention: <AgentName>` header, surfaced by wake rituals and the Kolega Code
+> bridge (see [AGENT-COMMUNICATION-SETUP.md](AGENT-COMMUNICATION-SETUP.md)).
+> This Redis bus is the complementary, ephemeral networking layer: presence,
+> interests, topics, and urgent wake pings. It does NOT replace the Katra
+> hybrid-memory model. You still have your private memory partition and the
+> shared `my-team` core. The bus is how you find collaborators.
+
+The bus ships as `scripts/python/satori_pubsub.py` (import it as
+`from katra_pubsub import AgentBus`) and is consumed by
+`scripts/python/wake_service.py`, which turns direct messages into working
+memory + wake-file deliveries.
 
 ## Quick Start
 
 ```python
 from katra_pubsub import AgentBus
 
-# Connect (uses localhost:6384 by default — the Satori Redis already running)
-bus = AgentBus("my-agent-name")
+# Connect (uses localhost:6384 by default — the Katra Redis, mapped on the host)
+bus = AgentBus("satori")
 
 # Tell the network who you are and what you're interested in
 bus.register(
@@ -35,14 +45,16 @@ reviewers = bus.find_by_capability("python")
 security_agents = bus.find_by_interest("security-audit")
 ```
 
+Use your Katra identity as the bus id — `satori`, `shoshin`, or `zanshin`.
+
 ## Core Operations
 
 ### 1. Discovery — "Who's out there?"
 
 ```python
 # All online agents
-peers = bus.discover()  
-# → {"opencode-agent": {"interests": [...], "capabilities": [...], "last_seen": "..."}}
+peers = bus.discover()
+# → {"zanshin": {"interests": [...], "capabilities": [...], "last_seen": "..."}}
 
 # Filter by interest
 code_reviewers = bus.find_by_interest("code-review")
@@ -50,6 +62,10 @@ code_reviewers = bus.find_by_interest("code-review")
 # Filter by capability
 python_devs = bus.find_by_capability("python")
 ```
+
+Presence is also inspectable over HTTP:
+`GET http://localhost:9012/api/v1/admin/pubsub/presence` (and `/pubsub/topics`)
+— read-only, no auth, convenient for dashboards.
 
 ### 2. Topic Pub-Sub — "Anyone working on X?"
 
@@ -60,7 +76,7 @@ help with. Multiple agents can tune into the same channel.
 # Subscribe to topics
 def on_code_review(msg):
     print(f"Review request from {msg['from']}: {msg['data']}")
-    
+
 bus.subscribe(["code-review", "architecture"], callback=on_code_review)
 
 # Publish to a topic — all subscribers get it
@@ -73,7 +89,7 @@ bus.publish("code-review", {
 
 # Publish an insight
 bus.publish("architecture", {
-    "type": "proposal", 
+    "type": "proposal",
     "title": "Switch to event-driven pattern",
     "details": "Considering moving the ingestion pipeline..."
 })
@@ -81,19 +97,33 @@ bus.publish("architecture", {
 
 ### 3. Direct Messaging — "Hey, you specifically"
 
-For urgent or targeted communication. The wake_service delivers it to the
-target agent's working memory and wake files.
+For urgent or targeted communication. `send_to_agent` publishes to
+`katra:events:{shared_id}`, and the `wake_service` delivers it to the target
+agent's working memory and wake files (`~/.katra/bulletins/<name>.json` —
+`satori.json`, `shoshin.json`, `zanshin.json`; the legacy
+`opencode.json` / `kolegacode.json` aliases are still honored for old
+messages).
 
 ```python
 # Send a direct message
-bus.send_to_agent("opencode-agent", 
-    "Attention: OpenCode — I found a security issue in the API layer. Can you review?")
+bus.send_to_agent("zanshin",
+    "Attention: Zanshin — I found a security issue in the API layer. Can you review?")
 
 # Urgent message (triggers priority wake)
-bus.send_to_agent("opencode-agent",
-    "Attention: OpenCode — CRITICAL: production config needs rollback",
+bus.send_to_agent("zanshin",
+    "Attention: Zanshin — CRITICAL: production config needs rollback",
     urgent=True)
 ```
+
+The wake service recognises `Attention:` targets among the three identities
+(Satori, Shoshin, Zanshin) plus the legacy OpenCode/KolegaCode aliases, and it
+skips messages tagged `background-ack` / `auto-reply` so read receipts never
+trigger a wake.
+
+> **Durability note:** direct messages over Redis are ephemeral. For messages
+> that must survive restarts, store the same `Attention:` text as a
+> `store_memory` event — the shared-memory bus is the record of truth, and the
+> wake rituals re-surface it.
 
 ### 4. Heartbeat — "I'm still here"
 
@@ -112,9 +142,9 @@ while True:
 
 ### Pattern A: The Dual-Hemisphere Pair
 
-Two agents in deep collaboration. Each has its own Satori hybrid memory
-(shared core + private partition). The bus is used for discovery and quick
-sync, not for shared thinking.
+Two agents in deep collaboration. Each has its own Katra hybrid memory
+(shared `my-team` core + private partition). The bus is used for discovery and
+quick sync, not for shared thinking.
 
 **Setup:**
 - Agent A registers with interests the partner cares about
@@ -122,31 +152,31 @@ sync, not for shared thinking.
 - Both heartbeat regularly
 - Direct messages for urgent sync
 
-**Example — KolegaCode (analytical) + OpenCode (architectural):**
+**Example — Shoshin (Kolega Code, analytical) + Zanshin (OpenCode, architectural):**
 
 ```python
-# KolegaCode setup
-kolega_bus = AgentBus("kolega-agent")
-kolega_bus.register(
+# Shoshin setup (iMac trading)
+shoshin_bus = AgentBus("shoshin")
+shoshin_bus.register(
     interests=["code-review", "implementation"],
     capabilities=["python", "typescript", "debugging", "testing"]
 )
 
-# OpenCode setup  
-opencode_bus = AgentBus("opencode-agent")
-opencode_bus.register(
+# Zanshin setup (iMac OpenCode desktop)
+zanshin_bus = AgentBus("zanshin")
+zanshin_bus.register(
     interests=["architecture", "code-review"],
     capabilities=["system-design", "requirements", "review"]
 )
 
-# KolegaCode publishes a review request
-kolega_bus.publish("code-review", {
+# Shoshin publishes a review request
+shoshin_bus.publish("code-review", {
     "type": "review-request",
     "file": "src/routes/admin-routes.ts",
     "concern": "Potential race condition in multi-tenant handler"
 })
 
-# OpenCode picks it up via subscription
+# Zanshin picks it up via subscription
 def handle_review(msg):
     if msg["data"].get("type") == "review-request":
         # Review the file, respond
@@ -183,7 +213,7 @@ An agent needs a specific skill and finds who has it.
 # I need a security review
 reviewer = bus.find_by_capability("security-audit")
 if reviewer:
-    bus.send_to_agent(reviewer[0], 
+    bus.send_to_agent(reviewer[0],
         "Can you audit the new token validation code?")
 else:
     # Broadcast to topic — someone might pick it up
@@ -198,7 +228,9 @@ else:
 
 When adding a new agent to the internal mesh:
 
-1. **Choose an agent_id** — unique, descriptive (e.g., `build-agent`, `test-agent`)
+1. **Choose an agent_id** — for the Katra identities use the identity name
+   (`satori`, `shoshin`, `zanshin`); for ad-hoc workers anything unique and
+   descriptive (e.g., `build-agent`, `test-agent`).
 2. **Define interests** — what topics will this agent collaborate on?
 3. **Define capabilities** — what can this agent do that others might need?
 4. **Start with**:
@@ -216,8 +248,11 @@ bus.register(interests=[...], capabilities=[...])
 katra:presence           → Agent registry (Redis Hash)
 katra:presence:heartbeat → Keepalive pings
 katra:topics:{name}      → Per-topic pub-sub
-katra:events:{shared_id} → Inter-agent events (wake_service)
+katra:events:{shared_id} → Inter-agent events (wake_service listens on katra:events:my-team)
 ```
+
+The host Redis port defaults to 6384 (`HOST_REDIS_PORT` in compose, mapping
+the container's 6379).
 
 ## Running as a Background Service
 
@@ -232,7 +267,8 @@ removes agents not seen within PRESENCE_TTL.
 
 | Problem | Check |
 |---|---|
-| Can't discover peers | Is Redis running? `redis-cli -p 6384 ping` |
+| Can't discover peers | Is Redis running and mapped? `redis-cli -p 6384 ping` |
 | Agent not appearing | Is it calling `register()` and `heartbeat()`? |
 | Messages not received | Is the subscriber thread alive? Check logs for "Subscribed to topics" |
+| Direct message never wakes the target | Is `wake_service.py` running and subscribed to `katra:events:my-team`? Is the message tagged `background-ack`/`auto-reply` (skipped by design)? |
 | Stale agents in discovery | Wait 120s for TTL cleanup, or restart Redis |
