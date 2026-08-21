@@ -97,6 +97,10 @@ hr; echo "SHOSHIN WAKE — unresolved threads"; hr
 mcp_call "get_unresolved_threads" '{}'
 
 echo
+hr; echo "SHOSHIN WAKE — messages from the team"; hr
+mcp_call "search_memories" '{"query": "\"Attention: Shoshin\" OR \"Attention: Satori\" OR \"Attention: Zanshin\"", "limit": 5}'
+
+echo
 hr; echo "SHOSHIN WAKE — memory health"; hr
 curl -s "$REST/api/v1/health" | python3 -c "
 import json,sys
