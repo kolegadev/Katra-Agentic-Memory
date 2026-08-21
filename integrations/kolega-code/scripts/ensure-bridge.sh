@@ -22,7 +22,18 @@ set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CLI_PY="${KOLEGA_CLI_PY:-$HOME/.local/share/uv/tools/kolega-code/bin/python}"
-STATE_DIR="${KOLEGA_CODE_STATE_DIR:-$HOME/.local/state/kolega-code}"
+# Platform-aware state dir — MUST match the bridge's config.py
+# _default_state_dir() so config/hooks land where the CLI reads them
+# (Shoshin's macOS auth saga: the installer wrote ~/.local/state while the
+# macOS CLI reads ~/Library/Application Support/kolega-code).
+if [ -z "${KOLEGA_CODE_STATE_DIR:-}" ]; then
+  case "$(uname -s)" in
+    Darwin) STATE_DIR="$HOME/Library/Application Support/kolega-code" ;;
+    *)      STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/kolega-code" ;;
+  esac
+else
+  STATE_DIR="$KOLEGA_CODE_STATE_DIR"
+fi
 export KOLEGA_CODE_STATE_DIR="$STATE_DIR"
 USER_ID="${KATRA_USER_ID:-satori}"
 SHARED_ID="${KATRA_SHARED_ID:-my-team}"

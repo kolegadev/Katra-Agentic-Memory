@@ -1627,7 +1627,19 @@ async function handleSearchMemories(args: unknown): Promise<TextContent[]> {
 
   // Utility: escape regex special chars for safe literal matching
   const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const safeRegex = new RegExp(escapeRegex(input.query), 'i');
+  // OR-aware query regex — the text-index branch handles 'A OR B' queries,
+  // but the regex fallback previously treated the whole string as ONE
+  // literal pattern ("Attention: Satori" OR "Attention: Shoshin" → 0
+  // matches). Split alternatives and OR them as a single regex.
+  const buildQueryRegex = (q: string): RegExp => {
+    const parts = q
+      .split(/\s+OR\s+/i)
+      .map((p) => p.trim().replace(/^["']|["']$/g, ''))
+      .filter(Boolean);
+    const alternatives = parts.length > 1 ? parts : [q];
+    return new RegExp(alternatives.map(escapeRegex).join('|'), 'i');
+  };
+  const safeRegex = buildQueryRegex(input.query);
 
   // ── Search Collections ──────────────────────────────────────────
   const collections = [
@@ -1718,14 +1730,20 @@ async function handleSearchMemories(args: unknown): Promise<TextContent[]> {
     }
 
     try {
-      // Try text index first — nested under $and so a hybrid-mode scope
-      // filter ({$or}) can never be dropped or conflict with $text.
-      const { textQuery } = buildScopedTextQueries(colFilter, [], input.query);
-      docs = await db.collection(col.name)
-        .find(textQuery)
-        .sort({ timestamp: -1 } as any)
-        .limit(limit)
-        .toArray();
+      // Text index first — but MongoDB forbids combining PHRASES with OR in
+      // one $text query (silently returns 0 matches), so OR-shaped queries
+      // skip $text and go straight to the OR-aware regex fallback below.
+      let textMatched = false;
+      if (!/\s+OR\s+/i.test(input.query)) {
+        const { textQuery } = buildScopedTextQueries(colFilter, [], input.query);
+        docs = await db.collection(col.name)
+          .find(textQuery)
+          .sort({ timestamp: -1 } as any)
+          .limit(limit)
+          .toArray();
+        textMatched = true;
+      }
+      if (!textMatched) throw new Error('OR query — use regex fallback');
     } catch {
       // Fall back to regex on content field + title/name fields — scope
       // preserved via the same $and nesting (the old code overwrote the

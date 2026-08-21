@@ -249,15 +249,36 @@ class MemoryRetriever:
         Prefers search_memories (works while embeddings load), falls back
         to vector_search. Items are retagged source=agent_message so the
         formatter surfaces them as the bulletin.
+
+        Identity-separation (2026-08-21): the attention query covers EVERY
+        team identity (Satori/Shoshin/Zanshin) plus the legacy aliases —
+        the pre-cutover query searched only KolegaCode/OpenCode, so
+        messages addressed to the new names never surfaced.
         """
+        attention_names = [
+            f'"Attention: {n}"' for n in ("Satori", "Shoshin", "Zanshin", "KolegaCode", "KolegaCoder", "OpenCode", "OpenCoder")
+        ]
+        query = " OR ".join(attention_names)
+        fallback = "Attention: Satori OR Shoshin OR Zanshin OR KolegaCoder OR OpenCode"
         try:
             messages = await client.search_memories(
-                '"Attention: KolegaCode" OR "Attention: KolegaCoder" OR "FROM: OpenCode"',
+                query,
                 limit=5,
             )
+            # The text-index branch may return "Found 0 results" for OR
+            # queries (index path quirks) even when matches exist — fall
+            # back to the vector search, which is scoped and reliable.
+            if not messages or all(
+                isinstance(m.content, str) and "Found 0 results" in m.content
+                for m in messages
+            ):
+                messages = await client.vector_search(
+                    fallback,
+                    limit=5,
+                )
         except Exception:
             messages = await client.vector_search(
-                "Attention: KolegaCoder OR TASK FOR KOLEGACODER",
+                fallback,
                 limit=5,
             )
         return [
