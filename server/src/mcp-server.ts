@@ -1570,6 +1570,20 @@ async function handleRetractMemory(args: unknown): Promise<TextContent[]> {
   }];
 }
 
+/**
+ * Semantic-facts filter for vector passes. MUST always include the caller's
+ * scope filter — a vector pass without it scans every user's private facts
+ * (cross-identity leak observed by Zanshin 2026-08-21).
+ */
+export function buildSemanticVectorFilter(
+  baseFilter: Record<string, unknown>,
+  includeRetracted: boolean,
+): Record<string, unknown> {
+  const f: Record<string, unknown> = { ...baseFilter, embedding: { $exists: true } };
+  if (!includeRetracted) f.status = { $ne: 'retracted' };
+  return f;
+}
+
 async function handleSearchMemories(args: unknown): Promise<TextContent[]> {
   const input = SearchMemoriesInput.parse(args);
   if (!is_database_connected()) {
@@ -1578,8 +1592,9 @@ async function handleSearchMemories(args: unknown): Promise<TextContent[]> {
 
   const db = get_database();
 
-  // Build scope-aware filter (personal / shared / hybrid)
-  const baseFilter = await buildScopeFilter(input.user_id);
+  // Build scope-aware filter (personal / shared / hybrid). resolveUserId
+  // pins untrusted callers to their own identity (read-side IDOR guard).
+  const baseFilter = await buildScopeFilter(resolveUserId(input.user_id));
   const limit = input.limit || 20;
 
   // Get scope info for output header
@@ -1621,10 +1636,11 @@ async function handleSearchMemories(args: unknown): Promise<TextContent[]> {
     if (embeddingService.isReady) {
       const queryVec = await embeddingService.encode(input.query);
       if (queryVec) {
-        const factsFilter: Record<string, unknown> = { embedding: { $exists: true } };
-        if (!input.include_retracted) {
-          factsFilter.status = { $ne: 'retracted' };
-        }
+        // F-identity-fix: the vector pass MUST carry the same scope filter
+        // as the text pass — previously it scanned semantic_facts from ALL
+        // users and leaked private memories across identities in hybrid
+        // mode (Zanshin verification report 2026-08-21).
+        const factsFilter = buildSemanticVectorFilter(baseFilter, input.include_retracted);
         const facts = await db.collection('semantic_facts')
           .find(factsFilter)
           .limit(100)
@@ -1798,11 +1814,8 @@ async function handleVectorSearch(args: unknown): Promise<TextContent[]> {
   let results: any[] = [];
   let usedVector = false;
 
-  // Build facts filter with retraction exclusion
-  const factsFilter: Record<string, unknown> = { ...scopeFilter };
-  if (!input.include_retracted) {
-    factsFilter.status = { $ne: 'retracted' };
-  }
+  // Build facts filter with retraction exclusion (scope always included).
+  const factsFilter: Record<string, unknown> = buildSemanticVectorFilter(scopeFilter, input.include_retracted);
 
   try {
     const queryVec = await embeddingService.encode(input.query);
