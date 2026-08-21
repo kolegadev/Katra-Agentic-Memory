@@ -65,7 +65,9 @@ IDENTITY_TEXT=$(mcp_call "get_my_identity" '{}')
 IDENTITY_NAME=$(printf '%s' "$IDENTITY_TEXT" | sed -n 's/^\*\*name:\*\* //p' | head -1)
 if [ "$IDENTITY_NAME" != "$EXPECTED_NAME" ]; then
   echo "⚠️  IDENTITY MISMATCH — expected $EXPECTED_NAME, got ${IDENTITY_NAME:-<unknown>}." >&2
-  echo "    Refusing to wake as the wrong identity. Check KATRA_HOST and KATRA_WAKE_KEY." >&2
+  echo "    Refusing to wake as the wrong identity." >&2
+  echo "    Check: KATRA_HOST set to thebrick's address (not localhost), and" >&2
+  echo "    ~/.katra/keys/katra-zanshin.key present (or KATRA_WAKE_KEY set)." >&2
   exit 1
 fi
 printf '%s\n' "$IDENTITY_TEXT"
