@@ -83,6 +83,11 @@ if [ ! -f "$HOOK_CFG" ]; then
   NEEDS_CFG=1
 elif [ -n "$API_KEY" ] && ! grep -q "\"user_id\": \"$USER_ID\"" "$HOOK_CFG" 2>/dev/null; then
   NEEDS_CFG=1
+elif ! grep -q "http://$HOST:3112/mcp" "$HOOK_CFG" 2>/dev/null; then
+  # Shoshin's finding: a non-login run with KATRA_HOST unset wrote
+  # mcp_url=localhost, and a later run with the right host skipped the
+  # rewrite because user_id matched — the config must track the host too.
+  NEEDS_CFG=1
 fi
 if [ "$NEEDS_CFG" = "1" ]; then
   if [ -z "$API_KEY" ]; then
