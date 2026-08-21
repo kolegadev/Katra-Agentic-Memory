@@ -547,7 +547,9 @@ export const create_memory_routes = (): Hono => {
      */
     router.get('/episodic/events', async (c) => {
         try {
-            const user_id = DEFAULT_USER_ID;
+            const caller = getCaller();
+            const requested = c.req.query('user_id') || DEFAULT_USER_ID;
+            const user_id = caller.trusted ? requested : caller.user_id;
             const from_str = c.req.query('from');
             const to_str = c.req.query('to');
             const limit = parseInt(c.req.query('limit') || '50');
@@ -1004,7 +1006,7 @@ export const create_memory_routes = (): Hono => {
     router.get('/stats', async (c) => {
         try {
             const db = get_database();
-            const user_id = DEFAULT_USER_ID;
+            const user_id = getCaller().user_id;
             const scopeFilter = await buildScopeFilter(user_id);
 
             console.log('🔍 Memory stats endpoint called for user:', user_id);
@@ -1362,7 +1364,9 @@ export const create_memory_routes = (): Hono => {
     router.get('/knowledge-graph', async (c) => {
         try {
             const db = get_database();
-            const user_id = DEFAULT_USER_ID;
+            const caller = getCaller();
+            const requested = c.req.query('user_id') || DEFAULT_USER_ID;
+            const user_id = caller.trusted ? requested : caller.user_id;
             const limit = parseInt(c.req.query('limit') || '100');
 
             const effective_user_id = user_id || DEFAULT_USER_ID;
@@ -2057,7 +2061,9 @@ export const create_memory_routes = (): Hono => {
      */
     router.get('/semantic/facts', async (c) => {
         try {
-            const user_id = c.req.query('user_id') || DEFAULT_USER_ID;
+            const caller = getCaller();
+            const requested = c.req.query('user_id') || DEFAULT_USER_ID;
+            const user_id = caller.trusted ? requested : caller.user_id;
             const limit = parseInt(c.req.query('limit') || '50');
             const scopeFilter = await buildScopeFilter(user_id);
 

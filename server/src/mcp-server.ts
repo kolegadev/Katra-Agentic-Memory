@@ -1855,7 +1855,7 @@ async function handleVectorSearch(args: unknown): Promise<TextContent[]> {
   }
 
   const db = get_database();
-  const scopeFilter = await buildScopeFilter(input.user_id);
+  const scopeFilter = await buildScopeFilter(resolveUserId(input.user_id));
   let results: any[] = [];
   let usedVector = false;
 
@@ -1952,7 +1952,7 @@ async function handleTemporalRecall(args: unknown): Promise<TextContent[]> {
   const from = input.from ? new Date(input.from) : new Date(Date.now() - 24 * 60 * 60 * 1000);
   const to = input.to ? new Date(input.to) : new Date();
 
-  const scopeFilter = await buildScopeFilter(input.user_id);
+  const scopeFilter = await buildScopeFilter(resolveUserId(input.user_id));
   const match: any = { ...scopeFilter, timestamp: { $gte: from, $lte: to } };
   if (input.event_type) match.event_type = input.event_type;
   if (input.role) match['content.role'] = input.role;
@@ -1973,7 +1973,7 @@ async function handleTemporalSearch(args: unknown): Promise<TextContent[]> {
   if (!is_database_connected()) return [{ type: 'text', text: '⚠️ MongoDB disconnected.' }];
 
   const db = get_database();
-  const scopeFilter = await buildScopeFilter(input.user_id);
+  const scopeFilter = await buildScopeFilter(resolveUserId(input.user_id));
   let results: unknown[] = [];
 
   try {
@@ -2012,7 +2012,7 @@ async function handleTimeBlockSummaries(args: unknown): Promise<TextContent[]> {
   const to = input.to ? new Date(input.to) : new Date();
 
   const { timeBlockSummarizer } = await import('./services/processing/time-block-summarizer.js');
-  const summaries = await timeBlockSummarizer.getTimeBlockSummaries(input.user_id, from, to, {
+  const summaries = await timeBlockSummarizer.getTimeBlockSummaries(resolveUserId(input.user_id), from, to, {
     block_type: input.block_type, limit: input.limit,
   });
 
@@ -2035,7 +2035,7 @@ async function handleSummarizeTimeBlocks(args: unknown): Promise<TextContent[]> 
 
   const { timeBlockSummarizer } = await import('./services/processing/time-block-summarizer.js');
   const result = await timeBlockSummarizer.summarizeTimeBlocks({
-    user_id: input.user_id,
+    user_id: resolveUserId(input.user_id),
     block_type: input.block_type,
     lookback_days: input.lookback_days,
     max_blocks: input.max_blocks,
@@ -2061,15 +2061,16 @@ async function handleDetectPatterns(args: unknown): Promise<TextContent[]> {
   if (!is_database_connected()) return [{ type: 'text', text: '⚠️ MongoDB disconnected.' }];
 
   const { temporalPatternDetector } = await import('./services/infrastructure/temporal-pattern-detector.js');
+  const userId = resolveUserId(input.user_id);
   const patterns = await temporalPatternDetector.detectPatterns({
-    user_id: input.user_id,
+    user_id: userId,
     lookback_weeks: input.lookback_weeks,
     min_confidence: input.min_confidence,
     dormant_threshold_days: input.dormant_threshold_days,
   });
   const summary = temporalPatternDetector.summarizePatterns(patterns);
 
-  const lines = [`## Temporal Patterns — ${input.user_id}`, `*${input.lookback_weeks} weeks*\n`];
+  const lines = [`## Temporal Patterns — ${userId}`, `*${input.lookback_weeks} weeks*\n`];
 
   lines.push(`### 🔄 Recurring (${patterns.recurring_topics?.length || 0})`);
   if (patterns.recurring_topics?.length) {
@@ -2116,7 +2117,7 @@ async function handleTemporalContext(args: unknown): Promise<TextContent[]> {
   } catch { /* ignore */ }
 
   const lines = [
-    `## Temporal Context — ${input.user_id} / ${input.session_id}`,
+    `## Temporal Context — ${resolveUserId(input.user_id)} / ${input.session_id}`,
     `### Recent Events (${recent.length})`,
     ...recent.map((e: any) => `- [${e.timestamp ? new Date(e.timestamp).toISOString() : '?'}] ${e.content?.role || '?'}: ${e.content?.message || JSON.stringify(e.content).substring(0, 150)}`),
     '',
@@ -2137,8 +2138,9 @@ async function handleGetJournal(args: unknown): Promise<TextContent[]> {
   if (!is_database_connected()) return [{ type: 'text', text: '⚠️ MongoDB disconnected.' }];
 
   const db = get_database();
-  const scopeFilter = await buildScopeFilter(input.user_id);
-  const lines: string[] = [`## Journal — ${input.user_id}`, `*source: ${input.source} | limit: ${input.limit}*\n`];
+  const journalUserId = resolveUserId(input.user_id);
+  const scopeFilter = await buildScopeFilter(journalUserId);
+  const lines: string[] = [`## Journal — ${journalUserId}`, `*source: ${input.source} | limit: ${input.limit}*\n`];
 
   if (input.source === 'all' || input.source === 'manual') {
     const manual = await db.collection('agent_journal_manual')
@@ -2208,7 +2210,7 @@ async function handleListMissions(args: unknown): Promise<TextContent[]> {
   if (!is_database_connected()) return [{ type: 'text', text: '⚠️ MongoDB disconnected.' }];
 
   const pms = getProspectiveMemoryService();
-  const scopeFilter = await buildScopeFilter(input.user_id);
+  const scopeFilter = await buildScopeFilter(resolveUserId(input.user_id));
   // pms.listMissions uses user_id internally; for scope we need to query directly
   const db = get_database();
   const missions = await db.collection('memory_missions')
@@ -2217,7 +2219,7 @@ async function handleListMissions(args: unknown): Promise<TextContent[]> {
     .limit(input.limit)
     .toArray();
 
-  const lines = [`## Missions — ${input.user_id}`, `*${missions.length} missions*\n`];
+  const lines = [`## Missions — ${resolveUserId(input.user_id)}`, `*${missions.length} missions*\n`];
   if (missions.length === 0) lines.push('*No missions.*');
   else missions.forEach((m: any) => {
     const emoji = m.status === 'ACTIVE' ? '🔄' : m.status === 'COMPLETED' ? '✅' : m.status === 'PAUSED' ? '⏸️' : '📝';
@@ -2236,7 +2238,7 @@ async function handleGetMission(args: unknown): Promise<TextContent[]> {
   const input = GetMissionInput.parse(args);
   if (!is_database_connected()) return [{ type: 'text', text: '⚠️ MongoDB disconnected.' }];
 
-  const scopeFilter = await buildScopeFilter(input.user_id);
+  const scopeFilter = await buildScopeFilter(resolveUserId(input.user_id));
   const db = get_database();
   const mission = await db.collection('memory_missions')
     .findOne({ ...scopeFilter, id: input.mission_id });
@@ -2281,7 +2283,7 @@ async function handleCreateMission(args: unknown): Promise<TextContent[]> {
 
   const pms = getProspectiveMemoryService();
   const goalText = input.title || input.goal;
-  const mission = await pms.createMission(input.user_id, goalText);
+  const mission = await pms.createMission(resolveUserId(input.user_id), goalText);
 
   // Apply shared_id if in shared/hybrid mode
   const sharedId = await resolveSharedId(input.shared_id);
@@ -2319,7 +2321,7 @@ async function handleUpdateMissionTask(args: unknown): Promise<TextContent[]> {
   const input = UpdateMissionTaskInput.parse(args);
   if (!is_database_connected()) return [{ type: 'text', text: '⚠️ MongoDB disconnected.' }];
 
-  const scopeFilter = await buildScopeFilter(input.user_id);
+  const scopeFilter = await buildScopeFilter(resolveUserId(input.user_id));
   const db = get_database();
   const mission = await db.collection('memory_missions')
     .findOne({ ...scopeFilter, id: input.mission_id });
@@ -2392,7 +2394,7 @@ async function handleGetMemoryDiagnostics(args: unknown): Promise<TextContent[]>
   if (!is_database_connected()) return [{ type: 'text', text: '⚠️ MongoDB disconnected.' }];
 
   const db = get_database();
-  const userId = input.user_id;
+  const userId = resolveUserId(input.user_id);
   const scopeFilter = userId ? await buildScopeFilter(userId) : {};
 
   const counts: Record<string, number> = {};
@@ -2611,7 +2613,7 @@ async function handleGetAutoJournal(args: unknown): Promise<TextContent[]> {
   if (!is_database_connected()) return [{ type: 'text', text: '⚠️ MongoDB disconnected.' }];
   const db = get_database();
 
-  const scopeFilter = await buildScopeFilter(input.user_id);
+  const scopeFilter = await buildScopeFilter(resolveUserId(input.user_id));
   const filter: Record<string, unknown> = { ...scopeFilter, source: 'auto' };
   if (input.since) filter.created_at = { $gte: new Date(input.since) };
 
@@ -2637,8 +2639,8 @@ async function handleGetTransactionLog(args: unknown): Promise<TextContent[]> {
   if (!is_database_connected()) return [{ type: 'text', text: '⚠️ MongoDB disconnected.' }];
   const db = get_database();
 
-  // Use scope filter when user_id is provided, otherwise query all
-  const scopeFilter = input.user_id ? await buildScopeFilter(input.user_id) : {};
+  // Pin to the caller: transaction logs of other identities are never visible.
+  const scopeFilter = await buildScopeFilter(resolveUserId(input.user_id));
   const filter: Record<string, unknown> = { ...scopeFilter };
   if (input.action) filter.action = input.action;
   if (input.since) filter.timestamp = { $gte: new Date(input.since) };
@@ -2704,7 +2706,7 @@ async function handleListAssets(args: unknown): Promise<TextContent[]> {
     const { s3_asset_service } = await import('./services/infrastructure/s3-asset-service.js');
     const result = await s3_asset_service.list_assets({
       limit: input.limit,
-      user_id: input.user_id,
+      user_id: resolveUserId(input.user_id),
     });
 
     let assets = result.assets || [];
@@ -3027,7 +3029,7 @@ async function handleTriggerReflection(args: unknown): Promise<TextContent[]> {
   // Fire-and-forget: consolidation calls the LLM and can take 30-90s.
   // Running synchronously causes MCP client timeout. Return immediately
   // and let the consolidation complete in the background.
-  service.consolidate(input.period_type, input.user_id)
+  service.consolidate(input.period_type, resolveUserId(input.user_id))
     .then(result => {
       if (result.success) {
         console.log('\u2705 ' + input.period_type + ' reflection completed (async): ' + result.nodes_upserted + ' nodes, ' + result.edges_upserted + ' edges');
