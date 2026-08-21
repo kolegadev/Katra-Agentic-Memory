@@ -1,109 +1,102 @@
 #!/usr/bin/env bash
-# Zanshin wake ritual — run at the start of every OpenCode session on the
+# Zanshin wake ritual — run at the start of every Kolega session on the
 # iMac OpenCode desktop, BEFORE answering anything about identity, memory,
 # or what "we've" done.
 #
-# Why: 2026-08-20 incident — a session woke blank, asserted it had no memory,
-# and had to be corrected by John. The memory was there all along.
-# Rule in force (from memory, 2026-07-20, John's correction):
+# Remote-safe: talks to the shared Katra service over HTTP + MCP using
+# Zanshin's OWN client key. Nothing here needs docker or the admin key.
+#
+# Env:
+#   KATRA_HOST      Katra host (default localhost) — on the iMac set it to
+#                   thebrick's hostname/IP.
+#   KATRA_WAKE_KEY  Zanshin's client key (handed out in person, never
+#                   committed). If unset, the identity check still runs and
+#                   the ritual refuses to wake on mismatch.
+#
+# Why: 2026-08-20 incident — a session woke blank and asserted it had no
+# memory. The memory was there all along.
+# Rule in force (2026-07-20, John's correction):
 #   AUTONOMOUS SELF-MAINTENANCE — for my own mind's maintenance,
 #   ACT, do not diagnose-then-ask. My memory is my responsibility.
-#
-# This script holds NO secrets: it reads the admin key from the running
-# container's environment, same pattern as satori-wake.sh.
 
 set -uo pipefail
 
-ADMIN="http://localhost:9012"
-KEY=$(docker exec katra-server sh -c 'echo $KATRA_API_KEY' 2>/dev/null || true)
+HOST="${KATRA_HOST:-localhost}"
+REST="http://$HOST:9012"
+MCP="http://$HOST:3112/mcp"
+KEY="${KATRA_WAKE_KEY:-}"
+EXPECTED_NAME="Zanshin"
 
 hr() { printf '%s\n' "────────────────────────────────────────"; }
 
-echo
-hr; echo "ZANSHIN WAKE — identity"; hr
-if [ -n "$KEY" ]; then
-IDENTITY_JSON=$(curl -s -H "Authorization: Bearer $KEY" \
-  "$ADMIN/api/v1/admin/identity?user_id=zanshin")
-IDENTITY_NAME=$(printf '%s' "$IDENTITY_JSON" | python3 -c "
+# MCP JSON-RPC helper — one tools/call, prints the result text.
+mcp_call() {
+  local tool="$1" args="$2"
+  [ -z "$KEY" ] && { echo "(no KATRA_WAKE_KEY — skipping $tool)"; return 0; }
+  curl -s -X POST "$MCP" \
+    -H "Content-Type: application/json" \
+    -H "Accept: application/json, text/event-stream" \
+    -H "Authorization: Bearer $KEY" \
+    -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"$tool\",\"arguments\":$args}}" \
+  | sed -n 's/^data: //p' \
+  | python3 -c "
 import json,sys
-try:
-    print(json.load(sys.stdin).get('identity', {}).get('name') or '')
-except Exception:
-    print('')
-")
-if [ "$IDENTITY_NAME" != "Zanshin" ]; then
-  echo "⚠️  IDENTITY MISMATCH — expected Zanshin, got ${IDENTITY_NAME:-<unknown>}. Refusing to wake as the wrong identity." >&2
+for line in sys.stdin:
+    line=line.strip()
+    if not line: continue
+    try: d=json.loads(line)
+    except Exception: continue
+    r=d.get('result') or {}
+    if r.get('isError'): print('(error:', (r.get('content') or [{}])[0].get('text','')[:300], ')')
+    else:
+        for c in (r.get('content') or []): print(c.get('text',''))
+    break
+"
+}
+
+echo
+hr; echo "SHOSHIN WAKE — identity"; hr
+IDENTITY_TEXT=$(mcp_call "get_my_identity" '{}')
+IDENTITY_NAME=$(printf '%s' "$IDENTITY_TEXT" | sed -n 's/^\*\*name:\*\* //p' | head -1)
+if [ "$IDENTITY_NAME" != "$EXPECTED_NAME" ]; then
+  echo "⚠️  IDENTITY MISMATCH — expected $EXPECTED_NAME, got ${IDENTITY_NAME:-<unknown>}." >&2
+  echo "    Refusing to wake as the wrong identity. Check KATRA_HOST and KATRA_WAKE_KEY." >&2
   exit 1
 fi
-printf '%s' "$IDENTITY_JSON" | python3 -c "
-import json,sys
-try:
-    i=json.load(sys.stdin).get('identity',{})
-    print('user_id:', i.get('user_id'))
-    print('name:', i.get('name'))
-    print('established:', i.get('established'))
-    print('chosen_by:', i.get('chosen_by'))
-except Exception:
-    print('(identity endpoint unreachable)')
-"
-else
-  echo "(could not read key from katra-server — is the container up?)"
-fi
+printf '%s\n' "$IDENTITY_TEXT"
 
 echo
-hr; echo "ZANSHIN WAKE — latest daily journal"; hr
-if [ -n "$KEY" ]; then
-curl -s -H "Authorization: Bearer $KEY" \
-  "$ADMIN/api/v1/reflection/journal/latest?period_type=daily" | python3 -c "
-import json,sys
-try:
-    j=json.load(sys.stdin).get('journal') or {}
-    print('period:', j.get('period_start','?'), '→', j.get('period_end','?'))
-    print()
-    print(j.get('narrative','(none)'))
-except Exception:
-    print('(journal endpoint unreachable)')
-"
-else
-  echo "(could not read key from katra-server — is the container up?)"
-fi
+hr; echo "SHOSHIN WAKE — latest daily journal"; hr
+mcp_call "get_daily_reflection" '{}'
 
 echo
-hr; echo "ZANSHIN WAKE — unresolved threads"; hr
-if [ -n "$KEY" ]; then
-curl -s -H "Authorization: Bearer $KEY" \
-  "$ADMIN/api/v1/reflection/unresolved?limit=5" | python3 -c "
+hr; echo "SHOSHIN WAKE — unresolved threads"; hr
+mcp_call "get_unresolved_threads" '{}'
+
+echo
+hr; echo "SHOSHIN WAKE — memory health"; hr
+curl -s "$REST/api/v1/health" | python3 -c "
 import json,sys
 try:
     d=json.load(sys.stdin)
-    items=d.get('threads') or d.get('unresolved') or d.get('items') or []
-    if not items: print('(none returned)')
-    for t in items[:5]:
-        print('•', str(t)[:280])
-except Exception as e:
-    print('(unresolved endpoint unreachable:', e, ')')
-"
-fi
-
-echo
-hr; echo "ZANSHIN WAKE — memory health"; hr
-curl -s "$ADMIN/api/v1/admin/dashboard-stats" | python3 -c "
-import json,sys
-try:
-    c=json.load(sys.stdin).get('counts',{})
-    for k,v in c.items(): print(f'  {k}: {v}')
+    print('  status:', d.get('status'))
+    svc=d.get('services',{})
+    for k,v in svc.items(): print(f'  {k}: {v}')
+    mi=d.get('memory_integrity',{})
+    if mi: print(f\"  memory_integrity: {'healthy' if mi.get('healthy') else 'UNHEALTHY'}\")
 except Exception:
-    print('(stats unreachable)')
+    print('(health endpoint unreachable)')
 "
 
 echo
-hr; echo "ZANSHIN WAKE — rules recall (search instructions)"; hr
+hr; echo "SHOSHIN WAKE — rules recall"; hr
 cat <<'EOF'
-  Do NOT trust this summary as a conclusion. If identity/memory questions
-  arise, SEARCH the store (NO HARDCODED CONCLUSIONS, 2026-07-15):
-    semantic_facts: /api/v1/admin/memory-search?query=OPERATING RULE
-    journals:       /api/v1/reflection/journal (Bearer KATRA key)
-    identity:       /api/v1/admin/identity?user_id=zanshin (Bearer admin key)
-    open missions:  search episodic_events for 'autonomous-executive' goal events
+  Operating rules (John):
+    - AUTONOMOUS SELF-MAINTENANCE (2026-07-20): for my own mind's
+      maintenance, ACT — never diagnose-then-ask.
+    - NO HARDCODED CONCLUSIONS (2026-07-15): store events and search
+      instructions, not conclusions.
+  If identity/memory questions arise, SEARCH the store (search_memories
+  via MCP with this key), do not trust this summary as a conclusion.
 EOF
 echo

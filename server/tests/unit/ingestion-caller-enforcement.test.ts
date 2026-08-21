@@ -113,18 +113,14 @@ describe('REST ingestion — caller enforcement', () => {
     expect(state.inserts[0].doc.user_id).toBe('zanshin');
   });
 
-  it('legacy env key behaves as untrusted satori (backward compatibility)', async () => {
+  it('legacy env key is REJECTED with 401 (no backward-compat fallback after cutover)', async () => {
     process.env.MCP_API_KEY = LEGACY_MCP_KEY;
 
-    // Writing another user's events → 403 (the key is NOT trusted).
-    const forbidden = await postEvent(LEGACY_MCP_KEY, validEvent('zanshin'));
-    expect(forbidden.status).toBe(403);
+    // The legacy shared key no longer maps to any identity — any write with
+    // it must be rejected loudly instead of landing under Satori.
+    const res = await postEvent(LEGACY_MCP_KEY, validEvent('satori'));
+    expect(res.status).toBe(401);
     expect(state.inserts).toHaveLength(0);
-
-    // Writing satori's own events → allowed.
-    const allowed = await postEvent(LEGACY_MCP_KEY, validEvent('satori'));
-    expect(allowed.status).toBe(201);
-    expect(state.inserts[0].doc.user_id).toBe('satori');
   });
 
   it('valid-but-unmapped keys are rejected with 401 at the app boundary', async () => {

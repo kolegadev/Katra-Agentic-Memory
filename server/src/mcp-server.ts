@@ -34,7 +34,7 @@ import dotenv from 'dotenv';
 import { z } from 'zod';
 import { zodToJsonSchema } from 'zod-to-json-schema';
 import { connect_to_mongodb, get_database, is_database_connected } from './database/connection.js';
-import { getAgentIdentityName } from './services/infrastructure/agent-identity.js';
+import { getAgentIdentityName, getAgentIdentity } from './services/infrastructure/agent-identity.js';
 import { get_redis_client, is_redis_healthy } from './database/redis-connection.js';
 import { working_memory_service } from './services/memory/working-memory-service.js';
 import {
@@ -638,6 +638,15 @@ const tools = [
     })) as Record<string, unknown>,
   },
   {
+    // Self-service identity — every agent's wake ritual calls this with its
+    // OWN key; the resolved caller can never see another agent's record.
+    name: 'get_my_identity',
+    description: 'Who am I? Returns the caller\'s identity record (name, user_id, chosen_by, established). Pinned to the caller\'s own identity — untrusted callers cannot read another agent\'s identity.',
+    inputSchema: zodToJsonSchema(z.object({
+      user_id: z.string().optional(),
+    })) as Record<string, unknown>,
+  },
+  {
     name: 'get_mind_wander',
     description: 'Perform a mind-wandering random walk on the knowledge graph. Starts at a random node and follows edges weighted by relationship strength. Returns the traversal path, an associative narrative, and stores the result as a low-salience episodic event.',
     inputSchema: zodToJsonSchema(z.object({
@@ -954,6 +963,27 @@ async function handleGetIdentityKernel(args: unknown): Promise<TextContent[]> {
     lines.push('*No stable or strengthening insights found.*');
   }
 
+  return [{ type: 'text', text: lines.join('\n') }];
+}
+
+/**
+ * Self-service identity for wake rituals — pinned to the caller.
+ */
+async function handleGetMyIdentity(args: unknown): Promise<TextContent[]> {
+  const input = z.object({
+    user_id: z.string().optional(),
+  }).parse(args);
+  const userId = resolveUserId(input.user_id);
+  const identity = await getAgentIdentity(userId);
+  const lines: string[] = [
+    '## Identity',
+    '',
+    `**name:** ${identity.name}`,
+    `**user_id:** ${userId}`,
+    `**established:** ${identity.established ?? '—'}`,
+    `**chosen_by:** ${identity.chosen_by ?? '—'}`,
+  ];
+  if (identity.rationale) lines.push(`**rationale:** ${identity.rationale}`);
   return [{ type: 'text', text: lines.join('\n') }];
 }
 
@@ -3147,6 +3177,7 @@ function registerHandlers(server: Server, getIdentity?: () => CallerIdentity) {
         case 'get_error_report': result = await handleGetErrorReport(); break;
         case 'get_action_policy': result = await handleGetActionPolicy(args); break;
         case 'get_identity_kernel': result = await handleGetIdentityKernel(args); break;
+        case 'get_my_identity': result = await handleGetMyIdentity(args); break;
         case 'get_mind_wander': result = await handleGetMindWander(args); break;
         case 'get_agent_beliefs': result = await handleGetAgentBeliefs(args); break;
         case 'get_procedural_templates': result = await handleGetProceduralTemplates(args); break;

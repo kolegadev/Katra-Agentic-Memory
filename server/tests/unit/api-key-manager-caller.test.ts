@@ -112,16 +112,16 @@ describe('resolveCallerIdentity', () => {
       .toEqual({ user_id: 'zanshin', trusted: false });
   });
 
-  it('legacy env keys (MCP_API_KEY) → { user_id: satori, trusted: false }', async () => {
+  it('legacy env keys (MCP_API_KEY) are REJECTED — no identity fallback (cutover policy)', async () => {
     process.env.MCP_API_KEY = LEGACY_MCP_KEY;
     const identity = await resolveCallerIdentity(remoteReq('192.168.1.50', { 'x-mcp-auth': LEGACY_MCP_KEY }));
-    expect(identity).toEqual({ user_id: 'satori', trusted: false });
+    expect(identity).toBeNull();
   });
 
-  it('legacy env keys (BACKUP_MCP_KEYS, comma-separated) → satori untrusted', async () => {
+  it('legacy env keys (BACKUP_MCP_KEYS, comma-separated) are REJECTED — no identity fallback', async () => {
     process.env.BACKUP_MCP_KEYS = `${LEGACY_MCP_KEY}, ${LEGACY_BACKUP_KEY}`;
     const identity = await resolveCallerIdentity(remoteReq('192.168.1.50', { authorization: `Bearer ${LEGACY_BACKUP_KEY}` }));
-    expect(identity).toEqual({ user_id: 'satori', trusted: false });
+    expect(identity).toBeNull();
   });
 
   it('admin key (KATRA_API_KEY) → { user_id: satori, trusted: true }', async () => {

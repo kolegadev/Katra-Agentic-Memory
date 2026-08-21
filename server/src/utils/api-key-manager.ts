@@ -505,7 +505,11 @@ export async function ensureClientKeys(options: {
  * - loopback IP → { user_id: 'satori', trusted: true }
  * - admin key (KATRA_API_KEY / stored admin hashes) → { user_id: 'satori', trusted: true }
  * - key mapped in system_settings.client_keys → { user_id, trusted: false }
- * - legacy env keys (MCP_API_KEY / ADMIN_API_KEY / BACKUP_MCP_KEYS) → { user_id: 'satori', trusted: false }
+ * - NO legacy env-key fallback: the pre-cutover shared keys (MCP_API_KEY /
+ *   BACKUP_MCP_KEYS) are deliberately unmapped so machines that still hold
+ *   them are rejected loudly instead of writing memories under Satori's
+ *   identity (Shoshin cutover report 2026-08-21). Non-loopback consumers get
+ *   their own mapped client key.
  * - valid but unmapped → null (the caller must be rejected with 401 + reason)
  * - no key, non-loopback → null
  */
@@ -527,15 +531,10 @@ export async function resolveCallerIdentity(
     return { user_id: 'satori', trusted: true };
   }
 
-  // Key mapped in client_keys (shoshin / zanshin / satori's legacy hash).
+  // Key mapped in client_keys (satori / shoshin / zanshin / tool actors).
   const mapped = clientKeyIdentities.get(tokenHash);
   if (mapped) {
     return { ...mapped };
-  }
-
-  // Legacy env keys → satori untrusted (backward compatibility).
-  if (getLegacyEnvKeyHashes().has(tokenHash)) {
-    return { user_id: 'satori', trusted: false };
   }
 
   // Valid but unmapped (or invalid) → null: reject with 401 + reason.

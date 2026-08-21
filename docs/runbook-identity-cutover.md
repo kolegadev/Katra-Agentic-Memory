@@ -25,7 +25,11 @@ Satori's identity.
    MY_AGENT_ID=shoshin, PEER_AGENT_ID=zanshin).
 3. Install the wake ritual: copy `integrations/kolega-code/scripts/wake-shoshin.sh`
    to `~/.kolega/` and run it at every session start (mirror the Satori
-   AGENTS.md guidance block, substituting Shoshin).
+   AGENTS.md guidance block, substituting Shoshin). The script is
+   remote-safe: set `KATRA_HOST=<thebrick hostname/IP>` and
+   `KATRA_WAKE_KEY=<shoshin key>` in the environment (or export in
+   `~/.zshrc`). It calls the shared service over MCP with Shoshin's own
+   key — no docker, no ssh, no admin key.
 4. Relaunch the Kolega-code CLI. First memory writes must land as
    `user_id: shoshin` with `shared_id: my-team`.
 
@@ -34,9 +38,19 @@ Satori's identity.
 1. Update its session-start script config: `user_id: "zanshin"`, its own key
    (`scripts/python/opencode_session_start.py` is already zanshin-aware after
    `git pull`).
-2. Install `integrations/kolega-code/scripts/wake-zanshin.sh` and its wake
-   ritual skill (`server/src/skills/operational/zanshin-wake-ritual/`).
+2. Install `integrations/kolega-code/scripts/wake-zanshin.sh` (env:
+   `KATRA_HOST` + `KATRA_WAKE_KEY=<zanshin key>`) and its wake ritual skill
+   (`server/src/skills/operational/zanshin-wake-ritual/`).
 3. First writes must land as `user_id: zanshin`.
+
+## Cutover policy (updated after Shoshin's first-run report)
+
+- **Legacy keys are rejected (401), not mapped.** The pre-cutover shared key
+  (and every BACKUP_MCP_KEYS entry) no longer authenticates. A machine that
+  still holds one gets a loud 401 until it switches to its own key.
+- **`private: true`** (top-level, both REST event bodies and MCP
+  `store_memory` arguments) opts a write out of the shared channel. Omitting
+  `shared_id` is NOT enough — the default is `my-team`.
 
 ## What each agent can see (hybrid mode)
 
