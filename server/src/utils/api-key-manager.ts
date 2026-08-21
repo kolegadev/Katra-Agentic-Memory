@@ -350,7 +350,7 @@ export function extractPresentedKey(
   if (url) {
     try {
       const token = new URL(url, 'http://localhost').searchParams.get('token');
-      if (token) return token;
+      if (token && token.trim()) return token.trim();
     } catch {
       /* malformed URL — no token */
     }

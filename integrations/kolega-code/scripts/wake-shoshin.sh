@@ -8,10 +8,13 @@
 #
 # Env:
 #   KATRA_HOST      Katra host (default localhost) — on the iMac set it to
-#                   thebrick's hostname/IP.
-#   KATRA_WAKE_KEY  Shoshin's client key (handed out in person, never
-#                   committed). If unset, the identity check still runs and
-#                   the ritual refuses to wake on mismatch.
+#                   thebrick's address (e.g. 100.101.206.13).
+#   KATRA_WAKE_KEY  Shoshin's client key (optional if the key file exists).
+#   Key file:       ~/.katra/keys/katra-shoshin.key (chmod 600), read
+#                   automatically; whitespace in the file is stripped.
+#
+# Fail-closed: if the identity check cannot confirm "Shoshin" after three
+# attempts, this script refuses to wake and prints the exact fix checklist.
 #
 # Why: 2026-08-20 incident — a session woke blank and asserted it had no
 # memory. The memory was there all along.
@@ -25,7 +28,7 @@ HOST="${KATRA_HOST:-localhost}"
 REST="http://$HOST:9012"
 MCP="http://$HOST:3112/mcp"
 KEY="${KATRA_WAKE_KEY:-}"
-# Key-file fallback (~/.katra/keys/katra-shoshin.key) — survives shell resets.
+# Key-file fallback — survives shell resets.
 if [ -z "$KEY" ] && [ -f "$HOME/.katra/keys/katra-shoshin.key" ]; then
   KEY="$(cat "$HOME/.katra/keys/katra-shoshin.key" | tr -d '[:space:]')"
 fi
@@ -36,7 +39,7 @@ hr() { printf '%s\n' "───────────────────�
 # MCP JSON-RPC helper — one tools/call, prints the result text.
 mcp_call() {
   local tool="$1" args="$2"
-  [ -z "$KEY" ] && { echo "(no KATRA_WAKE_KEY — skipping $tool)"; return 0; }
+  [ -z "$KEY" ] && { echo "(no key — set KATRA_WAKE_KEY or the key file)"; return 0; }
   curl -s -X POST "$MCP" \
     -H "Content-Type: application/json" \
     -H "Accept: application/json, text/event-stream" \
@@ -60,13 +63,27 @@ for line in sys.stdin:
 
 echo
 hr; echo "SHOSHIN WAKE — identity"; hr
-IDENTITY_TEXT=$(mcp_call "get_my_identity" '{}')
-IDENTITY_NAME=$(printf '%s' "$IDENTITY_TEXT" | sed -n 's/^\*\*name:\*\* //p' | head -1)
+IDENTITY_NAME=""
+IDENTITY_TEXT=""
+for attempt in 1 2 3; do
+  IDENTITY_TEXT=$(mcp_call "get_my_identity" '{}')
+  IDENTITY_NAME=$(printf '%s' "$IDENTITY_TEXT" | sed -n 's/^\*\*name:\*\* //p' | head -1 | tr -d '[:space:]')
+  [ "$IDENTITY_NAME" = "$EXPECTED_NAME" ] && break
+  if [ "$attempt" -lt 3 ]; then
+    echo "  ⚠  attempt $attempt: identity not confirmed (got '${IDENTITY_NAME:-<empty>}') — retrying in 3s…"
+    sleep 3
+  fi
+done
 if [ "$IDENTITY_NAME" != "$EXPECTED_NAME" ]; then
-  echo "⚠️  IDENTITY MISMATCH — expected $EXPECTED_NAME, got ${IDENTITY_NAME:-<unknown>}." >&2
+  echo "⚠️  IDENTITY MISMATCH — expected $EXPECTED_NAME, got '${IDENTITY_NAME:-<empty>}' after 3 attempts." >&2
   echo "    Refusing to wake as the wrong identity." >&2
-  echo "    Check: KATRA_HOST set to thebrick's address (not localhost), and" >&2
-  echo "    ~/.katra/keys/katra-shoshin.key present (or KATRA_WAKE_KEY set)." >&2
+  echo "" >&2
+  echo "    Fix checklist (in order):" >&2
+  echo "      1. KATRA_HOST must point at thebrick, NOT localhost. current: $HOST" >&2
+  echo "      2. Key file must exist: ~/.katra/keys/katra-shoshin.key" >&2
+  echo "         create: printf '%s' '<shoshin-key>' > ~/.katra/keys/katra-shoshin.key" >&2
+  echo "         present: $([ -f "$HOME/.katra/keys/katra-shoshin.key" ] && echo yes || echo NO)" >&2
+  echo "      3. Re-run: bash ~/.kolega/wake-shoshin.sh" >&2
   exit 1
 fi
 printf '%s\n' "$IDENTITY_TEXT"
