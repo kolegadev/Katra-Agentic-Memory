@@ -27,8 +27,7 @@ MCP="http://$HOST:3112/mcp"
 KEY="${KATRA_WAKE_KEY:-}"
 # Key-file fallback (~/.katra/keys/katra-zanshin.key) — survives shell resets.
 if [ -z "$KEY" ] && [ -f "$HOME/.katra/keys/katra-zanshin.key" ]; then
-  KEY="$(cat "$HOME/.katra/keys/katra-zanshin.key" | tr -d '
-')"
+  KEY="$(cat "$HOME/.katra/keys/katra-zanshin.key" | tr -d '[:space:]')"
 fi
 EXPECTED_NAME="Zanshin"
 

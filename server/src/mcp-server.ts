@@ -49,7 +49,7 @@ import { resolveWriteScope } from './services/memory/write-scope-policy.js';
 import { llmService, get_llm_config_from_db, save_llm_config_to_db } from './services/infrastructure/llm-service.js';
 import { getEpisodicEventManager } from './services/memory/episodic-event-manager.js';
 import { stableContentHash } from './services/infrastructure/content-hash-utils.js';
-import { ensureApiKeys, logGeneratedKeys, validateMcpKey, isMcpAuthConfigured, validateKatraKey, isKatraAuthConfigured, resolveCallerIdentity, ensureClientKeys, extractPresentedKey } from './utils/api-key-manager.js';
+import { ensureApiKeys, logGeneratedKeys, validateMcpKey, isMcpAuthConfigured, validateKatraKey, isKatraAuthConfigured, resolveCallerIdentity, ensureClientKeys, extractPresentedKey, hashApiKey } from './utils/api-key-manager.js';
 import { runWithCaller, getCaller, type CallerIdentity } from './utils/caller-identity.js';
 import { ReflectionStore } from './services/infrastructure/reflection-store.js';
 import { MemoryIntegrityService } from './services/infrastructure/memory-integrity.js';
@@ -121,15 +121,20 @@ export async function validateAuth(
       : await resolveCallerIdentity({ socket: req.socket, headers: req.headers, url: req.url });
   if (identity) return true;
 
-  // Rejected — explain why.
+  // Rejected — explain why. The sha256 prefix (first 8 hex chars) of the
+  // presented key is logged for cutover diagnostics: it identifies WHICH
+  // key a remote machine is presenting without ever leaking usable key
+  // material (8 hex chars ≈ 32 bits, and the full hash is salted storage).
   const token = extractPresentedKey(req.headers, req.url);
+  const presentedPrefix = token ? hashApiKey(token).slice(0, 8) : 'none';
   if (token && validateMcpKey(token)) {
     console.warn(
       '🔒 MCP 401: valid API key with no caller identity mapping — rejected. ' +
+        `presented-key sha256 prefix: ${presentedPrefix} ` +
         '(client_keys maps key hashes to user_ids; this key validates but is not mapped)',
     );
   } else {
-    console.warn('🔒 MCP 401: unrecognized or missing API key — rejected');
+    console.warn(`🔒 MCP 401: unrecognized or missing API key — rejected. presented-key sha256 prefix: ${presentedPrefix}`);
   }
   return false;
 }

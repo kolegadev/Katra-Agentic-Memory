@@ -34,7 +34,7 @@ API_KEY="${KATRA_API_KEY:-}"
 if [ -z "$API_KEY" ]; then
   KEY_FILE="${KATRA_API_KEY_FILE:-$HOME/.katra/keys/katra-$USER_ID.key}"
   if [ -f "$KEY_FILE" ]; then
-    API_KEY="$(cat "$KEY_FILE" | tr -d '\n')"
+    API_KEY="$(cat "$KEY_FILE" | tr -d '[:space:]')"
   fi
 fi
 
