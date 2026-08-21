@@ -1584,6 +1584,26 @@ export function buildSemanticVectorFilter(
   return f;
 }
 
+/**
+ * Scoped text-search query shapes for search_memories Pass 2.
+ *
+ * In hybrid mode the scope filter is {$or: [...]} — MongoDB forbids $text
+ * combined with a top-level $or, and naively setting regexFilter['$or'] to
+ * the content conditions OVERWRITES the scope $or (dropping the scope and
+ * leaking private memories across identities — Zanshin's keyword-pass
+ * report 2026-08-21). Both shapes therefore nest under $and.
+ */
+export function buildScopedTextQueries(
+  colFilter: Record<string, unknown>,
+  orConditions: Record<string, unknown>[],
+  query: string,
+): { textQuery: Record<string, unknown>; regexQuery: Record<string, unknown> } {
+  return {
+    textQuery: { $and: [{ ...colFilter }, { $text: { $search: query } }] },
+    regexQuery: { $and: [{ ...colFilter }, { $or: orConditions }] },
+  };
+}
+
 async function handleSearchMemories(args: unknown): Promise<TextContent[]> {
   const input = SearchMemoriesInput.parse(args);
   if (!is_database_connected()) {
@@ -1693,16 +1713,18 @@ async function handleSearchMemories(args: unknown): Promise<TextContent[]> {
     }
 
     try {
-      // Try  index first
+      // Try text index first — nested under $and so a hybrid-mode scope
+      // filter ({$or}) can never be dropped or conflict with $text.
+      const { textQuery } = buildScopedTextQueries(colFilter, [], input.query);
       docs = await db.collection(col.name)
-        .find({ ...colFilter, $text: { $search: input.query } })
+        .find(textQuery)
         .sort({ timestamp: -1 } as any)
         .limit(limit)
         .toArray();
     } catch {
-      // Fall back to regex on content field + title/name fields
-      const regexFilter: Record<string, unknown> = { ...colFilter };
-      // Build  across multiple searchable fields
+      // Fall back to regex on content field + title/name fields — scope
+      // preserved via the same $and nesting (the old code overwrote the
+      // scope $or here and leaked cross-identity private facts).
       const orConditions: Record<string, unknown>[] = [
         { [contentField]: { $regex: safeRegex } },
       ];
@@ -1712,10 +1734,10 @@ async function handleSearchMemories(args: unknown): Promise<TextContent[]> {
       if (col.name === 'memory_nodes')     orConditions.push({ content: { $regex: safeRegex } });
       if (col.name === 'knowledge_relationships') orConditions.push({ source_type: { $regex: safeRegex } });
 
-      regexFilter['$or'] = orConditions;
+      const { regexQuery } = buildScopedTextQueries(colFilter, orConditions, input.query);
       try {
         docs = await db.collection(col.name)
-          .find(regexFilter)
+          .find(regexQuery)
           .sort({ timestamp: -1 } as any)
           .limit(limit)
           .toArray();

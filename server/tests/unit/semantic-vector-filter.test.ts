@@ -7,7 +7,7 @@
  * across identities in hybrid mode. The scope filter must always ride along.
  */
 import { describe, expect, it } from 'vitest';
-import { buildSemanticVectorFilter } from '../../src/mcp-server.js';
+import { buildSemanticVectorFilter, buildScopedTextQueries } from '../../src/mcp-server.js';
 
 describe('buildSemanticVectorFilter', () => {
   it('carries the caller scope filter alongside the embedding requirement', () => {
@@ -33,5 +33,28 @@ describe('buildSemanticVectorFilter', () => {
   it('never drops the embedding requirement', () => {
     const f = buildSemanticVectorFilter({}, false);
     expect(f.embedding).toEqual({ $exists: true });
+  });
+});
+
+describe('buildScopedTextQueries — keyword-pass scope preservation', () => {
+  const contentConditions = [{ content: { $regex: /leak/ } }];
+
+  it('hybrid scope $or is nested under $and, never overwritten', () => {
+    const colFilter = {
+      $or: [{ user_id: 'zanshin' }, { shared_id: 'my-team' }],
+    };
+    const { regexQuery, textQuery } = buildScopedTextQueries(colFilter, contentConditions, 'leak');
+    // The scope $or must survive UNCHANGED inside the $and array.
+    expect(regexQuery.$and[0]).toEqual(colFilter);
+    expect(regexQuery.$and[1].$or).toEqual(contentConditions);
+    expect(textQuery.$and[0]).toEqual(colFilter);
+    expect(textQuery.$and[1].$text).toEqual({ $search: 'leak' });
+  });
+
+  it('personal-mode filter (plain user_id) survives in both shapes', () => {
+    const colFilter = { user_id: 'shoshin', status: { $ne: 'retracted' } };
+    const { regexQuery, textQuery } = buildScopedTextQueries(colFilter, contentConditions, 'leak');
+    expect(regexQuery.$and[0]).toEqual(colFilter);
+    expect(textQuery.$and[0]).toEqual(colFilter);
   });
 });
