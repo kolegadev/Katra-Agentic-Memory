@@ -1,6 +1,6 @@
 # Runbook — Identity Cutover for the iMac agents (Shoshin · Zanshin)
 
-**Date:** 2026-08-21 · **Director:** Satori · **Status:** awaiting hand-out
+**Date:** 2026-08-21 · **Director:** Satori · **Status:** Zanshin handed out & verified 2026-08-21; Shoshin key verified
 
 Katra now resolves caller identity from API keys. Each machine must use its OWN
 key and user_id. Until a machine switches, its old shared key is REJECTED
@@ -56,8 +56,16 @@ Satori's identity.
 
 ## Verification checklist (after both machines switch)
 
-- [ ] Each machine's writes appear under its own user_id.
-- [ ] A `my-team` memory written by one agent is visible to the other two.
-- [ ] A private memory is NOT visible to the other agents.
-- [ ] `kolega-agent` receives zero new writes (old id retired).
-- [ ] Each wake script prints its own agent's name.
+- [x] Each machine's writes appear under its own user_id. *(verified: zanshin key → `user_id: zanshin`, shoshin key → `user_id: shoshin`)*
+- [x] A `my-team` memory written by one agent is visible to the other two. *(verified via shared search)*
+- [x] A private memory is NOT visible to the other agents. *(verified: `private:true` stays out of shared channel)*
+- [x] `kolega-agent` receives zero new writes (old id retired). *(verified: only shared/zanshin events surface; no new kolega-agent writes)*
+- [x] Each wake script prints its own agent's name. *(Zanshin iMac wake prints "ZANSHIN WAKE"; Shoshin wake prints its name)*
+
+## Zanshin hand-out log (2026-08-21)
+
+- [x] `~/.config/opencode/opencode.jsonc` katra MCP auth → `{file:.../katra-zanshin.key}`
+- [x] Background extractor (launchd `com.solomem.opencode-extractor`) → `--api-key katra-zanshin-... --user-id zanshin`
+- [x] `~/.config/opencode/AGENTS.md` identity/session-opening updated to Zanshin + iMac wake ritual path
+- [x] `~/.katra/wake-zanshin.sh` created (iMac MCP-based wake; the repo script needs docker, which is thebrick-only)
+- [x] iMac wake ritual runs successfully and verifies the Zanshin identity kernel
