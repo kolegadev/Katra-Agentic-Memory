@@ -2,7 +2,7 @@
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  name: {{ include "katra.fullname" . }}
+  name: {{ include "satori.fullname" . }}
   labels:
     {{- include "katra.labels" . | nindent 4 }}
 spec:

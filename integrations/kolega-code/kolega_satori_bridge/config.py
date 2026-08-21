@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_MCP_URL = "http://localhost:3112/mcp"
 DEFAULT_API_KEY = ""  # Must be configured via satori-hook.json — no default key
-DEFAULT_USER_ID = "kolega-agent"
+DEFAULT_USER_ID = "satori"
 DEFAULT_TIMEOUT_SECONDS = 8
 DEFAULT_MAX_CONTEXT_TOKENS = 5000
 DEFAULT_CACHE_TTL_SECONDS = 30

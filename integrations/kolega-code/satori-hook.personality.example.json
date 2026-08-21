@@ -3,7 +3,7 @@
 
   "mcp_url": "http://localhost:3112/mcp",
   "api_key": "YOUR_MCP_API_KEY",
-  "user_id": "kolega-agent",
+  "user_id": "satori",
   "timeout_seconds": 8,
 
   "_comment_personality": "One of: balanced (default), scholar, pragmatist, strategist, historian, empath, analyst, sentinel, dreamer, legacy (pre-v2 behavior for A/B).",

@@ -1,5 +1,5 @@
 {{- if .Values.ingress.enabled -}}
-{{- $fullName := include "katra.fullname" . -}}
+{{- $fullName := include "satori.fullname" . -}}
 {{- $restPort := .Values.service.ports.rest -}}
 {{- $mcpPort := .Values.service.ports.mcp -}}
 {{- if and .Values.ingress.className (not (semverCompare ">=1.18-0" .Capabilities.KubeVersion.GitVersion)) }}

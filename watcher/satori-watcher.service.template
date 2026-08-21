@@ -34,7 +34,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=__PYTHON__ __KATRA_HOME__/katra_watcher.py --config __KATRA_HOME__/watcher-config.json
+ExecStart=__PYTHON__ __KATRA_HOME__/satori_watcher.py --config __KATRA_HOME__/watcher-config.json
 Restart=always
 RestartSec=30
 Environment=PYTHONUNBUFFERED=1

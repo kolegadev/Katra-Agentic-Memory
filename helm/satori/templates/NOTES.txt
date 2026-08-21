@@ -1,4 +1,4 @@
-{{- $fullName := include "katra.fullname" . -}}
+{{- $fullName := include "satori.fullname" . -}}
 {{- $restPort := .Values.service.ports.rest -}}
 {{- $mcpPort := .Values.service.ports.mcp -}}
 {{- $svcType := .Values.service.type -}}

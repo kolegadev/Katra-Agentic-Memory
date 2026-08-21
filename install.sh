@@ -526,7 +526,7 @@ PY
 
 install_watcher_systemd() {
     have systemctl || { warn "systemctl not found; watcher installed but not scheduled"; return 0; }
-    local template="$SRC_DIR/watcher/katra-watcher.service.template"
+    local template="$SRC_DIR/watcher/satori-watcher.service.template"
     [ -f "$template" ] || { warn "watcher unit template missing; watcher installed but not scheduled"; return 0; }
 
     local dest="$HOME/.config/systemd/user"
@@ -543,7 +543,7 @@ install_watcher_systemd() {
 }
 
 install_watcher_launchd() {
-    local template="$SRC_DIR/watcher/com.katra.watcher.plist.template"
+    local template="$SRC_DIR/watcher/com.satori.watcher.plist.template"
     [ -f "$template" ] || { warn "launchd plist template missing; watcher installed but not scheduled"; return 0; }
 
     local dest="$HOME/Library/LaunchAgents"
