@@ -15,7 +15,10 @@ import { escape_regex } from '../utils/regex-escape.js';
 import { v4 as uuidv4 } from 'uuid';
 import { generateContentHash, generateIdempotencyKey } from '../services/infrastructure/content-hash-utils.js';
 import { buildScopeFilter, DEFAULT_USER_ID } from '../services/memory/memory-scope-service.js';
+import { resolveWriteScope } from '../services/memory/write-scope-policy.js';
 import { validateKatraKey } from '../utils/api-key-manager.js';
+import { getCaller, runWithCaller } from '../utils/caller-identity.js';
+import { resolveCallerFromHono } from '../middleware/caller-auth.js';
 
 const DEBUG_ENDPOINTS_ENABLED = process.env.KATRA_ENABLE_DEBUG_ENDPOINTS === 'true';
 
@@ -34,10 +37,17 @@ export const create_memory_routes = (): Hono => {
         const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : authHeader;
         const queryToken = c.req.query('token') ?? '';
         const tokenToValidate = token || queryToken;
-        if (!validateKatraKey(tokenToValidate)) {
-            return c.json({ error: 'Unauthorized', message: 'API key required' }, 401);
+        if (validateKatraKey(tokenToValidate)) {
+            return next();
         }
-        return next();
+        // F1: also accept callers whose identity was resolved by the app-level
+        // middleware (loopback → trusted satori; client_keys-mapped keys;
+        // legacy env keys). Requests that map to no identity stay rejected.
+        const caller = await resolveCallerFromHono(c);
+        if (caller) {
+            return runWithCaller(caller, () => next());
+        }
+        return c.json({ error: 'Unauthorized', message: 'API key required' }, 401);
     });
 
     // Health check endpoint
@@ -69,7 +79,7 @@ export const create_memory_routes = (): Hono => {
 
             let llm_status = { available: false, provider: 'none', model: 'none' };
             try {
-                const { llmService } = await import('../services/llm-service.js');
+                const { llmService } = await import('../services/infrastructure/llm-service.js');
                 llm_status = llmService.getServiceStatus();
             } catch {
                 // LLM service not importable
@@ -363,7 +373,6 @@ export const create_memory_routes = (): Hono => {
         try {
             const body = await c.req.json();
             const { session_id, event_type, content, metadata } = body;
-            const user_id = DEFAULT_USER_ID;
 
             if (!event_type || !content) {
                 return c.json({
@@ -371,6 +380,28 @@ export const create_memory_routes = (): Hono => {
                     error: 'Missing required fields: user_id, event_type, content'
                 }, 400);
             }
+
+            // F1: caller-bound identity enforcement for ingestion writes.
+            // Untrusted callers may only write events for their own user_id
+            // (body.user_id equal to their own, or omitted); trusted callers
+            // (loopback / admin key) may write for any user_id.
+            const caller = getCaller();
+            const requestedUserId =
+                typeof body.user_id === 'string' && body.user_id.trim()
+                    ? body.user_id.trim()
+                    : undefined;
+            if (!caller.trusted && requestedUserId && requestedUserId !== caller.user_id) {
+                return c.json({
+                    success: false,
+                    error: `Forbidden: caller '${caller.user_id}' may not write events for user '${requestedUserId}'`
+                }, 403);
+            }
+            const user_id = caller.trusted && requestedUserId ? requestedUserId : caller.user_id;
+
+            // F2: write-scope policy — episodic events default to the shared
+            // scope ('my-team') while keeping the writer's user_id, unless
+            // the caller explicitly opts out with `private: true`.
+            const scope = resolveWriteScope({ caller, kind: 'event', requested: body });
 
             const db = get_database();
             const event_id = uuidv4();
@@ -390,6 +421,7 @@ export const create_memory_routes = (): Hono => {
                 content_hash: contentHash,
                 idempotency_key: generateIdempotencyKey({ event_type, user_id, session_id: session_id || uuidv4() }, contentHash),
                 metadata: { ...(metadata || {}), processed: false },
+                ...(scope.shared_id ? { shared_id: scope.shared_id } : {}),
                 timestamp: new Date(),
             });
 
@@ -802,7 +834,7 @@ export const create_memory_routes = (): Hono => {
                 }, 400);
             }
 
-            const { temporalPatternDetector } = await import('../services/temporal-pattern-detector.js');
+            const { temporalPatternDetector } = await import('../services/infrastructure/temporal-pattern-detector.js');
             const patterns = await temporalPatternDetector.detectPatterns({
                 user_id,
                 lookback_weeks,
@@ -1086,7 +1118,7 @@ export const create_memory_routes = (): Hono => {
                         updates_made: updates_made
                     };
                     
-                    console.log(`📊 ${collectionName}: ${updates_made} updates, final count: ${final_count}/${total_count}`);
+                    console.log(`📊 ${collectionName}: ${updates_made} updates`);
                     
                 } catch (error: any) {
                     console.error(`❌ Error repairing ${collectionName}:`, error);

@@ -21,6 +21,7 @@
 
 import { get_database } from '../../database/connection.js';
 import { driveStateService } from './orchestration-services.js';
+import { DEFAULT_USER_ID } from '../memory/memory-scope-service.js';
 
 // ── Trigger Taxonomy ─────────────────────────────────────────────────────
 
@@ -38,7 +39,7 @@ interface TriggerRule {
   /** Human-readable label for action cards */
   label: string;
   /** Minimum severity that triggers auto-start (bypasses approval gate) */
-  autoStartSeverity: 'critical' | 'urgent' | 'none';
+  autoStartSeverity: 'critical' | 'urgent' | 'warning' | 'none';
   /** Default action when triggered */
   defaultAction: 'auto_start_session' | 'store_action_card' | 'log_only';
 }
@@ -197,7 +198,7 @@ export class AutonomousActionPipeline {
   private async _evaluateDriveDeficits(
     entity: string,
     output: string
-  ): TriggerEvaluation | null {
+  ): Promise<TriggerEvaluation | null> {
     // Direct import of driveStateService — no HTTP round-trip needed
     const driveState = await driveStateService.getDriveState();
     if (!driveState || !driveState.drives) return null;
@@ -492,7 +493,7 @@ export class AutonomousActionPipeline {
         const tasks = this._tasksFromTrigger(eval_);
         await db.collection('memory_missions').insertOne({
           _id: missionId,
-          user_id: agentId || 'kolega-agent',
+          user_id: agentId || DEFAULT_USER_ID,
           status: 'ACTIVE',
           meta_goal: goalText,
           internal_monologue: `Auto-generated from ${eval_.category} trigger (severity: ${eval_.severity})`,
@@ -505,7 +506,7 @@ export class AutonomousActionPipeline {
           session_id: 'autonomous-executive',
           created_at: new Date(),
           updated_at: new Date(),
-        });
+        } as any);
         console.log(`   🌉 Bridged trigger ${eval_.category} → mission ${missionId} (${tasks.length} tasks)`);
       } catch (missionErr: any) {
         console.warn('   ⚠️ Mission bridge from trigger failed:', missionErr.message);

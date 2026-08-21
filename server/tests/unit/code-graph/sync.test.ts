@@ -24,6 +24,7 @@ import {
   testCollection,
 } from '../../helpers/db.js';
 import { CodeGraphSync } from '../../../src/services/code-graph/code-graph-sync.js';
+import { DEFAULT_USER_ID } from '../../../src/services/memory/memory-scope-service.js';
 import type {
   ChangeSet,
   CodeNode,
@@ -185,7 +186,7 @@ describe.skipIf(!mongoAvailable)('CodeGraphSync', () => {
         code_root: ROOT,
       },
       source: 'katra-code',
-      user_id: 'kolega-agent',
+      user_id: DEFAULT_USER_ID,
     });
     expect(doc!.created_at).toBeInstanceOf(Date);
     expect(doc!.updated_at).toBeInstanceOf(Date);
@@ -218,7 +219,7 @@ describe.skipIf(!mongoAvailable)('CodeGraphSync', () => {
         code_root: ROOT,
       },
       source: 'katra-code',
-      user_id: 'kolega-agent',
+      user_id: DEFAULT_USER_ID,
     });
     expect(doc!.created_at).toBeInstanceOf(Date);
     expect(doc!.updated_at).toBeInstanceOf(Date);

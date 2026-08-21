@@ -129,7 +129,7 @@ print(JSON.stringify({{entity_edges: edges, all_edges: allEdges}}));
     
     # 2. Event mentions per agent
     ev_raw = _mongo_query(f'''
-var agents = ["opencode-agent", "kolega-agent"];
+var agents = ["satori", "shoshin", "zanshin"];
 var counts = {{}};
 agents.forEach(function(a) {{
   counts[a] = db.episodic_events.countDocuments({{
@@ -144,7 +144,7 @@ print(JSON.stringify(counts));
     ev_counts = json.loads('\n'.join(ev_raw.split('\n')[-3:]).strip() or '{}')
     
     # ── Scoring ──
-    scores = {"opencode-agent": 0, "kolega-agent": 0}
+    scores = {"satori": 0, "shoshin": 0, "zanshin": 0}
     rationales = []
     
     # Signal 1: Reflection edges
@@ -157,7 +157,7 @@ print(JSON.stringify(counts));
         except (TypeError, ValueError):
             intensity = 0.0
         
-        for agent in ["opencode-agent", "kolega-agent"]:
+        for agent in ["satori", "shoshin", "zanshin"]:
             if agent in source or agent in target:
                 s = intensity * 1.5
                 if any(w in edge_type for w in ["frustrated","conflicted","anxious","tension"]):
@@ -172,7 +172,7 @@ print(JSON.stringify(counts));
         scores[agent] = scores.get(agent, 0) + (count / max(max_ev, 1))
     
     # Decision
-    best = max(scores, key=scores.get) if scores else "opencode-agent"
+    best = max(scores, key=scores.get) if scores else "satori"
     best_s = scores[best]
     second = sorted(scores.items(), key=lambda x: x[1], reverse=True)
     second_agent = second[1][0] if len(second) > 1 else None

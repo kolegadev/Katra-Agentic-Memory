@@ -180,7 +180,7 @@ export async function listTenants(opts: {
     db.collection('tenants').countDocuments(filter),
   ]);
 
-  return { tenants: tenants as Tenant[], total };
+  return { tenants: tenants as unknown as Tenant[], total };
 }
 
 /**

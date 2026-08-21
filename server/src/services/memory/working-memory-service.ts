@@ -14,6 +14,7 @@ export interface WorkingMemoryItem {
     id: string;
     session_id: string;
     user_id?: string;
+    tenant_id?: string;
     content: any;
     metadata: {
         created_at: Date;
@@ -271,8 +272,6 @@ export class WorkingMemoryService {
         const start_time = performance.now();
         
         const session_context: SessionContext = {
-            session_id,
-            tenant_id,
             user_id,
             created_at: new Date(),
             last_activity: new Date(),
@@ -285,7 +284,6 @@ export class WorkingMemoryService {
             tenant_id,
             session_id,
         };
-
         try {
             const redis = await get_redis_client();
             if (redis) {
@@ -693,15 +691,16 @@ export class WorkingMemoryService {
         };
 
         // Use sorted set: score = salience for eviction ordering
-        await redis.zadd(key, item.salience, JSON.stringify(item));
+        if (!redis) return id;
+        await redis.zAdd(key, { score: item.salience, value: JSON.stringify(item) });
 
         // ── Bottleneck: capacity 5 forces eviction choice ──────────
         // Each eviction is an RL decision: "which item do I sacrifice?"
         // Regret signal: if evicted item is later recalled, that was bad.
-        const count = await redis.zcard(key);
+        const count = await redis.zCard(key);
         if (count > this.MAX_ACTIVE_ITEMS) {
             // Get all items to choose which to evict
-            const allItems = await redis.zrange(key, 0, -1);
+            const allItems = await redis.zRange(key, 0, -1);
             const parsed: any[] = allItems.map((r: string) => JSON.parse(r));
 
             // Choose eviction target: lowest salience + strength combo
@@ -714,7 +713,7 @@ export class WorkingMemoryService {
             for (let i = 0; i < toRemove && i < parsed.length; i++) {
                 const victim = parsed[i];
                 // Record eviction in regret tracker
-                await redis.setex(
+                await redis.setEx(
                     `${this.EVICTED_PREFIX}${tenantId}:${victim.id}`,
                     this.REGRET_TTL,
                     JSON.stringify({ id: victim.id, content: victim.content, evictedAt: Date.now() })
@@ -731,7 +730,7 @@ export class WorkingMemoryService {
             }
 
             // Remove lowest items
-            await redis.zremrangebyrank(key, 0, toRemove - 1);
+            await redis.zRemRangeByRank(key, 0, toRemove - 1);
         }
 
         // Set TTL on the key
@@ -746,10 +745,11 @@ export class WorkingMemoryService {
      */
     async rehearse(tenantId: string, sessionId: string): Promise<void> {
         const redis = await get_redis_client();
+        if (!redis) return;
         const key = `${this.ACTIVE_SET_PREFIX}${tenantId}:${sessionId}`;
         const now = Date.now();
 
-        const raw = await redis.zrange(key, 0, -1);
+        const raw = await redis.zRange(key, 0, -1);
         if (raw.length === 0) return;
 
         const items: any[] = raw.map((r: string) => JSON.parse(r));
@@ -767,7 +767,7 @@ export class WorkingMemoryService {
         await redis.del(key);
         for (const item of decayed) {
             if (item.strength > this.STRENGTH_FLOOR) {
-                await redis.zadd(key, item.salience, JSON.stringify(item));
+                await redis.zAdd(key, { score: item.salience, value: JSON.stringify(item) });
             }
         }
         await redis.expire(key, 3600);
@@ -783,9 +783,10 @@ export class WorkingMemoryService {
         goalTerms: string[]
     ): Promise<any[]> {
         const redis = await get_redis_client();
+        if (!redis) return [];
         const key = `${this.ACTIVE_SET_PREFIX}${tenantId}:${sessionId}`;
 
-        const raw = await redis.zrange(key, 0, -1);
+        const raw = await redis.zRange(key, 0, -1);
         if (raw.length === 0) return [];
 
         const lowerTerms = goalTerms.map(t => t.toLowerCase());
@@ -812,9 +813,10 @@ export class WorkingMemoryService {
      */
     async getActiveItems(tenantId: string, sessionId: string): Promise<any[]> {
         const redis = await get_redis_client();
+        if (!redis) return [];
         const key = `${this.ACTIVE_SET_PREFIX}${tenantId}:${sessionId}`;
 
-        const raw = await redis.zrevrange(key, 0, -1);
+        const raw = await redis.zRange(key, 0, -1, { REV: true });
         if (raw.length === 0) return [];
 
         return raw
@@ -829,6 +831,7 @@ export class WorkingMemoryService {
      */
     async detectRegret(tenantId: string, itemId: string, sessionId: string): Promise<boolean> {
         const redis = await get_redis_client();
+        if (!redis) return false;
         const regretKey = `${this.EVICTED_PREFIX}${tenantId}:${itemId}`;
         const evicted = await redis.get(regretKey);
 

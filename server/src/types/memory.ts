@@ -12,6 +12,8 @@ export interface EpisodicEvent {
   metadata?: Record<string, any>;
   correlation_id?: string;
   timestamp: Date;
+  content_hash?: string;
+  idempotency_key?: string;
   embedding?: number[];
   embedding_model?: string;
   embedding_version?: number;
@@ -21,6 +23,7 @@ export interface EpisodicEvent {
   access_count?: number;
   anomaly_z_score?: number;
   anomaly_classification?: string;
+  shared_id?: string;
 }
 
 export interface SessionStats {

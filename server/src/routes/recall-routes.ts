@@ -615,7 +615,7 @@ function detectMemoryIntent(query: string): boolean {
  * Search across all user sessions for comprehensive recall
  */
 async function searchAcrossAllSessions(query: string, userId: string): Promise<any> {
-  const { MemoryManager } = await import('../services/memory-manager.js');
+  const { MemoryManager } = await import('../services/memory/memory-manager.js');
   const memoryManager = MemoryManager.get_instance();
   
   try {

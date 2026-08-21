@@ -25,7 +25,7 @@ from urllib.error import URLError
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from authority_matrix import gate_action, can_act_autonomously
 
-AGENT_ID = os.environ.get("KATRA_AGENT_ID", "kolega-agent")
+AGENT_ID = os.environ.get("KATRA_AGENT_ID", "satori")
 STATE_FILE = os.path.expanduser(f"~/.katra/agent-executor-{AGENT_ID}.json")
 PULSE_INTERVAL = 60
 

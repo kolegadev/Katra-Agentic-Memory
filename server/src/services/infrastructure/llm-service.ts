@@ -613,7 +613,7 @@ CRITICAL RULES:
         try {
           params.response_format = { type: 'json_object' };
           const response = await client.chat.completions.create(
-            params as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming
+            params as unknown as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming
           );
           this._trackCacheStats(response);
           const msg = response.choices[0]?.message as any;
@@ -623,7 +623,7 @@ CRITICAL RULES:
           if (formatError?.status === 400 || formatError?.message?.includes('response_format')) {
             delete params.response_format;
             const response = await client.chat.completions.create(
-              params as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming
+              params as unknown as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming
             );
             this._trackCacheStats(response);
             const msg = response.choices[0]?.message as any;

@@ -49,7 +49,7 @@ At the start of every session — and before answering ANY identity, memory, or 
    `GET http://localhost:9012/api/v1/admin/memory-search?query=OPERATING%20RULE`
    Expect at minimum: AUTONOMOUS SELF-MAINTENANCE (2026-07-20) and NO HARDCODED CONCLUSIONS (2026-07-15).
 
-5. **Check open missions and assigned work**: search episodic events for `autonomous-executive` goal/decision events from the last 24h. The heartbeat assigns tasks to kolega-agent; do not wait to be told.
+5. **Check open missions and assigned work**: search episodic events for `autonomous-executive` goal/decision events from the last 24h. The heartbeat assigns tasks to satori; do not wait to be told.
 
 6. **Check for new internal skills**: search/load Katra skills (`search_katra_skills`, `load_katra_skill`) when a task resembles something done before — this wake ritual itself is one.
 

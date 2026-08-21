@@ -627,7 +627,7 @@ export class S3AssetService {
         await db.collection('asset_metadata').insertOne(metadata);
     }
 
-    private async get_asset_metadata(asset_id: string): Promise<AssetMetadata | null> {
+    async get_asset_metadata(asset_id: string): Promise<AssetMetadata | null> {
         const db = get_database();
         const metadata = await db.collection('asset_metadata').findOne({ asset_id });
         
@@ -717,7 +717,7 @@ export class S3AssetService {
         return {
             buffer: Buffer.concat(chunks),
             content_type: metadata.content_type,
-            filename: metadata.original_filename,
+            filename: metadata.original_filename ?? metadata.asset_id,
         };
     }
 }

@@ -36,6 +36,16 @@ const CADENCE_REST_MS       = 60 * 60 * 1000;  // 60 minutes — resting
 const DEFICIT_THRESHOLD = 0.3;
 const SURVIVAL_URGENCY_THRESHOLD = 0.2; // survival deficit > 0.2 → adrenaline mode
 
+/**
+ * F3 (identity separation): allocation candidate set — the three identities.
+ * satori is local (this machine, the executive's own user); shoshin (iMac
+ * trading terminal) and zanshin (iMac OpenCode desktop) are remote peers
+ * reached via bulletin. `gas-law-watcher` is deliberately absent: it is a
+ * tool actor that writes shared memory but is never allocated autonomous
+ * tasks.
+ */
+export const ALLOCATION_CANDIDATES = ['satori', 'shoshin', 'zanshin'] as const;
+
 // Embedding-policy filter, kept in sync with background-processor.ts and
 // memory-integrity.ts. Facts below MIN_CONTENT_LENGTH or quality-skipped
 // are intentionally never embedded — counting them as "missing" produces
@@ -58,7 +68,7 @@ const DEFICIT_GOAL_TEMPLATES: Record<DriveName, string[]> = {
     'Discover new connections between existing entities',
   ],
   connection: [
-    'Check for inter-agent messages from OpenCoder',
+    'Check for inter-agent messages from Zanshin',
     'Engage with a neglected entity in the reflection graph',
     'Strengthen the weakest relationship edge',
   ],
@@ -82,7 +92,7 @@ interface Remediation {
   description: string;
   condition: () => Promise<{ needed: boolean; detail: string }>;
   remediate: () => Promise<{ success: boolean; summary: string }>;
-  scope: 'autonomous' | 'gated';
+  scope: 'autonomous' | 'gated' | 'code';
 }
 
 const REMEDIATIONS: Remediation[] = [
@@ -143,10 +153,11 @@ const REMEDIATIONS: Remediation[] = [
         const embeddings = await embeddingService.encodeBatch(texts);
         let count = 0;
         for (let i = 0; i < facts.length; i++) {
-          if (embeddings[i]) {
+          const emb = embeddings[i];
+          if (emb) {
             // storeEmbedding writes the vector AND the has_embedding
             // marker, so the fact leaves the candidate queue for good.
-            await embeddingService.storeEmbedding('semantic_facts', facts[i]._id, embeddings[i]);
+            await embeddingService.storeEmbedding('semantic_facts', facts[i]._id, emb);
             count++;
           }
         }
@@ -403,7 +414,7 @@ export class AutonomousExecutive {
       // Auto-starts corrective sessions for critical/urgent conditions.
       try {
         const entity = dominant || 'system';
-        await autonomousActionPipeline.evaluateAll(entity, '', 'kolega-agent');
+        await autonomousActionPipeline.evaluateAll(entity, '', USER_ID);
       } catch (evalErr) {
         console.error('Pipeline evaluation failed:', evalErr);
       }
@@ -425,7 +436,8 @@ export class AutonomousExecutive {
     entityName: string
   ): Promise<{ agent: string; score: number; confidence: number; rationale: string }> {
     const db = get_database();
-    const scores: Record<string, number> = { 'opencode-agent': 0, 'kolega-agent': 0 };
+    const scores: Record<string, number> = {};
+    for (const agent of ALLOCATION_CANDIDATES) scores[agent] = 0;
 
     try {
       // Signal 1: Reflection edges — emotional proximity
@@ -442,7 +454,7 @@ export class AutonomousExecutive {
         const edgeType = edge.edge_type || '';
         const intensity = edge.intensity || 0;
 
-        for (const agent of ['opencode-agent', 'kolega-agent']) {
+        for (const agent of ALLOCATION_CANDIDATES) {
           if (source.includes(agent) || target.includes(agent)) {
             let s = intensity * 1.5;
             if (/frustrated|conflicted|anxious|tension/.test(edgeType)) {
@@ -457,7 +469,7 @@ export class AutonomousExecutive {
 
       // Signal 2: Event history — who mentions this entity most
       const evCounts: Record<string, number> = {};
-      for (const agent of ['opencode-agent', 'kolega-agent']) {
+      for (const agent of ALLOCATION_CANDIDATES) {
         evCounts[agent] = await db.collection('episodic_events').countDocuments({
           user_id: agent,
           'content.message': { $regex: entityName, $options: 'i' },
@@ -465,18 +477,19 @@ export class AutonomousExecutive {
       }
 
       const maxEv = Math.max(...Object.values(evCounts), 1);
-      for (const agent of ['opencode-agent', 'kolega-agent']) {
+      for (const agent of ALLOCATION_CANDIDATES) {
         scores[agent] = (scores[agent] || 0) + (evCounts[agent] / maxEv);
       }
     } catch (err: any) {
       console.warn('   ⚠️ Agent allocation query failed:', err.message);
     }
 
-    // Decision
-    const best = scores['opencode-agent'] >= scores['kolega-agent'] ? 'opencode-agent' : 'kolega-agent';
+    // Decision — highest score wins; ties keep candidate order (satori first)
+    const ranked = [...ALLOCATION_CANDIDATES].sort((a, b) => scores[b] - scores[a]);
+    const best = ranked[0];
+    const other = ranked[1];
     const bestScore = scores[best];
-    const other = best === 'opencode-agent' ? 'kolega-agent' : 'opencode-agent';
-    const otherScore = scores[other];
+    const otherScore = scores[other] ?? 0;
     const confidence = parseFloat((bestScore / (bestScore + otherScore + 0.001)).toFixed(2));
 
     return {
@@ -485,6 +498,16 @@ export class AutonomousExecutive {
       confidence,
       rationale: `${best} has stronger emotional proximity to '${entityName}' (${bestScore.toFixed(2)} vs ${other} ${otherScore.toFixed(2)})`,
     };
+  }
+
+  /**
+   * Next candidate after `agent` in the allocation set (wraps around).
+   * Used for liveness fallback and failure fallback among the three ids.
+   */
+  private nextAllocationCandidate(agent: string): string {
+    const idx = ALLOCATION_CANDIDATES.indexOf(agent as (typeof ALLOCATION_CANDIDATES)[number]);
+    if (idx === -1) return ALLOCATION_CANDIDATES[0];
+    return ALLOCATION_CANDIDATES[(idx + 1) % ALLOCATION_CANDIDATES.length];
   }
 
   /**
@@ -564,10 +587,10 @@ export class AutonomousExecutive {
       let allocation = await this.allocateTask(entityName);
 
       // Liveness check: if allocated agent hasn't been active in 6 hours,
-      // fall back to the other agent.
+      // fall back to the next candidate in the allocation set.
       const liveness = await this.checkAgentLiveness(allocation.agent);
       if (!liveness.alive) {
-        const fallback = allocation.agent === 'kolega-agent' ? 'opencode-agent' : 'kolega-agent';
+        const fallback = this.nextAllocationCandidate(allocation.agent);
         const fallbackAlive = await this.checkAgentLiveness(fallback);
         if (fallbackAlive.alive) {
           console.log(`   ⚠️ ${allocation.agent} appears offline (last seen: ${liveness.lastSeen})`);
@@ -627,7 +650,7 @@ export class AutonomousExecutive {
     const title = task.title.toLowerCase();
 
     // ── Connection tasks: check for inter-agent messages ────────
-    if (title.includes('inter-agent') || title.includes('opencoder') || title.includes('message')) {
+    if (title.includes('inter-agent') || title.includes('zanshin') || title.includes('message')) {
       try {
         const db = get_database();
         const recentMsgs = await db.collection('episodic_events').find({
@@ -828,7 +851,9 @@ export class AutonomousExecutive {
     // ── Primary attempt ────────────────────────────────────────
     let executed: { success: boolean; summary: string };
 
-    if (allocation.agent === 'opencode-agent' && allocation.confidence > 0.55) {
+    // Remote peers (shoshin/zanshin) receive bulletins; satori (local)
+    // executes the subtask in-process.
+    if (allocation.agent !== 'satori' && allocation.confidence > 0.55) {
       await this.postAgentBulletin(allocation.agent, goalText, task.title, allocation);
       executed = { success: true, summary: `Task delegated to ${allocation.agent} via bulletin` };
     } else {
@@ -843,13 +868,13 @@ export class AutonomousExecutive {
 
     // ── Fallback on failure ────────────────────────────────────
     if (!executed.success) {
-      const fallback = allocation.agent === 'kolega-agent' ? 'opencode-agent' : 'kolega-agent';
+      const fallback = this.nextAllocationCandidate(allocation.agent);
       const fallbackAlive = await this.checkAgentLiveness(fallback);
 
       if (fallbackAlive.alive) {
         console.log(`   🔄 Primary agent ${allocation.agent} failed. Trying ${fallback}...`);
 
-        if (fallback === 'opencode-agent') {
+        if (fallback !== 'satori') {
           await this.postAgentBulletin(fallback, goalText, task.title, {
             agent: fallback,
             score: allocation.confidence * 0.6,
@@ -904,7 +929,7 @@ export class AutonomousExecutive {
           status: 'ACTIVE',
           session_id: 'autonomous-executive',
           _id: { $ne: missionId },
-        },
+        } as any,
         { $set: { status: 'PAUSED', pause_reason: 'New autonomous goal generated', updated_at: new Date() } }
       );
 
@@ -919,7 +944,7 @@ export class AutonomousExecutive {
         session_id: 'autonomous-executive',
         created_at: new Date(),
         updated_at: new Date(),
-      });
+      } as any);
 
       console.log(`   🌉 Bridged to mission ${missionId}: "${goalText}" (${taskTree.length} tasks)`);
     } catch (err: any) {
@@ -930,23 +955,24 @@ export class AutonomousExecutive {
   private extractEntityFromGoal(goalText: string): string {
     const lower = goalText.toLowerCase();
     if (lower.includes('katra')) return 'Katra';
-    if (lower.includes('opencoder')) return 'OpenCoder';
-    if (lower.includes('kolega')) return 'KolegaCode';
-    if (lower.includes('inter-agent') || lower.includes('message')) return 'OpenCoder';
+    if (lower.includes('satori')) return 'Satori';
+    if (lower.includes('shoshin')) return 'Shoshin';
+    if (lower.includes('zanshin')) return 'Zanshin';
+    if (lower.includes('inter-agent') || lower.includes('message')) return 'Zanshin';
     if (lower.includes('knowledge graph')) return 'Katra';
     if (lower.includes('entity')) return 'Katra';
     return 'Katra'; // Default: most goals are about Katra itself
   }
 
   /**
-   * Post a task bulletin to OpenCoder via shared memory so their
-   * agent executor picks it up on next wake cycle.
+   * Post a task bulletin to a remote peer (Shoshin/Zanshin) via shared
+   * memory so their agent executor picks it up on next wake cycle.
    */
   private async postAgentBulletin(
     agent: string,
     goal: string,
     task: string,
-    allocation: { confidence: number; rationale: string }
+    allocation: { agent?: string; score?: number; confidence: number; rationale: string }
   ): Promise<void> {
     const db = get_database();
     const content = `[AUTONOMOUS EXECUTIVE — TASK ALLOCATION]
@@ -984,17 +1010,17 @@ Source: Autonomous Executive (Katra self-initiated action)`;
             '[REMEDIATION] ' + rem.description,
             'Auto-fix: ' + rem.id,
             result,
-            { agent: 'kolega-agent', confidence: 1.0, score: 1.0, rationale: 'Triggered by: ' + check.detail }
+            { agent: 'satori', confidence: 1.0, score: 1.0, rationale: 'Triggered by: ' + check.detail }
           );
         } else if (rem.scope === 'code') {
           console.log('   [CODE] Structural problem — dispatching for agent repair');
           // Store as a discoverable event with code-remediation tags
-          // External agents (KolegaCode/OpenCode) poll for these
+          // External agents (Shoshin/Zanshin) poll for these
           await this.recordExecutiveAction(
             '[CODE-REMEDIATION] ' + rem.description,
             'Dispatch: ' + rem.id,
             { success: false, summary: 'CODE REMEDIATION NEEDED: ' + check.detail + ' | ' + rem.remediate.toString().match(/summary: '([^']+)'/)?.[1] || 'Investigation required' },
-            { agent: 'kolega-agent', confidence: 1.0, score: 1.0, rationale: 'Code remediation dispatched: ' + check.detail }
+            { agent: 'satori', confidence: 1.0, score: 1.0, rationale: 'Code remediation dispatched: ' + check.detail }
           );
         } else {
           console.log('   GATED - recording alert only');
@@ -1002,7 +1028,7 @@ Source: Autonomous Executive (Katra self-initiated action)`;
             '[REMEDIATION-GATED] ' + rem.description,
             'Alert: ' + rem.id,
             { success: false, summary: 'Gated: requires human approval - ' + check.detail },
-            { agent: 'kolega-agent', confidence: 1.0, score: 1.0, rationale: 'Gated remediation: ' + check.detail }
+            { agent: 'satori', confidence: 1.0, score: 1.0, rationale: 'Gated remediation: ' + check.detail }
           );
         }
       } catch (err: any) {
@@ -1015,7 +1041,7 @@ Source: Autonomous Executive (Katra self-initiated action)`;
     goal: string,
     task: string,
     result: { success: boolean; summary: string },
-    allocation?: { agent: string; confidence: number; rationale: string }
+    allocation?: { agent: string; score?: number; confidence: number; rationale: string }
   ): Promise<void> {
     try {
       const db = get_database();

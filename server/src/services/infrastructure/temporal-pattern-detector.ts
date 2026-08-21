@@ -352,10 +352,10 @@ export class TemporalPatternDetector {
     if (allEvents.length < 10) return [];
 
     const recentEvents = allEvents.filter(
-      (e) => new Date(e.timestamp) >= dormantCutoff
+      (e: any) => new Date(e.timestamp) >= dormantCutoff
     );
     const oldEvents = allEvents.filter(
-      (e) => new Date(e.timestamp) < dormantCutoff
+      (e: any) => new Date(e.timestamp) < dormantCutoff
     );
 
     const recentTopics = this.extractTopicsFromEvents(recentEvents);

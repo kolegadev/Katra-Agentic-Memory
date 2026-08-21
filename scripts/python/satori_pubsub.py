@@ -8,7 +8,7 @@ architecture (shared + private) without touching Katra's MCP server.
 Usage:
     from katra_pubsub import AgentBus
 
-    bus = AgentBus("kolega-agent")
+    bus = AgentBus("satori")
     bus.register(interests=["code-review", "architecture"], capabilities=["python", "typescript"])
 
     # Discover peers
@@ -26,7 +26,7 @@ Usage:
     bus.publish("code-review", {"type": "review-request", "file": "src/main.py"})
 
     # Send direct inter-agent message
-    bus.send_to_agent("opencode-agent", "Attention: OpenCode — can you review this?")
+    bus.send_to_agent("zanshin", "Attention: Zanshin — can you review this?")
 """
 
 from __future__ import annotations

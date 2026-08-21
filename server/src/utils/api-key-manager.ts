@@ -22,6 +22,7 @@
 
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { get_database } from '../database/connection.js';
+import type { CallerIdentity } from './caller-identity.js';
 
 interface ApiKeyResult {
   mcpApiKey: string;
@@ -41,11 +42,14 @@ let allMcpHashes: string[] = [];
 /** Accumulated list of all valid Katra key hashes (env + DB stored). */
 let allKatraHashes: string[] = [];
 
+/** In-memory client-key hash → caller identity map, loaded by ensureClientKeys(). */
+const clientKeyIdentities = new Map<string, { user_id: string; trusted: false }>();
+
 function generateKey(prefix: string): string {
   return `${prefix}-${randomBytes(32).toString('hex')}`;
 }
 
-function hashApiKey(key: string): string {
+export function hashApiKey(key: string): string {
   return createHash('sha256').update(key, 'utf8').digest('hex');
 }
 
@@ -300,4 +304,240 @@ export function logGeneratedKeys(mcpApiKey: string, katraApiKey: string): void {
   console.log('  clients present the same tokens.');
   console.log('═══════════════════════════════════════════════════════════');
   console.log('');
+}
+
+// ── F1: Caller-bound identities ───────────────────────────────────
+
+/**
+ * Minimal request shape needed to resolve a caller identity. Accepts a Node
+ * IncomingMessage (or a subset of it) as well as Hono-style normalized parts.
+ */
+export interface CallerRequestParts {
+  socket?: { remoteAddress?: string } | null;
+  remoteAddress?: string | null;
+  headers?: Record<string, string | string[] | undefined> | null;
+  url?: string | null;
+}
+
+/** Loopback check — loopback callers are the local machine (trusted satori). */
+export function isLoopbackAddress(remoteAddress?: string | null): boolean {
+  return (
+    remoteAddress === '127.0.0.1' ||
+    remoteAddress === '::1' ||
+    remoteAddress === '::ffff:127.0.0.1'
+  );
+}
+
+/**
+ * Extract the presented API key from request headers / query string:
+ * `x-mcp-auth` header, `Authorization: Bearer ...`, or `?token=...`.
+ */
+export function extractPresentedKey(
+  headers: Record<string, string | string[] | undefined>,
+  url?: string,
+): string | undefined {
+  const xMcpAuth = headers['x-mcp-auth'];
+  const x = Array.isArray(xMcpAuth) ? xMcpAuth[0] : xMcpAuth;
+  if (typeof x === 'string' && x.trim()) return x.trim();
+
+  const authorization = headers['authorization'];
+  const auth = Array.isArray(authorization) ? authorization[0] : authorization;
+  if (typeof auth === 'string' && auth.startsWith('Bearer ')) {
+    const token = auth.slice(7).trim();
+    if (token) return token;
+  }
+
+  if (url) {
+    try {
+      const token = new URL(url, 'http://localhost').searchParams.get('token');
+      if (token) return token;
+    } catch {
+      /* malformed URL — no token */
+    }
+  }
+  return undefined;
+}
+
+/** Register a client-key hash → identity mapping in the in-memory map. */
+export function registerClientKeyIdentity(hash: string, user_id: string): void {
+  clientKeyIdentities.set(hash, { user_id, trusted: false });
+}
+
+/** Clear the in-memory client-key identity map (reload + tests). */
+export function clearClientKeyIdentities(): void {
+  clientKeyIdentities.clear();
+}
+
+/** Number of in-memory client-key identity mappings (tests/diagnostics). */
+export function getClientKeyIdentityCount(): number {
+  return clientKeyIdentities.size;
+}
+
+/** system_settings.client_keys record shape. */
+export interface ClientKeyRecord {
+  key_hash: string;
+  user_id: string;
+  display_name: string;
+  created_at: string;
+}
+
+/**
+ * The legacy key hash that maps to satori: the current MCP env key hash when
+ * plaintext is available, otherwise the persisted validator hash from
+ * ensureApiKeys() (both describe the same legacy key).
+ */
+function resolveLegacyKeyHash(): string | null {
+  const legacyPlaintext = process.env.MCP_API_KEY || process.env.ADMIN_API_KEY || '';
+  if (legacyPlaintext) return hashApiKey(legacyPlaintext);
+  if (validators?.mcpHash) return validators.mcpHash;
+  return null;
+}
+
+/** Legacy env key hashes (MCP_API_KEY / ADMIN_API_KEY / BACKUP_MCP_KEYS). */
+function getLegacyEnvKeyHashes(): Set<string> {
+  const hashes = new Set<string>();
+  for (const envName of ['MCP_API_KEY', 'ADMIN_API_KEY', 'BACKUP_MCP_KEYS']) {
+    const raw = process.env[envName] || '';
+    for (const key of raw.split(',').map(k => k.trim()).filter(Boolean)) {
+      hashes.add(hashApiKey(key));
+    }
+  }
+  return hashes;
+}
+
+/**
+ * Provision the system_settings.client_keys entries at boot.
+ *
+ * - satori: mapped to the legacy env key hash (no new key).
+ * - shoshin / zanshin: freshly generated once, plaintext printed once to the
+ *   console, sha256 hash only in the database.
+ *
+ * Idempotent: existing entries are kept untouched; the in-memory identity
+ * map is refreshed from the stored records on every call.
+ *
+ * `options.collection` / `options.settingsKey` exist for tests so unit tests
+ * never write into the production system_settings document.
+ */
+export async function ensureClientKeys(options: {
+  collection?: string;
+  settingsKey?: string;
+} = {}): Promise<void> {
+  const collection = options.collection ?? 'system_settings';
+  const settingsKey = options.settingsKey ?? 'client_keys';
+  try {
+    // Throws when the database is not connected — caught below.
+    const db = get_database();
+
+    const coll = db.collection(collection);
+    const stored = await coll.findOne<{ value?: ClientKeyRecord[] }>({ key: settingsKey });
+    const records: ClientKeyRecord[] = Array.isArray(stored?.value)
+      ? stored.value.filter(r => r && typeof r.key_hash === 'string' && typeof r.user_id === 'string')
+      : [];
+    const byUser = new Map<string, ClientKeyRecord>(records.map(r => [r.user_id, r]));
+
+    let changed = false;
+    const now = new Date().toISOString();
+
+    // satori → legacy env key hash (no plaintext key generated).
+    const legacyHash = resolveLegacyKeyHash();
+    if (legacyHash && !byUser.has('satori')) {
+      records.push({ key_hash: legacyHash, user_id: 'satori', display_name: 'Satori', created_at: now });
+      changed = true;
+    }
+
+    // shoshin / zanshin → freshly generated keys (printed once below).
+    const freshPlaintext: Array<{ user_id: string; key: string }> = [];
+    const agents: Array<{ user_id: string; display_name: string }> = [
+      { user_id: 'shoshin', display_name: 'Shoshin' },
+      { user_id: 'zanshin', display_name: 'Zanshin' },
+    ];
+    for (const agent of agents) {
+      if (byUser.has(agent.user_id)) continue;
+      const key = generateKey(`katra-${agent.user_id}`);
+      records.push({
+        key_hash: hashApiKey(key),
+        user_id: agent.user_id,
+        display_name: agent.display_name,
+        created_at: now,
+      });
+      freshPlaintext.push({ user_id: agent.user_id, key });
+      changed = true;
+    }
+
+    if (changed) {
+      await coll.updateOne(
+        { key: settingsKey },
+        { $set: { key: settingsKey, value: records, updated_at: new Date() } },
+        { upsert: true },
+      );
+    }
+
+    // Plaintext is printed exactly once — when the keys were generated.
+    if (freshPlaintext.length > 0) {
+      console.log('');
+      console.log('═══════════════════════════════════════════════════════════');
+      console.log('  🗝️  Client keys (identity separation) — generated once, save now');
+      console.log('═══════════════════════════════════════════════════════════');
+      for (const entry of freshPlaintext) {
+        console.log(`  ${entry.user_id.padEnd(9)} ${entry.key}`);
+      }
+      console.log('');
+      console.log('  Hand these keys to the named machines (iMac trading → shoshin,');
+      console.log('  iMac OpenCode → zanshin). Only sha256 hashes are stored in the');
+      console.log('  database (system_settings.client_keys) — plaintext is not.');
+      console.log('═══════════════════════════════════════════════════════════');
+      console.log('');
+    }
+
+    // Refresh the in-memory identity map from the stored records.
+    clientKeyIdentities.clear();
+    for (const r of records) {
+      clientKeyIdentities.set(r.key_hash, { user_id: r.user_id, trusted: false });
+    }
+  } catch (error) {
+    console.warn('⚠️ ensureClientKeys failed:', (error as Error)?.message);
+  }
+}
+
+/**
+ * Resolve WHO is calling from the request's source address and presented key.
+ *
+ * - loopback IP → { user_id: 'satori', trusted: true }
+ * - admin key (KATRA_API_KEY / stored admin hashes) → { user_id: 'satori', trusted: true }
+ * - key mapped in system_settings.client_keys → { user_id, trusted: false }
+ * - legacy env keys (MCP_API_KEY / ADMIN_API_KEY / BACKUP_MCP_KEYS) → { user_id: 'satori', trusted: false }
+ * - valid but unmapped → null (the caller must be rejected with 401 + reason)
+ * - no key, non-loopback → null
+ */
+export async function resolveCallerIdentity(
+  req: CallerRequestParts,
+): Promise<CallerIdentity | null> {
+  const remoteAddress = req.remoteAddress || req.socket?.remoteAddress;
+  if (isLoopbackAddress(remoteAddress)) {
+    return { user_id: 'satori', trusted: true };
+  }
+
+  const token = extractPresentedKey(req.headers ?? {}, req.url ?? undefined);
+  if (!token) return null;
+
+  const tokenHash = hashApiKey(token);
+
+  // Admin key = trusted satori.
+  if (validateKatraKey(token)) {
+    return { user_id: 'satori', trusted: true };
+  }
+
+  // Key mapped in client_keys (shoshin / zanshin / satori's legacy hash).
+  const mapped = clientKeyIdentities.get(tokenHash);
+  if (mapped) {
+    return { ...mapped };
+  }
+
+  // Legacy env keys → satori untrusted (backward compatibility).
+  if (getLegacyEnvKeyHashes().has(tokenHash)) {
+    return { user_id: 'satori', trusted: false };
+  }
+
+  // Valid but unmapped (or invalid) → null: reject with 401 + reason.
+  return null;
 }

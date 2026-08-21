@@ -31,6 +31,7 @@ import type {
   FileExtraction,
   SyncResult,
 } from './types.js';
+import { DEFAULT_USER_ID } from '../memory/memory-scope-service.js';
 
 /** Node ids in the KG keep the `graphify:` prefix (shared with seeded nodes). */
 const KG_NODE_PREFIX = 'graphify:';
@@ -293,7 +294,7 @@ export class CodeGraphSync {
               },
               $setOnInsert: {
                 id,
-                user_id: 'kolega-agent',
+                user_id: DEFAULT_USER_ID,
                 created_at: now,
               },
             },
@@ -353,7 +354,7 @@ export class CodeGraphSync {
               },
               $setOnInsert: {
                 id: edgeId,
-                user_id: 'kolega-agent',
+                user_id: DEFAULT_USER_ID,
                 created_at: now,
               },
             },

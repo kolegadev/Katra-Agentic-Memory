@@ -601,13 +601,13 @@ class QueryOrchestrationService {
           break;
         case 'semantic_enhanced':
           // data is [semanticResults] where each has a .matches array
-          result.data.forEach(sr => {
+          result.data.forEach((sr: any) => {
             if (sr?.matches) aggregated.semantic.push(...sr.matches);
           });
           break;
         case 'cross_session':
           // data is [crossSessionResults] with episodic/semantic arrays
-          result.data.forEach(csr => {
+          result.data.forEach((csr: any) => {
             if (csr?.episodic) aggregated.episodic.push(...csr.episodic);
             if (csr?.semantic) aggregated.semantic.push(...csr.semantic);
           });

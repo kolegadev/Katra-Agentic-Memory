@@ -11,6 +11,7 @@ import { get_llm_config_from_db, save_llm_config_to_db, type LLMConfig } from '.
 import { entityResolver } from '../services/integration/entity-resolver.js';
 import { create_rate_limiter } from '../middleware/rate-limit.js';
 import { getAgentIdentity, setAgentIdentity } from '../services/infrastructure/agent-identity.js';
+import { getCaller } from '../utils/caller-identity.js';
 import { validateKatraKey } from '../utils/api-key-manager.js';
 import { SleepConsolidationService } from '../services/processing/sleep-consolidation-service.js';
 import { escape_regex } from '../utils/regex-escape.js';
@@ -720,7 +721,7 @@ export const create_admin_routes = (): Hono => {
       console.log('🧪 Testing extraction pipeline with message:', message);
       
       // Import extraction service
-      const { extraction_service } = await import('../services/extraction-service.js');
+      const { extraction_service } = await import('../services/processing/extraction-service.js');
       
       // Test extraction with proper context
       const extractionContext = {
@@ -1296,7 +1297,7 @@ export const create_admin_routes = (): Hono => {
   router.post('/llm-config/test', async (c) => {
     try {
       const result = await llmService.testService();
-      return c.json({ success: result.success, ...result });
+      return c.json({ ...result, success: result.success });
     } catch (error) {
       return c.json({
         success: false,
@@ -1610,8 +1611,27 @@ export const create_admin_routes = (): Hono => {
    */
   router.get('/identity', async (c) => {
     try {
-      const identity = await getAgentIdentity();
-      return c.json({ success: true, identity });
+      // F3: ?user_id=<id> reads that user's identity record. The route is on
+      // the no-auth read-only list for the caller's own identity, so the
+      // per-user lookup enforces the admin key itself.
+      const requestedUserId = c.req.query('user_id')?.trim();
+      if (requestedUserId) {
+        const header = c.req.header('Authorization') ?? '';
+        const presented = /^Bearer\s+(.+)$/i.exec(header)?.[1];
+        if (!presented || !validateKatraKey(presented)) {
+          console.warn(`Identity per-user lookup rejected (no admin key): user_id=${requestedUserId}`);
+          return c.json({ error: 'Unauthorized', message: 'Admin API key required for ?user_id=' }, 401);
+        }
+        const identity = await getAgentIdentity(requestedUserId);
+        return c.json({ success: true, identity: { ...identity, user_id: requestedUserId } });
+      }
+
+      // F2: identity is resolved per CALLER (getCaller()) instead of a
+      // process-wide default — each machine's wake ritual reads the record
+      // for its own user_id.
+      const callerUserId = getCaller().user_id;
+      const identity = await getAgentIdentity(callerUserId);
+      return c.json({ success: true, identity: { ...identity, user_id: callerUserId } });
     } catch (error: any) {
       console.error('Identity get error:', error.message);
       return c.json({ success: false, error: 'Internal server error' }, 500);
@@ -1623,22 +1643,41 @@ export const create_admin_routes = (): Hono => {
    * Set the agent identity name. Requires admin auth.
    * Body: { name: string, chosen_by?: string, confirmed_by?: string,
    *         rationale?: string, established?: string }
+   * F3: pass ?user_id=<id> (or body.user_id) to write that user's per-user
+   * record (agent_identity:<user_id>) instead of the legacy satori record.
    */
   router.put('/identity', async (c) => {
     try {
+      // F3: identity writes are admin-gated. The route path is on the
+      // no-auth read-only list (GET /identity must stay open for the wake
+      // rituals), so enforce the admin key here instead of the middleware.
+      const header = c.req.header('Authorization') ?? '';
+      const presented = /^Bearer\s+(.+)$/i.exec(header)?.[1];
+      if (!presented || !validateKatraKey(presented)) {
+        console.warn(`Identity put rejected (no admin key): ${c.req.method} ${c.req.path}`);
+        return c.json({ error: 'Unauthorized', message: 'Admin API key required' }, 401);
+      }
+
       const body = await c.req.json().catch(() => ({}));
       const name = String(body?.name || '').trim();
       if (!name || name.length > 80) {
         return c.json({ success: false, error: 'name required (max 80 chars)' }, 400);
       }
-      const identity = await setAgentIdentity({
+      const targetUserId = String(c.req.query('user_id') || body?.user_id || '').trim();
+      const record = {
         name,
         chosen_by: String(body?.chosen_by || 'dashboard'),
         confirmed_by: body?.confirmed_by ? String(body.confirmed_by) : undefined,
         rationale: body?.rationale ? String(body.rationale) : undefined,
         established: body?.established || new Date().toISOString().slice(0, 10),
+      };
+      const identity = targetUserId
+        ? await setAgentIdentity(targetUserId, record)
+        : await setAgentIdentity(record);
+      return c.json({
+        success: true,
+        identity: targetUserId ? { ...identity, user_id: targetUserId } : identity,
       });
-      return c.json({ success: true, identity });
     } catch (error: any) {
       console.error('Identity put error:', error.message);
       return c.json({ success: false, error: error.message || 'Internal server error' }, 500);
