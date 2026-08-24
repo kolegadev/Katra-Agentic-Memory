@@ -102,6 +102,8 @@ services:
       - ./server:/repos/katra-server:ro
       - ../RankPilot:/repos/rankpilot:ro
       - ../sweet-moments:/repos/sweet-moments:ro
+      - ../Projects/satori-scrape:/repos/satori-scrape:ro
+      - ../Projects/ConstructionMarketData:/repos/construction-market-data:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

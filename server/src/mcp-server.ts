@@ -1781,7 +1781,7 @@ async function handleSearchMemories(args: unknown): Promise<TextContent[]> {
 
       allResults.push({
         source: col.label,
-        snippet: text.length > 300 ? text.slice(0, 300) + '...' : text,
+        snippet: text.length > 1200 ? text.slice(0, 1200) + '...' : text,
         timestamp: doc.timestamp || doc.created_at || doc.date,
         confidence: doc.confidence,
         score: 0.5,
@@ -1828,7 +1828,7 @@ async function handleSearchMemories(args: unknown): Promise<TextContent[]> {
   if (vectorResults.length > 0) {
     lines.push('', `### 🔍 Vector (Semantic) (${vectorResults.length})`);
     for (const r of vectorResults) {
-      lines.push(`- ${r.snippet.slice(0, 200)} (score: ${r.score?.toFixed(2)})`);
+      lines.push(`- ${r.snippet.slice(0, 1200)} (score: ${r.score?.toFixed(2)})`);
     }
   }
 
@@ -1837,7 +1837,7 @@ async function handleSearchMemories(args: unknown): Promise<TextContent[]> {
     lines.push('', `### ${source} (${results.length})`);
     for (const r of results) {
       const ts = r.timestamp ? ` [${new Date(r.timestamp).toISOString()}]` : '';
-      lines.push(`-${ts} ${r.snippet.slice(0, 250)}`);
+      lines.push(`-${ts} ${r.snippet.slice(0, 1200)}`);
     }
   }
 
