@@ -14,6 +14,7 @@ always private; everything else defaults to shared (`my-team`).
 | `satori` | Satori | this machine (loopback default) |
 | `shoshin` | Shoshin | iMac trading Kolega-code |
 | `zanshin` | Zanshin | iMac OpenCode desktop |
+| `lilly` | Lilly | MacBook Pro (tailscale 100.112.76.54) |
 | `gas-law-watcher` | — | tool actor (unchanged, writes my-team) |
 
 ## F1 — Caller-bound identities (auth → user_id)

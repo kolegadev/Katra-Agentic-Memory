@@ -46,7 +46,7 @@ WAKE_DIR = os.path.expanduser("~/.katra/bulletins")
 # F3 (identity separation): the three identities first; legacy aliases
 # (OpenCoder/OpenCode/KolegaCoder/KolegaCode) kept for old messages.
 ATTN_PATTERN = re.compile(
-    r"Attention:\s*(Satori|Shoshin|Zanshin|OpenCoder|OpenCode|KolegaCoder|KolegaCode)",
+    r"Attention:\s*(Satori|Shoshin|Zanshin|Lilly|OpenCoder|OpenCode|KolegaCoder|KolegaCode)",
     re.IGNORECASE,
 )
 
@@ -54,6 +54,7 @@ AGENT_WAKE_FILES = {
     "Satori": os.path.expanduser("~/.katra/bulletins/satori.json"),
     "Shoshin": os.path.expanduser("~/.katra/bulletins/shoshin.json"),
     "Zanshin": os.path.expanduser("~/.katra/bulletins/zanshin.json"),
+    "Lilly": os.path.expanduser("~/.katra/bulletins/lilly.json"),
     "OpenCoder": os.path.expanduser("~/.katra/bulletins/opencode.json"),
     "OpenCode": os.path.expanduser("~/.katra/bulletins/opencode.json"),
     "KolegaCoder": os.path.expanduser("~/.katra/bulletins/kolegacode.json"),
@@ -149,6 +150,8 @@ def determine_target(content_preview: str) -> Optional[str]:
             return "Shoshin"
         if agent.lower() == "zanshin":
             return "Zanshin"
+        if agent.lower() == "lilly":
+            return "Lilly"
         if agent.lower() in ("opencoder", "opencode"):
             return "OpenCode"
         if agent.lower() in ("kolegacoder", "kolegacode"):

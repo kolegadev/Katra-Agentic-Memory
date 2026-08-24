@@ -445,11 +445,12 @@ export async function ensureClientKeys(options: {
       changed = true;
     }
 
-    // shoshin / zanshin → freshly generated keys (printed once below).
+    // shoshin / zanshin / lilly → freshly generated keys (printed once below).
     const freshPlaintext: Array<{ user_id: string; key: string }> = [];
     const agents: Array<{ user_id: string; display_name: string }> = [
       { user_id: 'shoshin', display_name: 'Shoshin' },
       { user_id: 'zanshin', display_name: 'Zanshin' },
+      { user_id: 'lilly', display_name: 'Lilly' },
     ];
     for (const agent of agents) {
       if (byUser.has(agent.user_id)) continue;

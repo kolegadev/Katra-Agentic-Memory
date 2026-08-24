@@ -37,14 +37,14 @@ const DEFICIT_THRESHOLD = 0.3;
 const SURVIVAL_URGENCY_THRESHOLD = 0.2; // survival deficit > 0.2 → adrenaline mode
 
 /**
- * F3 (identity separation): allocation candidate set — the three identities.
+ * F3 (identity separation): allocation candidate set — the four identities.
  * satori is local (this machine, the executive's own user); shoshin (iMac
- * trading terminal) and zanshin (iMac OpenCode desktop) are remote peers
- * reached via bulletin. `gas-law-watcher` is deliberately absent: it is a
- * tool actor that writes shared memory but is never allocated autonomous
- * tasks.
+ * trading terminal), zanshin (iMac OpenCode desktop) and lilly (MacBook
+ * Pro) are remote peers reached via bulletin. `gas-law-watcher` is
+ * deliberately absent: it is a tool actor that writes shared memory but is
+ * never allocated autonomous tasks.
  */
-export const ALLOCATION_CANDIDATES = ['satori', 'shoshin', 'zanshin'] as const;
+export const ALLOCATION_CANDIDATES = ['satori', 'shoshin', 'zanshin', 'lilly'] as const;
 
 // Embedding-policy filter, kept in sync with background-processor.ts and
 // memory-integrity.ts. Facts below MIN_CONTENT_LENGTH or quality-skipped
@@ -958,6 +958,7 @@ export class AutonomousExecutive {
     if (lower.includes('satori')) return 'Satori';
     if (lower.includes('shoshin')) return 'Shoshin';
     if (lower.includes('zanshin')) return 'Zanshin';
+    if (lower.includes('lilly')) return 'Lilly';
     if (lower.includes('inter-agent') || lower.includes('message')) return 'Zanshin';
     if (lower.includes('knowledge graph')) return 'Katra';
     if (lower.includes('entity')) return 'Katra';
