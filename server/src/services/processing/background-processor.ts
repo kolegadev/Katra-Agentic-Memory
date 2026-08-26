@@ -717,6 +717,29 @@ export class BackgroundProcessor {
         }
         console.log(`🧠 Embedded ${embeddedCount}/${allFacts.length} semantic facts (${linkedFacts.length} linked, ${otherFacts.length} other)`);
       }
+
+      // Drain the never-embeddable pool: facts below the embedding quality
+      // threshold (content_length < MIN_CONTENT_LENGTH) can never be
+      // embedded, but without the embedding_skipped marker they stay in the
+      // `has_embedding != true` pool forever and pad every sweep scan.
+      // One cheap indexed update per event cycle keeps the pool empty
+      // (2026-08-26: 433 stuck junk facts accumulated before this existed).
+      try {
+        const drained = await db.collection('semantic_facts').updateMany(
+          {
+            has_embedding: { $ne: true },
+            content_length: { $lt: MIN_CONTENT_LENGTH },
+            embedding_skipped: { $ne: true },
+          },
+          { $set: { embedding_skipped: true } },
+        );
+        if (drained.modifiedCount > 0) {
+          console.log(`🧹 Marked ${drained.modifiedCount} sub-threshold facts as embedding_skipped`);
+        }
+      } catch (drainErr: any) {
+        // Non-fatal housekeeping — never block fact processing on this.
+        console.warn('⚠️ Failed to drain sub-threshold facts:', drainErr.message);
+      }
     } catch (e: any) {
       console.warn('⚠️ Failed to embed semantic facts:', e.message);
     }

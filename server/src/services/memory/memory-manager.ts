@@ -80,6 +80,22 @@ export class MemoryManager {
     await createIndexSafely('semantic_facts', { confidence: -1 });
     await createIndexSafely('semantic_facts', { content: 'text' });
     await createIndexSafely('semantic_facts', { embedding: 1 }, { sparse: true });
+    // Embedding-backlog sweep indexes (background-processor embedEventAndFacts
+    // + memory-integrity): the boolean marker is indexable where the 384-dim
+    // embedding array is not. Without these, the per-event sweep
+    // `has_embedding != true AND content_length >= N` is a full collection
+    // scan (observed: 631k docs examined per event, ~43% constant mongo CPU).
+    await createIndexSafely('semantic_facts', {
+      user_id: 1,
+      has_embedding: 1,
+      content_length: 1,
+      created_at: 1,
+    });
+    await createIndexSafely('semantic_facts', {
+      has_embedding: 1,
+      content_length: 1,
+      created_at: 1,
+    });
 
     // Setup knowledge collections
     await createIndexSafely('knowledge_nodes', { user_id: 1 });
