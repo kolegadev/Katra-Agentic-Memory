@@ -116,6 +116,19 @@ export const MEMORY_SYSTEM_INDEXES: CollectionIndexes = {
     {
       keys: { content: 'text' },
       options: { name: 'content_text_search', background: true }
+    },
+    // Embedding-backlog sweep indexes (background-processor embedEventAndFacts
+    // + memory-integrity). The boolean marker is indexable where the 384-dim
+    // embedding array is not. Without these the per-event sweep
+    // `has_embedding != true AND content_length >= N` is a full collection
+    // scan (observed: 631k docs examined per event, ~43% constant mongo CPU).
+    {
+      keys: { user_id: 1, has_embedding: 1, content_length: 1, created_at: 1 },
+      options: { name: 'user_has_embedding_len_created', background: true }
+    },
+    {
+      keys: { has_embedding: 1, content_length: 1, created_at: 1 },
+      options: { name: 'has_embedding_len_created', background: true }
     }
   ],
   
