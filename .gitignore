@@ -25,3 +25,4 @@ helm/katra/charts/
 server/src/graphify-out/
 graphify-out/
 **/SKILL.md.bak
+tmp/*
