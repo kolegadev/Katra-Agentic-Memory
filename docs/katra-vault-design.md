@@ -219,3 +219,50 @@ prevented); operator provisioning if ever exposed to agents (mitigated by operat
 - Which existing shared-memory secrets (WiFi passwords) to migrate into the vault.
 - Whether the gcloud MCP's service-account key should be re-pointed through the vault
   capability layer.
+
+## 14. Future feature suggestions (not in v1.0 scope)
+
+Ideas raised in design review and captured here for later; they do not change the v1.0
+sections above until a decision is made.
+
+### 14.1 Ephemeral local-LLM exception (opt-in)
+
+Relax O3 for exactly one deliberate human workflow: when a human genuinely needs to
+*work through* a secret with an agent (debugging, setup), allow it only inside a:
+
+- **locally hosted** session — the model runs on the operator's own machine, never a
+  remote LLM;
+- **ephemeral** session — nothing persists: no conversation history, no memory-pipeline
+  writes, no embeddings/summarization, no value logging;
+- **gated + audited** session — explicit per-session opt-in (admin session required),
+  with an audit event recording that a value became model-visible.
+
+The §7.1 denylist stays untouched because such a session never writes to the pipeline.
+
+### 14.2 Human OAuth for service delegation
+
+Keep TOTP for identity bootstrap (§8), and delegate *service access* with standard
+OAuth instead of the custom `vault_approvals` table: the agent requests a grant via the
+OAuth device flow, a human approves it on their device, and the grant (scoped, expiring,
+revocable at the IdP) authorizes capability-tool use (§7.3). Better revocation and
+delegation than a bespoke approvals table; costs an IdP (self-hosted or external), which
+tensions with the no-new-dependency constraint. If adopted, `vault_approve_service` /
+`vault_revoke_approval` become device-flow initiation / revocation.
+
+### 14.3 Secret name obfuscation
+
+Two layers, both defense-in-depth:
+
+- **At rest** — `name`, `service`, `scope`, `acl`, and `meta` ride in an encrypted
+  `meta_blob` under the scope KEK, so a raw DB dump does not reveal the secret
+  inventory; optionally an opaque `secret_id` (e.g. `v_8f3a2d`) so even lookup keys carry
+  no service identity.
+- **At runtime** — for integrations that need real env vars (codex, gcloud, CLIs), a
+  vault launcher resolves the secret and injects it under a randomly named variable
+  (e.g. `KATRA_RND_9f3ab2d1`, regenerated per session/machine) and templates the tool
+  config to match, so nothing on the machine exposes `OPENAI_API_KEY=sk-…`.
+
+Caveat: neither layer stops an attacker who can read process memory or intercept the
+outbound request — the capability-tool model (§7.3) remains the primary guard. At-rest
+obfuscation only helps against DB/backup exfiltration, not repo leaks (source still
+names the services).
