@@ -20,6 +20,7 @@ import { llmService } from '../infrastructure/llm-service.js';
 import { ReflectionStore } from '../infrastructure/reflection-store.js';
 import { DEFAULT_USER_ID } from '../memory/memory-scope-service.js';
 import { DecisionActionService } from './decision-action-service.js';
+import { assertVaultCollectionAllowed } from '../vault/denylist.js';
 import type {
   GatheredData,
   ReflectionLLMOutput,
@@ -411,6 +412,8 @@ export class SleepConsolidationService {
     const db = get_database();
 
     // Episodic events in period
+    // Guard: gathered docs (events/facts/entities) are sent to the LLM via callLLM.
+    assertVaultCollectionAllowed('episodic_events', 'sleep-consolidation-service:gatherData');
     const events = await db.collection('episodic_events')
       .find({
         user_id: userId,
@@ -434,6 +437,7 @@ export class SleepConsolidationService {
       .join('\n');
 
     // Semantic facts in period (sampled, deduplicated)
+    assertVaultCollectionAllowed('semantic_facts', 'sleep-consolidation-service:gatherData');
     const facts = await db.collection('semantic_facts')
       .find({
         user_id: userId,
@@ -450,6 +454,7 @@ export class SleepConsolidationService {
       .join('\n');
 
     // Active entities (from knowledge_nodes updated in period)
+    assertVaultCollectionAllowed('knowledge_nodes', 'sleep-consolidation-service:gatherData');
     const entities = await db.collection('knowledge_nodes')
       .find({ updated_at: { $gte: from, $lte: to } })
       .limit(50)

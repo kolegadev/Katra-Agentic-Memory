@@ -11,6 +11,7 @@
 
 import { get_database } from '../../database/connection.js';
 import { llmService } from '../infrastructure/llm-service.js';
+import { assertVaultCollectionAllowed } from '../vault/denylist.js';
 
 interface TimeBlockSummary {
   user_id: string;
@@ -69,6 +70,8 @@ export class TimeBlockSummarizer {
     console.log(`📦 TimeBlockSummarizer: scanning ${block_type} blocks for user ${user_id}, last ${lookback_days} days`);
 
     // 1. Fetch all events in the lookback window
+    // Guard: these events are handed to the LLM summarization below.
+    assertVaultCollectionAllowed('episodic_events', 'time-block-summarizer:summarizeTimeBlocks');
     const events = await db.collection('episodic_events')
       .find({
         user_id,

@@ -13,6 +13,7 @@
 
 import { Db, ObjectId } from 'mongodb';
 import { llmService } from '../infrastructure/llm-service.js';
+import { assertVaultCollectionAllowed } from '../vault/denylist.js';
 
 export interface MissionTask {
   id: string;
@@ -646,6 +647,8 @@ export class ProspectiveMemoryService {
   ): Promise<void> {
     // Skip auto-journaling if the turn contains an explicit manual JOURNAL directive
     const hasManualJournal = /JOURNAL:\s*.+/i.test(conversationTurn);
+    // Guard: the mission document below is sent to the LLM (extractJson) for state updates.
+    assertVaultCollectionAllowed('memory_missions', 'prospective-memory-service:updateMissionState');
     const mission = await this.db.collection('memory_missions').findOne({ _id: missionId } as any);
     if (!mission || mission.status !== 'ACTIVE') return;
 
@@ -946,6 +949,8 @@ Return ONLY JSON:
     user_id: string,
     session_id: string
   ): Promise<number> {
+    // Guard: aged conversation turns below are summarized by the LLM.
+    assertVaultCollectionAllowed('episodic_events', 'prospective-memory-service:distillAgedTurns');
     try {
       const WINDOW = 10;
       const MAX_TURNS_PER_CYCLE = 10;

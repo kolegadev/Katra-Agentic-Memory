@@ -284,6 +284,25 @@ export const MEMORY_SYSTEM_INDEXES: CollectionIndexes = {
       keys: { user_id: 1, status: 1 },
       options: { name: 'user_status', background: true }
     }
+  ],
+
+  // Katra Vault auth sessions (F9): UNIQUE + SPARSE on (identity,
+  // last_counter) — every TOTP-issued session doc carries the verified
+  // `last_counter`, so the index makes each code claimable at most once per
+  // identity. MongoDB enforces the claim atomically at insertOne (duplicate
+  // key ⇒ replay, denied) — there is no separate counter doc and no
+  // check-then-act race. Sparse: only TOTP-issued session docs (which carry
+  // last_counter) participate; non-TOTP sessions would be exempt.
+  auth_sessions: [
+    {
+      keys: { identity: 1, last_counter: 1 },
+      options: {
+        name: 'identity_last_counter',
+        unique: true,
+        sparse: true,
+        background: true
+      }
+    }
   ]
 };
 

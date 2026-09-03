@@ -9,6 +9,7 @@
 import { get_database } from '../../database/connection.js';
 import { SkillLoaderService } from '../memory/skill-loader-service.js';
 import { llmService } from '../infrastructure/llm-service.js';
+import { assertVaultCollectionAllowed } from '../vault/denylist.js';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { SkillFeedbackRecord, KatraSkill } from '../../types/memory.js';
@@ -114,6 +115,10 @@ export class SkillRefinementService {
    * Returns records sorted by timestamp descending with pagination support.
    */
   async getFeedbackHistory(skillName: string, limit: number = 20, offset: number = 0): Promise<SkillFeedbackRecord[]> {
+    // Guard: feedback documents below are built into the LLM refinement
+    // prompt (refineSkill → generateResponse). Guard sits outside the
+    // catch-all so denylist blocks propagate.
+    assertVaultCollectionAllowed('skill_feedback', 'skill-refinement-service:getFeedbackHistory');
     try {
       const db = get_database();
       if (!db) return [];

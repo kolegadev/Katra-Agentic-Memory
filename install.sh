@@ -279,12 +279,27 @@ is_placeholder() {
     esac
 }
 
+# Katra Vault (envelope encryption) master key: 32 random bytes as 64 hex
+# chars. Idempotent — generated once and NEVER overwritten: rotating it
+# would lock every sealed secret until DEKs are re-wrapped out of band.
+ensure_vault_master_key() {
+    local existing
+    existing="$(env_get KATRA_VAULT_MASTER_KEY || true)"
+    if [ -n "$existing" ]; then
+        ok "KATRA_VAULT_MASTER_KEY already set — keeping it"
+        return 0
+    fi
+    env_set KATRA_VAULT_MASTER_KEY "$(gen_secret 32)"
+    ok "generated KATRA_VAULT_MASTER_KEY (vault master key, 64 hex chars)"
+}
+
 configure_env() {
     step "Configuring environment"
     ENV_FILE="$SRC_DIR/.env"
 
     if [ -f "$ENV_FILE" ]; then
         ok "existing .env found — keeping your settings"
+        ensure_vault_master_key
         audit_existing_secrets
         return
     fi
@@ -325,6 +340,8 @@ configure_env() {
     env_set MCP_API_KEY "$(gen_secret 32)"
     env_set KATRA_API_KEY "$(gen_secret 32)"
     ok "generated MCP_API_KEY and KATRA_API_KEY"
+
+    ensure_vault_master_key
 }
 
 # Warn — never silently rewrite — when an existing install is on defaults.
