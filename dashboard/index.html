@@ -117,6 +117,7 @@ button{padding:8px 16px;border-radius:var(--radius-sm);border:none;font-size:0.8
     <nav class="sidebar-nav" id="nav">
       <button class="nav-btn active" data-tab="overview"><span class="nav-icon">📊</span> Overview</button>
       <button class="nav-btn" data-tab="keys"><span class="nav-icon">🔑</span> API Keys</button>
+      <button class="nav-btn" data-tab="vault"><span class="nav-icon">🗝️</span> Secrets</button>
       <button class="nav-btn" data-tab="agents"><span class="nav-icon">🤖</span> Agents</button>
       <button class="nav-btn" data-tab="memory"><span class="nav-icon">🧠</span> Memory</button>
       <button class="nav-btn" data-tab="bus"><span class="nav-icon">📡</span> Bus</button>
@@ -200,6 +201,90 @@ button{padding:8px 16px;border-radius:var(--radius-sm);border:none;font-size:0.8
         <p>✅ Admin tools gated behind KATRA_API_KEY</p>
       </div>
     </div>
+  </div>
+</section>
+
+<!-- ═══════════ VAULT ═══════════ -->
+<section class="tab" id="tab-vault">
+  <div class="section-title">🗝️ Secrets — Katra Vault <span style="font-size:0.72rem;font-weight:400;color:var(--text3)">encrypted at rest · metadata only below</span></div>
+  <div class="cards cols-2">
+    <div class="card">
+      <div class="card-title">Create Secret</div>
+      <div class="form-group"><label>Name</label><input type="text" id="vault-name" placeholder="e.g. smtp_password, github_token" autocomplete="off"></div>
+      <div class="form-group"><label>Value</label><input type="password" id="vault-value" placeholder="••••••••" autocomplete="new-password"><div class="hint">Sent to the server once, then cleared from this page — never displayed back or kept in browser storage.</div></div>
+      <div class="form-group"><label>Scope</label><select id="vault-scope"><option value="private">private (owner only)</option><option value="team">team (shared space)</option></select></div>
+      <div class="form-group" id="vault-owner-row" style="display:none"><label>Owner (private scope)</label><input type="text" id="vault-owner" placeholder="user_id to own this secret — blank = you" autocomplete="off"><div class="hint">Only honored for trusted (admin) callers; otherwise the secret is always pinned to your own identity.</div></div>
+      <div style="display:flex;gap:16px;margin-bottom:14px;flex-wrap:wrap">
+        <label style="display:flex;align-items:center;gap:6px;font-size:0.8rem;color:var(--text2);cursor:pointer"><input type="checkbox" id="vault-approval" checked style="width:auto"> Approval required</label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:0.8rem;color:var(--text2);cursor:pointer"><input type="checkbox" id="vault-rotatable" checked style="width:auto"> Rotatable</label>
+      </div>
+      <div class="input-row">
+        <input type="text" id="vault-service" placeholder="Service (optional)" style="flex:1">
+        <select id="vault-kind" style="max-width:170px"><option value="">Kind (auto)</option><option value="api_key">api_key</option><option value="password">password</option><option value="token">token</option><option value="env">env</option></select>
+      </div>
+      <div style="margin-top:14px" class="input-row">
+        <button class="btn btn-primary" onclick="vaultCreateSecret()">Create Secret</button>
+        <button class="btn btn-secondary" onclick="vaultClearForm()">Clear Form</button>
+      </div>
+      <div id="vault-form-status" style="margin-top:8px;font-size:0.78rem"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Vault Security</div>
+      <div style="font-size:0.8rem;line-height:1.7;color:var(--text2)">
+        <p>✅ Secrets are encrypted with the vault master key before storage</p>
+        <p>✅ The API never returns stored values — the list below is metadata only</p>
+        <p>✅ Values are never written to browser storage or console output</p>
+        <p>✅ Delete removes a secret permanently; Rotate re-encrypts it in place</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-title">Stored Secrets <span style="font-size:0.72rem;font-weight:400;color:var(--text3)">secret_id, name, scope, service, kind, timestamps, flags</span></div>
+  <div class="card">
+    <div class="table-wrap"><table>
+      <thead><tr>
+        <th>Secret ID</th><th>Name</th><th>Scope</th><th>Service</th><th>Kind</th>
+        <th>Created</th><th>Last Used</th><th>Rotation Due</th><th>Approval</th><th>Rotatable</th><th>Actions</th>
+      </tr></thead>
+      <tbody id="vault-secrets"></tbody>
+    </table></div>
+    <div id="vault-list-status" style="margin-top:8px;font-size:0.78rem"></div>
+    <button class="btn btn-secondary btn-sm" onclick="loadVault()" style="margin-top:10px">↻ Refresh Secrets</button>
+  </div>
+
+  <!-- Service Approvals (F6) — operator-only grants gating service use.
+       The ledger carries NO secret values — identities/services only. -->
+  <div class="section-title">Service Approvals <span style="font-size:0.72rem;font-weight:400;color:var(--text3)">operator-only grants gating service use · value-free ledger</span></div>
+  <div class="cards cols-2">
+    <div class="card">
+      <div class="card-title">Grant Approval</div>
+      <div class="form-group"><label>Identity (user_id)</label><input type="text" id="va-identity" placeholder="e.g. lilly" autocomplete="off"></div>
+      <div class="form-group"><label>Service</label><input type="text" id="va-service" placeholder="e.g. agentmail — or * for any service" autocomplete="off"></div>
+      <div class="form-group"><label>Valid for (days)</label><input type="number" id="va-ttl" value="30" min="1" step="1" style="max-width:120px"><div class="hint">Default 30 days; re-granting an active approval extends its expiry from now.</div></div>
+      <div class="input-row">
+        <button class="btn btn-primary" onclick="approvalGrant()">Grant Approval</button>
+      </div>
+      <div id="va-form-status" style="margin-top:8px;font-size:0.78rem"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Approvals Security</div>
+      <div style="font-size:0.8rem;line-height:1.7;color:var(--text2)">
+        <p>✅ Grants and revokes are operator-only (admin key); each attempt is audited</p>
+        <p>✅ Approvals expire automatically (30 days by default)</p>
+        <p>✅ The ledger stores identities and services only — never secret values</p>
+        <p>✅ A service of <span class="mono">*</span> grants any service for that identity</p>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="table-wrap"><table>
+      <thead><tr>
+        <th>Identity</th><th>Service</th><th>Granted By</th><th>Granted At</th><th>Expires At</th><th>Status</th><th>Actions</th>
+      </tr></thead>
+      <tbody id="vault-approvals"></tbody>
+    </table></div>
+    <div id="vault-approvals-status" style="margin-top:8px;font-size:0.78rem"></div>
+    <button class="btn btn-secondary btn-sm" onclick="loadVaultApprovals()" style="margin-top:10px">↻ Refresh Approvals</button>
   </div>
 </section>
 
@@ -419,6 +504,7 @@ async function loadTab(tab) {
   switch(tab) {
     case 'overview': await loadOverview(); break;
     case 'keys': await loadKeys(); break;
+    case 'vault': await loadVault(); await loadVaultApprovals(); break;
     case 'agents': await loadAgents(); break;
     case 'memory': await searchMemory(); break;
     case 'bus': await loadBus(); break;
@@ -791,6 +877,292 @@ async function forceProcess() {
   } catch(e) { document.getElementById('sys-status').textContent = '❌ ' + e.message; }
 }
 
+// ═══════════ VAULT (Secrets) ═══════════
+// REST surface (same auth pattern as every other admin call above —
+// requireAuth() + authHeaders() + `${API}/vault/...`):
+//   GET    /api/v1/vault/secrets            → list
+//   POST   /api/v1/vault/secrets            → create {secret_id, created}
+//   DELETE /api/v1/vault/secrets/:id        → {deleted}
+//   POST   /api/v1/vault/secrets/:id/rotate → {rotated}
+// Redaction: only SecretMeta keys are ever read or rendered here; a secret
+// value exists only as a local variable in vaultCreateSecret(), is sent once
+// in the request body, is never logged or stored, and is cleared immediately.
+
+function vaultEsc(s) {
+  return String(s === undefined || s === null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+/** JSON-string-literal form of an id, safe to embed inside a quoted onclick.
+ *  JSON.stringify escapes \ and " but NOT ' — these ids sit inside a
+ *  SINGLE-QUOTED attribute, so also escape ' as \u0027 (unicode escapes
+ *  survive HTML attribute tokenization and decode to inert string data
+ *  inside the JS literal). */
+function vaultJsId(id) {
+  return JSON.stringify(id === undefined || id === null ? '' : id)
+    .replace(/&/g,'\\u0026').replace(/</g,'\\u003c').replace(/>/g,'\\u003e')
+    .replace(/'/g,'\\u0027');
+}
+
+/** Meta-only field read: flat key (e.g. created_at) or {meta|flags} nesting —
+ *  only whitelisted SecretMeta keys are accessed, never other fields. */
+function vaultMeta(m, flat, obj, key) {
+  if (!m || typeof m !== 'object') return null;
+  if (m[flat] !== undefined && m[flat] !== null) return m[flat];
+  const o = m[obj];
+  if (o && typeof o === 'object' && o[key] !== undefined && o[key] !== null) return o[key];
+  return null;
+}
+
+function vaultScope(m) {
+  if (m && (m.scope === 'private' || m.scope === 'team')) return m.scope;
+  const owner = m && m.owner;
+  if (owner && owner.shared_id) return 'team';
+  return (owner && owner.user_id) ? 'private' : null;
+}
+
+function vaultFmt(v) {
+  if (!v) return '—';
+  const t = new Date(v);
+  return isNaN(t.getTime()) ? '—' : t.toLocaleString();
+}
+
+async function vaultJson(r) {
+  try { return await r.json(); } catch (e) { return null; }
+}
+
+function vaultRow(m) {
+  const id = m && m.secret_id ? m.secret_id : '';
+  const sid = vaultEsc(id) || '—';
+  const scope = vaultScope(m);
+  const approval = vaultMeta(m, 'approval_required', 'flags', 'approval_required');
+  const rotatable = vaultMeta(m, 'rotatable', 'flags', 'rotatable');
+  return `<tr>
+    <td class="mono" style="max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${sid}">${sid}</td>
+    <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${vaultEsc(m ? m.name : '')}">${vaultEsc(m ? m.name : '') || '—'}</td>
+    <td>${scope ? `<span class="badge badge-${scope === 'team' ? 'green' : 'blue'}">${scope}</span>` : '—'}</td>
+    <td>${vaultEsc(vaultMeta(m, 'service', null, null)) || '—'}</td>
+    <td>${vaultEsc(vaultMeta(m, 'kind', null, null)) || '—'}</td>
+    <td style="white-space:nowrap">${vaultFmt(vaultMeta(m, 'created_at', 'meta', 'created_at'))}</td>
+    <td style="white-space:nowrap">${vaultFmt(vaultMeta(m, 'last_used_at', 'meta', 'last_used_at'))}</td>
+    <td style="white-space:nowrap">${vaultFmt(vaultMeta(m, 'rotation_due_at', 'meta', 'rotation_due_at'))}</td>
+    <td>${approval === null ? '—' : approval ? '<span class="badge badge-amber">required</span>' : '<span class="badge">no</span>'}</td>
+    <td>${rotatable === null ? '—' : rotatable ? '<span class="badge badge-green">yes</span>' : '<span class="badge">no</span>'}</td>
+    <td style="white-space:nowrap">
+      <button class="btn btn-danger btn-xs" title="Delete this secret permanently" onclick='vaultDeleteSecret(${vaultJsId(id)})'>✗ Delete</button>
+      <button class="btn btn-secondary btn-xs" title="Rotate (re-encrypt) this secret" onclick='vaultRotateSecret(${vaultJsId(id)})'>↻ Rotate</button>
+    </td>
+  </tr>`;
+}
+
+async function loadVault() {
+  const statusEl = document.getElementById('vault-list-status');
+  const tbody = document.getElementById('vault-secrets');
+  if (!statusEl || !tbody) return;
+  if (!adminKey) {
+    tbody.innerHTML = '';
+    statusEl.textContent = '🔐 Enter the admin key (you will be prompted on the first write) to view vault secrets.';
+    return;
+  }
+  statusEl.textContent = 'Loading…';
+  try {
+    const r = await fetch(`${API}/vault/secrets`, { headers: authHeaders() });
+    const d = await vaultJson(r);
+    if (!Array.isArray(d)) {
+      tbody.innerHTML = '';
+      statusEl.textContent = '❌ ' + ((d && d.error) || 'vault: list failed');
+      return;
+    }
+    statusEl.textContent = d.length === 0 ? 'No secrets yet — create one above.' : `✅ ${d.length} secret(s) · metadata only`;
+    tbody.innerHTML = d.length === 0
+      ? '<tr><td colspan="11" style="color:var(--text3);text-align:center">No secrets stored in the vault.</td></tr>'
+      : d.map(vaultRow).join('');
+  } catch (e) {
+    tbody.innerHTML = '';
+    statusEl.textContent = '❌ ' + e.message;
+  }
+}
+
+function vaultClearForm() {
+  document.getElementById('vault-name').value = '';
+  document.getElementById('vault-value').value = '';
+  document.getElementById('vault-service').value = '';
+  document.getElementById('vault-kind').selectedIndex = 0;
+  document.getElementById('vault-scope').selectedIndex = 0;
+  document.getElementById('vault-approval').checked = true;
+  document.getElementById('vault-rotatable').checked = true;
+  document.getElementById('vault-form-status').textContent = '';
+}
+
+async function vaultCreateSecret() {
+  if (!requireAuth()) return;
+  const statusEl = document.getElementById('vault-form-status');
+  const nameEl = document.getElementById('vault-name');
+  const valEl = document.getElementById('vault-value');
+  const name = nameEl.value.trim();
+  const secretValue = valEl.value;   // read once below; never logged, stored, or rendered
+  if (!name) { statusEl.textContent = '❌ vault: name is required'; return; }
+  if (!secretValue) { statusEl.textContent = '❌ vault: value is required'; return; }
+  valEl.value = '';                  // clear immediately — never kept in the page
+  const body = {
+    name,
+    value: secretValue,
+    scope: document.getElementById('vault-scope').value,
+    approvalRequired: document.getElementById('vault-approval').checked,
+    rotatable: document.getElementById('vault-rotatable').checked,
+  };
+  if (body.scope === 'private') {
+    const owner = document.getElementById('vault-owner').value.trim();
+    if (owner) body.ownerUserId = owner;
+  }
+  const service = document.getElementById('vault-service').value.trim();
+  if (service) body.service = service;
+  const kind = document.getElementById('vault-kind').value;
+  if (kind) body.kind = kind;
+  statusEl.innerHTML = '<span class="spinner"></span> Saving…';
+  try {
+    const r = await fetch(`${API}/vault/secrets`, { method: 'POST', headers: authHeaders(), body: JSON.stringify(body) });
+    const d = await vaultJson(r);
+    if (d && d.secret_id) {
+      statusEl.textContent = `✅ Created ${d.secret_id} — value is now encrypted in the vault.`;
+      toast(`Vault secret '${d.secret_id}' created`, 'success');
+      loadVault();
+    } else {
+      statusEl.textContent = '❌ ' + ((d && d.error) || 'vault: create failed');
+      toast((d && d.error) || 'vault: create failed', 'error');
+    }
+  } catch (e) { statusEl.textContent = '❌ ' + e.message; }
+}
+
+async function vaultDeleteSecret(id) {
+  if (!requireAuth()) return;
+  if (!confirm(`Delete vault secret ${id}? This cannot be undone.`)) return;
+  try {
+    const r = await fetch(`${API}/vault/secrets/${encodeURIComponent(id)}`, { method: 'DELETE', headers: authHeaders() });
+    const d = await vaultJson(r);
+    if (d && d.deleted) { toast(`Vault secret ${id} deleted`, 'success'); loadVault(); }
+    else { toast((d && d.error) || 'vault: delete failed', 'error'); }
+  } catch (e) { toast('Delete failed: ' + e.message, 'error'); }
+}
+
+async function vaultRotateSecret(id) {
+  if (!requireAuth()) return;
+  try {
+    const r = await fetch(`${API}/vault/secrets/${encodeURIComponent(id)}/rotate`, { method: 'POST', headers: authHeaders() });
+    const d = await vaultJson(r);
+    if (d && d.rotated) { toast(`Vault secret ${id} rotated`, 'success'); loadVault(); }
+    else { toast((d && d.error) || 'vault: rotate failed', 'error'); }
+  } catch (e) { toast('Rotate failed: ' + e.message, 'error'); }
+}
+
+// ═══════════ VAULT — Service Approvals (F6) ═══════════
+// REST surface (same auth pattern as the vault sections above):
+//   GET    /api/v1/vault/approvals            → [ServiceApproval] (caller-scoped)
+//   POST   /api/v1/vault/approvals            → 201 {granted, approval} (operator)
+//   DELETE /api/v1/vault/approvals?identity=&service= → 200 {revoked} (operator)
+// Value-free discipline: approvals carry NO secret values — the only API
+// strings rendered here are identity/service/granted_by (escaped exactly as
+// in vaultRow via vaultEsc) and ISO timestamps (vaultFmt). Status is
+// whitelisted before it can shape any markup. Revoke ids go through
+// vaultJsId (single-quote-attribute-safe) exactly like secret ids above.
+
+const VAULT_APPROVAL_STATUSES = { active: 'green', revoked: 'grey', expired: 'amber' };
+
+function approvalRow(a) {
+  const identity = vaultEsc(a && a.identity);
+  const service = vaultEsc(a && a.service);
+  const grantedBy = vaultEsc(a && a.granted_by);
+  // Own-property whitelist gate — 'constructor'/'__proto__' style keys can
+  // never pass, so status can only be one of the three server values.
+  const status = (a && Object.prototype.hasOwnProperty.call(VAULT_APPROVAL_STATUSES, a.status))
+    ? a.status
+    : '';
+  const badgeCls = status && VAULT_APPROVAL_STATUSES[status];
+  const statusCell = status
+    ? `<span class="badge badge-${badgeCls}">${status}</span>`
+    : '—';
+  // Revoke only makes sense while the approval is still active.
+  const revokeBtn = status === 'active'
+    ? `<button class="btn btn-danger btn-xs" title="Revoke this approval" onclick='approvalRevoke(${vaultJsId(a.identity)},${vaultJsId(a.service)})'>✗ Revoke</button>`
+    : '';
+  return `<tr>
+    <td class="mono">${identity || '—'}</td>
+    <td class="mono">${service || '—'}</td>
+    <td>${grantedBy || '—'}</td>
+    <td style="white-space:nowrap">${vaultFmt(a && a.granted_at)}</td>
+    <td style="white-space:nowrap">${vaultFmt(a && a.expires_at)}</td>
+    <td>${statusCell}</td>
+    <td style="white-space:nowrap">${revokeBtn}</td>
+  </tr>`;
+}
+
+async function loadVaultApprovals() {
+  const statusEl = document.getElementById('vault-approvals-status');
+  const tbody = document.getElementById('vault-approvals');
+  if (!statusEl || !tbody) return;
+  if (!adminKey) {
+    tbody.innerHTML = '';
+    statusEl.textContent = '🔐 Enter the admin key (you will be prompted on the first write) to view approvals.';
+    return;
+  }
+  statusEl.textContent = 'Loading…';
+  try {
+    const r = await fetch(`${API}/vault/approvals`, { headers: authHeaders() });
+    const d = await vaultJson(r);
+    if (!Array.isArray(d)) {
+      tbody.innerHTML = '';
+      statusEl.textContent = '❌ ' + ((d && d.error) || 'vault: approvals list failed');
+      return;
+    }
+    statusEl.textContent = d.length === 0
+      ? 'No approvals yet — grant one above (operator only).'
+      : `✅ ${d.length} approval(s) · value-free ledger`;
+    tbody.innerHTML = d.length === 0
+      ? '<tr><td colspan="7" style="color:var(--text3);text-align:center">No service approvals.</td></tr>'
+      : d.map(approvalRow).join('');
+  } catch (e) {
+    tbody.innerHTML = '';
+    statusEl.textContent = '❌ ' + e.message;
+  }
+}
+
+async function approvalGrant() {
+  if (!requireAuth()) return;
+  const statusEl = document.getElementById('va-form-status');
+  const identity = document.getElementById('va-identity').value.trim();
+  const service = document.getElementById('va-service').value.trim();
+  const ttl = parseInt(document.getElementById('va-ttl').value, 10);
+  if (!identity) { statusEl.textContent = '❌ vault: identity is required'; return; }
+  if (!service) { statusEl.textContent = '❌ vault: service is required'; return; }
+  if (!(ttl >= 1)) { statusEl.textContent = '❌ vault: ttlDays must be a positive number'; return; }
+  const body = { identity, service, ttlDays: ttl };
+  statusEl.innerHTML = '<span class="spinner"></span> Granting…';
+  try {
+    const r = await fetch(`${API}/vault/approvals`, { method: 'POST', headers: authHeaders(), body: JSON.stringify(body) });
+    const d = await vaultJson(r);
+    if (d && d.granted && r.status === 201) {
+      statusEl.textContent = `✅ Approval granted: ${identity} → ${service}`;
+      toast(`Approval granted: ${identity} → ${service}`, 'success');
+      document.getElementById('va-service').value = '';
+      loadVaultApprovals();
+    } else {
+      statusEl.textContent = '❌ ' + ((d && d.error) || 'vault: approval grant failed');
+      toast((d && d.error) || 'vault: approval grant failed', 'error');
+    }
+  } catch (e) { statusEl.textContent = '❌ ' + e.message; }
+}
+
+async function approvalRevoke(identity, service) {
+  if (!requireAuth()) return;
+  if (!confirm(`Revoke approval for ${identity} on service ${service}?`)) return;
+  try {
+    const q = `identity=${encodeURIComponent(identity)}&service=${encodeURIComponent(service)}`;
+    const r = await fetch(`${API}/vault/approvals?${q}`, { method: 'DELETE', headers: authHeaders() });
+    const d = await vaultJson(r);
+    if (d && d.revoked) { toast(`Approval revoked: ${identity} → ${service}`, 'success'); loadVaultApprovals(); }
+    else { toast((d && d.error) || 'vault: approval revoke failed', 'error'); }
+  } catch (e) { toast('Revoke failed: ' + e.message, 'error'); }
+}
+
 // ═══════════ PUB-SUB BUS ═══════════
 
 async function loadBus() {
@@ -1139,6 +1511,13 @@ function applyIdentity(identity) {
 // ── Init ──
 async function init() {
   loadIdentity();
+  const vaultScopeSel = document.getElementById('vault-scope');
+  const vaultOwnerRow = document.getElementById('vault-owner-row');
+  if (vaultScopeSel && vaultOwnerRow) {
+    vaultScopeSel.addEventListener('change', () => {
+      vaultOwnerRow.style.display = vaultScopeSel.value === 'private' ? '' : 'none';
+    });
+  }
   const svc = await checkHealth();
   if (svc) {
     document.getElementById('refresh-badge').style.display = 'inline';

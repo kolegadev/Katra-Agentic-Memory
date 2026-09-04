@@ -73,6 +73,9 @@ import { resolveCrossFileCalls } from './services/code-graph/cross-file-resolver
 import { ManifestStore } from './services/code-graph/manifest-store.js';
 import { ScanCodebaseInput, SyncCodeGraphInput, CodeGraphStatusInput } from './services/code-graph/tool-schemas.js';
 import type { FileExtraction, FileState } from './services/code-graph/types.js';
+import { createVaultStore, type VaultStore } from './services/vault/store.js';
+import { createCapability } from './services/vault/capability.js';
+import { createAuthService } from './services/vault/auth.js';
 
 dotenv.config();
 
@@ -403,6 +406,85 @@ const ListAssetsInput = z.object({
   limit: z.number().int().min(1).max(100).optional().default(20),
   content_type: z.string().optional().describe('Filter by MIME type prefix (e.g., image/)'),
 });
+
+// ── Katra Vault input schemas (F3) ───────────────────────────────
+// Zod enforces types only; content rules (name length/slash, value
+// non-empty, kind allow-list) are enforced by the vault store with static
+// 'vault: …' errors, so no submitted value can echo through a tool error.
+const VaultPutSecretInput = z.object({
+  name: z.string().describe('Secret name (<= 128 chars, no "/")'),
+  value: z.string().describe('Secret value — never returned by any tool or route'),
+  scope: z.enum(['private', 'team']).optional().describe("Defaults to 'private'"),
+  service: z.string().nullable().optional().describe('Service linking, e.g. agentmail'),
+  kind: z.enum(['api_key', 'password', 'token', 'totp_secret', 'env']).optional().describe("Defaults to 'api_key'"),
+  aclReaders: z.array(z.string()).optional().describe('Extra readers (trusted callers only)'),
+  ownerUserId: z.string().optional().describe('Owner override — honored only for trusted callers; ignored otherwise'),
+});
+
+const VaultListSecretsInput = z.object({});
+
+const VaultGetSecretInput = z.object({
+  secret_id: z.string().min(1).describe('Secret ID, e.g. "lilly/agentmail-api-key"'),
+});
+
+const VaultDeleteSecretInput = z.object({
+  secret_id: z.string().min(1).describe('Secret ID to delete'),
+});
+
+const VaultRotateSecretInput = z.object({
+  secret_id: z.string().min(1).describe('Secret ID to rotate'),
+});
+
+const VaultAuditInput = z.object({
+  secret_id: z.string().optional().describe('Filter audit rows by secret ID'),
+  limit: z.number().int().min(1).max(1000).optional().describe('Max rows (default 100)'),
+});
+
+const VaultApproveServiceInput = z.object({
+  identity: z.string().min(1).describe('User id the approval is granted to, e.g. "lilly"'),
+  service: z.string().min(1).describe('Service the approval gates, e.g. "agentmail" — "*" grants any service'),
+  ttlDays: z.number().int().positive().optional().describe('Grant validity in days (default 30)'),
+});
+
+const VaultRevokeApprovalInput = z.object({
+  identity: z.string().min(1).describe('User id the approval belongs to'),
+  service: z.string().min(1).describe('Service the approval gates'),
+});
+
+const VaultListApprovalsInput = z.object({});
+
+// ── F7 capability input schema ───────────────────────────────────
+// Types only — the capability core enforces approval, RBAC, SSRF and limit
+// rules and returns static blocked reasons, never echoed content.
+const VaultHttpInput = z.object({
+  secret_id: z.string().min(1).describe('Full secret ID, e.g. "lilly/agentmail-api-key"'),
+  service: z.string().min(1).describe('Approval service name, e.g. "agentmail"'),
+  method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD']).describe('HTTP method whitelist'),
+  url: z.string().min(1).describe('Absolute https:// URL (port 443, no userinfo)'),
+  inject_header: z.string().min(1).describe('Header name the resolved secret is injected into, e.g. "Authorization"'),
+  inject_scheme: z.string().optional().describe('Optional auth-scheme prefix for the header value (e.g. "Bearer" → "Bearer <secret>"); absent → raw secret'),
+  body: z.string().optional().describe('Optional request body (string)'),
+});
+
+// ── F9 auth tool input schemas ──────────────────────────────────
+// Types only — content rules live in the auth service with static reason
+// strings; the otpauth URI and the raw session token are returned exactly
+// once and are never stored or logged in plaintext.
+const AuthEnrollTotpInput = z.object({
+  identity: z.string().min(1).describe('Identity to enroll TOTP for (operator may name any identity; others enroll only themselves)'),
+  issuer: z.string().optional().describe('otpauth issuer label (default "Katra")'),
+});
+
+const AuthIssueSessionInput = z.object({
+  identity: z.string().optional().describe('Identity the session is for (defaults to the caller; operator may issue for others)'),
+  totp_code: z.string().min(1).describe('Current 6-digit TOTP code from the identity\'s authenticator'),
+});
+
+const AuthRevokeSessionInput = z.object({
+  token_hash: z.string().optional().describe('SHA-256 token hash or its prefix (>= 8 chars) of the session to revoke'),
+});
+
+const AuthSessionStatusInput = z.object({});
 
 // ── Tool definitions ───────────────────────────────────────────────
 
@@ -829,6 +911,80 @@ const tools = [
     name: 'code_graph_status',
     description: 'Report the current state of a codebase in the Katra knowledge graph: node/edge counts and last sync time for the given root.',
     inputSchema: zodToJsonSchema(CodeGraphStatusInput) as Record<string, unknown>,
+  },
+  // ── Katra Vault (F3) ────────────────────────────────────────
+  {
+    name: 'vault_put_secret',
+    description: 'Store a secret in the Katra Vault. OPERATOR ONLY: untrusted callers are rejected with \'operator only\'. Secrets are sealed with a per-secret DEK (F1) and never leave the vault: this tool returns only {secret_id, created}.',
+    inputSchema: zodToJsonSchema(VaultPutSecretInput) as Record<string, unknown>,
+  },
+  {
+    name: 'vault_list_secrets',
+    description: 'List vault secrets visible to the caller as redacted metadata (no values, no envelopes). Untrusted callers see their own private secrets plus team secrets; trusted callers see everything.',
+    inputSchema: zodToJsonSchema(VaultListSecretsInput) as Record<string, unknown>,
+  },
+  {
+    name: 'vault_get_secret',
+    description: 'Get REDACTED metadata for one vault secret: {secret_id, name, scope, service, length, last_used_at, status, value: \'<redacted>\'}. The plaintext value is never returned — only its character length.',
+    inputSchema: zodToJsonSchema(VaultGetSecretInput) as Record<string, unknown>,
+  },
+  {
+    name: 'vault_delete_secret',
+    description: 'Delete a vault secret (owner or trusted operator only). Returns {deleted}. The audit trail keeps a value-free delete row.',
+    inputSchema: zodToJsonSchema(VaultDeleteSecretInput) as Record<string, unknown>,
+  },
+  {
+    name: 'vault_rotate_secret',
+    description: 'Rotate a vault secret (owner or trusted operator only): re-seals the same value with a FRESH DEK and resets rotation_due_at (+30 days). Returns {rotated}. Requires the master key.',
+    inputSchema: zodToJsonSchema(VaultRotateSecretInput) as Record<string, unknown>,
+  },
+  {
+    name: 'vault_audit',
+    description: 'Query the vault audit trail (value-free rows: at, actor, action, secret_id, service, outcome). Untrusted callers see only rows they produced; trusted callers see all rows. Newest first, default limit 100.',
+    inputSchema: zodToJsonSchema(VaultAuditInput) as Record<string, unknown>,
+  },
+  // ── Katra Vault approvals (F6) ───────────────────────────────
+  {
+    name: 'vault_approve_service',
+    description: 'Grant (or extend) a per-service vault approval for an identity. OPERATOR ONLY: untrusted callers are rejected with \'operator only\' before any store work. {identity, service, ttlDays?} → {granted, approval}. The approval ledger carries no secret values.',
+    inputSchema: zodToJsonSchema(VaultApproveServiceInput) as Record<string, unknown>,
+  },
+  {
+    name: 'vault_revoke_approval',
+    description: 'Revoke an active per-service vault approval for (identity, service). OPERATOR ONLY: untrusted callers are rejected with \'operator only\' before any store work. {identity, service} → {revoked}.',
+    inputSchema: zodToJsonSchema(VaultRevokeApprovalInput) as Record<string, unknown>,
+  },
+  {
+    name: 'vault_list_approvals',
+    description: 'List vault approvals caller-scoped: untrusted callers see only rows for their own identity; trusted callers see all rows. Each row: identity, service, granted_by, granted_at, expires_at, revoked_at, status (active/revoked/expired). No arguments.',
+    inputSchema: zodToJsonSchema(VaultListApprovalsInput) as Record<string, unknown>,
+  },
+  // ── Katra Vault capability (F7) ───────────────────────────────
+  {
+    name: 'vault_http',
+    description: 'APPROVAL-GATED server-side secret use (the ONLY way a secret is ever used): opens the secret under the caller\'s RBAC scope, injects it as a single named request header into ONE outbound https:// request, and returns {status, body} — or {status: 0, blocked: {reason}} when refused (no active approval, secret not available, SSRF guard, method/port/scheme, limits, timeout). The secret NEVER appears in results, errors, logs, or audit rows.',
+    inputSchema: zodToJsonSchema(VaultHttpInput) as Record<string, unknown>,
+  },
+  // ── Katra Vault agent auth (F9) ───────────────────────────────
+  {
+    name: 'auth_enroll_totp',
+    description: 'Enroll an identity for TOTP agent auth. OPERATOR ONLY: untrusted callers are rejected with \'operator only\'. Generates a fresh RFC 6238 secret, seals it encrypted in the vault (kind totp_secret, private to the target identity), and returns the otpauth:// QR URI — which is shown EXACTLY ONCE at enrollment and never returned again.',
+    inputSchema: zodToJsonSchema(AuthEnrollTotpInput) as Record<string, unknown>,
+  },
+  {
+    name: 'auth_issue_session',
+    description: 'Issue a short-lived session token against a valid TOTP code (RFC 6238, ±1 step, replay-guarded). Returns {issued, token, expires_at} — the raw token is returned EXACTLY once; only its SHA-256 hash is stored. Errors are static: \'operator only\', \'not enrolled\', \'invalid TOTP code\'.',
+    inputSchema: zodToJsonSchema(AuthIssueSessionInput) as Record<string, unknown>,
+  },
+  {
+    name: 'auth_revoke_session',
+    description: 'Revoke a session by its SHA-256 token hash or a hash prefix (>= 8 chars). Callers may revoke their own sessions; operators may revoke any. Returns {revoked: count}.',
+    inputSchema: zodToJsonSchema(AuthRevokeSessionInput) as Record<string, unknown>,
+  },
+  {
+    name: 'auth_session_status',
+    description: 'List the caller\'s auth sessions (created_at, expires_at, revoked_at). Operators see all identities\' sessions with the identity included. No arguments.',
+    inputSchema: zodToJsonSchema(AuthSessionStatusInput) as Record<string, unknown>,
   },
 ];
 
@@ -1781,7 +1937,7 @@ async function handleSearchMemories(args: unknown): Promise<TextContent[]> {
 
       allResults.push({
         source: col.label,
-        snippet: text.length > 1200 ? text.slice(0, 1200) + '...' : text,
+        snippet: text.length > 2000 ? text.slice(0, 2000) + '...' : text,
         timestamp: doc.timestamp || doc.created_at || doc.date,
         confidence: doc.confidence,
         score: 0.5,
@@ -1828,7 +1984,7 @@ async function handleSearchMemories(args: unknown): Promise<TextContent[]> {
   if (vectorResults.length > 0) {
     lines.push('', `### 🔍 Vector (Semantic) (${vectorResults.length})`);
     for (const r of vectorResults) {
-      lines.push(`- ${r.snippet.slice(0, 1200)} (score: ${r.score?.toFixed(2)})`);
+      lines.push(`- ${r.snippet.slice(0, 2000)} (score: ${r.score?.toFixed(2)})`);
     }
   }
 
@@ -1837,7 +1993,7 @@ async function handleSearchMemories(args: unknown): Promise<TextContent[]> {
     lines.push('', `### ${source} (${results.length})`);
     for (const r of results) {
       const ts = r.timestamp ? ` [${new Date(r.timestamp).toISOString()}]` : '';
-      lines.push(`-${ts} ${r.snippet.slice(0, 1200)}`);
+      lines.push(`-${ts} ${r.snippet.slice(0, 2000)}`);
     }
   }
 
@@ -3160,6 +3316,230 @@ export async function handleCodeGraphStatus(args: unknown): Promise<TextContent[
   return [{ type: 'text', text: lines.join('\n') }];
 }
 
+// ── Katra Vault tools (F3) ───────────────────────────────────────
+// Every handler runs inside the caller identity propagated by the transport
+// (registerHandlers wraps each invocation in runWithCaller) and reads it via
+// getCaller(). Handlers never accept a client-supplied user_id as
+// authoritative: the vault store pins untrusted puts to the caller's own
+// identity and scopes all reads/deletes/rotates to the caller (IDOR guard).
+// Hard redaction: tool output carries no value, plaintext, or envelope;
+// errors are static strings that never echo a submitted value. Store errors
+// bubble to the dispatch wrapper → '❌ Error: <message>'.
+
+const VAULT_REDACTED_VALUE = '<redacted>';
+const VAULT_DISCONNECTED: TextContent[] = [{ type: 'text', text: '⚠️ MongoDB disconnected.' }];
+
+function lazyVaultStore(): VaultStore {
+  return createVaultStore();
+}
+
+export async function handleVaultPutSecret(args: unknown): Promise<TextContent[]> {
+  const caller = getCaller();
+  // Operator-only: untrusted callers are rejected before any parsing or
+  // store interaction — error text is exactly 'operator only'.
+  if (!caller.trusted) throw new Error('operator only');
+  const input = VaultPutSecretInput.parse(args);
+  if (!is_database_connected()) return VAULT_DISCONNECTED;
+  const result = await lazyVaultStore().putSecret({
+    caller,
+    name: input.name,
+    value: input.value,
+    scope: input.scope,
+    service: input.service === undefined ? null : input.service,
+    kind: input.kind,
+    aclReaders: input.aclReaders,
+    ownerUserId: input.ownerUserId,
+  });
+  return [{ type: 'text', text: JSON.stringify(result) }];
+}
+
+export async function handleVaultListSecrets(args: unknown): Promise<TextContent[]> {
+  VaultListSecretsInput.parse(args);
+  const caller = getCaller();
+  if (!is_database_connected()) return VAULT_DISCONNECTED;
+  const list = await lazyVaultStore().listSecrets(caller);
+  return [{ type: 'text', text: JSON.stringify(list) }];
+}
+
+export async function handleVaultGetSecret(args: unknown): Promise<TextContent[]> {
+  const input = VaultGetSecretInput.parse(args);
+  const caller = getCaller();
+  if (!is_database_connected()) return VAULT_DISCONNECTED;
+  const store = lazyVaultStore();
+  const meta = await store.getSecretMeta(caller, input.secret_id);
+  if (meta === null) throw new Error('secret not found'); // 404-equivalent
+  // The value is opened ONLY to learn its length — the plaintext never
+  // leaves this function and is never serialized into the response.
+  const value = await store.openSecretValue(caller, input.secret_id);
+  const fresh = (await store.getSecretMeta(caller, input.secret_id)) ?? meta;
+  return [{
+    type: 'text',
+    text: JSON.stringify({
+      secret_id: meta.secret_id,
+      name: meta.name,
+      scope: meta.owner.user_id ? 'private' : 'team',
+      service: meta.service,
+      length: value.length,
+      last_used_at: fresh.meta.last_used_at,
+      status: 'active',
+      value: VAULT_REDACTED_VALUE,
+    }),
+  }];
+}
+
+export async function handleVaultDeleteSecret(args: unknown): Promise<TextContent[]> {
+  const input = VaultDeleteSecretInput.parse(args);
+  const caller = getCaller();
+  if (!is_database_connected()) return VAULT_DISCONNECTED;
+  const result = await lazyVaultStore().deleteSecret(caller, input.secret_id);
+  return [{ type: 'text', text: JSON.stringify(result) }];
+}
+
+export async function handleVaultRotateSecret(args: unknown): Promise<TextContent[]> {
+  const input = VaultRotateSecretInput.parse(args);
+  const caller = getCaller();
+  if (!is_database_connected()) return VAULT_DISCONNECTED;
+  const result = await lazyVaultStore().rotateSecret(caller, input.secret_id);
+  return [{ type: 'text', text: JSON.stringify(result) }];
+}
+
+export async function handleVaultAudit(args: unknown): Promise<TextContent[]> {
+  const input = VaultAuditInput.parse(args);
+  const caller = getCaller();
+  if (!is_database_connected()) return VAULT_DISCONNECTED;
+  const rows = await lazyVaultStore().listAudit(caller, {
+    secretId: input.secret_id,
+    limit: input.limit,
+  });
+  return [{ type: 'text', text: JSON.stringify(rows) }];
+}
+
+export async function handleVaultApproveService(args: unknown): Promise<TextContent[]> {
+  const caller = getCaller();
+  // Operator-only: untrusted callers are rejected BEFORE any parsing or
+  // store interaction — error text is exactly 'operator only'.
+  if (!caller.trusted) throw new Error('operator only');
+  const input = VaultApproveServiceInput.parse(args);
+  if (!is_database_connected()) return VAULT_DISCONNECTED;
+  const result = await lazyVaultStore().grantApproval({
+    caller,
+    identity: input.identity,
+    service: input.service,
+    ttlDays: input.ttlDays,
+  });
+  return [{ type: 'text', text: JSON.stringify(result) }];
+}
+
+export async function handleVaultRevokeApproval(args: unknown): Promise<TextContent[]> {
+  const caller = getCaller();
+  // Operator-only: untrusted callers are rejected BEFORE any parsing or
+  // store interaction — error text is exactly 'operator only'.
+  if (!caller.trusted) throw new Error('operator only');
+  const input = VaultRevokeApprovalInput.parse(args);
+  if (!is_database_connected()) return VAULT_DISCONNECTED;
+  const result = await lazyVaultStore().revokeApproval({
+    caller,
+    identity: input.identity,
+    service: input.service,
+  });
+  return [{ type: 'text', text: JSON.stringify(result) }];
+}
+
+export async function handleVaultListApprovals(args: unknown): Promise<TextContent[]> {
+  VaultListApprovalsInput.parse(args);
+  const caller = getCaller();
+  if (!is_database_connected()) return VAULT_DISCONNECTED;
+  const list = await lazyVaultStore().listApprovals(caller);
+  return [{ type: 'text', text: JSON.stringify(list) }];
+}
+
+export async function handleVaultHttp(args: unknown): Promise<TextContent[]> {
+  const input = VaultHttpInput.parse(args);
+  const caller = getCaller();
+  if (!is_database_connected()) return VAULT_DISCONNECTED;
+  const result = await createCapability().vaultHttp({
+    caller,
+    secretId: input.secret_id,
+    service: input.service,
+    method: input.method,
+    url: input.url,
+    injectHeader: input.inject_header,
+    injectScheme: input.inject_scheme,
+    body: input.body,
+  });
+  // CapabilityResult JSON only — blocked reasons, never the secret.
+  return [{ type: 'text', text: JSON.stringify(result) }];
+}
+
+// ── Katra Vault agent auth tools (F9) ──────────────────────────
+// Same conventions as the F3 vault tools: callers come from getCaller();
+// enrollment is operator-gated for OTHER identities (self-enrollment is the
+// caller's own partition); the otpauth URI and raw session token appear in
+// tool output exactly once; failures are static strings.
+
+function lazyAuthService() {
+  return createAuthService();
+}
+
+export async function handleAuthEnrollTotp(args: unknown): Promise<TextContent[]> {
+  const caller = getCaller();
+  // Operator-only for other identities — untrusted callers cannot name a
+  // target identity through this tool at all (self-enrollment is done by
+  // omitting nothing: identity must equal the caller, enforced in-service).
+  if (!caller.trusted) throw new Error('operator only');
+  const input = AuthEnrollTotpInput.parse(args);
+  if (!is_database_connected()) return VAULT_DISCONNECTED;
+  const result = await lazyAuthService().enrollTotp({
+    caller,
+    identity: input.identity,
+    issuer: input.issuer,
+  });
+  if (!result.enrolled) throw new Error(result.reason ?? 'enrollment failed');
+  return [{
+    type: 'text',
+    text: JSON.stringify({
+      enrolled: true,
+      identity: result.identity,
+      otpauth_uri: result.otpauth_uri,
+    }),
+  }];
+}
+
+export async function handleAuthIssueSession(args: unknown): Promise<TextContent[]> {
+  const input = AuthIssueSessionInput.parse(args);
+  const caller = getCaller();
+  if (!is_database_connected()) return VAULT_DISCONNECTED;
+  const result = await lazyAuthService().issueSession({
+    caller,
+    identity: input.identity,
+    totpCode: input.totp_code,
+  });
+  if (!result.issued) throw new Error(result.reason ?? 'session issue failed');
+  return [{
+    type: 'text',
+    text: JSON.stringify({ issued: true, token: result.token, expires_at: result.expires_at }),
+  }];
+}
+
+export async function handleAuthRevokeSession(args: unknown): Promise<TextContent[]> {
+  const input = AuthRevokeSessionInput.parse(args);
+  const caller = getCaller();
+  if (!is_database_connected()) return VAULT_DISCONNECTED;
+  const result = await lazyAuthService().revokeSession({
+    caller,
+    tokenHashOrPrefix: input.token_hash,
+  });
+  return [{ type: 'text', text: JSON.stringify({ revoked: result.revoked }) }];
+}
+
+export async function handleAuthSessionStatus(args: unknown): Promise<TextContent[]> {
+  AuthSessionStatusInput.parse(args);
+  const caller = getCaller();
+  if (!is_database_connected()) return VAULT_DISCONNECTED;
+  const list = await lazyAuthService().listSessions(caller);
+  return [{ type: 'text', text: JSON.stringify(list) }];
+}
+
 async function createMCPServer() {
   // The server asks its memory who it is — the name presented to MCP
   // clients comes from the stored agent identity, not from code.
@@ -3255,6 +3635,20 @@ function registerHandlers(server: Server, getIdentity?: () => CallerIdentity) {
         case 'scan_codebase': result = await handleScanCodebase(args); break;
         case 'sync_code_graph': result = await handleSyncCodeGraph(args); break;
         case 'code_graph_status': result = await handleCodeGraphStatus(args); break;
+        case 'vault_put_secret': result = await handleVaultPutSecret(args); break;
+        case 'vault_list_secrets': result = await handleVaultListSecrets(args); break;
+        case 'vault_get_secret': result = await handleVaultGetSecret(args); break;
+        case 'vault_delete_secret': result = await handleVaultDeleteSecret(args); break;
+        case 'vault_rotate_secret': result = await handleVaultRotateSecret(args); break;
+        case 'vault_audit': result = await handleVaultAudit(args); break;
+        case 'vault_approve_service': result = await handleVaultApproveService(args); break;
+        case 'vault_revoke_approval': result = await handleVaultRevokeApproval(args); break;
+        case 'vault_list_approvals': result = await handleVaultListApprovals(args); break;
+        case 'vault_http': result = await handleVaultHttp(args); break;
+        case 'auth_enroll_totp': result = await handleAuthEnrollTotp(args); break;
+        case 'auth_issue_session': result = await handleAuthIssueSession(args); break;
+        case 'auth_revoke_session': result = await handleAuthRevokeSession(args); break;
+        case 'auth_session_status': result = await handleAuthSessionStatus(args); break;
         default: throw new Error(`Unknown tool: ${name}`);
       }
       // ── Cerebellum: procedural pattern observation ──────────

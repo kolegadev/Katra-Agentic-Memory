@@ -2,3 +2,5 @@ node_modules/
 build/
 .env
 *.log
+# F8 vault migration reports (may contain redacted audit findings)
+vault-migration-report-*.json

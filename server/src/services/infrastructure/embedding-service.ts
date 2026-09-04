@@ -12,6 +12,7 @@
  */
 
 import { get_database } from '../../database/connection.js';
+import { assertVaultCollectionAllowed } from '../vault/denylist.js';
 
 // Quality filter: skip low-value content that would pollute retrieval
 const SKIP_PATTERNS = [
@@ -319,6 +320,11 @@ export class EmbeddingService {
       semanticWeight = 0.6,
       maxAgeDays = 365,
     } = options;
+
+    // Guard (embedding read path): this generic reader returns document
+    // content from any named collection; denylisted vault collections must
+    // never be read through it. Synchronous and DB-free.
+    assertVaultCollectionAllowed(collection, 'embedding-service:searchSimilar');
 
     const modelReady = await this.ensureModel();
     if (!modelReady) return [];

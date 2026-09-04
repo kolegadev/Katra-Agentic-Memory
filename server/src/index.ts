@@ -31,6 +31,8 @@ import { create_diagnostic_routes } from './routes/health-routes.js';
 import { create_admin_routes } from './routes/admin-routes.js';
 import { create_tenant_routes } from './routes/tenant-routes.js';
 import { create_reflection_routes } from './routes/reflection-routes.js';
+import { create_vault_routes } from './routes/vault-routes.js';
+import { create_auth_routes } from './routes/vault-routes.js';
 
 // MCP server
 import { startMcpServer } from './mcp-server.js';
@@ -169,6 +171,8 @@ async function main() {
   app.route('/api/v1/assets', create_assets_routes());
   app.route('/api/v1/admin', create_admin_routes());
   app.route('/api/v1/reflection', create_reflection_routes());
+  app.route('/api/v1/vault', create_vault_routes());
+  app.route('/api/v1/auth', create_auth_routes());
 
   // Tenant management (multi-tenant mode only)
   if (isMultiTenant()) {

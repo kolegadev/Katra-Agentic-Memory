@@ -11,6 +11,7 @@
  */
 
 import { Db } from 'mongodb';
+import { assertVaultCollectionAllowed } from '../vault/denylist.js';
 
 export class MemorySynthesisService {
   private db: Db;
@@ -26,6 +27,11 @@ export class MemorySynthesisService {
    */
   public async getGraphContextAsString(detectedKeywords: string[]): Promise<string> {
     if (detectedKeywords.length === 0) return '';
+
+    // Guard: graph node/edge documents are formatted into context injected
+    // into the LLM system prompt — denylisted collections must never be read.
+    assertVaultCollectionAllowed('memory_nodes', 'memory-synthesis-service:getGraphContextAsString');
+    assertVaultCollectionAllowed('memory_edges', 'memory-synthesis-service:getGraphContextAsString');
 
     // Normalize keywords to node IDs
     const normalizedIds = detectedKeywords.map((k) =>
@@ -155,6 +161,11 @@ export class MemorySynthesisService {
     if (detectedKeywords.length === 0) {
       return { context: '', hop_summary: '(no keywords)', total_edges: 0, total_nodes: 0 };
     }
+
+    // Guard: traversed graph documents are formatted into context injected
+    // into the LLM system prompt.
+    assertVaultCollectionAllowed('memory_edges', 'memory-synthesis-service:getDeepGraphContext');
+    assertVaultCollectionAllowed('memory_nodes', 'memory-synthesis-service:getDeepGraphContext');
 
     const seedIds = detectedKeywords.map((k) =>
       `node_${k.toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')}`

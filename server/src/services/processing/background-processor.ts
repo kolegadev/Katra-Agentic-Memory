@@ -19,6 +19,7 @@ import { entityResolver } from '../integration/entity-resolver.js';
 import { stableContentHash } from '../infrastructure/content-hash-utils.js';
 import { DecisionActionService } from './decision-action-service.js';
 import { SalienceService } from './salience-service.js';
+import { assertVaultCollectionAllowed } from '../vault/denylist.js';
 
 export class BackgroundProcessor {
   private static instance: BackgroundProcessor;
@@ -99,6 +100,7 @@ export class BackgroundProcessor {
       // ── Pass 1: System Events (unlimited, triage everything) ──
       // System events are internal pulses — triage them at full speed
       // so they don't clog the pipeline. No bottleneck needed here.
+      assertVaultCollectionAllowed('episodic_events', 'background-processor:processUnprocessedEvents');
       const systemEvents = await this.memoryManager.get_unprocessed_events(200);
       const sysEvents = systemEvents.filter((e: any) => SYSTEM_EVENT_TYPES.has(e.event_type));
 
@@ -124,6 +126,7 @@ export class BackgroundProcessor {
       // prioritization — the RL loop must choose which events
       // get the expensive LLM extraction.
       const CONVERSATION_BATCH_SIZE = 12;
+      assertVaultCollectionAllowed('episodic_events', 'background-processor:processUnprocessedEvents');
       const allUnprocessed = await this.memoryManager.get_unprocessed_events(100);
       const convEvents = allUnprocessed
         .filter((e: any) => !SYSTEM_EVENT_TYPES.has(e.event_type))
@@ -222,6 +225,7 @@ export class BackgroundProcessor {
           const prospective = new ProspectiveMemoryService(db2);
 
           // Get all sessions with recent conversation activity
+          assertVaultCollectionAllowed('episodic_events', 'background-processor:processUnprocessedEvents');
           const recentSessions = await db2.collection('episodic_events')
             .aggregate([
               { $match: { event_type: { $in: ['conversation', 'user_message', 'assistant_response'] } } },
@@ -364,6 +368,8 @@ export class BackgroundProcessor {
       console.log(`🧠 Processing event ${eventId}: ${content.substring(0, 50)}...`);
 
     // Build extraction context with conversation history
+    // Guard: conversation events feed the LLM extraction call below.
+    assertVaultCollectionAllowed('episodic_events', 'background-processor:processEvent');
     const recentEvents = await this.memoryManager.get_session_events(sessionId, 5);
     const conversationHistory = recentEvents
       .filter(e => e.content?.message && e.id !== eventId)
@@ -645,6 +651,9 @@ export class BackgroundProcessor {
     }
 
     // 2. Find and embed newly created semantic facts for this event
+    // Guard (embedding read path): semantic_facts docs below are encoded by
+    // the embedding service; denylisted collections must never be embedded.
+    assertVaultCollectionAllowed('semantic_facts', 'background-processor:embedEventAndFacts');
     try {
       const { get_database } = await import('../../database/connection.js');
       const db = get_database();

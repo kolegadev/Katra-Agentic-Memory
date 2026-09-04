@@ -16,6 +16,7 @@ import { CAPABILITY_CARD } from '../integration/capability-card.js';
 import { temporalResolver } from './temporal-resolver.js';
 import { get_database } from '../../database/connection.js';
 import { embeddingService } from './embedding-service.js';
+import { assertVaultCollectionAllowed } from '../vault/denylist.js';
 
 export interface MemoryTrigger {
   type: 'temporal' | 'semantic' | 'episodic' | 'procedural' | 'emotional' | 'factual' | 'entity';
@@ -267,6 +268,9 @@ Respond with a JSON array of memory type names, e.g., ["episodic", "semantic"]`;
       const keywords = this.extractQueryTerms(userInput);
 
       if (keywords.length > 0) {
+        // Guard: event/fact documents retrieved here are sent to the LLM for
+        // response synthesis (synthesizeMemories/generateResponse).
+        assertVaultCollectionAllowed('episodic_events', 'llm-memory-curator:retrieveRelevantMemories');
         try {
           // Try text search first (fastest, but requires index)
           crossSessionEvents = await db.collection('episodic_events')
@@ -293,6 +297,7 @@ Respond with a JSON array of memory type names, e.g., ["episodic", "semantic"]`;
       }
 
       // 3. Semantic facts (with fallback)
+      assertVaultCollectionAllowed('semantic_facts', 'llm-memory-curator:retrieveRelevantMemories');
       let facts: any[] = [];
       try {
         facts = await db.collection('semantic_facts')
@@ -322,6 +327,7 @@ Respond with a JSON array of memory type names, e.g., ["episodic", "semantic"]`;
       // 4. Enhanced recall: also search auto-journal for long-term context
       let journalResults: any[] = [];
       if (enhancedRecall) {
+        assertVaultCollectionAllowed('agent_journal_auto', 'llm-memory-curator:retrieveRelevantMemories');
         try {
           const { getProspectiveMemoryService } = await import('../integration/knowledge-graph-factory.js');
           const prospective = getProspectiveMemoryService();
@@ -406,6 +412,8 @@ Respond with a JSON array of memory type names, e.g., ["episodic", "semantic"]`;
    * Get recent session events for conversation continuity.
    */
   private async getRecentSessionContext(sessionId: string, userId: string, limit: number): Promise<any[]> {
+    // Guard: recent event docs below feed the LLM synthesis path.
+    assertVaultCollectionAllowed('episodic_events', 'llm-memory-curator:getRecentSessionContext');
     try {
       const db = get_database();
       const events = await db.collection('episodic_events')

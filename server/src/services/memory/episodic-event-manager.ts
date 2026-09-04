@@ -12,6 +12,7 @@ import { get_redis_client } from '../../database/redis-connection.js';
 import { llmService } from '../infrastructure/llm-service.js';
 import type { Db, Collection } from 'mongodb';
 import { ValenceTagger } from '../processing/valence-tagger.js';
+import { assertVaultCollectionAllowed } from '../vault/denylist.js';
 
 /**
  * Cascade Detection Circuit Breaker
@@ -562,6 +563,11 @@ export class EpisodicEventManager {
     if (role) {
       matchCriteria['content.role'] = role;
     }
+
+    // Guard: matched event documents can be handed to the LLM (semantic
+    // ranking via llmService.rankByRelevance below). Denylisted collections
+    // must never be read here.
+    assertVaultCollectionAllowed('episodic_events', 'episodic-event-manager:searchEvents');
 
     try {
       // Try text search first
