@@ -335,6 +335,29 @@ describe.skipIf(!mongoAvailable)('Vault store (F2) — contract criteria', () =>
     });
   });
 
+  // 10b ── team member may OPEN team secrets (use path; F7 approval gates use)
+  it('criterion 10b: any team member opens a team-scoped secret (shared_id owner)', async () => {
+    await store.putSecret({
+      caller: TRUSTED,
+      name: 'team-pat',
+      value: 'team-pat-value',
+      scope: 'team',
+    });
+    // lilly (untrusted, not the creator, not an acl reader) is a team member:
+    expect(await store.openSecretValue(LILLY, 'team:my-team/team-pat')).toBe(
+      'team-pat-value',
+    );
+    const raw = await rawSecret('team:my-team/team-pat');
+    expect(typeof raw!.meta.last_used_at).toBe('string');
+    // team members may still not delete team secrets (shared-owner rows):
+    expect(await store.deleteSecret(LILLY, 'team:my-team/team-pat')).toEqual({
+      deleted: false,
+    });
+    expect(await store.deleteSecret(TRUSTED, 'team:my-team/team-pat')).toEqual({
+      deleted: true,
+    });
+  });
+
   // 11 ── master key missing ───────────────────────────────────────────────
   it('criterion 11: without a master key, put throws and list/get/delete still work', async () => {
     const saved = process.env.KATRA_VAULT_MASTER_KEY;

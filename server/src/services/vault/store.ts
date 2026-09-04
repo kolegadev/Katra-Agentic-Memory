@@ -660,7 +660,16 @@ export function createVaultStore(opts?: {
       const doc = (await secretsCol.findOne({ secret_id: secretId })) as SecretDoc | null;
 
       const isReader = (doc?.acl.readers ?? []).includes(c.user_id);
-      const ownerMayOpen = doc?.owner.user_id !== undefined && doc.owner.user_id === c.user_id;
+      // Owner-open covers private secrets (owner.user_id match) AND team
+      // secrets: a team secret has no user_id, and every identity in the
+      // default shared scope is a team member (the visibility filter already
+      // treats shared_id === defaultSharedId as visible to all). USE of team
+      // secrets is still gated upstream by the capability layer's per-service
+      // approval (F7) — this only unblocks team members from opening what
+      // they can already see.
+      const ownerMayOpen =
+        (doc?.owner.user_id !== undefined && doc.owner.user_id === c.user_id) ||
+        (doc?.owner.shared_id !== undefined && doc.owner.shared_id === sharedId);
       if (!doc || (!c.trusted && !ownerMayOpen && !isReader)) {
         await writeAudit({
           at: now,

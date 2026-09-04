@@ -131,3 +131,11 @@ only allowed failures; everything else must pass identically to main.
 - Use F1 exports only via their public names; never re-implement crypto.
 - Never console.log value/envelope/plaintext.
 - Dates as ISO strings via `new Date().toISOString()`.
+
+## AMENDMENT (2026-09-04, discovered during live team testing)
+`openSecretValue` additionally allows ANY identity in the default shared scope
+to open TEAM secrets (`owner.shared_id === defaultSharedId`): team members can
+already see the meta, and USE remains gated upstream by F7's per-service
+approval. Before this amendment only private-owners / acl.readers / trusted
+callers could open team secrets, which made team secrets unusable by agents.
+Covered by `criterion 10b` in tests/unit/vault/store.test.ts.
