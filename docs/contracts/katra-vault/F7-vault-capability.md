@@ -159,3 +159,12 @@ cd server && npx vitest run tests/unit/vault/capability.test.ts && npm test && n
   aborting.
 - Audit via the store's writeAudit path (reuse the same helper the store uses —
   do not reimplement).
+
+## AMENDMENTS (2026-09-04, live team testing with John)
+1. `CapabilityInput.injectScheme?: string` — when present, the outbound header
+   value is `"<scheme> <secret>"` (e.g. `Bearer <PAT>`); absent → raw secret.
+   Discovered when a valid GitHub PAT (stored as a team secret) returned 401
+   from api.github.com/user because GitHub requires the Bearer prefix. Wired
+   through REST `inject_scheme` and MCP `vault_http`; covered by criterion 2b.
+   Live end-to-end proof: lilly + github approval + team PAT + inject_scheme
+   Bearer → api.github.com/user 200 (login kolegadev), PAT never in response.
