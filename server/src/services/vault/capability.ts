@@ -60,6 +60,9 @@ export interface CapabilityInput {
   url: string;
   /** Header name the secret is injected into. */
   injectHeader: string;
+  /** Optional auth-scheme prefix for the header value (e.g. 'Bearer' sends
+   *  `Authorization: Bearer <secret>`); absent → raw secret is the value. */
+  injectScheme?: string;
   /** Optional request body (string). */
   body?: string;
 }
@@ -361,9 +364,12 @@ export function createCapability(opts: CapabilityOptions = {}): Capability {
           };
           pollerHandle = setTimeout(tick, TIMEOUT_POLL_MS);
         });
+        const headerValue = input.injectScheme
+          ? `${input.injectScheme} ${secret}`
+          : secret;
         const init: RequestInit = {
           method: input.method,
-          headers: { [input.injectHeader]: secret },
+          headers: { [input.injectHeader]: headerValue },
           redirect: 'manual',
           signal: controller.signal,
         };

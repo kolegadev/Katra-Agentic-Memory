@@ -392,6 +392,22 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
     await assertNoSecretText(result, rows);
   });
 
+  // ── Criterion 2b: injectScheme composes the header value ────────
+  it('criterion 2b: injectScheme prefixes the header value; absent → raw secret', async () => {
+    await grant('lilly', 'github');
+    const secretId = await putSecretFor('lilly', 'scheme');
+    let seen: string | undefined;
+    const fetchSpy = mockFetch(async (url, init) => {
+      seen = (init.headers as Record<string, string>)['Authorization'];
+      return new Response('ok', { status: 200 });
+    });
+    const cap = createCapability({ store, fetchImpl: fetchSpy, resolveHost: resolveTo(PUBLIC_IP) });
+    await cap.vaultHttp({ ...inputFor(secretId, { injectHeader: 'Authorization' }), service: 'github', injectScheme: 'Bearer' } as never);
+    expect(seen).toBe(`Bearer ${SECRET_VALUE}`);
+    await cap.vaultHttp({ ...inputFor(secretId, { injectHeader: 'Authorization' }), service: 'github' } as never);
+    expect(seen).toBe(SECRET_VALUE);
+  });
+
   // ── Criterion 3: secret redaction everywhere ────────────────────
   it('criterion 3: secret appears in no result, audit row JSON, or thrown error', async () => {
     await grant('lilly', 'agentmail');

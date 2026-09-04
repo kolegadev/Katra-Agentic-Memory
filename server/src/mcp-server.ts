@@ -462,6 +462,7 @@ const VaultHttpInput = z.object({
   method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD']).describe('HTTP method whitelist'),
   url: z.string().min(1).describe('Absolute https:// URL (port 443, no userinfo)'),
   inject_header: z.string().min(1).describe('Header name the resolved secret is injected into, e.g. "Authorization"'),
+  inject_scheme: z.string().optional().describe('Optional auth-scheme prefix for the header value (e.g. "Bearer" → "Bearer <secret>"); absent → raw secret'),
   body: z.string().optional().describe('Optional request body (string)'),
 });
 
@@ -1936,7 +1937,7 @@ async function handleSearchMemories(args: unknown): Promise<TextContent[]> {
 
       allResults.push({
         source: col.label,
-        snippet: text.length > 1200 ? text.slice(0, 1200) + '...' : text,
+        snippet: text.length > 2000 ? text.slice(0, 2000) + '...' : text,
         timestamp: doc.timestamp || doc.created_at || doc.date,
         confidence: doc.confidence,
         score: 0.5,
@@ -1983,7 +1984,7 @@ async function handleSearchMemories(args: unknown): Promise<TextContent[]> {
   if (vectorResults.length > 0) {
     lines.push('', `### 🔍 Vector (Semantic) (${vectorResults.length})`);
     for (const r of vectorResults) {
-      lines.push(`- ${r.snippet.slice(0, 1200)} (score: ${r.score?.toFixed(2)})`);
+      lines.push(`- ${r.snippet.slice(0, 2000)} (score: ${r.score?.toFixed(2)})`);
     }
   }
 
@@ -1992,7 +1993,7 @@ async function handleSearchMemories(args: unknown): Promise<TextContent[]> {
     lines.push('', `### ${source} (${results.length})`);
     for (const r of results) {
       const ts = r.timestamp ? ` [${new Date(r.timestamp).toISOString()}]` : '';
-      lines.push(`-${ts} ${r.snippet.slice(0, 1200)}`);
+      lines.push(`-${ts} ${r.snippet.slice(0, 2000)}`);
     }
   }
 
@@ -3463,6 +3464,7 @@ export async function handleVaultHttp(args: unknown): Promise<TextContent[]> {
     method: input.method,
     url: input.url,
     injectHeader: input.inject_header,
+    injectScheme: input.inject_scheme,
     body: input.body,
   });
   // CapabilityResult JSON only — blocked reasons, never the secret.

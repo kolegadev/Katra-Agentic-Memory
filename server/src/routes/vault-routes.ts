@@ -341,6 +341,9 @@ export const create_vault_routes = (opts: VaultRoutesOptions = {}): Hono => {
     if (b.body !== undefined && b.body !== null && typeof b.body !== 'string') {
       return c.json({ success: false, error: 'vault: body must be a string' }, 400);
     }
+    if (b.inject_scheme !== undefined && b.inject_scheme !== null && typeof b.inject_scheme !== 'string') {
+      return c.json({ success: false, error: 'vault: inject_scheme must be a string' }, 400);
+    }
     const input: CapabilityInput = {
       caller: getCaller(),
       secretId: b.secret_id,
@@ -348,6 +351,7 @@ export const create_vault_routes = (opts: VaultRoutesOptions = {}): Hono => {
       method: b.method,
       url: b.url,
       injectHeader: b.inject_header,
+      injectScheme: typeof b.inject_scheme === 'string' ? b.inject_scheme : undefined,
       body: typeof b.body === 'string' ? b.body : undefined,
     };
     try {
