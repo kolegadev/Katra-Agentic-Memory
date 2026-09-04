@@ -117,6 +117,13 @@ const PLAINTEXT_PATTERNS: { label: string; re: RegExp }[] = [
 ];
 const PLAINTEXT_TRIGGER_SRC = 'wpa_passphrase|wpa_key|psk|password|passwd|api[._-]?key';
 
+/** Known placeholder values that must never be reported as secrets. */
+const PLACEHOLDER_VALUES: ReadonlySet<string> = new Set([
+  'default_api_key', 'change-me', 'changeme', 'example', 'placeholder',
+  'your-api-key', 'your_api_key', 'password', 'admin', 'admin123',
+  '12345678', '123456789', '<password>',
+]);
+
 // ── Internal helpers ───────────────────────────────────────────────────────
 
 function contentText(content: unknown): string {
@@ -367,13 +374,28 @@ export async function scanPlaintextSecrets(
 
       let matchedPattern: string | null = null;
       const captured: string[] = [];
+      let realMatch = false;
       for (const { label, re } of PLAINTEXT_PATTERNS) {
         const m = re.exec(text);
         if (m === null) continue;
+        if (m[1] === undefined) continue;
+        const v = m[1];
+        // Skip redaction markers: after a migration run, the doc may contain
+        // '[REDACTED→<secret_id>]' right after a surviving 'password:' label —
+        // the marker is not a secret and must not re-flag the doc.
+        if (v.startsWith('[REDACTED')) continue;
+        // Skip placeholders / masked / trivially-short values: config docs
+        // containing 'api_key: str = DEFAULT_API_KEY' or already-masked
+        // 'katr****2026' text are not plaintext secrets.
+        if (v.length < 6) continue;
+        if (v.includes('*')) continue;
+        const low = v.toLowerCase();
+        if (PLACEHOLDER_VALUES.has(low)) continue;
         if (matchedPattern === null) matchedPattern = label;
-        if (m[1] !== undefined) captured.push(m[1]);
+        realMatch = true;
+        captured.push(v);
       }
-      if (matchedPattern === null) continue; // trigger word without '='/':' etc.
+      if (matchedPattern === null || !realMatch) continue; // trigger word without '='/':' etc.
 
       const redacted = redactText(text, redactionValues(text, captured));
       rows.push({

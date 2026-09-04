@@ -300,6 +300,33 @@ describe.skipIf(!mongoAvailable)('Vault migration (F8) — contract criteria', (
       expect(JSON.stringify(rows)).not.toContain(WIFI_TOKEN);
       expect(JSON.stringify(rows)).not.toContain(KEY_TOKEN);
     });
+
+    it('ignores redaction markers left by a previous migration run', async () => {
+      await semCol().insertMany([
+        { content: 'password: [REDACTED→team:my-team/migrated-password-team-abcd1234] for the router', user_id: 'lilly' },
+        { content: 'api_key: [REDACTED→team:my-team/migrated-api_key-team-ef567890] for the script', user_id: 'lilly' },
+        { content: `wifi password = ${WIFI_TOKEN} still present`, user_id: 'lilly' },
+      ]);
+
+      const rows = await scanPlaintextSecrets(db, { collections: [SEM], maxResults: 10 });
+
+      // only the genuinely unredacted doc is a candidate
+      expect(rows).toHaveLength(1);
+      expect(rows[0].matched_pattern).toBe('password=');
+      expect(JSON.stringify(rows)).not.toContain(WIFI_TOKEN);
+    });
+
+    it('ignores placeholder, masked, and too-short values after the labels', async () => {
+      await semCol().insertMany([
+        { content: 'api_key: str = DEFAULT_API_KEY  # must be configured via katra-hook.json', user_id: 'lilly' },
+        { content: 'api_key = ""  # no key set yet', user_id: 'lilly' },
+        { content: 'password: katr****2026 (already masked)', user_id: 'lilly' },
+        { content: 'password: ab', user_id: 'lilly' }, // too short
+      ]);
+
+      const rows = await scanPlaintextSecrets(db, { collections: [SEM], maxResults: 10 });
+      expect(rows).toHaveLength(0);
+    });
   });
 
   // ── Criterion 5: runMigration dry-run ───────────────────────────────────
