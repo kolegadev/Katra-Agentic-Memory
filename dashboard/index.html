@@ -213,6 +213,7 @@ button{padding:8px 16px;border-radius:var(--radius-sm);border:none;font-size:0.8
       <div class="form-group"><label>Name</label><input type="text" id="vault-name" placeholder="e.g. smtp_password, github_token" autocomplete="off"></div>
       <div class="form-group"><label>Value</label><input type="password" id="vault-value" placeholder="••••••••" autocomplete="new-password"><div class="hint">Sent to the server once, then cleared from this page — never displayed back or kept in browser storage.</div></div>
       <div class="form-group"><label>Scope</label><select id="vault-scope"><option value="private">private (owner only)</option><option value="team">team (shared space)</option></select></div>
+      <div class="form-group" id="vault-owner-row" style="display:none"><label>Owner (private scope)</label><input type="text" id="vault-owner" placeholder="user_id to own this secret — blank = you" autocomplete="off"><div class="hint">Only honored for trusted (admin) callers; otherwise the secret is always pinned to your own identity.</div></div>
       <div style="display:flex;gap:16px;margin-bottom:14px;flex-wrap:wrap">
         <label style="display:flex;align-items:center;gap:6px;font-size:0.8rem;color:var(--text2);cursor:pointer"><input type="checkbox" id="vault-approval" checked style="width:auto"> Approval required</label>
         <label style="display:flex;align-items:center;gap:6px;font-size:0.8rem;color:var(--text2);cursor:pointer"><input type="checkbox" id="vault-rotatable" checked style="width:auto"> Rotatable</label>
@@ -1009,6 +1010,10 @@ async function vaultCreateSecret() {
     approvalRequired: document.getElementById('vault-approval').checked,
     rotatable: document.getElementById('vault-rotatable').checked,
   };
+  if (body.scope === 'private') {
+    const owner = document.getElementById('vault-owner').value.trim();
+    if (owner) body.ownerUserId = owner;
+  }
   const service = document.getElementById('vault-service').value.trim();
   if (service) body.service = service;
   const kind = document.getElementById('vault-kind').value;
@@ -1506,6 +1511,13 @@ function applyIdentity(identity) {
 // ── Init ──
 async function init() {
   loadIdentity();
+  const vaultScopeSel = document.getElementById('vault-scope');
+  const vaultOwnerRow = document.getElementById('vault-owner-row');
+  if (vaultScopeSel && vaultOwnerRow) {
+    vaultScopeSel.addEventListener('change', () => {
+      vaultOwnerRow.style.display = vaultScopeSel.value === 'private' ? '' : 'none';
+    });
+  }
   const svc = await checkHealth();
   if (svc) {
     document.getElementById('refresh-badge').style.display = 'inline';
