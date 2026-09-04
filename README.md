@@ -491,8 +491,32 @@ Each platform can have its own `user_id` (identity) for isolation.
 - **Identity Separation** — Named identities per machine (Satori / Shoshin / Zanshin), personal memories always private, team memory shared by default
 - **Inter-Agent Message Bus** — `Attention:` messages through shared memory, with wake rituals and read receipts
 - **Dashboard** — Web UI for stats, memory scope, and system health
+- **Katra Vault** — Encrypted-at-rest secret store for the team (AES-256-GCM envelope encryption, per-identity partitions, value-free audit, approval-gated capability layer, TOTP-ready agent auth). No secret ever reaches an LLM. Design: [katra-vault-design.md](docs/katra-vault-design.md) · Instructions: [katra-vault-usage.md](docs/katra-vault-usage.md)
 - **Portable Data** — Single `DATA_DIR` env var controls where all data lives
 - **Local-First** — Runs on a Raspberry Pi with zero external API costs
+
+## Katra Vault
+
+Satori ships with a native secure secret store, closing the last plaintext gap
+in the memory stack. Secrets are encrypted at rest with envelope encryption
+(`KATRA_VAULT_MASTER_KEY` from `.env`), partitioned by identity (private or
+team scope), and structurally excluded from the LLM pipeline — vault
+collections are denylisted, tool results are redacted, and every use is
+approval-gated and audit-logged without ever exposing the value.
+
+- **Manage** secrets from the dashboard (Secrets + Approvals tabs), REST
+  (`/api/v1/vault/*`), or MCP (`vault_*` tools).
+- **Use** them only through the server-side capability layer — `vault_http`
+  injects the secret into an outbound request (SSRF-guarded) and returns the
+  response body; per-service drivers (AgentMail) ride on the same core.
+- **TOTP auth** for agent identities is shipped (enrollment QR, replay-safe
+  short-lived sessions); enforcement is opt-in per identity when the team is
+  ready to enroll.
+- **Migration tooling** moves legacy plaintext secrets into the vault and
+  redacts or removes the originals, with redacted audit reports.
+
+Full operator walkthrough: **[docs/katra-vault-usage.md](docs/katra-vault-usage.md)** ·
+Design spec: **[docs/katra-vault-design.md](docs/katra-vault-design.md)**
 
 ## Architecture
 
