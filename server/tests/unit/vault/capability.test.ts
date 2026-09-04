@@ -170,6 +170,8 @@ describe('vault drivers — registry + agentmail (criterion 9)', () => {
       method: 'GET',
       url: 'https://api.agentmail.to/v0/inboxes',
       injectHeader: 'Authorization',
+      // verified live 2026-09-04: AgentMail v0 requires Bearer <key>
+      injectScheme: 'Bearer',
     });
     expect('body' in (calls[0] as Record<string, unknown>)).toBe(false);
 

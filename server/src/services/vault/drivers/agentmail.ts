@@ -60,6 +60,9 @@ function agentmailRequest(
     method,
     url,
     injectHeader: AGENTMAIL_AUTH_HEADER,
+    // Verified live 2026-09-04: the AgentMail v0 API expects
+    // `Authorization: Bearer <api_key>` (raw key → 403).
+    injectScheme: 'Bearer',
   };
   if (body !== undefined) input.body = body;
   return ctx.vaultHttp(input);
