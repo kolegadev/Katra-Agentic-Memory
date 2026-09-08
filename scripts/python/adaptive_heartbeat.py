@@ -33,12 +33,17 @@ HIGH_SALIENCE_THRESHOLD = 0.4
 HIGH_THREAD_THRESHOLD = 3
 
 import docker as _docker
-_client = _docker.DockerClient(base_url='unix:///Users/johnpellew/.colima/default/docker.sock')
+_client = _docker.DockerClient(base_url=os.environ.get(
+    "KATRA_DOCKER_SOCKET", "unix:///var/run/docker.sock"))
+MONGO_URI = os.environ.get(
+    "KATRA_MONGO_URI",
+    "mongodb://admin:change-me@localhost:27017/katra?authSource=admin")
+
 
 def _mongo_query(js):
     mongo = _client.containers.get('katra-mongo')
     exec_id = _client.api.exec_create(mongo.id,
-        ['mongosh', 'mongodb://admin:katra-local-dev@localhost:27017/katra?authSource=admin',
+        ['mongosh', MONGO_URI,
          '--quiet', '--eval', js])
     return _client.api.exec_start(exec_id['Id']).decode('utf-8', errors='replace')
 
@@ -371,7 +376,7 @@ var r = db.episodic_events.insertOne({{
   session_id: "autonomous-loop",
   event_type: "heartbeat_action",
   content: {{ role: "assistant", message: {json.dumps(content)} }},
-  shared_id: "neural-link",
+  shared_id: "my-team",
   metadata: {{ processed: false, source: "adaptive-heartbeat", salience_score: {top['score']}, assigned_agent: "{assigned}", status: "{result['status']}", confidence: {affinity['confidence']}, interval: {interval}, created_at: new Date() }},
   timestamp: new Date()
 }});
