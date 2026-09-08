@@ -451,6 +451,7 @@ export async function ensureClientKeys(options: {
       { user_id: 'shoshin', display_name: 'Shoshin' },
       { user_id: 'zanshin', display_name: 'Zanshin' },
       { user_id: 'lilly', display_name: 'Lilly' },
+      { user_id: 'natasha', display_name: 'Natasha' },
     ];
     for (const agent of agents) {
       if (byUser.has(agent.user_id)) continue;
@@ -484,7 +485,8 @@ export async function ensureClientKeys(options: {
       }
       console.log('');
       console.log('  Hand these keys to the named machines (iMac trading → shoshin,');
-      console.log('  iMac OpenCode → zanshin). Only sha256 hashes are stored in the');
+      console.log('  iMac OpenCode → zanshin, natasha-macbook-pro → natasha).');
+      console.log('  Only sha256 hashes are stored in the');
       console.log('  database (system_settings.client_keys) — plaintext is not.');
       console.log('═══════════════════════════════════════════════════════════');
       console.log('');
