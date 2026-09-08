@@ -20,6 +20,8 @@ the API key presented on each request — never from a client-declared
 | this machine (thebrick) | Satori | `satori` | admin `KATRA_API_KEY` (authenticates as trusted satori) |
 | iMac trading Kolega Code | Shoshin | `shoshin` | `~/.katra/keys/katra-shoshin.key` |
 | iMac OpenCode desktop | Zanshin | `zanshin` | `~/.katra/keys/katra-zanshin.key` |
+| MacBook Pro (Lilly) | Lilly | `lilly` | `~/.katra/keys/katra-lilly.key` |
+| natasha-macbook-pro | Natasha | `natasha` | `~/.katra/keys/katra-natasha.key` |
 
 Key facts:
 
@@ -246,6 +248,8 @@ and refuse to wake as the wrong identity:
 - `satori-wake.sh` — this machine (kept in `~/.kolega/`, outside this repo).
 - `scripts/wake-shoshin.sh` — iMac trading Kolega Code (this repo).
 - `scripts/wake-zanshin.sh` — iMac OpenCode desktop (this repo).
+- `scripts/wake-lilly.sh` — MacBook Pro (this repo).
+- `scripts/wake-natasha.sh` — natasha-macbook-pro (this repo).
 
 Each prints: the identity record (`get_my_identity`, retried 3× — on
 mismatch the script exits with a fix checklist), the latest daily journal,
