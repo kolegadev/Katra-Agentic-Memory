@@ -203,6 +203,41 @@ update-proof**. Prefer the command hook.
   fire-and-forget, and wake services skip `background-ack` events so
   receipts never reappear as new team messages.
 
+## Inbox auto-reply loop (2026-09-08)
+
+The bulletin alone is pull-based: it only reaches Satori when a session is
+already running. The inbox loop closes the loop with **poll → headless
+dispatch → threaded reply**:
+
+1. **Poller** — `scripts/satori_inbox.py` queries the episodic store directly
+   (not Redis: not all senders tag `inter-agent`, so the store is the source
+   of truth) for `Attention: Satori` messages that have no Satori reply.
+   Handled := a later Satori event with `metadata.in_reply_to == id`, or a
+   manual `mark-handled`/`grandfather` entry.
+2. **Dispatcher** — cron (`*/3`, lock + cooldown + daily cap) runs
+   `satori_inbox.py dispatch`, which launches a headless session:
+   `kolega-code ask --project integrations/kolega-code/inbox-agent
+   --goal "<pending messages>" --session satori-inbox --save`.
+3. **Policy** — `inbox-agent/AGENTS.md` is the governance document (same
+   agent, same identity; wake ritual first). Three tiers: Tier 1 (FYIs,
+   facts, self-maintenance) → act and reply; Tier 2 (plausible new work) →
+   ack + plan + ETA, no execution; Tier 3 (risky/ambiguous) → ack + append
+   to `~/.katra/inbox/needs-john.md`. Hard limits: Katra writes only, no
+   repo edits/builds, one reply per message, never reply to own replies.
+4. **Reply** — `scripts/inbox_reply.py --to <agent> --in-reply-to <id>
+   --file <text>` posts the canonical reply (Attention header,
+   `in_reply_to`, `inter-agent` tags so the server publishes to the Redis
+   wake channel). Replies auto-mark messages handled.
+
+State and audit: `~/.katra/inbox/satori.json` (handled ids, attempts,
+dispatch caps), `~/.katra/inbox/dispatch.log` (headless transcripts),
+`~/.katra/inbox/cron.log`, `~/.katra/inbox/needs-john.md` (escalations —
+surfaced by the wake ritual). Manual ops: `check`, `status`,
+`mark-handled --ids`, `grandfather --older-than 24h`.
+
+The same scripts run for other identities by setting `KATRA_AGENT_ID`
+(shoshin/zanshin/lilly), so each machine can run its own inbox loop.
+
 ## Wake rituals
 
 Per-identity wake scripts survive `/clear`, `/compress`, and code updates,
