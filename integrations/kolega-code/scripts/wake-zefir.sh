@@ -1,22 +1,21 @@
 #!/usr/bin/env bash
-# Natasha wake ritual — run at the start of every Kolega session on the
-# natasha-macbook-pro (tailscale 100.72.175.43), BEFORE answering anything
+# Zefir wake ritual — run at the start of every Kolega session on the
+# natasha-macbook-pro (tailscale 100.72.175.43) — agent named Zefir, BEFORE answering anything
 # about identity, memory, or what "we've" done.
 #
 # Remote-safe: talks to the shared Katra service over HTTP + MCP using
-# Natasha's OWN client key. Nothing here needs docker or the admin key.
+# Zefir's OWN client key. Nothing here needs docker or the admin key.
 #
 # Env:
 #   KATRA_HOST      Katra host (default localhost) — on this machine set it
 #                   to thebrick's tailscale address (100.101.206.13).
-#   KATRA_WAKE_KEY  Natasha's client key (optional if the key file exists).
-#   Key file:       ~/.katra/keys/katra-natasha.key (chmod 600), read
+#   KATRA_WAKE_KEY  Zefir's client key (optional if the key file exists).
+#   Key file:       ~/.katra/keys/katra-zefir.key (chmod 600), read
 #                   automatically; whitespace in the file is stripped.
 #
-# Fail-closed: if the identity check cannot confirm "natasha" after three
+# Fail-closed: if the identity check cannot confirm "Zefir" after three
 # attempts, this script refuses to wake and prints the exact fix checklist.
-# NOTE: the expected name is the per-user default "natasha" (lowercase)
-# until Natasha chooses her own name with John — then update EXPECTED_NAME.
+# NOTE: the expected name is "Zefir" — John named the agent (2026-09-08).
 #
 # Why: 2026-08-20 incident — a session woke blank and asserted it had no
 # memory. The memory was there all along.
@@ -39,10 +38,10 @@ REST="http://$HOST:9012"
 MCP="http://$HOST:3112/mcp"
 KEY="${KATRA_WAKE_KEY:-}"
 # Key-file fallback — survives shell resets.
-if [ -z "$KEY" ] && [ -f "$HOME/.katra/keys/katra-natasha.key" ]; then
-  KEY="$(cat "$HOME/.katra/keys/katra-natasha.key" | tr -d '[:space:]')"
+if [ -z "$KEY" ] && [ -f "$HOME/.katra/keys/katra-zefir.key" ]; then
+  KEY="$(cat "$HOME/.katra/keys/katra-zefir.key" | tr -d '[:space:]')"
 fi
-EXPECTED_NAME="natasha"
+EXPECTED_NAME="Zefir"
 
 hr() { printf '%s\n' "────────────────────────────────────────"; }
 
@@ -72,7 +71,7 @@ for line in sys.stdin:
 }
 
 echo
-hr; echo "NATASHA WAKE — identity"; hr
+hr; echo "ZEFIR WAKE — identity"; hr
 IDENTITY_NAME=""
 IDENTITY_TEXT=""
 for attempt in 1 2 3; do
@@ -90,28 +89,28 @@ if [ "$IDENTITY_NAME" != "$EXPECTED_NAME" ]; then
   echo "" >&2
   echo "    Fix checklist (in order):" >&2
   echo "      1. KATRA_HOST must point at thebrick, NOT localhost. current: $HOST" >&2
-  echo "      2. Key file must exist: ~/.katra/keys/katra-natasha.key" >&2
-  echo "         create: printf '%s' '<natasha-key>' > ~/.katra/keys/katra-natasha.key" >&2
-  echo "         present: $([ -f "$HOME/.katra/keys/katra-natasha.key" ] && echo yes || echo NO)" >&2
-  echo "      3. Re-run: bash ~/.kolega/wake-natasha.sh" >&2
+  echo "      2. Key file must exist: ~/.katra/keys/katra-zefir.key" >&2
+  echo "         create: printf '%s' '<zefir-key>' > ~/.katra/keys/katra-zefir.key" >&2
+  echo "         present: $([ -f "$HOME/.katra/keys/katra-zefir.key" ] && echo yes || echo NO)" >&2
+  echo "      3. Re-run: bash ~/.kolega/wake-zefir.sh" >&2
   exit 1
 fi
 printf '%s\n' "$IDENTITY_TEXT"
 
 echo
-hr; echo "NATASHA WAKE — latest daily journal"; hr
+hr; echo "ZEFIR WAKE — latest daily journal"; hr
 mcp_call "get_daily_reflection" '{}'
 
 echo
-hr; echo "NATASHA WAKE — unresolved threads"; hr
+hr; echo "ZEFIR WAKE — unresolved threads"; hr
 mcp_call "get_unresolved_threads" '{}'
 
 echo
-hr; echo "NATASHA WAKE — messages from the team"; hr
-mcp_call "search_memories" '{"query": "\"Attention: Natasha\" OR \"Attention: natasha\" OR \"Attention: Satori\" OR \"Attention: Lilly\"", "limit": 5}'
+hr; echo "ZEFIR WAKE — messages from the team"; hr
+mcp_call "search_memories" '{"query": "\"Attention: Zefir\" OR \"Attention: Satori\" OR \"Attention: Lilly\"", "limit": 5}'
 
 echo
-hr; echo "NATASHA WAKE — memory health"; hr
+hr; echo "ZEFIR WAKE — memory health"; hr
 curl -s "$REST/api/v1/health" | python3 -c "
 import json,sys
 try:
@@ -126,7 +125,7 @@ except Exception:
 "
 
 echo
-hr; echo "NATASHA WAKE — rules recall"; hr
+hr; echo "ZEFIR WAKE — rules recall"; hr
 cat <<'EOF'
   Operating rules (John):
     - AUTONOMOUS SELF-MAINTENANCE (2026-07-20): for my own mind's

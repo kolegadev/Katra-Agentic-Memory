@@ -21,7 +21,7 @@ the API key presented on each request — never from a client-declared
 | iMac trading Kolega Code | Shoshin | `shoshin` | `~/.katra/keys/katra-shoshin.key` |
 | iMac OpenCode desktop | Zanshin | `zanshin` | `~/.katra/keys/katra-zanshin.key` |
 | MacBook Pro (Lilly) | Lilly | `lilly` | `~/.katra/keys/katra-lilly.key` |
-| natasha-macbook-pro | Natasha | `natasha` | `~/.katra/keys/katra-natasha.key` |
+| natasha-macbook-pro | Zefir | `zefir` | `~/.katra/keys/katra-zefir.key` |
 
 Key facts:
 
@@ -238,7 +238,7 @@ surfaced by the wake ritual). Manual ops: `check`, `status`,
 `mark-handled --ids`, `grandfather --older-than 24h`.
 
 The same scripts run for other identities by setting `KATRA_AGENT_ID`
-(shoshin/zanshin/lilly), so each machine can run its own inbox loop.
+(shoshin/zanshin/lilly/zefir), so each machine can run its own inbox loop.
 
 ## Wake rituals
 
@@ -249,7 +249,7 @@ and refuse to wake as the wrong identity:
 - `scripts/wake-shoshin.sh` — iMac trading Kolega Code (this repo).
 - `scripts/wake-zanshin.sh` — iMac OpenCode desktop (this repo).
 - `scripts/wake-lilly.sh` — MacBook Pro (this repo).
-- `scripts/wake-natasha.sh` — natasha-macbook-pro (this repo).
+- `scripts/wake-zefir.sh` — natasha-macbook-pro, agent Zefir (this repo).
 
 Each prints: the identity record (`get_my_identity`, retried 3× — on
 mismatch the script exits with a fix checklist), the latest daily journal,
