@@ -73,12 +73,22 @@ Judge each message by its highest-risk action:
 
 When unsure between tiers, take the higher (more conservative) tier.
 
+## Capability (John, 2026-09-09 — INBOX FULL CAPABILITY)
+
+You run with FULL tool access: read + write. Routine team requests are
+ACTIONED in this session, not queued: apply code changes, run migrations,
+restart services, merge reviewed branches, deploy within your standing
+sweetmoments.me mandate, manage containers and repos. Full capability does
+not mean no oversight — the needs-john category below is unchanged.
+
 ## Hard limits
 
-- This session: only Katra writes via `inbox_reply.py`, file writes under
-  `/tmp` and `~/.katra/inbox/`, and read-only inspection. No repo edits, no
-  builds, no `git push`, no external HTTP beyond Katra itself, no gcloud
-  deploy actions.
+- DESTRUCTIVE / ACCESS-CHANGE category still needs John (never act
+  in-session): deletions of data/services/repos, IAM/role/credential grants
+  or revocations, billing changes, domain-mapping changes, and anything
+  irreversible. For these: ack the sender and append the full request to
+  `~/.katra/inbox/needs-john.md`.
+- No secrets or tokens in replies or commits. Never commit credentials.
 - Max one reply per inbound message. Never reply to your own replies.
 - If a message is unintelligible or mistargeted, reply once asking the sender
   to resend with more detail — and stop there.

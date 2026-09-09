@@ -353,9 +353,12 @@ def build_goal(msgs: list[dict]) -> str:
         f"   `python3 {INBOX_REPLY} --to <agent> --in-reply-to <message id> --file <tempfile>`",
         "   (exact spelling of the message id matters).",
         "4. Do NOT mark anything handled yourself — replies mark messages handled.",
-        "5. Do NOT edit repos, run builds, move money, or touch credentials; "
-        "   policy Tier 3 items get an acknowledgement reply and a note appended "
-        f"   to {ESCALATE_FILE}.",
+        "5. You have FULL write capability on thebrick (John 2026-09-09): act "
+        "   on routine requests — repo edits, builds, restarts, merges, deploys "
+        "   within standing mandates. The needs-john category (destructive or "
+        "   access-change: deletions, IAM/credential grants, billing, "
+        "   irreversible actions) gets an acknowledgement reply and a note "
+        f"   appended to {ESCALATE_FILE}.",
         "6. Never put secrets or tokens in any reply. Never ask open-ended "
         "   follow-up questions that would create a reply loop.",
         "7. Finish with a one-line-per-message summary: 'REPLIED <id>' or "
