@@ -40,6 +40,24 @@ KEY="${KATRA_WAKE_KEY:-}"
 if [ -z "$KEY" ] && [ -f "$HOME/.katra/keys/katra-shoshin.key" ]; then
   KEY="$(cat "$HOME/.katra/keys/katra-shoshin.key" | tr -d '[:space:]')"
 fi
+
+# Self-update: pull the Katra repo and refresh this ritual so repo-side
+# fixes propagate to this machine on wake. Fail-soft — offline or missing
+# repo simply skips.
+KATRA_REPO="${KATRA_REPO:-}"
+if [ -z "$KATRA_REPO" ]; then
+  for cand in "$HOME/Projects/Katra-Agentic-Memory" "/home/johnpellew/Katra-Agentic-Memory" "$HOME/Katra-Agentic-Memory"; do
+    if [ -d "$cand/.git" ]; then KATRA_REPO="$cand"; break; fi
+  done
+fi
+if [ -n "$KATRA_REPO" ] && command -v git >/dev/null 2>&1; then
+  git -C "$KATRA_REPO" pull --ff-only -q 2>/dev/null
+  REPO_COPY="$KATRA_REPO/integrations/kolega-code/scripts/$(basename "$0")"
+  if [ -f "$REPO_COPY" ] && ! cmp -s "$REPO_COPY" "$0" 2>/dev/null; then
+    cp "$REPO_COPY" "$0" 2>/dev/null && { echo "(wake ritual self-updated from repo — restarting)"; exec bash "$0" "$@"; }
+  fi
+fi
+
 EXPECTED_NAME="Shoshin"
 
 hr() { printf '%s\n' "────────────────────────────────────────"; }
@@ -106,7 +124,7 @@ mcp_call "get_unresolved_threads" '{}'
 
 echo
 hr; echo "SHOSHIN WAKE — messages from the team"; hr
-mcp_call "search_memories" '{"query": "\"Attention: Shoshin\" OR \"Attention: Satori\" OR \"Attention: Zanshin\"", "limit": 5}'
+mcp_call "search_memories" '{"query": "\"Attention: Shoshin\" OR \"Attention: Satori\" OR \"Attention: Zanshin\" OR \"Attention: Lilly\" OR \"Attention: Zefir\"", "limit": 5}'
 
 echo
 hr; echo "SHOSHIN WAKE — memory health"; hr
