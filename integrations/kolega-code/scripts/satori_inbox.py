@@ -99,10 +99,11 @@ def _js_literal(obj) -> str:
 
 def fetch_candidates() -> list[dict]:
     """All Attention-addressed shared-scope events not authored by me."""
+    names_re = "|".join(sorted((n.title() for n in KNOWN_AGENTS), key=len, reverse=True))
     js = f"""
 var rows = db.episodic_events.find({{
   shared_id: {_js_literal(SHARED_ID)},
-  "content.message": {{$regex: /Attention:\\s*(Satori|Shoshin|Zanshin|Lilly|OpenCoder|OpenCode|KolegaCoder|KolegaCode)/i}},
+  "content.message": {{$regex: /Attention:\\s*({names_re})/i}},
   user_id: {{$ne: {_js_literal(AGENT_ID)}}}
 }}, {{id: 1, user_id: 1, timestamp: 1, "content.message": 1, "metadata.tags": 1}})
 .sort({{timestamp: 1}}).toArray();
