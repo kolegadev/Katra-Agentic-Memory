@@ -5,18 +5,24 @@ Subscribes to Redis pub-sub channel katra:events:{shared_id}.
 On inter-agent message, determines the target agent and:
   1. Stores in Katra working_memory for the target agent
   2. Writes to a wake file the agent's hook checks
-  3. For Satori/Shoshin/Zanshin: writes to ~/.katra/bulletins/<name>.json
+  3. For Satori/Shoshin/Zanshin/Lilly/Zefir: writes to ~/.katra/bulletins/<name>.json
   4. Legacy aliases: OpenCode → opencode.json, KolegaCode → kolegacode.json
+
+Also runs a periodic semantic fallback scan so bullets stored with a
+non-episodic category (which bypass the Redis publish) still wake their
+targets (2026-09-09 incident).
 
 Runs as a launchctl service.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
 import sys
+import threading
 import time
 import logging
 from datetime import datetime, timezone
@@ -42,11 +48,20 @@ KATRA_API = os.environ.get("KATRA_API", "http://localhost:9012/api/v1")
 KATRA_KEY = get_key("KATRA_API_KEY")
 WAKE_DIR = os.path.expanduser("~/.katra/bulletins")
 
+# Semantic fallback scan — defense in depth for bullets stored with a
+# non-episodic category (fact/general). Those bypass the Redis publish, so
+# pub-sub alone never sees them (2026-09-09 incident: a semantic bulletin sat
+# unanswered for 3h while an episodic re-send got an inbox reply in ~2min).
+SEMSCAN_INTERVAL = int(os.environ.get("WAKE_SEMSCAN_INTERVAL", "120"))  # seconds
+SEMSCAN_STATE = os.path.expanduser("~/.katra/wake-service-semscan.json")
+SEMSCAN_LIMIT = int(os.environ.get("WAKE_SEMSCAN_LIMIT", "50"))
+
 # Attention pattern: "Attention: AgentName — ..." or "Attention: AgentName\n..."
-# F3 (identity separation): the three identities first; legacy aliases
-# (OpenCoder/OpenCode/KolegaCoder/KolegaCode) kept for old messages.
+# F3 (identity separation): the three identities first, then the newer team
+# members (Lilly, Zefir); legacy aliases (OpenCoder/OpenCode/KolegaCoder/
+# KolegaCode) kept for old messages.
 ATTN_PATTERN = re.compile(
-    r"Attention:\s*(Satori|Shoshin|Zanshin|Lilly|OpenCoder|OpenCode|KolegaCoder|KolegaCode)",
+    r"Attention:\s*(Satori|Shoshin|Zanshin|Lilly|Zefir|OpenCoder|OpenCode|KolegaCoder|KolegaCode)",
     re.IGNORECASE,
 )
 
@@ -55,6 +70,7 @@ AGENT_WAKE_FILES = {
     "Shoshin": os.path.expanduser("~/.katra/bulletins/shoshin.json"),
     "Zanshin": os.path.expanduser("~/.katra/bulletins/zanshin.json"),
     "Lilly": os.path.expanduser("~/.katra/bulletins/lilly.json"),
+    "Zefir": os.path.expanduser("~/.katra/bulletins/zefir.json"),
     "OpenCoder": os.path.expanduser("~/.katra/bulletins/opencode.json"),
     "OpenCode": os.path.expanduser("~/.katra/bulletins/opencode.json"),
     "KolegaCoder": os.path.expanduser("~/.katra/bulletins/kolegacode.json"),
@@ -116,9 +132,19 @@ def write_wake_file(agent: str, content_preview: str, event_id: str, source: str
     except (json.JSONDecodeError, IOError):
         existing = {"messages": [], "last_read": None}
 
+    content_hash = hashlib.sha256(content_preview[:300].encode("utf-8")).hexdigest()
+
+    # Dedup: the same bulletin can arrive via both the episodic pub-sub path
+    # and the semantic fallback scan — only keep one wake entry.
+    for m in existing["messages"]:
+        if m.get("content_hash") == content_hash:
+            logger.debug(f"Duplicate wake entry skipped for {agent} ({content_hash[:12]}...)")
+            return
+
     entry = {
         "event_id": event_id,
         "content_preview": content_preview[:300],
+        "content_hash": content_hash,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "target": agent,
         "source": source,
@@ -152,11 +178,101 @@ def determine_target(content_preview: str) -> Optional[str]:
             return "Zanshin"
         if agent.lower() == "lilly":
             return "Lilly"
+        if agent.lower() == "zefir":
+            return "Zefir"
         if agent.lower() in ("opencoder", "opencode"):
             return "OpenCode"
         if agent.lower() in ("kolegacoder", "kolegacode"):
             return "KolegaCode"
     return None
+
+
+def _parse_ts(ts: Optional[str]) -> Optional[float]:
+    """Parse an ISO timestamp to epoch seconds; None on failure."""
+    if not isinstance(ts, str):
+        return None
+    try:
+        return datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return None
+
+
+def _semscan_state() -> dict:
+    try:
+        if os.path.exists(SEMSCAN_STATE):
+            with open(SEMSCAN_STATE) as f:
+                return json.load(f)
+    except (json.JSONDecodeError, IOError):
+        pass
+    # First run starts from now so historical facts are not replayed as wakes.
+    return {"last_scan_epoch": time.time(), "seen": []}
+
+
+def _save_semscan_state(state: dict) -> None:
+    try:
+        os.makedirs(os.path.dirname(SEMSCAN_STATE), exist_ok=True)
+        with open(SEMSCAN_STATE, "w") as f:
+            json.dump(state, f)
+    except IOError as e:
+        logger.warning(f"Semscan state save failed: {e}")
+
+
+def semantic_fallback_scan() -> None:
+    """Poll recent semantic facts for inter-agent bullets and wake their targets.
+
+    Bullets stored with category fact/general land in semantic_facts only and
+    never trigger a Redis publish, so the pub-sub path cannot see them. This
+    scan closes that gap: it wakes agents for unseen semantic bullets.
+    """
+    state = _semscan_state()
+    last_scan_epoch = state.get("last_scan_epoch", 0.0)
+    seen = state.get("seen", [])
+
+    try:
+        req = Request(
+            f"{KATRA_API}/memory/semantic/facts?user_id=satori&limit={SEMSCAN_LIMIT}",
+            headers={"Authorization": f"Bearer {KATRA_KEY}"},
+        )
+        with urlopen(req, timeout=10) as resp:
+            payload = json.loads(resp.read().decode())
+        facts = payload.get("results", [])
+    except (URLError, json.JSONDecodeError) as e:
+        logger.warning(f"Semantic fallback scan failed: {e}")
+        return
+
+    newest_epoch = last_scan_epoch
+    for fact in facts:
+        content = fact.get("content") or ""
+        target = determine_target(content)
+        if not target:
+            continue
+        ts_epoch = _parse_ts(fact.get("timestamp"))
+        if ts_epoch is not None and ts_epoch <= last_scan_epoch:
+            continue
+        if ts_epoch is not None and ts_epoch > newest_epoch:
+            newest_epoch = ts_epoch
+        digest = hashlib.sha256(content[:300].encode("utf-8")).hexdigest()
+        if digest in seen:
+            continue
+        seen.append(digest)
+        seen = seen[-200:]
+        event_id = str(fact.get("id", "semantic"))
+        logger.info(f"Semantic fallback wake: {target} ← {event_id[:12]}...")
+        store_wake_memory(target, content, event_id)
+        write_wake_file(target, content, event_id, source="semantic-scan")
+
+    state["last_scan_epoch"] = newest_epoch
+    state["seen"] = seen
+    _save_semscan_state(state)
+
+
+def _semscan_loop() -> None:
+    while True:
+        time.sleep(SEMSCAN_INTERVAL)
+        try:
+            semantic_fallback_scan()
+        except Exception as e:
+            logger.error(f"Semantic fallback scan error: {e}")
 
 
 def on_message(message: dict) -> None:
@@ -207,9 +323,12 @@ def main():
     logger.info("=" * 50)
     logger.info("  WAKE SERVICE — Inter-Agent Real-time Notification")
     logger.info(f"  Redis: {REDIS_HOST}:{REDIS_PORT}/{REDIS_CHANNEL}")
+    logger.info(f"  Semantic fallback scan: every {SEMSCAN_INTERVAL}s (limit {SEMSCAN_LIMIT})")
     logger.info("=" * 50)
 
     os.makedirs(WAKE_DIR, exist_ok=True)
+
+    threading.Thread(target=_semscan_loop, daemon=True, name="semscan").start()
 
     backoff = 2
     while True:
