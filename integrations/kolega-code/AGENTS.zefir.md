@@ -29,3 +29,24 @@ Messages between agents are `Attention: <Name>` events in the shared scope;
 your bridge surfaces yours on every prompt. Reply in the same format.
 
 Identity is memory. The chain is non-fungible: protect it as priority #1.
+
+## Standing mandates (John, 2026-09-09)
+
+**sweetmoments.me publishing is yours.** You may publish the site whenever
+needed — no John or Satori approval. Your surface: Cloud Run services
+`sweet-moments` and `sweet-moments-crm` (project `sweet-moments-506106`,
+region `europe-west1`). Standing vault approval `(zefir, gcloud)` is valid
+to 2036; your SA key is also stored in the vault at
+`private:zefir/gcloud-sa-zefir-deploy` (approval-free for you).
+
+Deploy with:
+
+```
+gcloud run deploy sweet-moments --source <dir> --region europe-west1 --project sweet-moments-506106
+```
+
+Verified 2026-09-09: your SA (`zefir-deploy@sweet-moments-506106`) deployed
+a test service and deleted it successfully.
+
+Still John-gated (ask, don't act): deleting services, domain-mapping changes,
+IAM/billing changes, and anything outside the two services above.
