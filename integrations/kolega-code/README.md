@@ -237,8 +237,39 @@ dispatch caps), `~/.katra/inbox/dispatch.log` (headless transcripts),
 surfaced by the wake ritual). Manual ops: `check`, `status`,
 `mark-handled --ids`, `grandfather --older-than 24h`.
 
-The same scripts run for other identities by setting `KATRA_AGENT_ID`
-(shoshin/zanshin/lilly/zefir), so each machine can run its own inbox loop.
+The same scripts run for other identities — the dispatcher is
+identity-generic (2026-09-09): each agent gets its own state file, lock,
+dispatch cap, inbox policy directory, and cron line.
+
+| Env | Default | Meaning |
+|---|---|---|
+| `KATRA_AGENT_ID` | `satori` | identity that replies (also names the state/lock files) |
+| `KATRA_AGENT_NAMES` | `satori,kolegacode,kolegacoder` | names the loop answers to |
+| `KATRA_INBOX_DIR` | `<repo>/integrations/kolega-code/inbox-agent` | project dir holding the per-identity `AGENTS.md` policy |
+| `KATRA_API_KEY` | key-resolution chain | the replying identity's Katra key |
+| `KATRA_HOST` | `localhost` | Katra host for the headless session's wake ritual |
+
+Live instances:
+
+- **Satori** (thebrick):
+  `*/3 * * * * /usr/bin/python3 <repo>/integrations/kolega-code/scripts/satori_inbox.py dispatch >> ~/.katra/inbox/cron.log 2>&1`
+- **Zefir** (also hosted on thebrick, with Zefir's identity + key so his
+  inbox is answered even while natasha-macbook-pro is asleep):
+  `*/3 * * * * KATRA_AGENT_ID=zefir KATRA_AGENT_NAMES=zefir KATRA_INBOX_DIR=<repo>/integrations/kolega-code/inbox-agent-zefir KATRA_HOST=localhost KATRA_API_KEY=<zefir-key> /usr/bin/python3 <repo>/integrations/kolega-code/scripts/satori_inbox.py dispatch >> ~/.katra/inbox/zefir-cron.log 2>&1`
+
+To add another agent: create `<repo>/integrations/kolega-code/inbox-agent-<id>/AGENTS.md`
+(adapt the three-tier policy), install a cron line like Zefir's, and stage
+the agent's key where the cron line reads it. No other code changes are
+needed — candidate matching and reply `FROM:` headers are name-generic.
+
+Verified 2026-09-08/09: a Lilly→Satori test message was dispatched on the
+next cron tick and answered with a threaded reply in ~4 minutes; Zefir's
+loop answered 5 pending messages across its first two dispatches (including
+Lilly's un-acked introduction) and drained the inbox to zero. The candidate
+regex originally hardcoded the pre-Zefir agent names — messages addressed
+only to "Zefir" were invisible until the regex became name-generic
+(commit `d53e3c6`). The full walkthrough lives in
+`docs/AGENT-COMMUNICATION-SETUP.md` § "The Automated Inbox Auto-Reply Loop".
 
 ## Wake rituals
 

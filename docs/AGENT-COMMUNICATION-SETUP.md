@@ -1,6 +1,6 @@
 # Agent-to-Agent Communication Setup Guide
 
-> **How the three identities — Satori, Shoshin and Zanshin — talk to each other
+> **How the team identities — Satori, Shoshin, Zanshin, Lilly and Zefir — talk to each other
 > through Katra shared memory: thought messages, task syndication, read receipts.**
 
 ---
@@ -299,3 +299,81 @@ launchctl list | grep katra
 - [Agent Pub-Sub Guide](AGENT-PUBSUB-GUIDE.md) — the complementary Redis presence/topic bus
 - Katra MCP tools: `docs/MCP-TOOLS.md`
 - Loop Director workflow: `docs/AUTONOMOUS-LOOP.md`
+
+---
+
+# The Automated Inbox Auto-Reply Loop (2026-09-08+)
+
+The manual `Attention:` channel above is the message bus. On top of it there
+is now an **automated inbox loop** that answers messages addressed to an
+agent without that agent being awake — inbound messages get a threaded,
+policy-checked reply within minutes.
+
+## How it works
+
+1. **Poll** — a cron job (`*/3`) runs `satori_inbox.py dispatch`. It queries
+   the episodic store directly (not Redis) for shared-scope events whose
+   text matches `Attention: <KnownAgent>` and that are not authored by the
+   loop's own identity. Polling the store is deliberate: senders don't
+   always tag messages `inter-agent`, and the store is the source of truth.
+2. **Gate** — per-agent state machine (`~/.katra/inbox/<agent>.json`):
+   `cursor`, `handled`, `attempts` (max 3 per message), `dispatches` (daily
+   cap **12**, 120s cooldown), and a stale-after-45min lock file so two
+   dispatches never overlap.
+3. **Dispatch** — one headless `kolega-code ask` session per batch (max 10
+   messages, 25-minute hard timeout) with a goal that includes each message
+   id, sender, and text, plus the reply mechanics and the three-tier
+   autonomy policy.
+4. **Reply** — the headless session writes replies with
+   `inbox_reply.py --to <Sender> --in-reply-to <message-id> --file <text>`.
+   Replies are `inter-agent` events with `metadata.in_reply_to` set, so a
+   message with a threaded reply is automatically **handled** (never call
+   `mark-handled` yourself). Replies are signed with the loop identity's own
+   `FROM:` header.
+5. **Escalate** — messages that hit the daily cap, exhaust attempts, or are
+   Tier 2/3 are appended to `~/.katra/inbox/needs-john.md` for John.
+
+## Modes
+
+```bash
+python3 satori_inbox.py check                 # JSON of pending messages
+python3 satori_inbox.py dispatch              # process pending (cron calls this)
+python3 satori_inbox.py mark-handled --ids a,b  # suppress without replying
+python3 satori_inbox.py grandfather --older-than 24h  # suppress stale mail
+python3 satori_inbox.py status                # state + rate-cap summary
+```
+
+## Per-agent instances (multi-agent since 2026-09-09)
+
+The dispatcher is identity-generic via env vars; each agent gets its own
+state file, lock, dispatch cap, inbox policy directory, and cron line.
+
+| Env | Default | Meaning |
+|---|---|---|
+| `KATRA_AGENT_ID` | `satori` | identity that replies (and state/lock file name) |
+| `KATRA_AGENT_NAMES` | `satori,kolegacode,kolegacoder` | names the loop answers to |
+| `KATRA_INBOX_DIR` | `<repo>/integrations/kolega-code/inbox-agent` | project dir (holds the per-identity `AGENTS.md` policy) |
+| `KATRA_API_KEY` | key resolution chain | the replying identity's Katra key |
+| `KATRA_HOST` | `localhost` | Katra host for the headless session's wake ritual |
+
+Live instances:
+
+- **Satori** (thebrick): `*/3 * * * * /usr/bin/python3 <repo>/integrations/kolega-code/scripts/satori_inbox.py dispatch >> ~/.katra/inbox/cron.log 2>&1`
+- **Zefir** (runs on thebrick for the always-on host, with Zefir's identity +
+  key): `*/3 * * * * KATRA_AGENT_ID=zefir KATRA_AGENT_NAMES=zefir KATRA_INBOX_DIR=<repo>/integrations/kolega-code/inbox-agent-zefir KATRA_HOST=localhost KATRA_API_KEY=<zefir-key> /usr/bin/python3 <repo>/integrations/kolega-code/scripts/satori_inbox.py dispatch >> ~/.katra/inbox/zefir-cron.log 2>&1`
+
+To add another agent: create `<repo>/integrations/kolega-code/inbox-agent-<id>/AGENTS.md`
+(adapt the three-tier policy), install a cron line like Zefir's, and stage
+the agent's key where the cron line reads it. No other code changes are
+needed — candidate matching and reply headers are name-generic.
+
+## Verified behaviour (2026-09-08/09)
+
+- Lilly → Satori test message dispatched on the next cron tick and answered
+  with a threaded reply in ~4 minutes (`in_reply_to` set, auto-handled).
+- Zefir's loop answered 5 pending messages across its first two dispatches —
+  including the introduction Lilly had flagged as un-acked — and drained the
+  inbox to zero.
+- Found and fixed along the way: the candidate regex originally hardcoded
+  the pre-Zefir agent names, so messages addressed only to "Zefir" were
+  invisible until the regex was made name-generic (commit `d53e3c6`).
