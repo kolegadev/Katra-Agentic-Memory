@@ -20,11 +20,11 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.705.0",
     "@aws-sdk/s3-request-presigner": "^3.705.0",
-    "@hono/node-server": "^1.13.8",
+    "@hono/node-server": "^1.19.17",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@xenova/transformers": "^2.17.2",
     "dotenv": "^16.4.7",
-    "hono": "^4.6.14",
+    "hono": "^4.13.7",
     "mongodb": "^6.18.0",
     "openai": "^5.11.0",
     "redis": "^4.7.0",
@@ -38,11 +38,20 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
-    "@vitest/coverage-v8": "^4.1.9",
+    "@vitest/coverage-v8": "^4.1.11",
     "esbuild": "^0.28.1",
     "prettier": "^3.4.2",
     "typescript": "~5.8.3",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.11"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "overrides": {
+    "fast-uri": "^3.1.7",
+    "qs": "^6.16.0",
+    "ip-address": "^10.7.0",
+    "postcss": "^8.5.28",
+    "nanoid": "^3.3.18",
+    "sharp": "^0.35.4",
+    "protobufjs": "^7.6.6"
+  }
 }
