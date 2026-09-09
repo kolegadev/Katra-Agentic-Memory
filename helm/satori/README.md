@@ -211,7 +211,7 @@ Current-system notes:
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `secrets.KATRA_API_KEY` | string | `""` (auto-generated, 32 chars) | Admin API key — authenticates the trusted `satori` identity |
+| `secrets.KATRA_API_KEY` | string | `""` (auto-generated, 32 chars) | Admin API key — authenticates the trusted machine identity |
 | `secrets.MONGODB_URI` | string | `""` (auto from subchart) | MongoDB connection string |
 | `secrets.REDIS_URL` | string | `""` (auto from subchart) | Redis connection URL |
 | `secrets.LLM_API_KEY` | string | `""` | LLM provider API key |
@@ -222,8 +222,8 @@ Current-system notes:
 
 Identity separation: the server resolves the calling identity from the API
 key presented on each request (`X-MCP-Auth` header, `Authorization: Bearer`,
-or `?token=` URL param). `KATRA_API_KEY` authenticates as the trusted satori
-identity; additional per-identity client keys (shoshin, zanshin) are
+or `?token=` URL param). `KATRA_API_KEY` authenticates as the trusted machine
+identity; additional per-identity client keys are
 provisioned by the server itself at boot — you do not set them here.
 
 ### External Secret

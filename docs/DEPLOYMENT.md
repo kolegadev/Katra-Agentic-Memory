@@ -3,7 +3,7 @@
 ## Install script (Recommended)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kolegadev/Satori-Agentic-Memory/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/kolegadev/Katra-Agentic-Memory/main/install.sh | bash
 ```
 
 That clones the source to `~/.katra/src`, generates a `.env` with real
@@ -18,7 +18,7 @@ Useful flags:
 | Flag | Effect |
 |---|---|
 | `--with-watcher` | Also install the host-side session watcher (see below) |
-| `--with-systemd` | Install the boot unit so Satori starts on reboot (needs sudo) |
+| `--with-systemd` | Install the boot unit so Katra starts on reboot (needs sudo) |
 | `--rebuild` | Rebuild and recreate just the server container, then verify |
 | `--no-start` | Write config but don't start containers |
 | `--dir PATH` | Where to clone/find the source (default `~/.katra/src`) |
@@ -29,7 +29,7 @@ Useful flags:
 Passing flags through a pipe needs `bash -s --`:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kolegadev/Satori-Agentic-Memory/main/install.sh \
+curl -fsSL https://raw.githubusercontent.com/kolegadev/Katra-Agentic-Memory/main/install.sh \
   | bash -s -- --with-watcher --with-systemd
 ```
 
@@ -45,8 +45,8 @@ It is also idempotent: re-running it against an existing install keeps your
 If you'd rather do it by hand:
 
 ```bash
-git clone https://github.com/kolegadev/Satori-Agentic-Memory.git
-cd Satori-Agentic-Memory
+git clone https://github.com/kolegadev/Katra-Agentic-Memory.git
+cd Katra-Agentic-Memory
 cp .env.example .env
 # Required: MONGO_PASS, MINIO_USER, MINIO_PASS — compose refuses to start
 # without them. See "Credentials" below for the two pairs that must match.
@@ -127,15 +127,9 @@ Inside the container the server binds to `9002` (REST) and `3100` (MCP). The hos
 
 Katra resolves caller identity from the API key presented on a request
 (`X-MCP-Auth` or `Authorization: Bearer` headers, or a `?token=` URL
-parameter) — never from client self-report. One Katra, three named
-identities plus one tool actor:
-
-| Identity | Machine | Notes |
-|---|---|---|
-| `satori` | This machine (the server host) | `KATRA_API_KEY` authenticates as trusted satori |
-| `shoshin` | iMac trading Kolega Code | Own client key, auto-provisioned |
-| `zanshin` | iMac OpenCode desktop | Own client key, auto-provisioned |
-| `gas-law-watcher` | — | Tool actor: writes team memory only, never allocated |
+parameter) — never from client self-report. One Katra serves any number of
+named identities (one per machine or agent) plus optional tool actors that
+write team memory only.
 
 Client keys are provisioned idempotently at boot (`ensureClientKeys()`),
 stored only as sha256 hashes in `system_settings.client_keys`, and printed
@@ -143,10 +137,8 @@ once in the server log under the "Client keys (identity separation)" block —
 the plaintext is never stored anywhere. A valid-but-unmapped key is rejected
 with 401 + reason: loud failure, no silent fallback. The legacy env keys
 (`MCP_API_KEY`, `BACKUP_MCP_KEYS`) were retired at the 2026-08-21 cutover and
-no longer authenticate. See
-[`docs/runbook-identity-cutover.md`](runbook-identity-cutover.md) for the
-cutover runbook and [`docs/contracts/identity-separation.md`](contracts/identity-separation.md)
-for the design contract.
+no longer authenticate. Deployment-specific cutover runbooks and the design
+contract live in the git-ignored `private/` folder.
 
 ### Docker Build Details
 
@@ -172,15 +164,15 @@ node esbuild.config.mjs
 # Set environment variables
 export MONGODB_URI="mongodb://admin:password@localhost:27017/katra?authSource=admin"
 export REDIS_URL="redis://localhost:6379"
-export KATRA_API_KEY="your-admin-key"   # Admin key — authenticates as trusted satori
-export SOLOMEM_USER_ID="satori"         # The server's own default identity (optional)
+export KATRA_API_KEY="your-admin-key"   # Admin key — authenticates as the trusted machine identity
+export SOLOMEM_USER_ID="your-agent"     # The server's own default identity (optional)
 export DEEPSEEK_API_KEY="sk-..."        # Optional
 
 node build/index.js
 ```
 
-There is no separate MCP key to set: client keys for the other identities
-(`shoshin`, `zanshin`) are provisioned automatically at boot as sha256 hashes
+There is no separate MCP key to set: client keys for additional identities
+are provisioned automatically at boot as sha256 hashes
 in `system_settings.client_keys` and printed once in the server log. The
 legacy `MCP_API_KEY` / `BACKUP_MCP_KEYS` env keys no longer authenticate —
 see [Identity & client keys](#identity--client-keys).
@@ -189,7 +181,7 @@ When running directly on the host, the default ports are `9002` (REST) and `3100
 
 ## Connecting to External Services
 
-Satori can use managed cloud services:
+Katra can use managed cloud services:
 
 ```bash
 # MongoDB Atlas
@@ -243,19 +235,15 @@ chmod 600 ~/.katra/watcher-config.json
 python3 ~/.katra/satori_watcher.py --once --config ~/.katra/watcher-config.json
 ```
 
-Each machine's watcher must use its **own identity and client key**. The
-default on this machine is `satori`; the iMacs override the identity with
+Each machine's watcher must use its **own identity and client key**, set with
 `default_user_id` in the config or `--user-id` per run:
 
 ```bash
 # This machine (default)
-python3 ~/.katra/satori_watcher.py --config ~/.katra/watcher-config.json --user-id satori
+python3 ~/.katra/satori_watcher.py --config ~/.katra/watcher-config.json --user-id your-agent
 
-# iMac trading Kolega Code
-python3 ~/.katra/satori_watcher.py --config ~/.katra/watcher-config.json --user-id shoshin
-
-# iMac OpenCode desktop
-python3 ~/.katra/satori_watcher.py --config ~/.katra/watcher-config.json --user-id zanshin
+# A second machine or agent
+python3 ~/.katra/satori_watcher.py --config ~/.katra/watcher-config.json --user-id other-agent
 ```
 
 Then install the scheduler. On **Linux**, render the unit template:
@@ -322,7 +310,7 @@ which is normal, not an error. What keeps the containers alive after boot is
 
 ## Nginx Reverse Proxy
 
-If you run Satori behind Nginx, proxy the **host-mapped ports** (`9012`/`3112` by
+If you run Katra behind Nginx, proxy the **host-mapped ports** (`9012`/`3112` by
 default; adjust if you changed `HOST_API_PORT`/`HOST_MCP_PORT`):
 
 ```nginx
@@ -377,7 +365,7 @@ katra.example.com {
 
 ## SaaS / Multi-Tenant Mode
 
-Satori supports database-per-tenant isolation for SaaS deployments.
+Katra supports database-per-tenant isolation for SaaS deployments.
 
 ### Enable Multi-Tenancy
 
@@ -437,12 +425,12 @@ installation instructions.
 
 ## Running on Raspberry Pi
 
-Satori is designed to run on a Raspberry Pi 5 (16GB):
+Katra is designed to run on a Raspberry Pi 5 (16GB):
 
 1. Use Docker Compose (recommended)
 2. If building locally, use `node esbuild.config.mjs` (not `tsc`)
 3. Local embeddings (`@xenova/transformers`) work on ARM64
-4. Default memory usage: ~384MB total (MongoDB 254MB, Satori 52MB, MinIO 73MB, Redis 5MB)
+4. Default memory usage: ~384MB total (MongoDB 254MB, Katra 52MB, MinIO 73MB, Redis 5MB)
 
 ## Health Monitoring
 

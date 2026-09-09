@@ -1,6 +1,6 @@
 # Katra Vault — User Instructions
 
-The **Katra Vault** is Satori's built-in secure secret store for the team:
+The **Katra Vault** is Katra's built-in secure secret store for the team:
 encrypted at rest, partitioned by identity, and wired so a secret never passes
 through an LLM. Design rationale and threat model: [katra-vault-design.md](katra-vault-design.md).
 Implementation shipped 2026-09-04 (main, commit `e1392f4`).
@@ -32,7 +32,7 @@ Open `http://localhost:9012/dashboard/` → **Secrets** tab (enter the admin key
 when prompted).
 
 - **Create**: Name, Value (password field, cleared after submit), Scope
-  (`private` shows an **Owner** field — e.g. `lilly`; `team` shares with
+  (`private` shows an **Owner** field — e.g. `alex`; `team` shares with
   everyone), Service (e.g. `agentmail`, `github`), Kind (`api_key`,
   `password`, `token`, `env`), Approval required, Rotatable.
 - **List**: metadata only — the value is never displayed back.
@@ -44,12 +44,12 @@ when prompted).
 ```bash
 curl -X POST localhost:9012/api/v1/vault/secrets \
   -H "Authorization: Bearer $KATRA_API_KEY" -H "Content-Type: application/json" \
-  -d '{"name":"agentmail-api-key","value":"...","scope":"private","ownerUserId":"lilly","service":"agentmail","kind":"api_key"}'
-# → {"secret_id":"lilly/agentmail-api-key","created":true}
+  -d '{"name":"agentmail-api-key","value":"...","scope":"private","ownerUserId":"alex","service":"agentmail","kind":"api_key"}'
+# → {"secret_id":"alex/agentmail-api-key","created":true}
 
 curl localhost:9012/api/v1/vault/secrets -H "Authorization: Bearer $KATRA_API_KEY"
-curl -X POST localhost:9012/api/v1/vault/secrets/lilly%2Fagentmail-api-key/rotate -H "Authorization: Bearer $KATRA_API_KEY"
-curl -X DELETE localhost:9012/api/v1/vault/secrets/lilly%2Fagentmail-api-key -H "Authorization: Bearer $KATRA_API_KEY"
+curl -X POST localhost:9012/api/v1/vault/secrets/alex%2Fagentmail-api-key/rotate -H "Authorization: Bearer $KATRA_API_KEY"
+curl -X DELETE localhost:9012/api/v1/vault/secrets/alex%2Fagentmail-api-key -H "Authorization: Bearer $KATRA_API_KEY"
 ```
 Untrusted (identity-key) callers are always pinned to their own partition;
 `ownerUserId` is honored only for the admin key.
@@ -67,13 +67,13 @@ Secrets are only *used* server-side. Two steps:
    ```bash
    curl -X POST localhost:9012/api/v1/vault/approvals \
      -H "Authorization: Bearer $KATRA_API_KEY" -H "Content-Type: application/json" \
-     -d '{"identity":"lilly","service":"agentmail","ttlDays":30}'
+     -d '{"identity":"alex","service":"agentmail","ttlDays":30}'
    ```
 2. **Call the capability** (identity key):
    ```bash
    curl -X POST localhost:9012/api/v1/vault/capability/http \
-     -H "Authorization: Bearer <lilly-key>" -H "Content-Type: application/json" \
-     -d '{"secret_id":"lilly/agentmail-api-key","service":"agentmail","method":"GET","url":"https://api.agentmail.to/v0/inboxes","inject_header":"Authorization","inject_scheme":"Bearer"}'
+     -H "Authorization: Bearer <alex-key>" -H "Content-Type: application/json" \
+     -d '{"secret_id":"alex/agentmail-api-key","service":"agentmail","method":"GET","url":"https://api.agentmail.to/v0/inboxes","inject_header":"Authorization","inject_scheme":"Bearer"}'
    ```
    `inject_scheme` prefixes the header value (`Bearer <secret>`); omit it to
    send the raw secret. MCP tool: `vault_http`.
@@ -98,7 +98,7 @@ per attempt. Per-service drivers (AgentMail: `inbox_list`, `thread_list`,
 ## Migration tooling (plaintext → vault)
 
 `scripts/vault-migrate.sh` — dry-run by default, destructive only with `--apply`:
-finds legacy plaintext secret docs, imports `~/.katra/keys/agentmail-lilly.key`
+finds legacy plaintext secret docs, imports `~/.katra/keys/agentmail-alex.key`
 if present, hard-deletes flagged legacy docs (or redacts in place), and writes a
 **redacted** audit report (`server/vault-migration-report-*.json`). The scanner
 ignores redaction markers, placeholders, masked and short values, so a clean
@@ -125,4 +125,4 @@ checks. Run: `python3 dashboard/qa/qa_vault_page.py`.
   independently — DNS-rebinding hardening (pin IP + SNI) is a recommended
   follow-up.
 - 5 pre-existing identity-drift test failures (client-key count expectations
-  after the `lilly` identity was added) remain to be fixed.
+  after an additional identity was added) remain to be fixed.

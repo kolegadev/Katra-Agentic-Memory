@@ -14,6 +14,9 @@ __pycache__/
 .vscode/
 .idea/
 
+# Private deployment docs (machine identities, keys, runbooks) — never committed
+private/
+
 # Terraform
 terraform/aws/.terraform/
 terraform/aws/*.tfstate

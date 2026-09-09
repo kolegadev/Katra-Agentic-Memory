@@ -1,8 +1,8 @@
-# scripts/code-graph.mjs — Katra-native code graph (Satori Graph, F5)
+# scripts/code-graph.mjs — Katra-native code graph (Katra Graph, F5)
 
 Scan a codebase root, classify changes against the persisted manifest, and
 sync the structural code graph into `knowledge_nodes` /
-`knowledge_relationships`. This Katra-native graph is the **Satori Graph** —
+`knowledge_relationships`. This Katra-native graph is the **Katra Graph** —
 it replaces the old Graphify toolchain (see "Legacy Graphify migration"
 below). The same capability is exposed to agents through three MCP tools:
 `scan_codebase`, `sync_code_graph`, and `code_graph_status`.
@@ -46,7 +46,7 @@ The script loads the esbuild-built modules under
 
 ## Legacy Graphify migration
 
-The Satori Graph replaces the old Graphify toolchain (previously used by the
+The Katra Graph replaces the old Graphify toolchain (previously used by the
 bug-fix and loop-director skills). Two one-way migration scripts remain for
 historical Graphify data and are not part of the current sync flow:
 
@@ -56,5 +56,5 @@ historical Graphify data and are not part of the current sync flow:
   facts directly into `knowledge_nodes` / `knowledge_relationships`,
   bypassing the episodic backlog.
 
-Use these only to bring over data from a pre-Satori-Graph Graphify export;
+Use these only to bring over data from a pre-Katra-Graph Graphify export;
 ongoing code-graph work goes through the MCP tools or `code-graph.mjs`.

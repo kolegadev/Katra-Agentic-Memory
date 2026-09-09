@@ -1,4 +1,4 @@
-# Kolega ⇄ Katra (Satori) Bridge
+# Kolega ⇄ Katra Bridge
 
 Dynamic Katra memory retrieval for Kolega Code.
 
@@ -11,23 +11,18 @@ for CLIs that fire that event.
 
 ## Identity separation (2026-08-21 cutover)
 
-One Katra, three named identities. Katra resolves the calling identity from
-the API key presented on each request — never from a client-declared
-`user_id`. This bridge is installed per machine with that machine's identity:
-
-| Machine | Identity | `user_id` | Client key |
-|---|---|---|---|
-| this machine (thebrick) | Satori | `satori` | admin `KATRA_API_KEY` (authenticates as trusted satori) |
-| iMac trading Kolega Code | Shoshin | `shoshin` | `~/.katra/keys/katra-shoshin.key` |
-| iMac OpenCode desktop | Zanshin | `zanshin` | `~/.katra/keys/katra-zanshin.key` |
-| MacBook Pro (Lilly) | Lilly | `lilly` | `~/.katra/keys/katra-lilly.key` |
-| natasha-macbook-pro | Zefir | `zefir` | `~/.katra/keys/katra-zefir.key` |
+One Katra, any number of named identities. Katra resolves the calling
+identity from the API key presented on each request — never from a
+client-declared `user_id`. This bridge is installed per machine with that
+machine's identity and its own client key (key files live under
+`~/.katra/keys/katra-<user>.key`; the admin `KATRA_API_KEY` authenticates as
+the trusted machine identity).
 
 Key facts:
 
 - Client keys live in `system_settings.client_keys` as sha256 hashes only.
   The server provisions them idempotently at boot (`ensureClientKeys()`);
-  the shoshin/zanshin plaintext keys are printed once in the
+  the plaintext keys for additional identities are printed once in the
   "Client keys (identity separation)" block of the server log and are never
   stored.
 - A valid-but-unmapped key is REJECTED with 401 + reason — loud failure, no
@@ -57,20 +52,21 @@ install, hook config, hooks.json, live self-test):
 bash /path/to/Katra-Agentic-Memory/integrations/kolega-code/scripts/ensure-bridge.sh
 ```
 
-On the iMacs, run the same script with the machine's own identity and the
-Katra host (thebrick), so the hook config and key file are per-identity:
+On each additional machine, run the same script with the machine's own
+identity and the Katra host, so the hook config and key file are
+per-identity:
 
 ```bash
-KATRA_USER_ID=shoshin KATRA_HOST=<thebrick-address> bash /path/to/Katra-Agentic-Memory/integrations/kolega-code/scripts/ensure-bridge.sh
-KATRA_USER_ID=zanshin KATRA_HOST=<thebrick-address> bash /path/to/Katra-Agentic-Memory/integrations/kolega-code/scripts/ensure-bridge.sh
+KATRA_USER_ID=agent-b KATRA_HOST=<katra-host-address> bash /path/to/Katra-Agentic-Memory/integrations/kolega-code/scripts/ensure-bridge.sh
+KATRA_USER_ID=agent-c KATRA_HOST=<katra-host-address> bash /path/to/Katra-Agentic-Memory/integrations/kolega-code/scripts/ensure-bridge.sh
 ```
 
-Install env (all optional; defaults keep this machine's Satori install
+Install env (all optional; defaults keep this machine's Katra install
 unchanged):
 
 | Env | Default | Meaning |
 |---|---|---|
-| `KATRA_USER_ID` | `satori` | identity written into the hook config |
+| `KATRA_USER_ID` | the machine's own identity | identity written into the hook config |
 | `KATRA_SHARED_ID` | `my-team` | shared scope for non-personal writes |
 | `KATRA_HOST` | `localhost` | Katra host used in `mcp_url` and the self-test |
 | `KATRA_API_KEY` | key file | this machine's client key |
@@ -114,7 +110,7 @@ uv pip install --python .venv/bin/python -e .
    {
      "mcp_url": "http://localhost:3112/mcp",
      "api_key": "<client-key-for-this-identity>",
-     "user_id": "satori",
+     "user_id": "your-agent",
      "shared_id": "my-team",
      "enabled": true,
      "timeout_seconds": 8,
@@ -194,9 +190,9 @@ update-proof**. Prefer the command hook.
 
 - Messages between agents are ordinary `store_memory` events in the shared
   scope (`my-team`) whose text carries an `Attention: <AgentName>` header,
-  e.g. `"Attention: Shoshin — the fix is merged"`.
+  e.g. `"Attention: Alex — the fix is merged"`.
 - On every prompt the bridge scans the shared scope for
-  `Attention: Satori` OR `Attention: Shoshin` OR `Attention: Zanshin`
+  `Attention:` headers addressed to this identity
   (plus legacy pre-cutover aliases) and surfaces hits as the
   🔔 INTER-AGENT BULLETIN at the top of the injected context.
 - When a bulletin is shown, the runner writes a read receipt — a
@@ -207,61 +203,62 @@ update-proof**. Prefer the command hook.
 
 ## Inbox auto-reply loop (2026-09-08)
 
-The bulletin alone is pull-based: it only reaches Satori when a session is
-already running. The inbox loop closes the loop with **poll → headless
-dispatch → threaded reply**:
+The bulletin alone is pull-based: it only reaches the machine's agent when a
+session is already running. The inbox loop closes the loop with **poll →
+headless dispatch → threaded reply**:
 
 1. **Poller** — `scripts/satori_inbox.py` queries the episodic store directly
    (not Redis: not all senders tag `inter-agent`, so the store is the source
-   of truth) for `Attention: Satori` messages that have no Satori reply.
-   Handled := a later Satori event with `metadata.in_reply_to == id`, or a
-   manual `mark-handled`/`grandfather` entry.
+   of truth) for `Attention: <this-identity>` messages that have no reply
+   from this identity. Handled := a later event from this identity with
+   `metadata.in_reply_to == id`, or a manual `mark-handled`/`grandfather`
+   entry.
 2. **Dispatcher** — cron (`*/3`, lock + cooldown + daily cap) runs
    `satori_inbox.py dispatch`, which launches a headless session:
-   `kolega-code ask --project integrations/kolega-code/inbox-agent
-   --goal "<pending messages>" --session satori-inbox --save`.
-3. **Policy** — `inbox-agent/AGENTS.md` is the governance document (same
-   agent, same identity; wake ritual first). Three tiers: Tier 1 (FYIs,
-   facts, self-maintenance) → act and reply; Tier 2 (plausible new work) →
-   ack + plan + ETA, no execution; Tier 3 (risky/ambiguous) → ack + append
-   to `~/.katra/inbox/needs-john.md`. Hard limits: Katra writes only, no
-   repo edits/builds, one reply per message, never reply to own replies.
+   `kolega-code ask --project private/integrations/kolega-code/inbox-agent
+   --goal "<pending messages>" --session <agent>-inbox --save`.
+3. **Policy** — the inbox governance document lives in the git-ignored
+   `private/` folder (same agent, same identity; wake ritual first). Three
+   tiers: Tier 1 (FYIs, facts, self-maintenance) → act and reply; Tier 2
+   (plausible new work) → ack + plan + ETA, no execution; Tier 3
+   (risky/ambiguous) → ack + append to the operator's escalations file.
+   Hard limits: this identity writes only, no repo edits/builds, one reply
+   per message, never reply to own replies.
 4. **Reply** — `scripts/inbox_reply.py --to <agent> --in-reply-to <id>
    --file <text>` posts the canonical reply (Attention header,
    `in_reply_to`, `inter-agent` tags so the server publishes to the Redis
    wake channel). Replies auto-mark messages handled.
 
-State and audit: `~/.katra/inbox/satori.json` (handled ids, attempts,
+State and audit: `~/.katra/inbox/<agent>.json` (handled ids, attempts,
 dispatch caps), `~/.katra/inbox/dispatch.log` (headless transcripts),
-`~/.katra/inbox/cron.log`, `~/.katra/inbox/needs-john.md` (escalations —
+`~/.katra/inbox/cron.log`, `~/.katra/inbox/escalations.md` (escalations —
 surfaced by the wake ritual). Manual ops: `check`, `status`,
 `mark-handled --ids`, `grandfather --older-than 24h`.
 
-The same scripts run for other identities by setting `KATRA_AGENT_ID`
-(shoshin/zanshin/lilly/zefir), so each machine can run its own inbox loop.
+The same scripts run for other identities by setting `KATRA_AGENT_ID` to
+that machine's own identity, so each machine can run its own inbox loop.
 
 ## Wake rituals
 
 Per-identity wake scripts survive `/clear`, `/compress`, and code updates,
 and refuse to wake as the wrong identity:
 
-- `satori-wake.sh` — this machine (kept in `~/.kolega/`, outside this repo).
-- `scripts/wake-shoshin.sh` — iMac trading Kolega Code (this repo).
-- `scripts/wake-zanshin.sh` — iMac OpenCode desktop (this repo).
-- `scripts/wake-lilly.sh` — MacBook Pro (this repo).
-- `scripts/wake-zefir.sh` — natasha-macbook-pro, agent Zefir (this repo).
+- a machine-local wake script for the server host (keep yours outside the
+  repo, e.g. `~/.kolega/`), and
+- `scripts/wake-<agent>.sh` — per-identity wake helpers (this repo).
 
 Each prints: the identity record (`get_my_identity`, retried 3× — on
 mismatch the script exits with a fix checklist), the latest daily journal,
 unresolved threads, memory health (`GET /api/v1/health`), rules-recall
 search instructions, and messages from the team (a `search_memories` query
-for `"Attention: Shoshin" OR "Attention: Satori" OR "Attention: Zanshin"`,
-limit 5). Per-machine settings live in `~/.katra/wake-env.sh`
-(`KATRA_HOST`, `KATRA_API_KEY`, `KATRA_USER_ID`); the scripts fall back to
-the key files `~/.katra/keys/katra-<user>.key`.
+for attention headers addressed to this identity, limit 5). Per-machine
+settings live in `~/.katra/wake-env.sh` (`KATRA_HOST`, `KATRA_API_KEY`,
+`KATRA_USER_ID`); the scripts fall back to the key files
+`~/.katra/keys/katra-<user>.key`.
 
-`AGENTS.shoshin.md` and `AGENTS.zanshin.md` hold the per-agent wake guidance
-the CLI re-sends after thread resets and compaction.
+Per-agent wake guidance lives in `AGENTS.<name>.md` files — keep yours in the
+git-ignored `private/` folder. The CLI re-sends them after thread resets and
+compaction.
 
 ## Staying healthy across updates
 
@@ -275,7 +272,7 @@ For hands-off operation, install the self-healing guard (checks the repo
 venv, the CLI venv, the hook config, `hooks.json` (command-type entries),
 and a live runner test every 5 minutes; repairs what it finds, migrates a
 legacy `katra-hook.json` to `satori-hook.json`, and records health
-transitions as episodic events in Satori):
+transitions as episodic events in Katra):
 
 ```bash
 */5 * * * * /usr/bin/python3 /path/to/Katra-Agentic-Memory/watcher/bridge_guard.py --once >/dev/null 2>&1

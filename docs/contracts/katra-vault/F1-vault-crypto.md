@@ -67,8 +67,8 @@ Semantics (from the spec, must hold):
    (emoji + CJK), empty string, 10 KB payload.
 2. Tamper detection: flipping any single byte of `ciphertext`, `tag`, `iv`,
    `dek_wrapped`, `dek_tag`, or `dek_iv` makes `openSecret` throw.
-3. Scope isolation: envelope sealed for `user:lilly` throws when opened with
-   scope `user:shoshin` (same master key).
+3. Scope isolation: envelope sealed for `user:alex` throws when opened with
+   scope `user:agent-b` (same master key).
 4. Master-key isolation: opening with a different master key throws.
 5. Non-determinism + determinism: two seals of the same value produce
    different envelopes but both open to the same plaintext; `deriveScopeKek`
