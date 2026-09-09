@@ -256,10 +256,10 @@ class MemoryRetriever:
         messages addressed to the new names never surfaced.
         """
         attention_names = [
-            f'"Attention: {n}"' for n in ("Satori", "Shoshin", "Zanshin", "KolegaCode", "KolegaCoder", "OpenCode", "OpenCoder")
+            f'"Attention: {n}"' for n in ("Satori", "Shoshin", "Zanshin", "Lilly", "Zefir", "KolegaCode", "KolegaCoder", "OpenCode", "OpenCoder")
         ]
         query = " OR ".join(attention_names)
-        fallback = "Attention: Satori OR Shoshin OR Zanshin OR KolegaCoder OR OpenCode"
+        fallback = "Attention: Satori OR Shoshin OR Zanshin OR Lilly OR Zefir OR KolegaCoder OR OpenCode"
         try:
             messages = await client.search_memories(
                 query,

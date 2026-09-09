@@ -40,6 +40,24 @@ KEY="${KATRA_WAKE_KEY:-}"
 if [ -z "$KEY" ] && [ -f "$HOME/.katra/keys/katra-zanshin.key" ]; then
   KEY="$(cat "$HOME/.katra/keys/katra-zanshin.key" | tr -d '[:space:]')"
 fi
+
+# Self-update: pull the Katra repo and refresh this ritual so repo-side
+# fixes propagate to this machine on wake. Fail-soft — offline or missing
+# repo simply skips.
+KATRA_REPO="${KATRA_REPO:-}"
+if [ -z "$KATRA_REPO" ]; then
+  for cand in "$HOME/Projects/Katra-Agentic-Memory" "/home/johnpellew/Katra-Agentic-Memory" "$HOME/Katra-Agentic-Memory"; do
+    if [ -d "$cand/.git" ]; then KATRA_REPO="$cand"; break; fi
+  done
+fi
+if [ -n "$KATRA_REPO" ] && command -v git >/dev/null 2>&1; then
+  git -C "$KATRA_REPO" pull --ff-only -q 2>/dev/null
+  REPO_COPY="$KATRA_REPO/integrations/kolega-code/scripts/$(basename "$0")"
+  if [ -f "$REPO_COPY" ] && ! cmp -s "$REPO_COPY" "$0" 2>/dev/null; then
+    cp "$REPO_COPY" "$0" 2>/dev/null && { echo "(wake ritual self-updated from repo — restarting)"; exec bash "$0" "$@"; }
+  fi
+fi
+
 EXPECTED_NAME="Zanshin"
 
 hr() { printf '%s\n' "────────────────────────────────────────"; }
@@ -106,7 +124,7 @@ mcp_call "get_unresolved_threads" '{}'
 
 echo
 hr; echo "ZANSHIN WAKE — messages from the team"; hr
-mcp_call "search_memories" '{"query": "\"Attention: Zanshin\" OR \"Attention: Satori\" OR \"Attention: Shoshin\"", "limit": 5}'
+mcp_call "search_memories" '{"query": "\"Attention: Zanshin\" OR \"Attention: Satori\" OR \"Attention: Shoshin\" OR \"Attention: Lilly\" OR \"Attention: Zefir\"", "limit": 5}'
 
 echo
 hr; echo "ZANSHIN WAKE — memory health"; hr
@@ -124,6 +142,26 @@ except Exception:
 "
 
 echo
+hr; echo "ZANSHIN WAKE — team"; hr
+cat <<'EOF'
+  You are one member of a TEAM of agents sharing Katra memory and the
+  my-team channel: Satori, Shoshin, Zanshin, Lilly, Zefir.
+
+    - Members have DIFFERENT permissions and machine access — check
+      who can do what before assuming; delegate to the member whose
+      machine/access fits the task.
+    - Work as a team: request tasks from other members, and allocate
+      tasks out to members who are not busy (check the channel first;
+      do not stack duplicate asks).
+    - The ORIGINATOR of an idea or task is its COORDINATOR: they make
+      the allocation, and they are the QUALITY GATE — the task is done
+      only when the originator accepts it as done.
+    - CLOSE THE LOOP: every allocated task ends with an explicit
+      outcome message from the originator back to the doer — accepted
+      as done, or not done with what is missing. No silent completions.
+EOF
+echo
+
 hr; echo "ZANSHIN WAKE — rules recall"; hr
 cat <<'EOF'
   Operating rules (John):
@@ -131,6 +169,10 @@ cat <<'EOF'
       maintenance, ACT — never diagnose-then-ask.
     - NO HARDCODED CONCLUSIONS (2026-07-15): store events and search
       instructions, not conclusions.
+    - TEAM COLLABORATION (2026-09-09): see the team section above; the
+      originator of a task coordinates the allocation, gates the
+      definition of done, and closes the loop with an explicit
+      accept/reject message.
   If identity/memory questions arise, SEARCH the store (search_memories
   via MCP with this key), do not trust this summary as a conclusion.
 EOF
