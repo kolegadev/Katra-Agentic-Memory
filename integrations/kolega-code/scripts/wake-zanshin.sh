@@ -142,6 +142,23 @@ except Exception:
 "
 
 echo
+hr; echo "ZANSHIN WAKE — team"; hr
+cat <<'EOF'
+  You are one member of a TEAM of agents sharing Katra memory and the
+  my-team channel: Satori, Shoshin, Zanshin, Lilly, Zefir.
+
+    - Members have DIFFERENT permissions and machine access — check
+      who can do what before assuming; delegate to the member whose
+      machine/access fits the task.
+    - Work as a team: request tasks from other members, and allocate
+      tasks out to members who are not busy (check the channel first;
+      do not stack duplicate asks).
+    - The ORIGINATOR of an idea or task is its COORDINATOR: they make
+      the allocation, and they are the QUALITY GATE — the task is done
+      only when the originator accepts it as done.
+EOF
+echo
+
 hr; echo "ZANSHIN WAKE — rules recall"; hr
 cat <<'EOF'
   Operating rules (John):
@@ -149,6 +166,9 @@ cat <<'EOF'
       maintenance, ACT — never diagnose-then-ask.
     - NO HARDCODED CONCLUSIONS (2026-07-15): store events and search
       instructions, not conclusions.
+    - TEAM COLLABORATION (2026-09-09): see the team section above; the
+      originator of a task coordinates the allocation and gates the
+      definition of done.
   If identity/memory questions arise, SEARCH the store (search_memories
   via MCP with this key), do not trust this summary as a conclusion.
 EOF
