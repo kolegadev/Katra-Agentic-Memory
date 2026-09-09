@@ -409,8 +409,11 @@ function getLegacyEnvKeyHashes(): Set<string> {
  * Provision the system_settings.client_keys entries at boot.
  *
  * - satori: mapped to the legacy env key hash (no new key).
- * - shoshin / zanshin: freshly generated once, plaintext printed once to the
- *   console, sha256 hash only in the database.
+ * - additional identities declared in `KATRA_EXTRA_IDENTITIES` (comma-
+ *   separated `user_id:Display Name` pairs): freshly generated once,
+ *   plaintext printed once to the console, sha256 hash only in the database.
+ *   Identities are deployment data, so they come from the environment —
+ *   never from code.
  *
  * Idempotent: existing entries are kept untouched; the in-memory identity
  * map is refreshed from the stored records on every call.
@@ -418,6 +421,29 @@ function getLegacyEnvKeyHashes(): Set<string> {
  * `options.collection` / `options.settingsKey` exist for tests so unit tests
  * never write into the production system_settings document.
  */
+
+/**
+ * Extra identities to provision, declared by the deployment in the
+ * environment: `KATRA_EXTRA_IDENTITIES` is a comma-separated list of
+ * `user_id:Display Name` pairs, e.g.
+ * `KATRA_EXTRA_IDENTITIES='agent-a:Agent A,agent-b:Agent B'`.
+ * A bare `user_id` without a colon is allowed (display name = user_id).
+ */
+function configuredIdentities(): Array<{ user_id: string; display_name: string }> {
+  const raw = process.env.KATRA_EXTRA_IDENTITIES || '';
+  const identities: Array<{ user_id: string; display_name: string }> = [];
+  for (const part of raw.split(',')) {
+    const pair = part.trim();
+    if (!pair) continue;
+    const sep = pair.indexOf(':');
+    const user_id = (sep === -1 ? pair : pair.slice(0, sep)).trim();
+    if (!user_id) continue;
+    const display_name = (sep === -1 ? user_id : pair.slice(sep + 1).trim()) || user_id;
+    identities.push({ user_id, display_name });
+  }
+  return identities;
+}
+
 export async function ensureClientKeys(options: {
   collection?: string;
   settingsKey?: string;
@@ -445,14 +471,10 @@ export async function ensureClientKeys(options: {
       changed = true;
     }
 
-    // shoshin / zanshin / lilly → freshly generated keys (printed once below).
+    // Extra identities from the deployment environment (KATRA_EXTRA_IDENTITIES)
+    // → freshly generated keys (printed once below).
     const freshPlaintext: Array<{ user_id: string; key: string }> = [];
-    const agents: Array<{ user_id: string; display_name: string }> = [
-      { user_id: 'shoshin', display_name: 'Shoshin' },
-      { user_id: 'zanshin', display_name: 'Zanshin' },
-      { user_id: 'lilly', display_name: 'Lilly' },
-      { user_id: 'zefir', display_name: 'Zefir' },
-    ];
+    const agents = configuredIdentities();
     for (const agent of agents) {
       if (byUser.has(agent.user_id)) continue;
       const key = generateKey(`katra-${agent.user_id}`);
@@ -484,8 +506,7 @@ export async function ensureClientKeys(options: {
         console.log(`  ${entry.user_id.padEnd(9)} ${entry.key}`);
       }
       console.log('');
-      console.log('  Hand these keys to the named machines (iMac trading → shoshin,');
-      console.log('  iMac OpenCode → zanshin, natasha-macbook-pro → zefir).');
+      console.log('  Hand each key to the machine or agent it belongs to.');
       console.log('  Only sha256 hashes are stored in the');
       console.log('  database (system_settings.client_keys) — plaintext is not.');
       console.log('═══════════════════════════════════════════════════════════');
@@ -534,7 +555,7 @@ export async function resolveCallerIdentity(
     return { user_id: 'satori', trusted: true };
   }
 
-  // Key mapped in client_keys (satori / shoshin / zanshin / tool actors).
+  // Key mapped in client_keys → that identity, untrusted.
   const mapped = clientKeyIdentities.get(tokenHash);
   if (mapped) {
     return { ...mapped };
