@@ -28,7 +28,7 @@ AGENT_ID = os.environ.get("KATRA_AGENT_ID", "satori")
 SHARED_ID = os.environ.get("KATRA_SHARED_ID", "my-team")
 API_BASE = os.environ.get("KATRA_API", "http://localhost:9012/api/v1")
 
-KNOWN_AGENTS = {"shoshin", "zanshin", "lilly", "opencode", "opencoder",
+KNOWN_AGENTS = {"shoshin", "zanshin", "lilly", "zefir", "opencode", "opencoder",
                 "kolegacode", "kolegacoder", "john"}
 
 
@@ -72,7 +72,7 @@ def main() -> int:
         print("inbox_reply: empty reply file", file=sys.stderr)
         return 1
 
-    full = f"Attention: {target} — FROM: Satori — {body_text}"
+    full = f"Attention: {target} — FROM: {AGENT_ID.title()} — {body_text}"
     payload = {
         "user_id": AGENT_ID,
         "session_id": "inbox-auto",

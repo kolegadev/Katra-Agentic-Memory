@@ -46,14 +46,19 @@ DISPATCH_LOG = os.path.expanduser(f"~/.katra/inbox/dispatch.log")
 ESCALATE_FILE = os.path.expanduser("~/.katra/inbox/needs-john.md")
 
 # This machine's names, current + legacy pre-cutover aliases (matches the
-# bridge's bulletin scan).
-MY_NAMES = {"satori", "kolegacode", "kolegacoder"}
+# bridge's bulletin scan). Override with KATRA_AGENT_NAMES for other agents.
+MY_NAMES = {n.strip().lower() for n in
+            os.environ.get("KATRA_AGENT_NAMES",
+                           "satori,kolegacode,kolegacoder").split(",")
+            if n.strip()}
 
-KNOWN_AGENTS = {"satori", "shoshin", "zanshin", "lilly",
+KNOWN_AGENTS = {"satori", "shoshin", "zanshin", "lilly", "zefir",
                 "opencode", "opencoder", "kolegacode", "kolegacoder"}
 
 ATTN_RE = re.compile(
-    r"Attention:\s*(Satori|Shoshin|Zanshin|Lilly|OpenCoder|OpenCode|KolegaCoder|KolegaCode)",
+    r"Attention:\s*(" +
+    "|".join(sorted((n.title() for n in KNOWN_AGENTS), key=len, reverse=True)) +
+    ")",
     re.IGNORECASE)
 
 SKIP_TAGS = {"background-ack", "read-receipt", "auto-reply", "auto-ack",
@@ -68,7 +73,9 @@ MAX_MSGS_PER_DISPATCH = 10
 MSG_PREVIEW_CHARS = 1200
 
 REPO = os.path.expanduser("~/Katra-Agentic-Memory")
-INBOX_AGENT_DIR = os.path.join(REPO, "integrations/kolega-code/inbox-agent")
+INBOX_AGENT_DIR = os.path.expanduser(
+    os.environ.get("KATRA_INBOX_DIR")
+    or os.path.join(REPO, "integrations/kolega-code/inbox-agent"))
 INBOX_REPLY = os.path.join(REPO, "integrations/kolega-code/scripts/inbox_reply.py")
 KOLEGA_BIN = os.path.expanduser(
     "~/.local/share/uv/tools/kolega-code/bin/kolega-code")
@@ -283,7 +290,7 @@ def dispatch(args) -> int:
                "--project", INBOX_AGENT_DIR,
                "--goal", goal,
                "--goal-max-turns", "30",
-               "--save", "--session", "satori-inbox",
+               "--save", "--session", f"{AGENT_ID}-inbox",
                "--permission-mode", "auto",
                "--trust-hooks"]
         with open(DISPATCH_LOG, "a") as log:
@@ -321,8 +328,10 @@ def dispatch(args) -> int:
 
 
 def build_goal(msgs: list[dict]) -> str:
+    wake = "satori-wake.sh" if AGENT_ID == "satori" else f"wake-{AGENT_ID}.sh"
+    host = " on thebrick" if AGENT_ID == "satori" else ""
     lines = [
-        "You are Satori, the kolega-code agent on thebrick, processing your "
+        f"You are {AGENT_ID.title()}, the kolega-code agent{host}, processing your "
         "Katra inbox autonomously per the policy in this project's AGENTS.md "
         "(read it first — it is auto-loaded as project guidance).",
         "",
@@ -337,7 +346,7 @@ def build_goal(msgs: list[dict]) -> str:
     lines += [
         "",
         "Instructions:",
-        "1. Run `bash ~/.kolega/satori-wake.sh` first so you act with full identity.",
+        f"1. Run `bash ~/.kolega/{'satori-wake.sh' if AGENT_ID == 'satori' else f'wake-{AGENT_ID}.sh'}` first so you act with full identity.",
         "2. For EACH message, decide per the policy tiers in AGENTS.md.",
         "3. To reply: write your reply text to a temp file, then run",
         f"   `python3 {INBOX_REPLY} --to <agent> --in-reply-to <message id> --file <tempfile>`",
