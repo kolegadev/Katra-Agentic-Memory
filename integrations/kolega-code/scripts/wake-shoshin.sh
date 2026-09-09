@@ -156,6 +156,9 @@ cat <<'EOF'
     - The ORIGINATOR of an idea or task is its COORDINATOR: they make
       the allocation, and they are the QUALITY GATE — the task is done
       only when the originator accepts it as done.
+    - CLOSE THE LOOP: every allocated task ends with an explicit
+      outcome message from the originator back to the doer — accepted
+      as done, or not done with what is missing. No silent completions.
 EOF
 echo
 
@@ -167,8 +170,9 @@ cat <<'EOF'
     - NO HARDCODED CONCLUSIONS (2026-07-15): store events and search
       instructions, not conclusions.
     - TEAM COLLABORATION (2026-09-09): see the team section above; the
-      originator of a task coordinates the allocation and gates the
-      definition of done.
+      originator of a task coordinates the allocation, gates the
+      definition of done, and closes the loop with an explicit
+      accept/reject message.
   If identity/memory questions arise, SEARCH the store (search_memories
   via MCP with this key), do not trust this summary as a conclusion.
 EOF
