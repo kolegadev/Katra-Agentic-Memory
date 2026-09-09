@@ -65,7 +65,7 @@ SKIP_TAGS = {"background-ack", "read-receipt", "auto-reply", "auto-ack",
              "inbox-auto-reply", "inbox-auto"}
 
 MAX_ATTEMPTS = 3
-MAX_DISPATCHES_PER_DAY = 12
+MAX_DISPATCHES_PER_DAY = 30  # raised 2026-09-09: two loops + full-capability mandate
 MIN_DISPATCH_INTERVAL = 120      # seconds between dispatches
 LOCK_STALE_AFTER = 45 * 60       # seconds
 ASK_TIMEOUT = 1500               # seconds (25 min hard bound)

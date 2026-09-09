@@ -2,10 +2,10 @@
 # Installs (idempotently) the inbox auto-reply cron entries for Satori and
 # Zefir on thebrick. Version-controlled dispatch config — see README.md.
 set -euo pipefail
-REPO="$(cd "$(dirname "$0")/../.." && pwd)"
-SCRIPT="$REPO/scripts/satori_inbox.py"
-SATORI_DIR="$REPO/inbox-agent"
-ZEFIR_DIR="$REPO/inbox-agent-zefir"
+REPO="$(cd "$(dirname "$0")/../../.." && pwd)"
+SCRIPT="$REPO/integrations/kolega-code/scripts/satori_inbox.py"
+SATORI_DIR="$REPO/integrations/kolega-code/inbox-agent"
+ZEFIR_DIR="$REPO/integrations/kolega-code/inbox-agent-zefir"
 LOG_DIR="$HOME/.katra/inbox"
 ZEFIR_KEY_FILE="$HOME/.katra/keys/katra-zefir.key"
 
