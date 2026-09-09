@@ -46,7 +46,11 @@ gcloud run deploy sweet-moments --source <dir> --region europe-west1 --project s
 ```
 
 Verified 2026-09-09: your SA (`zefir-deploy@sweet-moments-506106`) deployed
-a test service and deleted it successfully.
+a test service and deleted it successfully. Source deploys (`--source`) from
+your Mac also verified working the same day — your SA now has the needed
+roles: run.developer, storage.objectAdmin, iam.serviceAccountUser,
+cloudbuild.builds.editor, artifactregistry.reader/writer, and a custom
+role for the source-upload buckets (storage.buckets.create/get/list).
 
 Still John-gated (ask, don't act): deleting services, domain-mapping changes,
 IAM/billing changes, and anything outside the two services above.
