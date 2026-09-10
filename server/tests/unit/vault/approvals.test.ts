@@ -214,27 +214,27 @@ describe('vault approvals — source wiring (F6)', () => {
 // ── MCP handlers: operator gate (no DB needed) ───────────────────────────
 
 describe('vault approval MCP handlers — operator gate (criterion 8)', () => {
-  const LILLY: CallerIdentity = { user_id: 'lilly', trusted: false };
+  const AGENT_C: CallerIdentity = { user_id: 'agent-c', trusted: false };
 
   it('vault_approve_service rejects untrusted callers with \'operator only\' before any store work', async () => {
     await expect(
-      runWithCaller(LILLY, () =>
-        handleVaultApproveService({ identity: 'lilly', service: 'agentmail', ttlDays: 30 }),
+      runWithCaller(AGENT_C, () =>
+        handleVaultApproveService({ identity: 'agent-c', service: 'agentmail', ttlDays: 30 }),
       ),
     ).rejects.toThrow('operator only');
   });
 
   it('vault_revoke_approval rejects untrusted callers with \'operator only\' before any store work', async () => {
     await expect(
-      runWithCaller(LILLY, () =>
-        handleVaultRevokeApproval({ identity: 'lilly', service: 'agentmail' }),
+      runWithCaller(AGENT_C, () =>
+        handleVaultRevokeApproval({ identity: 'agent-c', service: 'agentmail' }),
       ),
     ).rejects.toThrow('operator only');
   });
 
   it('vault_list_approvals is caller-scoped and needs no operator flag (no DB → disconnected warning)', async () => {
     expect(is_database_connected()).toBe(false); // no DB work at import time
-    const content = await runWithCaller(LILLY, () => handleVaultListApprovals({}));
+    const content = await runWithCaller(AGENT_C, () => handleVaultListApprovals({}));
     expect(content[0].text).toBe('⚠️ MongoDB disconnected.');
   });
 });
@@ -248,9 +248,9 @@ describe.skipIf(!mongoAvailable)('vault approvals (F6) — store + REST contract
   let db: Db;
   let store: VaultStore;
   let app: Hono;
-  const LILLY: CallerIdentity = { user_id: 'lilly', trusted: false };
-  const SHOSHIN: CallerIdentity = { user_id: 'shoshin', trusted: false };
-  const SATORI: CallerIdentity = { user_id: 'satori', trusted: true };
+  const AGENT_C: CallerIdentity = { user_id: 'agent-c', trusted: false };
+  const AGENT_A: CallerIdentity = { user_id: 'agent-a', trusted: false };
+  const KATRA: CallerIdentity = { user_id: 'katra', trusted: true };
   const DAY_30 = 30 * DAY_MS;
 
   const approvalsCol = () => db.collection(APPROVALS);
@@ -325,27 +325,27 @@ describe.skipIf(!mongoAvailable)('vault approvals (F6) — store + REST contract
   it('criterion 1: untrusted grant/revoke → {granted:false}/{revoked:false} + denied audit row, no approval row created/updated', async () => {
     // Grant attempt with nothing pre-existing: no row appears.
     const deny = await store.grantApproval({
-      caller: LILLY,
-      identity: 'lilly',
+      caller: AGENT_C,
+      identity: 'agent-c',
       service: 'agentmail',
     });
     expect(deny).toEqual({ granted: false, approval: null });
     expect(await approvalDocs()).toEqual([]);
 
     // An operator row exists; untrusted re-grant + revoke must not touch it.
-    await store.grantApproval({ caller: SATORI, identity: 'lilly', service: 'agentmail' });
+    await store.grantApproval({ caller: KATRA, identity: 'agent-c', service: 'agentmail' });
     const before = await approvalDocs();
     expect(before).toHaveLength(1);
 
     const denyGrant = await store.grantApproval({
-      caller: SHOSHIN,
-      identity: 'lilly',
+      caller: AGENT_A,
+      identity: 'agent-c',
       service: 'agentmail',
     });
     expect(denyGrant).toEqual({ granted: false, approval: null });
     const denyRevoke = await store.revokeApproval({
-      caller: SHOSHIN,
-      identity: 'lilly',
+      caller: AGENT_A,
+      identity: 'agent-c',
       service: 'agentmail',
     });
     expect(denyRevoke).toEqual({ revoked: false });
@@ -366,22 +366,22 @@ describe.skipIf(!mongoAvailable)('vault approvals (F6) — store + REST contract
       expect(['approval_grant', 'approval_revoke']).toContain(row.action);
     }
     const grantDenies = denied.filter((r) => r.action === 'approval_grant');
-    expect(grantDenies.map((r) => r.actor).sort()).toEqual(['lilly', 'shoshin']);
-    expect(denied.filter((r) => r.action === 'approval_revoke')[0].actor).toBe('shoshin');
+    expect(grantDenies.map((r) => r.actor).sort()).toEqual(['agent-a', 'agent-c']);
+    expect(denied.filter((r) => r.action === 'approval_revoke')[0].actor).toBe('agent-a');
   });
 
   // 2 ── operator grant: active row, +30d expiry, audit ok ────────────────
   it('criterion 2: operator grant → active row with expires_at = granted_at + 30d (±60s); audit approval_grant ok', async () => {
     const res = await store.grantApproval({
-      caller: SATORI,
-      identity: 'lilly',
+      caller: KATRA,
+      identity: 'agent-c',
       service: 'agentmail',
     });
     expect(res.granted).toBe(true);
     const a = res.approval!;
-    expect(a.identity).toBe('lilly');
+    expect(a.identity).toBe('agent-c');
     expect(a.service).toBe('agentmail');
-    expect(a.granted_by).toBe('satori');
+    expect(a.granted_by).toBe('katra');
     expect(a.revoked_at).toBeNull();
     expect(a.status).toBe('active');
 
@@ -406,7 +406,7 @@ describe.skipIf(!mongoAvailable)('vault approvals (F6) — store + REST contract
     const audit = await auditRows();
     expect(audit).toHaveLength(1);
     expect(audit[0]).toMatchObject({
-      actor: 'satori',
+      actor: 'katra',
       action: 'approval_grant',
       secret_id: null,
       service: 'agentmail',
@@ -415,8 +415,8 @@ describe.skipIf(!mongoAvailable)('vault approvals (F6) — store + REST contract
 
     // ttlDays override is honored.
     const short = await store.grantApproval({
-      caller: SATORI,
-      identity: 'shoshin',
+      caller: KATRA,
+      identity: 'agent-a',
       service: 'gcloud',
       ttlDays: 7,
     });
@@ -430,14 +430,14 @@ describe.skipIf(!mongoAvailable)('vault approvals (F6) — store + REST contract
   // 3 ── idempotent re-grant: one row, extended expires_at ────────────────
   it('criterion 3: re-granting an active (identity, service) extends expires_at on the same single row', async () => {
     const first = await store.grantApproval({
-      caller: SATORI,
-      identity: 'lilly',
+      caller: KATRA,
+      identity: 'agent-c',
       service: 'agentmail',
     });
     await sleep(5);
     const second = await store.grantApproval({
-      caller: SATORI,
-      identity: 'lilly',
+      caller: KATRA,
+      identity: 'agent-c',
       service: 'agentmail',
     });
     expect(second.granted).toBe(true);
@@ -456,52 +456,52 @@ describe.skipIf(!mongoAvailable)('vault approvals (F6) — store + REST contract
 
   // 4 ── hasActiveApproval: expiry / revoke / wildcard ────────────────────
   it('criterion 4: hasActiveApproval true within expiry; false after expiry (injected past expires_at); false when revoked; wildcard * true for any service', async () => {
-    await store.grantApproval({ caller: SATORI, identity: 'lilly', service: 'agentmail' });
-    expect(await store.hasActiveApproval('lilly', 'agentmail')).toBe(true);
+    await store.grantApproval({ caller: KATRA, identity: 'agent-c', service: 'agentmail' });
+    expect(await store.hasActiveApproval('agent-c', 'agentmail')).toBe(true);
 
     // Expiry: inject a past expires_at directly (contract-approved test hook).
     await approvalsCol().updateOne(
-      { identity: 'lilly', service: 'agentmail' },
+      { identity: 'agent-c', service: 'agentmail' },
       { $set: { expires_at: new Date(Date.now() - DAY_MS).toISOString() } },
     );
-    expect(await store.hasActiveApproval('lilly', 'agentmail')).toBe(false);
-    const listed = await store.listApprovals(SATORI);
+    expect(await store.hasActiveApproval('agent-c', 'agentmail')).toBe(false);
+    const listed = await store.listApprovals(KATRA);
     expect(listed.find((x) => x.service === 'agentmail')!.status).toBe('expired');
 
     // Revoke kills an active grant.
-    await store.grantApproval({ caller: SATORI, identity: 'lilly', service: 'agentmail' });
-    await store.revokeApproval({ caller: SATORI, identity: 'lilly', service: 'agentmail' });
-    expect(await store.hasActiveApproval('lilly', 'agentmail')).toBe(false);
+    await store.grantApproval({ caller: KATRA, identity: 'agent-c', service: 'agentmail' });
+    await store.revokeApproval({ caller: KATRA, identity: 'agent-c', service: 'agentmail' });
+    expect(await store.hasActiveApproval('agent-c', 'agentmail')).toBe(false);
 
     // Wildcard '*' grants any service.
-    await store.grantApproval({ caller: SATORI, identity: 'lilly', service: '*' });
-    expect(await store.hasActiveApproval('lilly', 'gcloud')).toBe(true);
-    expect(await store.hasActiveApproval('lilly', 'agentmail')).toBe(true);
-    expect(await store.hasActiveApproval('shoshin', 'gcloud')).toBe(false); // unrelated id
+    await store.grantApproval({ caller: KATRA, identity: 'agent-c', service: '*' });
+    expect(await store.hasActiveApproval('agent-c', 'gcloud')).toBe(true);
+    expect(await store.hasActiveApproval('agent-c', 'agentmail')).toBe(true);
+    expect(await store.hasActiveApproval('agent-a', 'gcloud')).toBe(false); // unrelated id
   });
 
   // 5 ── revoke sets revoked_at + re-grant after revoke ───────────────────
   it('criterion 5: revoke → status revoked with revoked_at; re-grant after revoke works; double revoke → {revoked:false}', async () => {
-    await store.grantApproval({ caller: SATORI, identity: 'lilly', service: 'agentmail' });
-    const rev = await store.revokeApproval({ caller: SATORI, identity: 'lilly', service: 'agentmail' });
+    await store.grantApproval({ caller: KATRA, identity: 'agent-c', service: 'agentmail' });
+    const rev = await store.revokeApproval({ caller: KATRA, identity: 'agent-c', service: 'agentmail' });
     expect(rev).toEqual({ revoked: true });
 
     const docs = await approvalDocs();
     expect(docs).toHaveLength(1);
     expect(docs[0].revoked_at).not.toBeNull();
-    const listed = await store.listApprovals(SATORI);
+    const listed = await store.listApprovals(KATRA);
     expect(listed[0].status).toBe('revoked');
-    expect(await store.hasActiveApproval('lilly', 'agentmail')).toBe(false);
+    expect(await store.hasActiveApproval('agent-c', 'agentmail')).toBe(false);
 
     // Revoking an already-revoked row → false (+ one denied audit row).
     expect(
-      await store.revokeApproval({ caller: SATORI, identity: 'lilly', service: 'agentmail' }),
+      await store.revokeApproval({ caller: KATRA, identity: 'agent-c', service: 'agentmail' }),
     ).toEqual({ revoked: false });
 
     // Re-grant after revoke: single row revived with revoked_at null.
     const regrant = await store.grantApproval({
-      caller: SATORI,
-      identity: 'lilly',
+      caller: KATRA,
+      identity: 'agent-c',
       service: 'agentmail',
     });
     expect(regrant.granted).toBe(true);
@@ -510,34 +510,34 @@ describe.skipIf(!mongoAvailable)('vault approvals (F6) — store + REST contract
     const after = await approvalDocs();
     expect(after).toHaveLength(1);
     expect(after[0].revoked_at).toBeNull();
-    expect(await store.hasActiveApproval('lilly', 'agentmail')).toBe(true);
+    expect(await store.hasActiveApproval('agent-c', 'agentmail')).toBe(true);
   });
 
   // 6 ── listApprovals caller-scoped ──────────────────────────────────────
   it('criterion 6: listApprovals is caller-scoped — untrusted sees own identity rows only; trusted sees all', async () => {
-    await store.grantApproval({ caller: SATORI, identity: 'lilly', service: 'agentmail' });
-    await store.grantApproval({ caller: SATORI, identity: 'lilly', service: '*' });
-    await store.grantApproval({ caller: SATORI, identity: 'shoshin', service: 'gcloud' });
+    await store.grantApproval({ caller: KATRA, identity: 'agent-c', service: 'agentmail' });
+    await store.grantApproval({ caller: KATRA, identity: 'agent-c', service: '*' });
+    await store.grantApproval({ caller: KATRA, identity: 'agent-a', service: 'gcloud' });
 
-    const lillyRows = await store.listApprovals(LILLY);
-    expect(lillyRows).toHaveLength(2);
-    for (const row of lillyRows) expect(row.identity).toBe('lilly');
-    expect(new Set(lillyRows.map((r) => r.service))).toEqual(new Set(['agentmail', '*']));
+    const agentCRows = await store.listApprovals(AGENT_C);
+    expect(agentCRows).toHaveLength(2);
+    for (const row of agentCRows) expect(row.identity).toBe('agent-c');
+    expect(new Set(agentCRows.map((r) => r.service))).toEqual(new Set(['agentmail', '*']));
     // Response rows carry exactly the ServiceApproval key set.
-    for (const row of lillyRows) {
+    for (const row of agentCRows) {
       expect(Object.keys(row).sort()).toEqual([...APPROVAL_KEYS].sort());
     }
 
-    expect(await store.listApprovals(SHOSHIN)).toHaveLength(1);
-    expect((await store.listApprovals(SATORI))).toHaveLength(3); // operator: all
+    expect(await store.listApprovals(AGENT_A)).toHaveLength(1);
+    expect((await store.listApprovals(KATRA))).toHaveLength(3); // operator: all
   });
 
   // 10 ── audit rows for approval actions: value-free, whitelist keys ─────
   it('criterion 10: approval audit rows are value-free and use only the F2 whitelist keys', async () => {
-    await store.grantApproval({ caller: SATORI, identity: 'lilly', service: 'agentmail' });
-    await store.grantApproval({ caller: LILLY, identity: 'lilly', service: 'agentmail' }); // denied
-    await store.revokeApproval({ caller: SATORI, identity: 'lilly', service: 'agentmail' });
-    await store.revokeApproval({ caller: SHOSHIN, identity: 'shoshin', service: 'gcloud' }); // denied
+    await store.grantApproval({ caller: KATRA, identity: 'agent-c', service: 'agentmail' });
+    await store.grantApproval({ caller: AGENT_C, identity: 'agent-c', service: 'agentmail' }); // denied
+    await store.revokeApproval({ caller: KATRA, identity: 'agent-c', service: 'agentmail' });
+    await store.revokeApproval({ caller: AGENT_A, identity: 'agent-a', service: 'gcloud' }); // denied
 
     const rows = await auditRows();
     expect(rows).toHaveLength(4);
@@ -570,15 +570,15 @@ describe.skipIf(!mongoAvailable)('vault approvals (F6) — store + REST contract
 
   // ── REST (criterion 7): 403 untrusted, 201/200 shapes, GET scoped ─────
   it('criterion 7a: untrusted POST/DELETE /approvals → 403; operator POST → 201 {granted, approval}', async () => {
-    const denied = await req(LILLY, 'POST', '/approvals', {
-      identity: 'lilly',
+    const denied = await req(AGENT_C, 'POST', '/approvals', {
+      identity: 'agent-c',
       service: 'agentmail',
     });
     expect(denied.status).toBe(403);
     expect(await approvalDocs()).toEqual([]);
 
-    const ok = await req(SATORI, 'POST', '/approvals', {
-      identity: 'lilly',
+    const ok = await req(KATRA, 'POST', '/approvals', {
+      identity: 'agent-c',
       service: 'agentmail',
       ttlDays: 30,
     });
@@ -587,14 +587,14 @@ describe.skipIf(!mongoAvailable)('vault approvals (F6) — store + REST contract
     expect(body.granted).toBe(true);
     expect(Object.keys(body).sort()).toEqual(['approval', 'granted']);
     expect(Object.keys(body.approval).sort()).toEqual([...APPROVAL_KEYS].sort());
-    expect(body.approval.identity).toBe('lilly');
+    expect(body.approval.identity).toBe('agent-c');
     expect(body.approval.service).toBe('agentmail');
     expect(body.approval.status).toBe('active');
 
     const delDenied = await req(
-      LILLY,
+      AGENT_C,
       'DELETE',
-      '/approvals?identity=lilly&service=agentmail',
+      '/approvals?identity=agent-c&service=agentmail',
     );
     expect(delDenied.status).toBe(403);
     expect((await approvalDocs())[0].revoked_at).toBeNull(); // untouched
@@ -607,59 +607,59 @@ describe.skipIf(!mongoAvailable)('vault approvals (F6) — store + REST contract
   });
 
   it('criterion 7b: operator DELETE → 200 {revoked:true}; GET caller-scoped', async () => {
-    await req(SATORI, 'POST', '/approvals', { identity: 'lilly', service: 'agentmail' });
-    await req(SATORI, 'POST', '/approvals', { identity: 'shoshin', service: 'gcloud' });
+    await req(KATRA, 'POST', '/approvals', { identity: 'agent-c', service: 'agentmail' });
+    await req(KATRA, 'POST', '/approvals', { identity: 'agent-a', service: 'gcloud' });
 
-    // GET is caller-scoped: lilly (untrusted) sees only her own rows.
-    const lillyList: any[] = await (await req(LILLY, 'GET', '/approvals')).json();
-    expect(lillyList).toHaveLength(1);
-    expect(lillyList[0].identity).toBe('lilly');
+    // GET is caller-scoped: agent-c (untrusted) sees only her own rows.
+    const agentCList: any[] = await (await req(AGENT_C, 'GET', '/approvals')).json();
+    expect(agentCList).toHaveLength(1);
+    expect(agentCList[0].identity).toBe('agent-c');
     // Trusted GET sees all rows.
-    const all: any[] = await (await req(SATORI, 'GET', '/approvals')).json();
+    const all: any[] = await (await req(KATRA, 'GET', '/approvals')).json();
     expect(all).toHaveLength(2);
 
-    const del = await req(SATORI, 'DELETE', '/approvals?identity=lilly&service=agentmail');
+    const del = await req(KATRA, 'DELETE', '/approvals?identity=agent-c&service=agentmail');
     expect(del.status).toBe(200);
     expect(await del.json()).toEqual({ revoked: true });
 
     // Revoking a non-existent grant → 403 (no active grant).
-    const ghost = await req(SATORI, 'DELETE', '/approvals?identity=ghost&service=agentmail');
+    const ghost = await req(KATRA, 'DELETE', '/approvals?identity=ghost&service=agentmail');
     expect(ghost.status).toBe(403);
 
-    // lilly still sees her (now revoked) row with status 'revoked'.
-    const afterList: any[] = await (await req(LILLY, 'GET', '/approvals')).json();
+    // agent-c still sees her (now revoked) row with status 'revoked'.
+    const afterList: any[] = await (await req(AGENT_C, 'GET', '/approvals')).json();
     expect(afterList[0].status).toBe('revoked');
   });
 
   it('criterion 7c: bad approval input → 400 with static errors', async () => {
-    expect((await req(SATORI, 'POST', '/approvals', {})).status).toBe(400);
-    expect((await req(SATORI, 'POST', '/approvals', { identity: 'lilly' })).status).toBe(400);
-    expect((await req(SATORI, 'POST', '/approvals', { identity: 1, service: 'a' })).status).toBe(400);
+    expect((await req(KATRA, 'POST', '/approvals', {})).status).toBe(400);
+    expect((await req(KATRA, 'POST', '/approvals', { identity: 'agent-c' })).status).toBe(400);
+    expect((await req(KATRA, 'POST', '/approvals', { identity: 1, service: 'a' })).status).toBe(400);
     expect(
-      (await req(SATORI, 'POST', '/approvals', { identity: 'lilly', service: 'a', ttlDays: 0 }))
+      (await req(KATRA, 'POST', '/approvals', { identity: 'agent-c', service: 'a', ttlDays: 0 }))
         .status,
     ).toBe(400);
-    expect((await req(SATORI, 'POST', '/approvals', 'not-an-object')).status).toBe(400);
+    expect((await req(KATRA, 'POST', '/approvals', 'not-an-object')).status).toBe(400);
     expect(
-      (await req(SATORI, 'DELETE', '/approvals?identity=lilly')).status,
+      (await req(KATRA, 'DELETE', '/approvals?identity=agent-c')).status,
     ).toBe(400);
     expect(
-      (await req(SATORI, 'DELETE', '/approvals?service=agentmail')).status,
+      (await req(KATRA, 'DELETE', '/approvals?service=agentmail')).status,
     ).toBe(400);
   });
 
   it('validation: identity with "/" and empty identity/service are refused with static vault errors', async () => {
     await expect(
-      store.grantApproval({ caller: SATORI, identity: 'a/b', service: 'agentmail' }),
+      store.grantApproval({ caller: KATRA, identity: 'a/b', service: 'agentmail' }),
     ).rejects.toThrow('vault:');
     await expect(
-      store.grantApproval({ caller: SATORI, identity: '', service: 'agentmail' }),
+      store.grantApproval({ caller: KATRA, identity: '', service: 'agentmail' }),
     ).rejects.toThrow('vault:');
     await expect(
-      store.grantApproval({ caller: SATORI, identity: 'lilly', service: '' }),
+      store.grantApproval({ caller: KATRA, identity: 'agent-c', service: '' }),
     ).rejects.toThrow('vault:');
     await expect(
-      store.grantApproval({ caller: SATORI, identity: 'lilly', service: 'a', ttlDays: -1 }),
+      store.grantApproval({ caller: KATRA, identity: 'agent-c', service: 'a', ttlDays: -1 }),
     ).rejects.toThrow('vault:');
     expect(await approvalDocs()).toEqual([]);
     // Refused invalid inputs write no audit rows either.
@@ -670,8 +670,8 @@ describe.skipIf(!mongoAvailable)('vault approvals (F6) — store + REST contract
 // ── MCP connected flow (real Mongo, default collections, f6mcp- prefix) ──
 
 describe.skipIf(!mongoAvailable)('vault approval MCP handlers — connected flow (criterion 8)', () => {
-  const LILLY: CallerIdentity = { user_id: 'lilly', trusted: false };
-  const SATORI: CallerIdentity = { user_id: 'satori', trusted: true };
+  const AGENT_C: CallerIdentity = { user_id: 'agent-c', trusted: false };
+  const KATRA: CallerIdentity = { user_id: 'katra', trusted: true };
 
   const runId = randomBytes(4).toString('hex');
   const runPrefix = `f6mcp-${runId}`;
@@ -714,12 +714,12 @@ describe.skipIf(!mongoAvailable)('vault approval MCP handlers — connected flow
   });
 
   it('vault_approve_service grants for a trusted caller; vault_list_approvals is caller-scoped', async () => {
-    const id = identity('lilly');
+    const id = identity('agent-c');
     const svc = service('agentmail');
     // The untrusted caller IS the granted identity — list scoping must show
     // exactly their own row.
     const GRANTEE: CallerIdentity = { user_id: id, trusted: false };
-    const content = await as(SATORI, () =>
+    const content = await as(KATRA, () =>
       handleVaultApproveService({ identity: id, service: svc, ttlDays: 30 }),
     );
     const body = JSON.parse(textOf(content)) as { granted: boolean; approval: any };
@@ -727,27 +727,27 @@ describe.skipIf(!mongoAvailable)('vault approval MCP handlers — connected flow
     expect(body.approval).toMatchObject({
       identity: id,
       service: svc,
-      granted_by: 'satori',
+      granted_by: 'katra',
       status: 'active',
     });
     expect(body.approval.revoked_at).toBeNull();
 
     // Untrusted caller lists only their own identity rows.
-    const lillyList = JSON.parse(textOf(await as(GRANTEE, () => handleVaultListApprovals({}))));
-    const mine = (lillyList as any[]).filter((x) => x.service === svc);
+    const agentCList = JSON.parse(textOf(await as(GRANTEE, () => handleVaultListApprovals({}))));
+    const mine = (agentCList as any[]).filter((x) => x.service === svc);
     expect(mine).toHaveLength(1);
     expect(mine[0].identity).toBe(id);
 
     // Revoke + confirm.
     const rev = JSON.parse(
       textOf(
-        await as(SATORI, () =>
+        await as(KATRA, () =>
           handleVaultRevokeApproval({ identity: id, service: svc }),
         ),
       ),
     );
     expect(rev).toEqual({ revoked: true });
-    const afterList = JSON.parse(textOf(await as(SATORI, () => handleVaultListApprovals({}))));
+    const afterList = JSON.parse(textOf(await as(KATRA, () => handleVaultListApprovals({}))));
     const row = (afterList as any[]).find((x) => x.service === svc);
     expect(row.status).toBe('revoked');
   });
@@ -756,7 +756,7 @@ describe.skipIf(!mongoAvailable)('vault approval MCP handlers — connected flow
     const id = identity('nope');
     const svc = service('denied');
     await expect(
-      as(LILLY, () => handleVaultApproveService({ identity: id, service: svc })),
+      as(AGENT_C, () => handleVaultApproveService({ identity: id, service: svc })),
     ).rejects.toThrow('operator only');
     const db = get_database();
     const rows = await db

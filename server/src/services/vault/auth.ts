@@ -64,21 +64,18 @@ const TRUSTED: AuthPolicy = Object.freeze({
 });
 
 /**
- * Per-identity default policy table (design §8): interactive humans
- * (shoshin/zanshin/lilly — plus the interactive fallback identity),
- * unattended agents (satori heartbeat, gas-law-watcher), trusted operators
+ * Per-identity default policy table (design §8): interactive identities
+ * (including the interactive fallback identity), the unattended local
+ * agent (KATRA_USER_ID, default 'katra'), and trusted operators
  * (loopback / admin key). `require_totp` is FALSE for everyone by default —
- * enforcement is the separate cutover step.
+ * enforcement is the separate cutover step. Deployment-specific identities
+ * get the interactive fallback unless overridden via system_settings.
  */
 export const DEFAULT_AUTH_POLICY: Record<string, AuthPolicy> = {
   // Interactive — laptops, human present.
-  shoshin: INTERACTIVE,
-  zanshin: INTERACTIVE,
-  lilly: INTERACTIVE,
-  'satori-interactive-default': INTERACTIVE,
-  // Unattended — device-bound, narrow scope, 720 h sessions.
-  satori: UNATTENDED,
-  'gas-law-watcher': UNATTENDED,
+  'interactive-default': INTERACTIVE,
+  // Unattended — the local agent identity, device-bound, 720 h sessions.
+  [process.env.KATRA_USER_ID || 'katra']: UNATTENDED,
   // Trusted — loopback / admin key (the host machine).
   loopback: TRUSTED,
   admin: TRUSTED,

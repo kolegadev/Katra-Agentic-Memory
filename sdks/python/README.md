@@ -31,7 +31,7 @@ and every registered tool is reachable through `list_tools()` /
 ## Installation
 
 ```bash
-pip install satori-sdk
+pip install katra-sdk
 ```
 
 For development:
@@ -43,7 +43,7 @@ pip install -e ".[dev]"
 ## Quick Start
 
 ```python
-from satori import KatraClient
+from katra import KatraClient
 
 # Connect to your Katra server (host-mapped MCP port). The api_key is this
 # identity's client key — Katra resolves the identity from the key, not from

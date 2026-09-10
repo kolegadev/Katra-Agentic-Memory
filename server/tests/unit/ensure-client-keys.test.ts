@@ -1,7 +1,7 @@
 /**
  * Unit tests: ensureClientKeys (F1 — client_keys provisioning)
  *
- * Provisions satori (legacy key hash) + identities declared in
+ * Provisions katra (legacy key hash) + identities declared in
  * KATRA_EXTRA_IDENTITIES (freshly generated) into
  * system_settings.client_keys. Asserts: idempotency, hashes-only in the
  * database, plaintext printed exactly once, and that the stored hashes feed
@@ -50,7 +50,7 @@ describe('ensureClientKeys', () => {
     process.env.MONGODB_URI = TEST_URI;
     process.env.DATABASE_NAME = TEST_DB;
     process.env.MCP_API_KEY = LEGACY_MCP_KEY;
-    process.env.KATRA_EXTRA_IDENTITIES = 'shoshin:Shoshin,zanshin:Zanshin';
+    process.env.KATRA_EXTRA_IDENTITIES = 'agent-a:Agent-A,agent-b:Agent-B';
     try {
       const db = await connect_to_mongodb();
       mongoReady = !!db;
@@ -59,7 +59,7 @@ describe('ensureClientKeys', () => {
     }
     if (!mongoReady) return;
 
-    // First call: generates shoshin/zanshin and prints the plaintext once.
+    // First call: generates agent-a/agent-b and prints the plaintext once.
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     try {
       await ensureClientKeys({ collection: TEST_COLLECTION, settingsKey: TEST_SETTINGS_KEY });
@@ -68,7 +68,7 @@ describe('ensureClientKeys', () => {
       logSpy.mockRestore();
     }
     for (const line of captured.printedLines) {
-      const match = line.match(/\b(katra-(shoshin|zanshin)-[0-9a-f]{64})\b/);
+      const match = line.match(/\b(katra-(agent-a|agent-b)-[0-9a-f]{64})\b/);
       if (match) captured.plaintext.set(match[2], match[1]);
     }
   });
@@ -87,7 +87,7 @@ describe('ensureClientKeys', () => {
     delete process.env.KATRA_EXTRA_IDENTITIES;
   });
 
-  it('provisions satori (legacy hash) plus the identities declared in KATRA_EXTRA_IDENTITIES', async (ctx) => {
+  it('provisions katra (legacy hash) plus the identities declared in KATRA_EXTRA_IDENTITIES', async (ctx) => {
     if (!mongoReady) return ctx.skip();
     const doc = await readStoredRecord();
     expect(doc).toBeTruthy();
@@ -96,15 +96,15 @@ describe('ensureClientKeys', () => {
     expect(records).toHaveLength(3);
 
     const byUser = new Map(records.map(r => [r.user_id, r]));
-    expect(byUser.has('satori')).toBe(true);
-    expect(byUser.has('shoshin')).toBe(true);
-    expect(byUser.has('zanshin')).toBe(true);
+    expect(byUser.has('katra')).toBe(true);
+    expect(byUser.has('agent-a')).toBe(true);
+    expect(byUser.has('agent-b')).toBe(true);
 
-    // satori maps to the legacy env key hash — no new key generated for satori.
-    expect(byUser.get('satori')!.key_hash).toBe(hashApiKey(LEGACY_MCP_KEY));
-    expect(byUser.get('satori')!.display_name).toBe('Satori');
-    expect(byUser.get('shoshin')!.display_name).toBe('Shoshin');
-    expect(byUser.get('zanshin')!.display_name).toBe('Zanshin');
+    // katra maps to the legacy env key hash — no new key generated for katra.
+    expect(byUser.get('katra')!.key_hash).toBe(hashApiKey(LEGACY_MCP_KEY));
+    expect(byUser.get('katra')!.display_name).toBe('Katra');
+    expect(byUser.get('agent-a')!.display_name).toBe('Agent-A');
+    expect(byUser.get('agent-b')!.display_name).toBe('Agent-B');
 
     // All hashes are sha256 hex digests.
     for (const r of records) {
@@ -118,25 +118,25 @@ describe('ensureClientKeys', () => {
     const doc = await readStoredRecord();
     const serialized = JSON.stringify(doc);
     expect(serialized).not.toContain(LEGACY_MCP_KEY);
-    expect(serialized).not.toContain('katra-shoshin-');
-    expect(serialized).not.toContain('katra-zanshin-');
+    expect(serialized).not.toContain('katra-agent-a-');
+    expect(serialized).not.toContain('katra-agent-b-');
   });
 
   it('prints the freshly generated plaintext keys exactly once', async (ctx) => {
     if (!mongoReady) return ctx.skip();
     // The generation call (beforeAll) printed each key once.
-    const shoshinPrints = captured.printedLines.filter(line => line.includes('katra-shoshin-'));
-    const zanshinPrints = captured.printedLines.filter(line => line.includes('katra-zanshin-'));
-    expect(shoshinPrints).toHaveLength(1);
-    expect(zanshinPrints).toHaveLength(1);
-    expect(captured.plaintext.has('shoshin')).toBe(true);
-    expect(captured.plaintext.has('zanshin')).toBe(true);
+    const agentAPrints = captured.printedLines.filter(line => line.includes('katra-agent-a-'));
+    const agentBPrints = captured.printedLines.filter(line => line.includes('katra-agent-b-'));
+    expect(agentAPrints).toHaveLength(1);
+    expect(agentBPrints).toHaveLength(1);
+    expect(captured.plaintext.has('agent-a')).toBe(true);
+    expect(captured.plaintext.has('agent-b')).toBe(true);
 
     // The printed plaintext hashes to the stored hashes.
     const doc = await readStoredRecord();
     const byUser = new Map(storedRecords(doc).map(r => [r.user_id, r]));
-    expect(byUser.get('shoshin')!.key_hash).toBe(hashApiKey(captured.plaintext.get('shoshin')!));
-    expect(byUser.get('zanshin')!.key_hash).toBe(hashApiKey(captured.plaintext.get('zanshin')!));
+    expect(byUser.get('agent-a')!.key_hash).toBe(hashApiKey(captured.plaintext.get('agent-a')!));
+    expect(byUser.get('agent-b')!.key_hash).toBe(hashApiKey(captured.plaintext.get('agent-b')!));
 
     // A subsequent call must NOT re-print any keys.
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -147,8 +147,8 @@ describe('ensureClientKeys', () => {
     } finally {
       logSpy.mockRestore();
     }
-    expect(secondRun.some(line => line.includes('katra-shoshin-'))).toBe(false);
-    expect(secondRun.some(line => line.includes('katra-zanshin-'))).toBe(false);
+    expect(secondRun.some(line => line.includes('katra-agent-a-'))).toBe(false);
+    expect(secondRun.some(line => line.includes('katra-agent-b-'))).toBe(false);
   });
 
   it('is idempotent — repeated calls keep the same key hashes', async (ctx) => {
@@ -178,27 +178,27 @@ describe('ensureClientKeys', () => {
     await ensureClientKeys({ collection: TEST_COLLECTION, settingsKey: TEST_SETTINGS_KEY });
     expect(getClientKeyIdentityCount()).toBe(3);
 
-    // Present shoshin's printed plaintext key from a remote address.
+    // Present agent-a's printed plaintext key from a remote address.
     const identity = await resolveCallerIdentity({
       remoteAddress: '192.168.1.99',
-      headers: { 'x-mcp-auth': captured.plaintext.get('shoshin')! },
+      headers: { 'x-mcp-auth': captured.plaintext.get('agent-a')! },
       url: '/mcp',
     });
-    expect(identity).toEqual({ user_id: 'shoshin', trusted: false });
+    expect(identity).toEqual({ user_id: 'agent-a', trusted: false });
 
-    const zanshinIdentity = await resolveCallerIdentity({
+    const agentBIdentity = await resolveCallerIdentity({
       remoteAddress: '192.168.1.99',
-      headers: { authorization: `Bearer ${captured.plaintext.get('zanshin')!}` },
+      headers: { authorization: `Bearer ${captured.plaintext.get('agent-b')!}` },
       url: '/mcp',
     });
-    expect(zanshinIdentity).toEqual({ user_id: 'zanshin', trusted: false });
+    expect(agentBIdentity).toEqual({ user_id: 'agent-b', trusted: false });
 
-    // The legacy env key resolves to satori untrusted.
+    // The legacy env key resolves to katra untrusted.
     const legacyIdentity = await resolveCallerIdentity({
       remoteAddress: '192.168.1.99',
       headers: { authorization: `Bearer ${LEGACY_MCP_KEY}` },
       url: '/mcp',
     });
-    expect(legacyIdentity).toEqual({ user_id: 'satori', trusted: false });
+    expect(legacyIdentity).toEqual({ user_id: 'katra', trusted: false });
   });
 });

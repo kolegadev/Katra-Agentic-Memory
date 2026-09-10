@@ -319,7 +319,7 @@ export interface CallerRequestParts {
   url?: string | null;
 }
 
-/** Loopback check — loopback callers are the local machine (trusted satori). */
+/** Loopback check — loopback callers are the local machine (trusted katra). */
 export function isLoopbackAddress(remoteAddress?: string | null): boolean {
   return (
     remoteAddress === '127.0.0.1' ||
@@ -382,7 +382,7 @@ export interface ClientKeyRecord {
 }
 
 /**
- * The legacy key hash that maps to satori: the current MCP env key hash when
+ * The legacy key hash that maps to katra: the current MCP env key hash when
  * plaintext is available, otherwise the persisted validator hash from
  * ensureApiKeys() (both describe the same legacy key).
  */
@@ -408,7 +408,8 @@ function getLegacyEnvKeyHashes(): Set<string> {
 /**
  * Provision the system_settings.client_keys entries at boot.
  *
- * - satori: mapped to the legacy env key hash (no new key).
+ * - local identity (KATRA_USER_ID, default 'katra'): mapped to the legacy
+ *   env key hash (no new key).
  * - additional identities declared in `KATRA_EXTRA_IDENTITIES` (comma-
  *   separated `user_id:Display Name` pairs): freshly generated once,
  *   plaintext printed once to the console, sha256 hash only in the database.
@@ -421,6 +422,9 @@ function getLegacyEnvKeyHashes(): Set<string> {
  * `options.collection` / `options.settingsKey` exist for tests so unit tests
  * never write into the production system_settings document.
  */
+
+/** The local/core identity — deployment data via KATRA_USER_ID. */
+export const LOCAL_IDENTITY_ID = process.env.KATRA_USER_ID || 'katra';
 
 /**
  * Extra identities to provision, declared by the deployment in the
@@ -464,10 +468,15 @@ export async function ensureClientKeys(options: {
     let changed = false;
     const now = new Date().toISOString();
 
-    // satori → legacy env key hash (no plaintext key generated).
+    // Local identity → legacy env key hash (no plaintext key generated).
     const legacyHash = resolveLegacyKeyHash();
-    if (legacyHash && !byUser.has('satori')) {
-      records.push({ key_hash: legacyHash, user_id: 'satori', display_name: 'Satori', created_at: now });
+    if (legacyHash && !byUser.has(LOCAL_IDENTITY_ID)) {
+      records.push({
+        key_hash: legacyHash,
+        user_id: LOCAL_IDENTITY_ID,
+        display_name: LOCAL_IDENTITY_ID.charAt(0).toUpperCase() + LOCAL_IDENTITY_ID.slice(1),
+        created_at: now,
+      });
       changed = true;
     }
 
@@ -527,13 +536,13 @@ export async function ensureClientKeys(options: {
 /**
  * Resolve WHO is calling from the request's source address and presented key.
  *
- * - loopback IP → { user_id: 'satori', trusted: true }
- * - admin key (KATRA_API_KEY / stored admin hashes) → { user_id: 'satori', trusted: true }
+ * - loopback IP → { user_id: LOCAL_IDENTITY_ID, trusted: true }
+ * - admin key (KATRA_API_KEY / stored admin hashes) → { user_id: LOCAL_IDENTITY_ID, trusted: true }
  * - key mapped in system_settings.client_keys → { user_id, trusted: false }
  * - NO legacy env-key fallback: the pre-cutover shared keys (MCP_API_KEY /
  *   BACKUP_MCP_KEYS) are deliberately unmapped so machines that still hold
- *   them are rejected loudly instead of writing memories under Satori's
- *   identity (Shoshin cutover report 2026-08-21). Non-loopback consumers get
+ *   them are rejected loudly instead of writing memories under the local
+ *   identity (cutover report 2026-08-21). Non-loopback consumers get
  *   their own mapped client key.
  * - valid but unmapped → null (the caller must be rejected with 401 + reason)
  * - no key, non-loopback → null
@@ -543,7 +552,7 @@ export async function resolveCallerIdentity(
 ): Promise<CallerIdentity | null> {
   const remoteAddress = req.remoteAddress || req.socket?.remoteAddress;
   if (isLoopbackAddress(remoteAddress)) {
-    return { user_id: 'satori', trusted: true };
+    return { user_id: LOCAL_IDENTITY_ID, trusted: true };
   }
 
   const token = extractPresentedKey(req.headers ?? {}, req.url ?? undefined);
@@ -551,9 +560,9 @@ export async function resolveCallerIdentity(
 
   const tokenHash = hashApiKey(token);
 
-  // Admin key = trusted satori.
+  // Admin key = trusted local identity.
   if (validateKatraKey(token)) {
-    return { user_id: 'satori', trusted: true };
+    return { user_id: LOCAL_IDENTITY_ID, trusted: true };
   }
 
   // Key mapped in client_keys → that identity, untrusted.

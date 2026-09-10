@@ -165,7 +165,7 @@ node esbuild.config.mjs
 export MONGODB_URI="mongodb://admin:password@localhost:27017/katra?authSource=admin"
 export REDIS_URL="redis://localhost:6379"
 export KATRA_API_KEY="your-admin-key"   # Admin key — authenticates as the trusted machine identity
-export SOLOMEM_USER_ID="your-agent"     # The server's own default identity (optional)
+export KATRA_USER_ID="your-agent"     # The server's own default identity (optional)
 export DEEPSEEK_API_KEY="sk-..."        # Optional
 
 node build/index.js
@@ -219,8 +219,8 @@ All watcher files live in `~/.katra`.
 
 ```bash
 mkdir -p ~/.katra
-cp watcher/satori_watcher.py ~/.katra/
-cp watcher/satori_opencode_extractor.py ~/.katra/
+cp watcher/katra_watcher.py ~/.katra/
+cp watcher/katra_opencode_extractor.py ~/.katra/
 cp watcher/claude_history_extractor.py ~/.katra/
 cp watcher/kolega_code_extractor.py ~/.katra/
 cp watcher/watcher-config.example.json ~/.katra/watcher-config.json
@@ -232,7 +232,7 @@ $EDITOR ~/.katra/watcher-config.json
 chmod 600 ~/.katra/watcher-config.json
 
 # Backfill existing history
-python3 ~/.katra/satori_watcher.py --once --config ~/.katra/watcher-config.json
+python3 ~/.katra/katra_watcher.py --once --config ~/.katra/watcher-config.json
 ```
 
 Each machine's watcher must use its **own identity and client key**, set with
@@ -240,10 +240,10 @@ Each machine's watcher must use its **own identity and client key**, set with
 
 ```bash
 # This machine (default)
-python3 ~/.katra/satori_watcher.py --config ~/.katra/watcher-config.json --user-id your-agent
+python3 ~/.katra/katra_watcher.py --config ~/.katra/watcher-config.json --user-id your-agent
 
 # A second machine or agent
-python3 ~/.katra/satori_watcher.py --config ~/.katra/watcher-config.json --user-id other-agent
+python3 ~/.katra/katra_watcher.py --config ~/.katra/watcher-config.json --user-id other-agent
 ```
 
 Then install the scheduler. On **Linux**, render the unit template:
@@ -252,8 +252,8 @@ Then install the scheduler. On **Linux**, render the unit template:
 mkdir -p ~/.config/systemd/user
 sed -e "s|__PYTHON__|$(command -v python3)|g" \
     -e "s|__KATRA_HOME__|$HOME/.katra|g" \
-    -e "s|katra_watcher.py|satori_watcher.py|g" \
-    watcher/satori-watcher.service.template > ~/.config/systemd/user/katra-watcher.service
+    -e "s|katra_watcher.py|katra_watcher.py|g" \
+    watcher/katra-watcher.service.template > ~/.config/systemd/user/katra-watcher.service
 systemctl --user daemon-reload
 systemctl --user enable --now katra-watcher
 ```
@@ -267,8 +267,8 @@ On **macOS**, render the launchd agent:
 mkdir -p ~/Library/LaunchAgents
 sed -e "s|__PYTHON__|$(command -v python3)|g" \
     -e "s|__KATRA_HOME__|$HOME/.katra|g" \
-    -e "s|katra_watcher.py|satori_watcher.py|g" \
-    watcher/com.satori.watcher.plist.template > ~/Library/LaunchAgents/com.katra.watcher.plist
+    -e "s|katra_watcher.py|katra_watcher.py|g" \
+    watcher/com.katra.watcher.plist.template > ~/Library/LaunchAgents/com.katra.watcher.plist
 launchctl load -w ~/Library/LaunchAgents/com.katra.watcher.plist
 ```
 
@@ -419,8 +419,8 @@ variables and usage.
 
 ## Kubernetes (Helm)
 
-Helm chart included in `helm/satori/` — supports Bitnami MongoDB + Redis subcharts,
-ingress with path routing, HPA, and PDB. See `helm/satori/README.md` for values and
+Helm chart included in `helm/katra/` — supports Bitnami MongoDB + Redis subcharts,
+ingress with path routing, HPA, and PDB. See `helm/katra/README.md` for values and
 installation instructions.
 
 ## Running on Raspberry Pi

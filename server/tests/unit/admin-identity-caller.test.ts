@@ -10,7 +10,7 @@ vi.mock('../../src/database/connection.js', () => ({
   get_database: () => ({
     collection: () => ({
       findOne: async () => ({
-        value: { name: 'Satori', chosen_by: 'the agent', established: '2026-08-19' },
+        value: { name: 'Katra', chosen_by: 'the agent', established: '2026-08-19' },
       }),
       updateOne: async () => ({ acknowledged: true }),
       insertOne: async () => ({ acknowledged: true, insertedId: 'x' }),
@@ -36,7 +36,7 @@ import {
   registerClientKeyIdentity,
 } from '../../src/utils/api-key-manager.js';
 
-const SHOSHIN_KEY = 'katra-shoshin-identity-test-key';
+const AGENT_A_KEY = 'katra-agent-a-identity-test-key';
 const envNames = ['MCP_API_KEY', 'ADMIN_API_KEY', 'KATRA_API_KEY', 'BACKUP_MCP_KEYS'];
 
 const app = new Hono();
@@ -53,7 +53,7 @@ describe('Admin identity endpoint — caller-resolved user_id (F2)', () => {
   beforeEach(() => {
     clearClientKeyIdentities();
     for (const name of envNames) delete process.env[name];
-    registerClientKeyIdentity(hashApiKey(SHOSHIN_KEY), 'shoshin');
+    registerClientKeyIdentity(hashApiKey(AGENT_A_KEY), 'agent-a');
   });
 
   afterEach(() => {
@@ -62,12 +62,12 @@ describe('Admin identity endpoint — caller-resolved user_id (F2)', () => {
   });
 
   it('returns the caller-resolved user_id for a mapped client key', async () => {
-    const res = await getIdentity(SHOSHIN_KEY);
+    const res = await getIdentity(AGENT_A_KEY);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.success).toBe(true);
-    expect(body.identity.user_id).toBe('shoshin');
-    expect(body.identity.name).toBe('Satori');
+    expect(body.identity.user_id).toBe('agent-a');
+    expect(body.identity.name).toBe('Katra');
   });
 
   it('falls back to the safe default caller when no identity is resolved', async () => {

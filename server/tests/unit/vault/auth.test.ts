@@ -157,30 +157,30 @@ describe('F9 wiring — denylist coverage (criterion 13)', () => {
 // ── Direct MCP handler gates (no DB) ──────────────────────────────────────
 
 describe('F9 MCP handlers — operator gate + disconnected guard', () => {
-  const LILLY: CallerIdentity = { user_id: 'lilly', trusted: false };
-  const SATORI: CallerIdentity = { user_id: 'satori', trusted: true };
+  const AGENT_C: CallerIdentity = { user_id: 'agent-c', trusted: false };
+  const KATRA: CallerIdentity = { user_id: 'katra', trusted: true };
 
   it('auth_enroll_totp rejects untrusted callers with \'operator only\'', async () => {
     await expect(
-      runWithCaller(LILLY, () => handleAuthEnrollTotp({ identity: 'lilly' })),
+      runWithCaller(AGENT_C, () => handleAuthEnrollTotp({ identity: 'agent-c' })),
     ).rejects.toThrow('operator only');
   });
 
   it('auth handlers return a disconnected warning without a DB', async () => {
-    const enroll = await runWithCaller(SATORI, () =>
-      handleAuthEnrollTotp({ identity: 'satori' }),
+    const enroll = await runWithCaller(KATRA, () =>
+      handleAuthEnrollTotp({ identity: 'katra' }),
     );
     expect(enroll[0].text).toBe('⚠️ MongoDB disconnected.');
 
-    const issue = await runWithCaller(LILLY, () =>
-      handleAuthIssueSession({ identity: 'lilly', totp_code: '123456' }),
+    const issue = await runWithCaller(AGENT_C, () =>
+      handleAuthIssueSession({ identity: 'agent-c', totp_code: '123456' }),
     );
     expect(issue[0].text).toBe('⚠️ MongoDB disconnected.');
 
-    const revoke = await runWithCaller(LILLY, () => handleAuthRevokeSession({}));
+    const revoke = await runWithCaller(AGENT_C, () => handleAuthRevokeSession({}));
     expect(revoke[0].text).toBe('⚠️ MongoDB disconnected.');
 
-    const status = await runWithCaller(LILLY, () => handleAuthSessionStatus({}));
+    const status = await runWithCaller(AGENT_C, () => handleAuthSessionStatus({}));
     expect(status[0].text).toBe('⚠️ MongoDB disconnected.');
   });
 });
@@ -193,9 +193,9 @@ describe.skipIf(!mongoAvailable)('F9 auth service — contract criteria 5–11 +
   const SESSIONS = 'test_auth_sessions_f9';
   const AUDIT_KEYS = new Set(['at', 'actor', 'action', 'secret_id', 'service', 'outcome', 'error']);
 
-  const OPERATOR: CallerIdentity = { user_id: 'satori', trusted: true };
-  const LILLY: CallerIdentity = { user_id: 'lilly', trusted: false };
-  const SHOSHIN: CallerIdentity = { user_id: 'shoshin', trusted: false };
+  const OPERATOR: CallerIdentity = { user_id: 'katra', trusted: true };
+  const AGENT_C: CallerIdentity = { user_id: 'agent-c', trusted: false };
+  const AGENT_A: CallerIdentity = { user_id: 'agent-a', trusted: false };
 
   /** Fixed injected clock — every TOTP computation is deterministic. */
   const BASE_T = 1_800_000_000; // 2027-01-15T08:00:00Z — divisible by 30
@@ -323,16 +323,16 @@ describe.skipIf(!mongoAvailable)('F9 auth service — contract criteria 5–11 +
   }
 
   // 5 ── enrollment: encrypted, RBAC open round-trip, re-enroll invalidates ──
-  it('criterion 5: operator enrolls lilly — envelope at rest, lilly opens it, re-enroll issues a NEW uri and the old code stops verifying', async () => {
-    const uri1 = await enroll(OPERATOR, 'lilly');
-    expect(uri1).toMatch(/^otpauth:\/\/totp\/Katra:lilly\?secret=[A-Z2-7]+&issuer=Katra&algorithm=SHA1&digits=6&period=30$/);
+  it('criterion 5: operator enrolls agent-c — envelope at rest, agent-c opens it, re-enroll issues a NEW uri and the old code stops verifying', async () => {
+    const uri1 = await enroll(OPERATOR, 'agent-c');
+    expect(uri1).toMatch(/^otpauth:\/\/totp\/Katra:agent-c\?secret=[A-Z2-7]+&issuer=Katra&algorithm=SHA1&digits=6&period=30$/);
     const secret1 = secretOf(uri1);
     expect(secret1).toHaveLength(32);
 
     // At rest: an F1 envelope — never the plaintext base32.
-    const raw = await rawSecret('lilly/auth-totp');
+    const raw = await rawSecret('agent-c/auth-totp');
     expect(raw).not.toBeNull();
-    expect(raw!.owner.user_id).toBe('lilly');
+    expect(raw!.owner.user_id).toBe('agent-c');
     expect(raw!.service).toBe('auth');
     expect(raw!.kind).toBe('totp_secret');
     expect(raw!.flags).toEqual({ rotatable: false, approval_required: false });
@@ -342,23 +342,23 @@ describe.skipIf(!mongoAvailable)('F9 auth service — contract criteria 5–11 +
     expect(JSON.stringify(raw)).not.toContain(secret1);
 
     // The envelope opens to the exact secret (crypto round-trip via F1).
-    expect(openSecret(raw!.envelope, 'user:lilly', MK)).toBe(secret1);
+    expect(openSecret(raw!.envelope, 'user:agent-c', MK)).toBe(secret1);
 
-    // Lilly (owner, untrusted) recovers her own secret via openSecretValue.
-    expect(await keyedStore.openSecretValue(LILLY, 'lilly/auth-totp')).toBe(secret1);
+    // Agent-C (owner, untrusted) recovers her own secret via openSecretValue.
+    expect(await keyedStore.openSecretValue(AGENT_C, 'agent-c/auth-totp')).toBe(secret1);
 
     // Re-enroll overwrites with a fresh secret + NEW uri.
-    const uri2 = await enroll(OPERATOR, 'lilly');
+    const uri2 = await enroll(OPERATOR, 'agent-c');
     expect(uri2).not.toBe(uri1);
     const secret2 = secretOf(uri2);
     expect(secret2).not.toBe(secret1);
-    expect(await keyedStore.openSecretValue(LILLY, 'lilly/auth-totp')).toBe(secret2);
+    expect(await keyedStore.openSecretValue(AGENT_C, 'agent-c/auth-totp')).toBe(secret2);
 
     // The OLD code no longer verifies (no prior sessions → clean secret check).
     const oldCode = totpCode(secret1, { time: BASE_T });
     const oldTry = await svc.issueSession({
-      caller: LILLY,
-      identity: 'lilly',
+      caller: AGENT_C,
+      identity: 'agent-c',
       totpCode: oldCode,
     });
     expect(oldTry).toEqual({
@@ -369,23 +369,23 @@ describe.skipIf(!mongoAvailable)('F9 auth service — contract criteria 5–11 +
     });
     // The NEW code works.
     const newTry = await svc.issueSession({
-      caller: LILLY,
-      identity: 'lilly',
+      caller: AGENT_C,
+      identity: 'agent-c',
       totpCode: totpCode(secret2, { time: BASE_T }),
     });
     expect(newTry.issued).toBe(true);
   });
 
   it('enrollTotp is operator-only for OTHER identities (denied result + denied audit row)', async () => {
-    const res = await svc.enrollTotp({ caller: LILLY, identity: 'shoshin' });
+    const res = await svc.enrollTotp({ caller: AGENT_C, identity: 'agent-a' });
     expect(res).toEqual({
       enrolled: false,
-      identity: 'shoshin',
+      identity: 'agent-a',
       otpauth_uri: null,
       secret_id: null,
       reason: 'operator only',
     });
-    expect(await rawSecret('shoshin/auth-totp')).toBeNull();
+    expect(await rawSecret('agent-a/auth-totp')).toBeNull();
     const rows = await auditRows();
     const enrollRows = rows.filter((r) => r.action === 'totp_enroll');
     expect(enrollRows).toHaveLength(1);
@@ -394,13 +394,13 @@ describe.skipIf(!mongoAvailable)('F9 auth service — contract criteria 5–11 +
 
   // 6 ── issueSession: shape, ttl from policy, wrong code denied + audited ──
   it('criterion 6: issueSession with a correct code returns token + expires_at = now + policy ttl; DB stores only the SHA-256 hash', async () => {
-    const uri = await enroll(LILLY, 'lilly'); // self-enrollment (own partition)
+    const uri = await enroll(AGENT_C, 'agent-c'); // self-enrollment (own partition)
     const secret = secretOf(uri);
 
     // Wrong code first: static reason + denied audit row.
     const wrong = await svc.issueSession({
-      caller: LILLY,
-      identity: 'lilly',
+      caller: AGENT_C,
+      identity: 'agent-c',
       totpCode: '000000',
     });
     expect(wrong).toEqual({
@@ -411,15 +411,15 @@ describe.skipIf(!mongoAvailable)('F9 auth service — contract criteria 5–11 +
     });
 
     const issued = await svc.issueSession({
-      caller: LILLY,
-      identity: 'lilly',
+      caller: AGENT_C,
+      identity: 'agent-c',
       totpCode: totpCode(secret, { time: BASE_T }),
     });
     expect(issued.issued).toBe(true);
     expect(issued.token).not.toBeNull();
     expect(typeof issued.token).toBe('string');
     expect(issued.token!.length).toBeGreaterThanOrEqual(43); // 32 bytes base64url
-    // Interactive lilly → default 12 h TTL from the injected clock.
+    // Interactive agent-c → default 12 h TTL from the injected clock.
     expect(issued.expires_at).toBe(new Date(BASE_T * 1000 + 12 * HOUR_MS).toISOString());
 
     // DB: SHA-256 hash only — the raw token never appears anywhere.
@@ -427,7 +427,7 @@ describe.skipIf(!mongoAvailable)('F9 auth service — contract criteria 5–11 +
     expect(doc).not.toBeNull();
     expect(doc!.token_hash).toBe(hashOf(issued.token!));
     expect(doc!.token_hash).toHaveLength(64);
-    expect(doc!.identity).toBe('lilly');
+    expect(doc!.identity).toBe('agent-c');
     expect(doc!.created_at).toBe(new Date(BASE_T * 1000).toISOString());
     expect(doc!.revoked_at).toBeNull();
     expect(JSON.stringify(doc)).not.toContain(issued.token);
@@ -444,8 +444,8 @@ describe.skipIf(!mongoAvailable)('F9 auth service — contract criteria 5–11 +
 
   it('issueSession for an unenrolled identity → static \'not enrolled\' + denied audit', async () => {
     const res = await svc.issueSession({
-      caller: SHOSHIN,
-      identity: 'shoshin',
+      caller: AGENT_A,
+      identity: 'agent-a',
       totpCode: '123456',
     });
     expect(res).toEqual({
@@ -461,17 +461,17 @@ describe.skipIf(!mongoAvailable)('F9 auth service — contract criteria 5–11 +
 
   // 7 ── validateSession: valid / expired / revoked ───────────────────────
   it('criterion 7: validateSession accepts a live token, rejects after expiry and after revocation', async () => {
-    const uri = await enroll(LILLY, 'lilly');
+    const uri = await enroll(AGENT_C, 'agent-c');
     const issued = await svc.issueSession({
-      caller: LILLY,
-      identity: 'lilly',
+      caller: AGENT_C,
+      identity: 'agent-c',
       totpCode: totpCode(secretOf(uri), { time: BASE_T }),
     });
     expect(issued.issued).toBe(true);
     const token = issued.token!;
 
     const valid = await svc.validateSession(token);
-    expect(valid).toEqual({ valid: true, identity: 'lilly' });
+    expect(valid).toEqual({ valid: true, identity: 'agent-c' });
 
     // Expiry: advance the injected clock past the 12 h TTL.
     clock.ms = BASE_T * 1000 + 12 * HOUR_MS + 1000;
@@ -480,7 +480,7 @@ describe.skipIf(!mongoAvailable)('F9 auth service — contract criteria 5–11 +
 
     // Revoked: reset the clock and revoke, then validate again.
     clock.ms = BASE_T * 1000;
-    expect(await svc.revokeSession({ caller: LILLY, tokenHashOrPrefix: hashOf(token) })).toEqual({
+    expect(await svc.revokeSession({ caller: AGENT_C, tokenHashOrPrefix: hashOf(token) })).toEqual({
       revoked: 1,
     });
     const revoked = await svc.validateSession(token);
@@ -496,17 +496,17 @@ describe.skipIf(!mongoAvailable)('F9 auth service — contract criteria 5–11 +
 
   // 8 ── replay on issue ──────────────────────────────────────────────────
   it('criterion 8: the same TOTP code cannot be used twice (per-identity replay guard)', async () => {
-    const uri = await enroll(LILLY, 'lilly');
+    const uri = await enroll(AGENT_C, 'agent-c');
     const code = totpCode(secretOf(uri), { time: BASE_T });
 
-    const first = await svc.issueSession({ caller: LILLY, identity: 'lilly', totpCode: code });
+    const first = await svc.issueSession({ caller: AGENT_C, identity: 'agent-c', totpCode: code });
     expect(first.issued).toBe(true);
     // The session doc ITSELF is the replay claim: it carries the verified
     // counter, and the unique (identity, last_counter) index blocks re-claims.
     const firstDoc = await sessionDoc(hashOf(first.token!));
     expect(firstDoc!.last_counter).toBe(BASE_T / 30);
 
-    const second = await svc.issueSession({ caller: LILLY, identity: 'lilly', totpCode: code });
+    const second = await svc.issueSession({ caller: AGENT_C, identity: 'agent-c', totpCode: code });
     expect(second).toEqual({
       issued: false,
       token: null,
@@ -521,8 +521,8 @@ describe.skipIf(!mongoAvailable)('F9 auth service — contract criteria 5–11 +
     // The NEXT step's code is accepted (a fresh counter is claimable).
     clock.ms = (BASE_T + 30) * 1000;
     const next = await svc.issueSession({
-      caller: LILLY,
-      identity: 'lilly',
+      caller: AGENT_C,
+      identity: 'agent-c',
       totpCode: totpCode(secretOf(uri), { time: BASE_T + 30 }),
     });
     expect(next.issued).toBe(true);
@@ -533,12 +533,12 @@ describe.skipIf(!mongoAvailable)('F9 auth service — contract criteria 5–11 +
 
   it('criterion 8 (concurrent): two simultaneous same-code issues mint exactly ONE session (atomic claim)', async () => {
     await ensureReplayIndex(); // index may be built lazily at boot — create it
-    const uri = await enroll(LILLY, 'lilly');
+    const uri = await enroll(AGENT_C, 'agent-c');
     const code = totpCode(secretOf(uri), { time: BASE_T });
 
     const results = await Promise.all([
-      svc.issueSession({ caller: LILLY, identity: 'lilly', totpCode: code }),
-      svc.issueSession({ caller: LILLY, identity: 'lilly', totpCode: code }),
+      svc.issueSession({ caller: AGENT_C, identity: 'agent-c', totpCode: code }),
+      svc.issueSession({ caller: AGENT_C, identity: 'agent-c', totpCode: code }),
     ]);
 
     // Exactly one winner; the loser is a clean static denial (no session).
@@ -566,15 +566,11 @@ describe.skipIf(!mongoAvailable)('F9 auth service — contract criteria 5–11 +
   // 9 ── policy: defaults + system_settings overrides ─────────────────────
   it('criterion 9: getAuthPolicy defaults match the design table', () => {
     const interactive = { class: 'interactive', require_totp: false, session_ttl_hours: 12 };
-    for (const id of ['shoshin', 'zanshin', 'lilly', 'satori-interactive-default']) {
+    for (const id of ['agent-a', 'agent-b', 'agent-c', 'interactive-default']) {
       expect(getAuthPolicy(id)).toEqual(interactive);
     }
-    expect(getAuthPolicy('satori')).toEqual({
-      class: 'unattended',
-      require_totp: false,
-      session_ttl_hours: 720,
-    });
-    expect(getAuthPolicy('gas-law-watcher')).toEqual({
+    const local = process.env.KATRA_USER_ID || 'katra';
+    expect(getAuthPolicy(local)).toEqual({
       class: 'unattended',
       require_totp: false,
       session_ttl_hours: 720,
@@ -589,8 +585,8 @@ describe.skipIf(!mongoAvailable)('F9 auth service — contract criteria 5–11 +
     // Unknown identity → interactive default.
     expect(getAuthPolicy('someone-new')).toEqual(interactive);
     // DEFAULT_AUTH_POLICY itself mirrors the table keys.
-    expect(DEFAULT_AUTH_POLICY['satori']!.class).toBe('unattended');
-    expect(DEFAULT_AUTH_POLICY['lilly']!.session_ttl_hours).toBe(12);
+    expect(DEFAULT_AUTH_POLICY[local]!.class).toBe('unattended');
+    expect((DEFAULT_AUTH_POLICY['agent-c'] ?? { session_ttl_hours: 12 }).session_ttl_hours).toBe(12);
   });
 
   it('criterion 9: system_settings.auth_policy overrides are honored (cached ≤60 s)', async () => {
@@ -604,7 +600,7 @@ describe.skipIf(!mongoAvailable)('F9 auth service — contract criteria 5–11 +
           $set: {
             overrides: {
               [target]: { class: 'unattended', require_totp: true, session_ttl_hours: 48 },
-              lilly: { session_ttl_hours: 2 }, // partial override merges
+              'agent-c': { session_ttl_hours: 2 }, // partial override merges
             },
           },
         },
@@ -617,12 +613,12 @@ describe.skipIf(!mongoAvailable)('F9 auth service — contract criteria 5–11 +
         session_ttl_hours: 48,
       });
       // Partial override merges over the default entry.
-      const lillyPol = getAuthPolicy('lilly');
-      expect(lillyPol.session_ttl_hours).toBe(2);
-      expect(lillyPol.class).toBe('interactive');
-      expect(lillyPol.require_totp).toBe(false);
+      const agentCPol = getAuthPolicy('agent-c');
+      expect(agentCPol.session_ttl_hours).toBe(2);
+      expect(agentCPol.class).toBe('interactive');
+      expect(agentCPol.require_totp).toBe(false);
       // Unrelated identities are untouched.
-      expect(getAuthPolicy('satori').class).toBe('unattended');
+      expect(getAuthPolicy('katra').class).toBe('unattended');
     } finally {
       if (prior === null) await settings.deleteOne({ key: 'auth_policy' });
       else await settings.replaceOne({ key: 'auth_policy' }, prior);
@@ -632,35 +628,35 @@ describe.skipIf(!mongoAvailable)('F9 auth service — contract criteria 5–11 +
 
   // 10 ── revoke/list scoping ────────────────────────────────────────────
   it('criterion 10: caller revokes own sessions; operator revokes any (≥8-char prefix); list is caller-scoped', async () => {
-    const uri = await enroll(LILLY, 'lilly');
+    const uri = await enroll(AGENT_C, 'agent-c');
     const secret = secretOf(uri);
     const a = await svc.issueSession({
-      caller: LILLY,
-      identity: 'lilly',
+      caller: AGENT_C,
+      identity: 'agent-c',
       totpCode: totpCode(secret, { time: BASE_T }),
     });
     clock.ms = (BASE_T + 30) * 1000; // next step → second session
     const b = await svc.issueSession({
-      caller: LILLY,
-      identity: 'lilly',
+      caller: AGENT_C,
+      identity: 'agent-c',
       totpCode: totpCode(secret, { time: BASE_T + 30 }),
     });
     const hashA = hashOf(a.token!);
     const hashB = hashOf(b.token!);
 
-    // Another untrusted caller cannot revoke lilly's session by prefix.
+    // Another untrusted caller cannot revoke agent-c's session by prefix.
     expect(
-      await svc.revokeSession({ caller: SHOSHIN, tokenHashOrPrefix: hashA.slice(0, 12) }),
+      await svc.revokeSession({ caller: AGENT_A, tokenHashOrPrefix: hashA.slice(0, 12) }),
     ).toEqual({ revoked: 0 });
 
     // Too-short identifiers revoke nothing.
-    expect(await svc.revokeSession({ caller: LILLY, tokenHashOrPrefix: 'ab' })).toEqual({
+    expect(await svc.revokeSession({ caller: AGENT_C, tokenHashOrPrefix: 'ab' })).toEqual({
       revoked: 0,
     });
 
-    // Lilly revokes her OWN session by an 8-char hash prefix.
+    // Agent-C revokes her OWN session by an 8-char hash prefix.
     expect(
-      await svc.revokeSession({ caller: LILLY, tokenHashOrPrefix: hashA.slice(0, 8) }),
+      await svc.revokeSession({ caller: AGENT_C, tokenHashOrPrefix: hashA.slice(0, 8) }),
     ).toEqual({ revoked: 1 });
     expect(await svc.validateSession(a.token!)).toEqual({
       valid: false,
@@ -673,18 +669,18 @@ describe.skipIf(!mongoAvailable)('F9 auth service — contract criteria 5–11 +
       revoked: 1,
     });
 
-    // List scoping: shoshin sees nothing; lilly sees her own (both revoked);
+    // List scoping: agent-a sees nothing; agent-c sees her own (both revoked);
     // the operator sees all rows with the identity included.
-    expect(await svc.listSessions(SHOSHIN)).toEqual([]);
-    const lillyList = await svc.listSessions(LILLY);
-    expect(lillyList).toHaveLength(2);
-    for (const row of lillyList) {
+    expect(await svc.listSessions(AGENT_A)).toEqual([]);
+    const agentCList = await svc.listSessions(AGENT_C);
+    expect(agentCList).toHaveLength(2);
+    for (const row of agentCList) {
       expect(Object.keys(row).sort()).toEqual(['created_at', 'expires_at', 'revoked_at']);
       expect(row.revoked_at).not.toBeNull();
     }
     const opList = await svc.listSessions(OPERATOR);
     expect(opList).toHaveLength(2);
-    expect(opList.every((row) => row.identity === 'lilly')).toBe(true);
+    expect(opList.every((row) => row.identity === 'agent-c')).toBe(true);
     for (const row of opList) {
       expect(Object.keys(row).sort()).toEqual([
         'created_at',
@@ -697,23 +693,23 @@ describe.skipIf(!mongoAvailable)('F9 auth service — contract criteria 5–11 +
 
   // 11 ── audit: exactly one value-free row per attempt ───────────────────
   it('criterion 11: enroll/issue/revoke write exactly one vault_audit row each, whitelist keys only, value-free', async () => {
-    const uri = await enroll(OPERATOR, 'lilly'); // 1 totp_enroll ok row
+    const uri = await enroll(OPERATOR, 'agent-c'); // 1 totp_enroll ok row
     const secret = secretOf(uri);
     const issued = await svc.issueSession({
-      caller: LILLY,
-      identity: 'lilly',
+      caller: AGENT_C,
+      identity: 'agent-c',
       totpCode: totpCode(secret, { time: BASE_T }),
     }); // 1 session_issue ok row
     await svc.issueSession({
-      caller: LILLY,
-      identity: 'lilly',
+      caller: AGENT_C,
+      identity: 'agent-c',
       totpCode: totpCode(secret, { time: BASE_T }),
     }); // replay → 1 session_issue denied row
     await svc.revokeSession({
-      caller: LILLY,
+      caller: AGENT_C,
       tokenHashOrPrefix: hashOf(issued.token!).slice(0, 12),
     }); // 1 session_revoke ok row
-    await svc.revokeSession({ caller: LILLY, tokenHashOrPrefix: 'zz' }); // denied revoke
+    await svc.revokeSession({ caller: AGENT_C, tokenHashOrPrefix: 'zz' }); // denied revoke
 
     const rows = await auditRows();
     // The store writes its own value-free put/open rows to the same audit
@@ -736,8 +732,8 @@ describe.skipIf(!mongoAvailable)('F9 auth service — contract criteria 5–11 +
       expect(row.service).toBe('auth');
       expect(Date.parse(row.at as string)).not.toBeNaN();
       if (row.action === 'totp_enroll') {
-        expect(row.actor).toBe('satori');
-        expect(row.secret_id).toBe('lilly/auth-totp');
+        expect(row.actor).toBe('katra');
+        expect(row.secret_id).toBe('agent-c/auth-totp');
         expect(row.outcome).toBe('ok');
       }
       if (row.action === 'session_revoke') {
@@ -766,35 +762,35 @@ describe.skipIf(!mongoAvailable)('F9 auth service — contract criteria 5–11 +
 
   // 12 ── REST behavior at /api/v1/auth (getCaller()) ────────────────────
   it('REST: POST /enroll-totp operator → 201 {enrolled, identity, otpauth_uri}; untrusted for another identity → 403', async () => {
-    const res = await req(OPERATOR, 'POST', '/enroll-totp', { identity: 'lilly' });
+    const res = await req(OPERATOR, 'POST', '/enroll-totp', { identity: 'agent-c' });
     expect(res.status).toBe(201);
     const body: any = await res.clone().json();
     expect(body.enrolled).toBe(true);
-    expect(body.identity).toBe('lilly');
-    expect(body.otpauth_uri).toMatch(/^otpauth:\/\/totp\/Katra:lilly\?secret=/);
+    expect(body.identity).toBe('agent-c');
+    expect(body.otpauth_uri).toMatch(/^otpauth:\/\/totp\/Katra:agent-c\?secret=/);
     // Never echoed anywhere else.
-    expect(JSON.stringify(await rawSecret('lilly/auth-totp'))).not.toContain(
+    expect(JSON.stringify(await rawSecret('agent-c/auth-totp'))).not.toContain(
       secretOf(body.otpauth_uri as string),
     );
 
-    const denied = await req(LILLY, 'POST', '/enroll-totp', { identity: 'shoshin' });
+    const denied = await req(AGENT_C, 'POST', '/enroll-totp', { identity: 'agent-a' });
     expect(denied.status).toBe(403);
     expect((await denied.json()).error).toBe('operator only');
 
     // Self-enrollment by an untrusted caller is their own partition.
-    const self = await req(SHOSHIN, 'POST', '/enroll-totp', { identity: 'shoshin' });
+    const self = await req(AGENT_A, 'POST', '/enroll-totp', { identity: 'agent-a' });
     expect(self.status).toBe(201);
 
-    expect((await req(LILLY, 'POST', '/enroll-totp', {})).status).toBe(400);
+    expect((await req(AGENT_C, 'POST', '/enroll-totp', {})).status).toBe(400);
   });
 
   it('REST: POST /session → 201 {issued, token, expires_at}; wrong code → 403', async () => {
-    const enrollRes = await req(LILLY, 'POST', '/enroll-totp', { identity: 'lilly' });
+    const enrollRes = await req(AGENT_C, 'POST', '/enroll-totp', { identity: 'agent-c' });
     const uri: any = (await enrollRes.json()).otpauth_uri;
     const secret = secretOf(uri as string);
 
-    const ok = await req(LILLY, 'POST', '/session', {
-      identity: 'lilly',
+    const ok = await req(AGENT_C, 'POST', '/session', {
+      identity: 'agent-c',
       totp_code: totpCode(secret, { time: BASE_T }),
     });
     expect(ok.status).toBe(201);
@@ -807,61 +803,61 @@ describe.skipIf(!mongoAvailable)('F9 auth service — contract criteria 5–11 +
     expect(doc).not.toBeNull();
     expect(JSON.stringify(doc)).not.toContain(body.token);
 
-    const bad = await req(LILLY, 'POST', '/session', {
-      identity: 'lilly',
+    const bad = await req(AGENT_C, 'POST', '/session', {
+      identity: 'agent-c',
       totp_code: '999999',
     });
     expect(bad.status).toBe(403);
     expect((await bad.json()).error).toBe('invalid TOTP code');
 
-    expect((await req(LILLY, 'POST', '/session', { identity: 'lilly' })).status).toBe(400);
+    expect((await req(AGENT_C, 'POST', '/session', { identity: 'agent-c' })).status).toBe(400);
   });
 
   it('REST: DELETE /session + GET /sessions follow the caller-scoped contract', async () => {
-    const enrollRes = await req(LILLY, 'POST', '/enroll-totp', { identity: 'lilly' });
+    const enrollRes = await req(AGENT_C, 'POST', '/enroll-totp', { identity: 'agent-c' });
     const secret = secretOf((await enrollRes.json()).otpauth_uri as string);
-    const issueRes = await req(LILLY, 'POST', '/session', {
-      identity: 'lilly',
+    const issueRes = await req(AGENT_C, 'POST', '/session', {
+      identity: 'agent-c',
       totp_code: totpCode(secret, { time: BASE_T }),
     });
     const token: any = (await issueRes.json()).token;
     const hash = hashOf(token as string);
 
-    // shoshin cannot delete lilly's session (prefix matches nothing of hers).
-    const foreign = await req(SHOSHIN, 'DELETE', '/session', {
+    // agent-a cannot delete agent-c's session (prefix matches nothing of hers).
+    const foreign = await req(AGENT_A, 'DELETE', '/session', {
       token_hash: hash.slice(0, 16),
     });
     expect(foreign.status).toBe(200);
     expect((await foreign.json()).revoked).toBe(0);
 
-    const del = await req(LILLY, 'DELETE', '/session', { token_hash: hash });
+    const del = await req(AGENT_C, 'DELETE', '/session', { token_hash: hash });
     expect(del.status).toBe(200);
     expect((await del.json()).revoked).toBe(1);
 
     // An EMPTY (no JSON) DELETE body is not an error: revokes nothing.
-    const emptyDel = await req(LILLY, 'DELETE', '/session');
+    const emptyDel = await req(AGENT_C, 'DELETE', '/session');
     expect(emptyDel.status).toBe(200);
     expect((await emptyDel.json()).revoked).toBe(0);
 
-    const list = await req(SHOSHIN, 'GET', '/sessions');
+    const list = await req(AGENT_A, 'GET', '/sessions');
     expect(list.status).toBe(200);
     expect(await list.json()).toEqual([]);
 
-    const lillyList: any[] = await (await req(LILLY, 'GET', '/sessions')).json();
-    expect(lillyList).toHaveLength(1);
-    expect(lillyList[0].revoked_at).not.toBeNull();
-    expect(lillyList[0].identity).toBeUndefined(); // caller-scoped: no identity key
+    const agentCList: any[] = await (await req(AGENT_C, 'GET', '/sessions')).json();
+    expect(agentCList).toHaveLength(1);
+    expect(agentCList[0].revoked_at).not.toBeNull();
+    expect(agentCList[0].identity).toBeUndefined(); // caller-scoped: no identity key
   });
 
   it('REST: issuer parameter flows into the otpauth URI', async () => {
     const res = await req(OPERATOR, 'POST', '/enroll-totp', {
-      identity: 'zanshin',
+      identity: 'agent-b',
       issuer: 'Katra Lab',
     });
     expect(res.status).toBe(201);
     const body: any = await res.json();
     expect(body.otpauth_uri).toMatch(
-      /^otpauth:\/\/totp\/Katra Lab:zanshin\?secret=[A-Z2-7]+&issuer=Katra Lab&algorithm=SHA1&digits=6&period=30$/,
+      /^otpauth:\/\/totp\/Katra Lab:agent-b\?secret=[A-Z2-7]+&issuer=Katra Lab&algorithm=SHA1&digits=6&period=30$/,
     );
   });
 });

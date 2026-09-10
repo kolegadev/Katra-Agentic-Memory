@@ -137,7 +137,7 @@ No auth required. Returns the **caller's** identity record — each machine read
 
 ### GET /api/v1/admin/system-identity
 
-Legacy endpoint — returns the process-level identity (`user_id` from `SOLOMEM_USER_ID`, falling back to `<hostname>-agent`) plus hostname. Requires the admin key.
+Legacy endpoint — returns the process-level identity (`user_id` from `KATRA_USER_ID`, falling back to `<hostname>-agent`) plus hostname. Requires the admin key.
 
 ---
 

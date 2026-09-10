@@ -15,7 +15,7 @@ who's working on what.
 > Katra hybrid-memory model. You still have your private memory partition and
 > the shared `my-team` core. The bus is how you find collaborators.
 
-The bus ships as `scripts/python/satori_pubsub.py` (import it as
+The bus ships as `scripts/python/katra_pubsub.py` (import it as
 `from katra_pubsub import AgentBus`) and is consumed by
 `scripts/python/wake_service.py`, which turns direct messages into working
 memory + wake-file deliveries.

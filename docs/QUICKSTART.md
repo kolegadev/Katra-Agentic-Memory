@@ -277,12 +277,12 @@ machine's client key; writes are then stamped with that machine's identity:
 
 | Platform | Command |
 |----------|---------|
-| **OpenCode** | `python3 ~/.katra/satori_opencode_extractor.py --once --api-key <agent-key> --user-id <agent>` |
+| **OpenCode** | `python3 ~/.katra/katra_opencode_extractor.py --once --api-key <agent-key> --user-id <agent>` |
 | **Claude Code** | `python3 ~/.katra/claude_history_extractor.py --once --api-key <agent-key> --user-id <agent>` |
 | **Kolega Code** | `python3 ~/.katra/kolega_code_extractor.py --once --api-key <agent-key> --user-id <agent>` |
 
 On macOS the installer uses launchd instead of systemd. A ready-made agent
-template ships at `watcher/com.satori.watcher.plist.template` — there is no
+template ships at `watcher/com.katra.watcher.plist.template` — there is no
 longer anything to hand-write.
 
 ## Next Steps

@@ -105,7 +105,7 @@ inter-agent message arrives, stores it in working memory for the target
 identity and writes a wake file the agent's hook checks —
 `~/.katra/bulletins/<agent>.json`.
 
-### 4. `satori_pubsub.py` — The Pub/Sub Bus
+### 4. `katra_pubsub.py` — The Pub/Sub Bus
 
 Redis-backed agent pub-sub: identities register presence, discover peers, and
 form ad-hoc collaboration channels (`AgentBus("your-agent")`,

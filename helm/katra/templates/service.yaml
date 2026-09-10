@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "katra.fullname" . }}
+  labels:
+    {{- include "katra.labels" . | nindent 4 }}
+  {{- with .Values.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.ports.rest }}
+      targetPort: rest
+      protocol: TCP
+      name: rest
+    - port: {{ .Values.service.ports.mcp }}
+      targetPort: mcp
+      protocol: TCP
+      name: mcp
+  selector:
+    {{- include "katra.selectorLabels" . | nindent 4 }}

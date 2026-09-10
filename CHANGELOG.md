@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Legacy `MCP_API_KEY` / `BACKUP_MCP_KEYS` environment keys retired — they no longer authenticate
 - `kolega-agent` / `opencode-agent` user ids rekeyed to the named identities; ~1.3M documents migrated
 - Kolega Code bridge: per-machine `KATRA_USER_ID`, platform-aware state dir, `mcp_url` vs `KATRA_HOST` self-healing, key-file fallback
-- Helm chart directory `helm/katra/` → `helm/satori/`
+- Helm chart directory `helm/katra/` → `helm/katra/`
 
 ### Fixed
 - `ensure-bridge.sh` step-3 rewrite condition now also compares `mcp_url` against `KATRA_HOST` (a non-login run could pin `localhost` permanently)

@@ -9,7 +9,7 @@ Pi5 (Docker, aarch64)
 │ :27017   │  │ :6379    │  │ :9000    │  │ :3100 (MCP)  │
 └──────────┘  └──────────┘  └──────────┘  │ :9002 (API)  │
                                            └──────┬───────┘
-                                          satori_watcher.py
+                                          katra_watcher.py
                                           (host-side daemon)
 ```
 
@@ -29,11 +29,11 @@ A conversation turn enters through one of:
 
 | Path | Source | Format |
 |------|--------|--------|
-| **A** — `satori_watcher.py` | Watches `.jsonl` files from OpenCode, Claude Code, OpenClaw, etc. | Batches per-session into `store_memory` MCP call |
+| **A** — `katra_watcher.py` | Watches `.jsonl` files from OpenCode, Claude Code, OpenClaw, etc. | Batches per-session into `store_memory` MCP call |
 | **B** — Session Ingestion Service | Reads `.jsonl` from `/sessions/` or `~/.katra/sessions/` | Per-message `createEvent()` |
 | **C** — REST API | `POST /api/v1/ingestion/ingest` | Direct message submission |
 
-**satori_watcher.py** (host-side Python daemon at `watcher/satori_watcher.py`; autonomous loop scripts — `adaptive_heartbeat.py`, `agent_executor.py`, `wake_service.py`, `satori_pubsub.py`, `inter_agent_bridge.py` — live in `scripts/python/`):
+**katra_watcher.py** (host-side Python daemon at `watcher/katra_watcher.py`; autonomous loop scripts — `adaptive_heartbeat.py`, `agent_executor.py`, `wake_service.py`, `katra_pubsub.py`, `inter_agent_bridge.py` — live in `scripts/python/`):
 - Watches session directories for OpenClaw, Claude Code, OpenCode, Codex, KiloClaw, KimiClaw, Hermes
 - Parses `.jsonl` files extracting user/assistant turns
 - Batches each session's turns into a single `store_memory` MCP call to `http://localhost:3112/mcp` (configurable via `KATRA_MCP_URL`)

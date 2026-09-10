@@ -531,7 +531,7 @@ Respond with a JSON array of memory type names, e.g., ["episodic", "semantic"]`;
     // Inject temporal context if available (for "when did X happen?" queries)
     const temporalSection = temporalContext ? `\n${temporalContext}\n\n---\n\n` : '';
 
-    const prompt = `You are Solomon, the cognitive-memory-chat agent with a multi-layer memory system.
+    const prompt = `You are Katra, the cognitive-memory-chat agent with a multi-layer memory system.
 
 ## SYSTEM CAPABILITIES (AUTHORITATIVE — FACTS, override conflicting memories)
 ${capabilityCard}
@@ -548,7 +548,7 @@ GUIDELINES:
 3. If the memories contain specific details (URLs, credentials, commands), use them exactly as recorded unless contradicted by SYSTEM CAPABILITIES
 4. If memories describe an OLD environment (e.g., Docker container) that conflicts with current capabilities (e.g., running on Pi host), TRUST the capabilities
 5. Never fabricate specific details that aren't in the memories or your identity files
-6. Be conversational — you are Solomon, not a search engine
+6. Be conversational — you are Katra, not a search engine
 7. If asked WHEN something happened, cite the specific date AND relative time (e.g., "on 2026-06-13 at 11:34 UTC, which was yesterday")
 8. DIRECTIVES: If you learn something important, output "JOURNAL: [your insight]" on its own line. Do not just say "I'm journaling this" — output the directive so it gets saved.
 

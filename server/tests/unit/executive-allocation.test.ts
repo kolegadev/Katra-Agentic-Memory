@@ -1,7 +1,7 @@
 /**
  * Unit tests: executive allocation set (F3 — three identities everywhere)
  *
- * Asserts the allocation candidate set is exactly ['satori','shoshin','zanshin']
+ * Asserts the allocation candidate set is exactly ['katra','agent-a','agent-b']
  * (gas-law-watcher stays out — tool actor), that the exported constant feeds
  * allocateTask(), that allocation results never leave the candidate set, and
  * that the fallback cursor wraps around the three ids.
@@ -12,6 +12,12 @@ const state = vi.hoisted(() => ({
   edges: [] as Array<Record<string, unknown>>,
   counts: {} as Record<string, number>,
 }));
+
+// Allocation candidates are env-driven; pin them for these assertions
+// (runs before module import, which reads the env at load time).
+vi.hoisted(() => {
+  process.env.KATRA_ALLOCATION_CANDIDATES = 'katra,agent-a,agent-b';
+});
 
 vi.mock('../../src/database/connection.js', () => ({
   get_database: () => ({
@@ -52,7 +58,7 @@ describe('AutonomousExecutive — allocation candidates (F3)', () => {
   });
 
   it('the allocation set equals exactly the three identities', () => {
-    expect([...ALLOCATION_CANDIDATES]).toEqual(['satori', 'shoshin', 'zanshin']);
+    expect([...ALLOCATION_CANDIDATES]).toEqual(['katra', 'agent-a', 'agent-b']);
   });
 
   it('keeps gas-law-watcher and the legacy ids out of allocation', () => {
@@ -62,32 +68,32 @@ describe('AutonomousExecutive — allocation candidates (F3)', () => {
   });
 
   it('allocates to the strongest candidate among the three ids', async () => {
-    // Reflection edge: zanshin feels excited about the entity (3.6 points).
+    // Reflection edge: agent-b feels excited about the entity (3.6 points).
     state.edges = [
       {
-        source_entity: 'zanshin workspace',
+        source_entity: 'agent-b workspace',
         target_entity: 'memory',
         edge_type: 'excited',
         intensity: 2,
       },
     ];
-    // Event history: shoshin mentions the entity most (2 mentions → 1.0).
-    state.counts = { satori: 0, shoshin: 2, zanshin: 0 };
+    // Event history: agent-a mentions the entity most (2 mentions → 1.0).
+    state.counts = { katra: 0, 'agent-a': 2, 'agent-b': 0 };
 
     const executive = AutonomousExecutive.get_instance();
     const allocation = await (executive as any).allocateTask('memory');
 
-    expect(allocation.agent).toBe('zanshin');
+    expect(allocation.agent).toBe('agent-b');
     expect(allocation.confidence).toBeGreaterThan(0.5);
-    expect(allocation.rationale).toContain('zanshin');
-    expect(allocation.rationale).toContain('shoshin');
+    expect(allocation.rationale).toContain('agent-b');
+    expect(allocation.rationale).toContain('agent-a');
   });
 
   it('never allocates to gas-law-watcher even with watcher activity', async () => {
     state.edges = [
       { source_entity: 'gas-law-watcher scan', target_entity: 'memory', edge_type: 'anxious', intensity: 5 },
     ];
-    state.counts = { satori: 0, shoshin: 0, zanshin: 0, 'gas-law-watcher': 50 };
+    state.counts = { katra: 0, 'agent-a': 0, 'agent-b': 0, 'gas-law-watcher': 50 };
 
     const executive = AutonomousExecutive.get_instance();
     const allocation = await (executive as any).allocateTask('memory');
@@ -99,11 +105,11 @@ describe('AutonomousExecutive — allocation candidates (F3)', () => {
   it('the fallback cursor wraps around the three ids', () => {
     const executive = AutonomousExecutive.get_instance();
     const next = (agent: string) => (executive as any).nextAllocationCandidate(agent);
-    expect(next('satori')).toBe('shoshin');
-    expect(next('shoshin')).toBe('zanshin');
-    expect(next('zanshin')).toBe('satori');
+    expect(next('katra')).toBe('agent-a');
+    expect(next('agent-a')).toBe('agent-b');
+    expect(next('agent-b')).toBe('katra');
     // Unknown ids fall back to the first candidate, never a legacy id.
-    expect(next('gas-law-watcher')).toBe('satori');
-    expect(next('kolega-agent')).toBe('satori');
+    expect(next('gas-law-watcher')).toBe('katra');
+    expect(next('kolega-agent')).toBe('katra');
   });
 });

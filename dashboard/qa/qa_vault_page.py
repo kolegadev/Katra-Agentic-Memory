@@ -87,14 +87,14 @@ def main():
         page.select_option("#vault-scope", "team")
         check("owner row hidden for team", page.is_hidden("#vault-owner-row"))
 
-        # ── 4. create private secret owned by lilly ─────────────────────────
+        # ── 4. create private secret owned by agent-c ─────────────────────────
         page.select_option("#vault-scope", "private")
-        page.fill("#vault-owner", "lilly")
+        page.fill("#vault-owner", "agent-c")
         page.fill("#vault-service", "qa")
         page.select_option("#vault-kind", "api_key")
         page.fill("#vault-value", V1)
         st = create_and_wait(page)
-        check("private secret created for lilly", "lilly/qa-mech-1" in st, repr(st))
+        check("private secret created for agent-c", "agent-c/qa-mech-1" in st, repr(st))
         check("value input cleared after submit", page.input_value("#vault-value") == "")
         check("new secret appears in list", "qa-mech-1" in page.inner_text("#vault-secrets"))
         check("V1 not anywhere in DOM", V1 not in page.inner_text("body"))
@@ -155,7 +155,7 @@ def main():
         check("rotate produced rotation_due date", ("2026" in after) and (after != before), f"before={before[-60:]!r} after={after[-60:]!r}")
 
         # ── 9. approvals: grant + revoke ────────────────────────────────────
-        page.fill("#va-identity", "lilly")
+        page.fill("#va-identity", "agent-c")
         page.fill("#va-service", "qa-svc")
         page.fill("#va-ttl", "1")
         page.click('button:has-text("Grant Approval")')

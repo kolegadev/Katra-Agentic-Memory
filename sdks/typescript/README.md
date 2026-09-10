@@ -1,4 +1,4 @@
-# @satori/sdk
+# @katra/sdk
 
 TypeScript SDK for [Katra](../../README.md) — Cognitive Memory as a Service.
 
@@ -29,13 +29,13 @@ through the low-level `MCPClient`.
 ## Quick Start
 
 ```bash
-npm install @satori/sdk
+npm install @katra/sdk
 ```
 
 ```ts
-import { SatoriClient } from '@satori/sdk';
+import { KatraClient } from '@katra/sdk';
 
-const katra = new SatoriClient({
+const katra = new KatraClient({
   url: 'http://localhost:3112', // the SDK appends /mcp
   apiKey: process.env.KATRA_API_KEY, // a valid client key; identity is resolved from it
 });
@@ -127,16 +127,16 @@ await katra.close();
 ## Error Handling
 
 ```ts
-import { SatoriClient, SatoriAuthError, SatoriConnectionError } from '@satori/sdk';
+import { KatraClient, KatraAuthError, KatraConnectionError } from '@katra/sdk';
 
-const katra = new SatoriClient({ url: 'http://localhost:3112', apiKey: 'sk-...' });
+const katra = new KatraClient({ url: 'http://localhost:3112', apiKey: 'sk-...' });
 
 try {
   await katra.storeMemory({ content: 'Hello' });
 } catch (err) {
-  if (err instanceof SatoriAuthError) {
+  if (err instanceof KatraAuthError) {
     console.error('Auth failed — check your API key');
-  } else if (err instanceof SatoriConnectionError) {
+  } else if (err instanceof KatraConnectionError) {
     console.error('Server unreachable');
   } else {
     throw err;
@@ -149,7 +149,7 @@ try {
 For advanced scenarios, use `MCPClient` directly:
 
 ```ts
-import { MCPClient } from '@satori/sdk';
+import { MCPClient } from '@katra/sdk';
 
 const mcp = new MCPClient({ url: 'http://localhost:3112', apiKey: 'sk-...' });
 await mcp.initialize();

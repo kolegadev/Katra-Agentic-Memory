@@ -15,10 +15,10 @@ This guide covers migrating from [cognitive-memory-chat](https://github.com/kole
 
 | Aspect | cognitive-memory-chat | Katra |
 |---|---|---|
-| **Purpose** | Solomon agent + memory system | Memory system only |
+| **Purpose** | Katra agent + memory system | Memory system only |
 | **Services** | 45+ services (including agent, heartbeat, autonomous execution) | Core memory services plus newer additions: skill engine, executive/cognitive services, code-graph tools |
 | **LLM** | Hardcoded DeepSeek/Moonshot | Pluggable (DeepSeek, OpenAI, Moonshot, Ollama, custom OpenAI-compatible) |
-| **Identity** | Solomon-specific capability card | Per-identity client keys (one per machine/agent) + optional tool actors |
+| **Identity** | Katra-specific capability card | Per-identity client keys (one per machine/agent) + optional tool actors |
 | **Ingestion** | OpenClaw-specific | Generic (any JSONL-producing platform) |
 | **API keys** | `ADMIN_API_KEY` (plaintext) | `KATRA_API_KEY` (admin key, authenticates as the trusted machine identity) + identity-resolved client keys (sha256 hashes only, in `system_settings.client_keys`) |
 | **Database name** | `cognitive-memory` | `katra` |
@@ -35,7 +35,7 @@ This guide covers migrating from [cognitive-memory-chat](https://github.com/kole
 | — | `LLM_PROVIDER_*_API_KEY` | New per-provider keys |
 | — | `EMBEDDING_PROVIDER` | New (default: `local` — Xenova/all-MiniLM-L6-v2) |
 | — | `HOST_MCP_PORT` / `HOST_API_PORT` | Compose host mapping — `3112 -> 3100` (MCP) and `9012 -> 9002` (REST) |
-| — | `SOLOMEM_USER_ID` | The server's own default identity (compose sets the default) |
+| — | `KATRA_USER_ID` | The server's own default identity (compose sets the default) |
 | — | client keys | Not an env var — provisioned at boot as sha256 hashes in `system_settings.client_keys`, printed once in the server log |
 
 > **Legacy env keys retired (2026-08-21):** `MCP_API_KEY` and
@@ -142,14 +142,14 @@ notes — keep those in the git-ignored `private/` folder. Summary:
 
 ## What's Left Behind
 
-Some Solomon-specific services were **not** carried over, and Katra grew its
+Some Katra-specific services were **not** carried over, and Katra grew its
 own equivalents for others:
 
 - **Heartbeat / autonomous execution** — replaced by Katra's own autonomous
   loop: the autonomous executive
   (`server/src/services/processing/autonomous-executive.ts`) plus the
   `scripts/python/` loop scripts (`adaptive_heartbeat.py`,
-  `agent_executor.py`, `wake_service.py`, `satori_pubsub.py`,
+  `agent_executor.py`, `wake_service.py`, `katra_pubsub.py`,
   `inter_agent_bridge.py`). See [AUTONOMOUS-LOOP.md](AUTONOMOUS-LOOP.md).
 - **Skill runner** — replaced by the Katra skill engine (`list_katra_skills`,
   `load_katra_skill`, `search_katra_skills`, `request_skill`, `refine_skill`,

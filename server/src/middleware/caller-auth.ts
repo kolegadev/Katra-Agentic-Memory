@@ -6,10 +6,10 @@
  * handlers can attribute writes via getCaller().
  *
  * Auth semantics (single-tenant, the default):
- * - loopback            → trusted satori (no key needed)
- * - admin key (KATRA)   → trusted satori
+ * - loopback            → trusted katra (no key needed)
+ * - admin key (KATRA)   → trusted katra
  * - client_keys-mapped  → untrusted identity
- * - legacy env key      → satori untrusted
+ * - legacy env key      → katra untrusted
  * - valid but unmapped  → 401 (rejected loudly)
  * - open-access mode    → no key configured at all: requests proceed with the
  *                         safe default caller ({ DEFAULT_USER_ID, trusted: false })

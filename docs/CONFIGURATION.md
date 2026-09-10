@@ -141,7 +141,7 @@ These are consumed by the integration and wake scripts, not by the server:
 | `~/.katra/wake-env.sh` | Per-machine wake settings (`KATRA_HOST`, `KATRA_API_KEY`, `KATRA_USER_ID`); sourced by the wake scripts when env vars are unset |
 | `~/.katra/keys/katra-<user>.key` | Per-machine client key file (chmod 600) — fallback when the key isn't in the environment |
 
-The bridge hook config (`integrations/kolega-code/satori-hook.json`) holds `mcp_url` / `api_key` / `user_id` / `sources`; `ensure-bridge.sh` rewrites it when `user_id` or the `mcp_url` host differ from `KATRA_HOST`.
+The bridge hook config (`integrations/kolega-code/katra-hook.json`) holds `mcp_url` / `api_key` / `user_id` / `sources`; `ensure-bridge.sh` rewrites it when `user_id` or the `mcp_url` host differ from `KATRA_HOST`.
 
 ## Docker Compose
 

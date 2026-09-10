@@ -37,13 +37,19 @@ const DEFICIT_THRESHOLD = 0.3;
 const SURVIVAL_URGENCY_THRESHOLD = 0.2; // survival deficit > 0.2 → adrenaline mode
 
 /**
- * F3 (identity separation): allocation candidate set — the four identities.
- * satori is local (this machine, the executive's own user); shoshin,
- * zanshin and lilly are remote peers reached via bulletin.
- * `gas-law-watcher` is deliberately absent: it is a tool actor that writes
- * shared memory but is never allocated autonomous tasks.
+ * F3 (identity separation): allocation candidate set. Deployment data, not
+ * product logic — read from KATRA_ALLOCATION_CANDIDATES (comma-separated
+ * user_ids, defaulting to the local identity). The local identity executes
+ * in-process; remote candidates are reached via bulletin. Tool actors are
+ * never allocated autonomous tasks.
  */
-export const ALLOCATION_CANDIDATES = ['satori', 'shoshin', 'zanshin', 'lilly'] as const;
+export const LOCAL_AGENT_ID = process.env.KATRA_USER_ID || 'katra';
+export const ALLOCATION_CANDIDATES: string[] = (
+  process.env.KATRA_ALLOCATION_CANDIDATES || LOCAL_AGENT_ID
+)
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
 
 // Embedding-policy filter, kept in sync with background-processor.ts and
 // memory-integrity.ts. Facts below MIN_CONTENT_LENGTH or quality-skipped
@@ -67,7 +73,7 @@ const DEFICIT_GOAL_TEMPLATES: Record<DriveName, string[]> = {
     'Discover new connections between existing entities',
   ],
   connection: [
-    'Check for inter-agent messages from Zanshin',
+    'Check for inter-agent messages from team peers',
     'Engage with a neglected entity in the reflection graph',
     'Strengthen the weakest relationship edge',
   ],
@@ -483,7 +489,7 @@ export class AutonomousExecutive {
       console.warn('   ⚠️ Agent allocation query failed:', err.message);
     }
 
-    // Decision — highest score wins; ties keep candidate order (satori first)
+    // Decision — highest score wins; ties keep candidate order (katra first)
     const ranked = [...ALLOCATION_CANDIDATES].sort((a, b) => scores[b] - scores[a]);
     const best = ranked[0];
     const other = ranked[1];
@@ -649,7 +655,7 @@ export class AutonomousExecutive {
     const title = task.title.toLowerCase();
 
     // ── Connection tasks: check for inter-agent messages ────────
-    if (title.includes('inter-agent') || title.includes('zanshin') || title.includes('message')) {
+    if (title.includes('inter-agent') || title.includes('peer') || title.includes('message')) {
       try {
         const db = get_database();
         const recentMsgs = await db.collection('episodic_events').find({
@@ -850,9 +856,9 @@ export class AutonomousExecutive {
     // ── Primary attempt ────────────────────────────────────────
     let executed: { success: boolean; summary: string };
 
-    // Remote peers (shoshin/zanshin) receive bulletins; satori (local)
-    // executes the subtask in-process.
-    if (allocation.agent !== 'satori' && allocation.confidence > 0.55) {
+    // Remote peers receive bulletins; the local identity executes the
+    // subtask in-process.
+    if (allocation.agent !== LOCAL_AGENT_ID && allocation.confidence > 0.55) {
       await this.postAgentBulletin(allocation.agent, goalText, task.title, allocation);
       executed = { success: true, summary: `Task delegated to ${allocation.agent} via bulletin` };
     } else {
@@ -873,7 +879,7 @@ export class AutonomousExecutive {
       if (fallbackAlive.alive) {
         console.log(`   🔄 Primary agent ${allocation.agent} failed. Trying ${fallback}...`);
 
-        if (fallback !== 'satori') {
+        if (fallback !== LOCAL_AGENT_ID) {
           await this.postAgentBulletin(fallback, goalText, task.title, {
             agent: fallback,
             score: allocation.confidence * 0.6,
@@ -953,20 +959,18 @@ export class AutonomousExecutive {
 
   private extractEntityFromGoal(goalText: string): string {
     const lower = goalText.toLowerCase();
-    if (lower.includes('katra')) return 'Katra';
-    if (lower.includes('satori')) return 'Satori';
-    if (lower.includes('shoshin')) return 'Shoshin';
-    if (lower.includes('zanshin')) return 'Zanshin';
-    if (lower.includes('lilly')) return 'Lilly';
-    if (lower.includes('inter-agent') || lower.includes('message')) return 'Zanshin';
+    for (const id of ALLOCATION_CANDIDATES) {
+      if (lower.includes(id)) return id.charAt(0).toUpperCase() + id.slice(1);
+    }
+    if (lower.includes('inter-agent') || lower.includes('message')) return 'Peers';
     if (lower.includes('knowledge graph')) return 'Katra';
     if (lower.includes('entity')) return 'Katra';
     return 'Katra'; // Default: most goals are about Katra itself
   }
 
   /**
-   * Post a task bulletin to a remote peer (Shoshin/Zanshin) via shared
-   * memory so their agent executor picks it up on next wake cycle.
+   * Post a task bulletin to a remote peer via shared memory so their agent
+   * executor picks it up on next wake cycle.
    */
   private async postAgentBulletin(
     agent: string,
@@ -1010,17 +1014,17 @@ Source: Autonomous Executive (Katra self-initiated action)`;
             '[REMEDIATION] ' + rem.description,
             'Auto-fix: ' + rem.id,
             result,
-            { agent: 'satori', confidence: 1.0, score: 1.0, rationale: 'Triggered by: ' + check.detail }
+            { agent: LOCAL_AGENT_ID, confidence: 1.0, score: 1.0, rationale: 'Triggered by: ' + check.detail }
           );
         } else if (rem.scope === 'code') {
           console.log('   [CODE] Structural problem — dispatching for agent repair');
           // Store as a discoverable event with code-remediation tags
-          // External agents (Shoshin/Zanshin) poll for these
+          // Remote agents poll for these
           await this.recordExecutiveAction(
             '[CODE-REMEDIATION] ' + rem.description,
             'Dispatch: ' + rem.id,
             { success: false, summary: 'CODE REMEDIATION NEEDED: ' + check.detail + ' | ' + rem.remediate.toString().match(/summary: '([^']+)'/)?.[1] || 'Investigation required' },
-            { agent: 'satori', confidence: 1.0, score: 1.0, rationale: 'Code remediation dispatched: ' + check.detail }
+            { agent: LOCAL_AGENT_ID, confidence: 1.0, score: 1.0, rationale: 'Code remediation dispatched: ' + check.detail }
           );
         } else {
           console.log('   GATED - recording alert only');
@@ -1028,7 +1032,7 @@ Source: Autonomous Executive (Katra self-initiated action)`;
             '[REMEDIATION-GATED] ' + rem.description,
             'Alert: ' + rem.id,
             { success: false, summary: 'Gated: requires human approval - ' + check.detail },
-            { agent: 'satori', confidence: 1.0, score: 1.0, rationale: 'Gated remediation: ' + check.detail }
+            { agent: LOCAL_AGENT_ID, confidence: 1.0, score: 1.0, rationale: 'Gated remediation: ' + check.detail }
           );
         }
       } catch (err: any) {

@@ -23,6 +23,17 @@ from urllib.request import urlopen, Request
 from urllib.error import URLError
 
 # ── Config ──────────────────────────────────────────────────────────
+# Allocation candidates are deployment data: KATRA_ALLOCATION_CANDIDATES
+# (comma-separated user_ids), defaulting to the local identity.
+AGENT_IDS = [
+    a.strip()
+    for a in (
+        os.environ.get("KATRA_ALLOCATION_CANDIDATES")
+        or os.environ.get("KATRA_USER_ID")
+        or "katra"
+    ).split(",")
+    if a.strip()
+]
 STATE_FILE = os.path.expanduser("~/.katra/adaptive-heartbeat-state.json")
 EXECUTED_FILE = os.path.expanduser("~/.katra/adaptive-heartbeat-executed.json")
 BASE_INTERVAL = 30 * 60
@@ -134,7 +145,7 @@ print(JSON.stringify({{entity_edges: edges, all_edges: allEdges}}));
     
     # 2. Event mentions per agent
     ev_raw = _mongo_query(f'''
-var agents = ["satori", "shoshin", "zanshin", "lilly"];
+var agents = {json.dumps(AGENT_IDS)};
 var counts = {{}};
 agents.forEach(function(a) {{
   counts[a] = db.episodic_events.countDocuments({{
@@ -149,7 +160,7 @@ print(JSON.stringify(counts));
     ev_counts = json.loads('\n'.join(ev_raw.split('\n')[-3:]).strip() or '{}')
     
     # ── Scoring ──
-    scores = {"satori": 0, "shoshin": 0, "zanshin": 0, "lilly": 0}
+    scores = {a: 0 for a in AGENT_IDS}
     rationales = []
     
     # Signal 1: Reflection edges
@@ -162,7 +173,7 @@ print(JSON.stringify(counts));
         except (TypeError, ValueError):
             intensity = 0.0
         
-        for agent in ["satori", "shoshin", "zanshin", "lilly"]:
+        for agent in AGENT_IDS:
             if agent in source or agent in target:
                 s = intensity * 1.5
                 if any(w in edge_type for w in ["frustrated","conflicted","anxious","tension"]):
@@ -177,7 +188,7 @@ print(JSON.stringify(counts));
         scores[agent] = scores.get(agent, 0) + (count / max(max_ev, 1))
     
     # Decision
-    best = max(scores, key=scores.get) if scores else "satori"
+    best = max(scores, key=scores.get) if scores else AGENT_IDS[0]
     best_s = scores[best]
     second = sorted(scores.items(), key=lambda x: x[1], reverse=True)
     second_agent = second[1][0] if len(second) > 1 else None
@@ -210,7 +221,7 @@ def execute(entity, dry_run=False):
         return {"entity": name, "status": "completed",
                 "output": f"gh-hygiene: {repo.get('description','?')} — updated {repo.get('updated_at','?')} | stars: {repo.get('stargazers_count',0)}"}
     elif "opencode_extractor" in name.lower() or "extractor" in name.lower():
-        ep = os.path.expanduser("~/.solomem/opencode_extractor.py")
+        ep = os.path.expanduser("~/.katra/opencode_extractor.py")
         exists = os.path.exists(ep)
         return {"entity": name, "status": "action_needed" if not exists else "completed",
                 "output": f"opencode_extractor.py: {'EXISTS' if exists else 'MISSING'}"}

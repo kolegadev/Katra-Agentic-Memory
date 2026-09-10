@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Kolega Code command-hook runner for the Katra (Satori) memory bridge.
+"""Kolega Code command-hook runner for the Katra (Katra) memory bridge.
 
 Why this file exists
 --------------------
@@ -83,7 +83,7 @@ def main() -> int:
 
 async def _post_read_receipt(session_id: str) -> None:
     from kolega_katra_bridge.config import load_config
-    from kolega_katra_bridge.satori_client import KatraMCPClient
+    from kolega_katra_bridge.katra_client import KatraMCPClient
 
     cfg = load_config()
     async with KatraMCPClient(cfg) as client:

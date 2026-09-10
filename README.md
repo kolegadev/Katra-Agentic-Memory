@@ -13,7 +13,7 @@ anything that speaks the Model Context Protocol.
 
 The mission of Katra is to create an analog of human memory architecture, with the hope that it and the experimentation around it through OpenSourcing solves a few of the more challenging issues of LLM context management for long-running, persistent and autonomous agent operations. The thesis (hope) is that if you create the memory ecosystem with the majority of the functional memory types of human memory and similar architecture, over time and with refinement, we will see emergent behaviours similar to human memory, expressed as functional utility, learning, self goal setting, autonamous task planning and prioritisation,  personality and ultimately emotions. 
 
-In early prototype called Solomon, we created an OpenClaw like agentic framework that runs a single contiuous chat thread, no topic or task separation and with no requirement for context compression. Context is served dynamically into the LLM based on memories and attention. 
+In early prototype called Katra, we created an OpenClaw like agentic framework that runs a single contiuous chat thread, no topic or task separation and with no requirement for context compression. Context is served dynamically into the LLM based on memories and attention. 
 
 ## Observed Emergent Behaviours Log
 
@@ -266,7 +266,7 @@ export KATRA_HOST=localhost          # host serving the MCP endpoint
 bash integrations/kolega-code/scripts/ensure-bridge.sh
 ```
 
-The bridge config lives at `~/Library/Application Support/kolega-code/satori-hook.json`
+The bridge config lives at `~/Library/Application Support/kolega-code/katra-hook.json`
 on macOS (platform-aware state dir on Linux; `katra-hook.json` was the
 pre-cutover name, migrated automatically):
 
@@ -417,7 +417,7 @@ Embeddings are **always local** — no API key, no external service, no cost.
 - **Lazy load:** Downloads on first `store_memory` call, then caches in container
 - **Docker:** Uses `node:20-slim` (Debian/glibc) — Alpine/musl does NOT work
 
-## Auto-Collection (Solomem Watchers)
+## Auto-Collection (Katra Watchers)
 
 Katra captures memories in real-time when your agent calls `store_memory` via MCP.
 For **passive background collection** from conversation logs, use the watchers
@@ -563,7 +563,7 @@ katra/
 ├── docker-compose.yml       MongoDB + Redis + MinIO + Katra
 ├── Dockerfile               Multi-stage (builds TS inside image)
 ├── .env.example             All config options documented
-├── watcher/                 Passive session-log extractors (Solomem)
+├── watcher/                 Passive session-log extractors (Katra)
 ├── integrations/            Agent-specific dynamic-retrieval integrations
 │   └── kolega-code/         Kolega Code lifecycle-hook bridge + wake rituals
 ├── docs/                    Full documentation (see below)
@@ -725,7 +725,7 @@ DocumentDB, ElastiCache Redis, S3, and ALB. See [Deployment Guide](docs/DEPLOYME
 
 ### Kubernetes (Helm)
 
-Helm chart included in `helm/satori/` — supports Bitnami MongoDB + Redis subcharts,
+Helm chart included in `helm/katra/` — supports Bitnami MongoDB + Redis subcharts,
 ingress with path routing, HPA, and PDB. See [Deployment Guide](docs/DEPLOYMENT.md).
 
 ## Maintenance & Operations

@@ -120,42 +120,42 @@ describe('mcp-server wiring for the vault tools (F3)', () => {
 // ── Direct handler tests: disconnected guard + operator gate ─────
 
 describe('vault MCP handlers — disconnected guard + operator gate', () => {
-  const LILLY: CallerIdentity = { user_id: 'lilly', trusted: false };
-  const SATORI: CallerIdentity = { user_id: 'satori', trusted: true };
+  const AGENT_C: CallerIdentity = { user_id: 'agent-c', trusted: false };
+  const KATRA: CallerIdentity = { user_id: 'katra', trusted: true };
 
   it('vault_put_secret rejects untrusted callers with \'operator only\' (criterion 9)', async () => {
     await expect(
-      runWithCaller(LILLY, () =>
+      runWithCaller(AGENT_C, () =>
         handleVaultPutSecret({ name: 'x', value: 'never-stored' }),
       ),
     ).rejects.toThrow('operator only');
   });
 
   it('store-touching handlers return a disconnected warning without a DB', async () => {
-    const put = await runWithCaller(SATORI, () =>
+    const put = await runWithCaller(KATRA, () =>
       handleVaultPutSecret({ name: 'x', value: 'v' }),
     );
     expect(put[0].text).toBe('⚠️ MongoDB disconnected.');
 
-    const list = await runWithCaller(LILLY, () => handleVaultListSecrets({}));
+    const list = await runWithCaller(AGENT_C, () => handleVaultListSecrets({}));
     expect(list[0].text).toBe('⚠️ MongoDB disconnected.');
 
-    const get = await runWithCaller(LILLY, () =>
-      handleVaultGetSecret({ secret_id: 'lilly/x' }),
+    const get = await runWithCaller(AGENT_C, () =>
+      handleVaultGetSecret({ secret_id: 'agent-c/x' }),
     );
     expect(get[0].text).toBe('⚠️ MongoDB disconnected.');
 
-    const del = await runWithCaller(LILLY, () =>
-      handleVaultDeleteSecret({ secret_id: 'lilly/x' }),
+    const del = await runWithCaller(AGENT_C, () =>
+      handleVaultDeleteSecret({ secret_id: 'agent-c/x' }),
     );
     expect(del[0].text).toBe('⚠️ MongoDB disconnected.');
 
-    const rot = await runWithCaller(LILLY, () =>
-      handleVaultRotateSecret({ secret_id: 'lilly/x' }),
+    const rot = await runWithCaller(AGENT_C, () =>
+      handleVaultRotateSecret({ secret_id: 'agent-c/x' }),
     );
     expect(rot[0].text).toBe('⚠️ MongoDB disconnected.');
 
-    const audit = await runWithCaller(LILLY, () => handleVaultAudit({}));
+    const audit = await runWithCaller(AGENT_C, () => handleVaultAudit({}));
     expect(audit[0].text).toBe('⚠️ MongoDB disconnected.');
   });
 });
@@ -163,9 +163,9 @@ describe('vault MCP handlers — disconnected guard + operator gate', () => {
 // ── Direct handler tests: connected flow (MongoDB required) ──────
 
 describe.skipIf(!mongoAvailable)('vault MCP handlers — connected flow (criterion 8)', () => {
-  const LILLY: CallerIdentity = { user_id: 'lilly', trusted: false };
-  const SHOSHIN: CallerIdentity = { user_id: 'shoshin', trusted: false };
-  const SATORI: CallerIdentity = { user_id: 'satori', trusted: true };
+  const AGENT_C: CallerIdentity = { user_id: 'agent-c', trusted: false };
+  const AGENT_A: CallerIdentity = { user_id: 'agent-a', trusted: false };
+  const KATRA: CallerIdentity = { user_id: 'katra', trusted: true };
   const AUDIT_KEYS = new Set([
     'at',
     'actor',
@@ -233,56 +233,56 @@ describe.skipIf(!mongoAvailable)('vault MCP handlers — connected flow (criteri
 
   it('vault_put_secret stores for a trusted caller and returns {secret_id, created}', async () => {
     const n = name('put');
-    const content = await as(SATORI, () =>
+    const content = await as(KATRA, () =>
       handleVaultPutSecret({ name: n, value: SECRET_VALUE, service: 'agentmail' }),
     );
     const body = JSON.parse(textOf(content)) as { secret_id: string; created: boolean };
-    expect(body).toEqual({ secret_id: `satori/${n}`, created: true });
+    expect(body).toEqual({ secret_id: `katra/${n}`, created: true });
     expect(textOf(content)).not.toContain(SECRET_VALUE);
     createdIds.push(body.secret_id);
 
     const doc = await rawDoc(body.secret_id);
     expect(doc).not.toBeNull();
-    expect(doc!.owner.user_id).toBe('satori');
+    expect(doc!.owner.user_id).toBe('katra');
     expect(doc!.envelope).toBeDefined();
   });
 
   it('vault_put_secret honors ownerUserId for trusted callers only (no row for untrusted)', async () => {
     const n = name('putfor');
-    const content = await as(SATORI, () =>
-      handleVaultPutSecret({ name: n, value: 'lilly-bound', ownerUserId: 'lilly' }),
+    const content = await as(KATRA, () =>
+      handleVaultPutSecret({ name: n, value: 'agent-c-bound', ownerUserId: 'agent-c' }),
     );
     const body = JSON.parse(textOf(content)) as { secret_id: string };
-    expect(body.secret_id).toBe(`lilly/${n}`);
+    expect(body.secret_id).toBe(`agent-c/${n}`);
     createdIds.push(body.secret_id);
     const doc = await rawDoc(body.secret_id);
-    expect(doc!.owner.user_id).toBe('lilly');
+    expect(doc!.owner.user_id).toBe('agent-c');
 
     // Untrusted attempt is refused outright — nothing stored.
     const n2 = name('nope');
     await expect(
-      as(SHOSHIN, () =>
-        handleVaultPutSecret({ name: n2, value: 'should-not-store', ownerUserId: 'lilly' }),
+      as(AGENT_A, () =>
+        handleVaultPutSecret({ name: n2, value: 'should-not-store', ownerUserId: 'agent-c' }),
       ),
     ).rejects.toThrow('operator only');
-    expect(await rawDoc(`lilly/${n2}`)).toBeNull();
-    expect(await rawDoc(`shoshin/${n2}`)).toBeNull();
+    expect(await rawDoc(`agent-c/${n2}`)).toBeNull();
+    expect(await rawDoc(`agent-a/${n2}`)).toBeNull();
   });
 
   it('vault_get_secret returns the redacted view with length but never the plaintext', async () => {
     const n = name('get');
-    const putContent = await as(SATORI, () =>
+    const putContent = await as(KATRA, () =>
       handleVaultPutSecret({
         name: n,
         value: SECRET_VALUE,
         service: 'agentmail',
-        ownerUserId: 'lilly',
+        ownerUserId: 'agent-c',
       }),
     );
     const secretId = (JSON.parse(textOf(putContent)) as { secret_id: string }).secret_id;
     createdIds.push(secretId);
 
-    const content = await as(LILLY, () => handleVaultGetSecret({ secret_id: secretId }));
+    const content = await as(AGENT_C, () => handleVaultGetSecret({ secret_id: secretId }));
     const text = textOf(content);
     const body = JSON.parse(text) as Record<string, unknown>;
     expect(body.secret_id).toBe(secretId);
@@ -302,128 +302,128 @@ describe.skipIf(!mongoAvailable)('vault MCP handlers — connected flow (criteri
 
   it('vault_get_secret errors 404-equivalently for secrets the caller cannot see', async () => {
     const n = name('hidden');
-    const putContent = await as(SATORI, () =>
-      handleVaultPutSecret({ name: n, value: 'hidden-value', ownerUserId: 'lilly' }),
+    const putContent = await as(KATRA, () =>
+      handleVaultPutSecret({ name: n, value: 'hidden-value', ownerUserId: 'agent-c' }),
     );
     const secretId = (JSON.parse(textOf(putContent)) as { secret_id: string }).secret_id;
     createdIds.push(secretId);
-    await expect(as(SHOSHIN, () => handleVaultGetSecret({ secret_id: secretId }))).rejects.toThrow(
+    await expect(as(AGENT_A, () => handleVaultGetSecret({ secret_id: secretId }))).rejects.toThrow(
       'secret not found',
     );
   });
 
   it('vault_list_secrets is caller-scoped: own + team, never another private', async () => {
-    const lillyN = name('privl');
-    const lillyPut = await as(SATORI, () =>
-      handleVaultPutSecret({ name: lillyN, value: 'pl', ownerUserId: 'lilly' }),
+    const agentCN = name('privl');
+    const agentCPut = await as(KATRA, () =>
+      handleVaultPutSecret({ name: agentCN, value: 'pl', ownerUserId: 'agent-c' }),
     );
-    const lillyId = (JSON.parse(textOf(lillyPut)) as { secret_id: string }).secret_id;
-    createdIds.push(lillyId);
+    const agentCId = (JSON.parse(textOf(agentCPut)) as { secret_id: string }).secret_id;
+    createdIds.push(agentCId);
 
-    const shoshinN = name('privs');
-    const shoshinPut = await as(SATORI, () =>
-      handleVaultPutSecret({ name: shoshinN, value: 'ps', ownerUserId: 'shoshin' }),
+    const agentAN = name('privs');
+    const agentAPut = await as(KATRA, () =>
+      handleVaultPutSecret({ name: agentAN, value: 'ps', ownerUserId: 'agent-a' }),
     );
-    const shoshinId = (JSON.parse(textOf(shoshinPut)) as { secret_id: string }).secret_id;
-    createdIds.push(shoshinId);
+    const agentAId = (JSON.parse(textOf(agentAPut)) as { secret_id: string }).secret_id;
+    createdIds.push(agentAId);
 
     const teamN = name('team');
-    const teamPut = await as(SATORI, () =>
+    const teamPut = await as(KATRA, () =>
       handleVaultPutSecret({ name: teamN, value: 'pt', scope: 'team' }),
     );
     const teamId = (JSON.parse(textOf(teamPut)) as { secret_id: string }).secret_id;
     createdIds.push(teamId);
 
-    const lillyList = JSON.parse(
-      textOf(await as(LILLY, () => handleVaultListSecrets({}))),
+    const agentCList = JSON.parse(
+      textOf(await as(AGENT_C, () => handleVaultListSecrets({}))),
     ) as Array<{ secret_id: string }>;
-    const lillyIds = lillyList.map((s) => s.secret_id);
-    expect(lillyIds).toContain(lillyId);
-    expect(lillyIds).toContain(teamId);
-    expect(lillyIds).not.toContain(shoshinId);
+    const agentCIds = agentCList.map((s) => s.secret_id);
+    expect(agentCIds).toContain(agentCId);
+    expect(agentCIds).toContain(teamId);
+    expect(agentCIds).not.toContain(agentAId);
 
-    const shoshinList = JSON.parse(
-      textOf(await as(SHOSHIN, () => handleVaultListSecrets({}))),
+    const agentAList = JSON.parse(
+      textOf(await as(AGENT_A, () => handleVaultListSecrets({}))),
     ) as Array<{ secret_id: string }>;
-    const shoshinIds = shoshinList.map((s) => s.secret_id);
-    expect(shoshinIds).toContain(shoshinId);
-    expect(shoshinIds).toContain(teamId);
-    expect(shoshinIds).not.toContain(lillyId);
+    const agentAIds = agentAList.map((s) => s.secret_id);
+    expect(agentAIds).toContain(agentAId);
+    expect(agentAIds).toContain(teamId);
+    expect(agentAIds).not.toContain(agentCId);
   });
 
   it('vault_delete_secret / vault_rotate_secret enforce ownership; owner succeeds', async () => {
     const n = name('owner');
-    const putContent = await as(SATORI, () =>
-      handleVaultPutSecret({ name: n, value: 'own-me', ownerUserId: 'lilly' }),
+    const putContent = await as(KATRA, () =>
+      handleVaultPutSecret({ name: n, value: 'own-me', ownerUserId: 'agent-c' }),
     );
     const secretId = (JSON.parse(textOf(putContent)) as { secret_id: string }).secret_id;
     createdIds.push(secretId);
 
     // Non-owner untrusted: denied, row unchanged.
-    const rotDenied = await as(SHOSHIN, () =>
+    const rotDenied = await as(AGENT_A, () =>
       handleVaultRotateSecret({ secret_id: secretId }),
     );
     expect(JSON.parse(textOf(rotDenied))).toEqual({ rotated: false });
-    const delDenied = await as(SHOSHIN, () =>
+    const delDenied = await as(AGENT_A, () =>
       handleVaultDeleteSecret({ secret_id: secretId }),
     );
     expect(JSON.parse(textOf(delDenied))).toEqual({ deleted: false });
     expect(await rawDoc(secretId)).not.toBeNull();
 
     // Owner: rotate succeeds.
-    const rot = await as(LILLY, () => handleVaultRotateSecret({ secret_id: secretId }));
+    const rot = await as(AGENT_C, () => handleVaultRotateSecret({ secret_id: secretId }));
     expect(JSON.parse(textOf(rot))).toEqual({ rotated: true });
     const doc = await rawDoc(secretId);
     expect(doc!.meta.rotation_due_at).not.toBeNull();
 
     // Owner: delete succeeds.
-    const del = await as(LILLY, () => handleVaultDeleteSecret({ secret_id: secretId }));
+    const del = await as(AGENT_C, () => handleVaultDeleteSecret({ secret_id: secretId }));
     expect(JSON.parse(textOf(del))).toEqual({ deleted: true });
     expect(await rawDoc(secretId)).toBeNull();
   });
 
   it('vault_audit is actor-scoped for untrusted callers and value-free', async () => {
     const n = name('aud');
-    const putContent = await as(SATORI, () =>
-      handleVaultPutSecret({ name: n, value: SECRET_VALUE, ownerUserId: 'lilly' }),
+    const putContent = await as(KATRA, () =>
+      handleVaultPutSecret({ name: n, value: SECRET_VALUE, ownerUserId: 'agent-c' }),
     );
     const secretId = (JSON.parse(textOf(putContent)) as { secret_id: string }).secret_id;
     createdIds.push(secretId);
 
-    // lilly opens her own secret → audit 'open' row with actor lilly.
-    await as(LILLY, () => handleVaultGetSecret({ secret_id: secretId }));
-    // shoshin attempts a rotate → denied row with actor shoshin.
-    await as(SHOSHIN, () => handleVaultRotateSecret({ secret_id: secretId }));
+    // agent-c opens her own secret → audit 'open' row with actor agent-c.
+    await as(AGENT_C, () => handleVaultGetSecret({ secret_id: secretId }));
+    // agent-a attempts a rotate → denied row with actor agent-a.
+    await as(AGENT_A, () => handleVaultRotateSecret({ secret_id: secretId }));
 
-    const lillyAudit = JSON.parse(
-      textOf(await as(LILLY, () => handleVaultAudit({ secret_id: secretId }))),
+    const agentCAudit = JSON.parse(
+      textOf(await as(AGENT_C, () => handleVaultAudit({ secret_id: secretId }))),
     ) as Array<Record<string, any>>;
-    expect(lillyAudit.length).toBeGreaterThan(0);
-    for (const row of lillyAudit) {
-      expect(row.actor).toBe('lilly');
+    expect(agentCAudit.length).toBeGreaterThan(0);
+    for (const row of agentCAudit) {
+      expect(row.actor).toBe('agent-c');
       expect(row.secret_id).toBe(secretId);
       for (const key of Object.keys(row)) expect(AUDIT_KEYS.has(key)).toBe(true);
     }
-    const lillyActions = lillyAudit.map((r) => r.action);
-    expect(lillyActions).toContain('open');
-    expect(lillyActions).not.toContain('put'); // put rows are satori's
+    const agentCActions = agentCAudit.map((r) => r.action);
+    expect(agentCActions).toContain('open');
+    expect(agentCActions).not.toContain('put'); // put rows are katra's
 
-    const shoshinAudit = JSON.parse(
-      textOf(await as(SHOSHIN, () => handleVaultAudit({ secret_id: secretId }))),
+    const agentAAudit = JSON.parse(
+      textOf(await as(AGENT_A, () => handleVaultAudit({ secret_id: secretId }))),
     ) as Array<Record<string, any>>;
-    expect(shoshinAudit.length).toBeGreaterThan(0);
-    for (const row of shoshinAudit) {
-      expect(row.actor).toBe('shoshin');
+    expect(agentAAudit.length).toBeGreaterThan(0);
+    for (const row of agentAAudit) {
+      expect(row.actor).toBe('agent-a');
       expect(row.outcome).toBe('denied');
     }
 
     const trustedAudit = JSON.parse(
-      textOf(await as(SATORI, () => handleVaultAudit({ secret_id: secretId }))),
+      textOf(await as(KATRA, () => handleVaultAudit({ secret_id: secretId }))),
     ) as Array<Record<string, any>>;
     const trustedActors = new Set(trustedAudit.map((r) => r.actor));
-    expect(trustedActors.has('lilly')).toBe(true);
-    expect(trustedActors.has('shoshin')).toBe(true);
-    expect(trustedActors.has('satori')).toBe(true);
+    expect(trustedActors.has('agent-c')).toBe(true);
+    expect(trustedActors.has('agent-a')).toBe(true);
+    expect(trustedActors.has('katra')).toBe(true);
 
     const allText = JSON.stringify(trustedAudit);
     expect(allText).not.toContain(SECRET_VALUE);
@@ -432,8 +432,8 @@ describe.skipIf(!mongoAvailable)('vault MCP handlers — connected flow (criteri
 
   it('vault_rotate_secret surfaces the master-key error without a key', async () => {
     const n = name('nokey');
-    const putContent = await as(SATORI, () =>
-      handleVaultPutSecret({ name: n, value: 'keyed-value', ownerUserId: 'lilly' }),
+    const putContent = await as(KATRA, () =>
+      handleVaultPutSecret({ name: n, value: 'keyed-value', ownerUserId: 'agent-c' }),
     );
     const secretId = (JSON.parse(textOf(putContent)) as { secret_id: string }).secret_id;
     createdIds.push(secretId);
@@ -441,7 +441,7 @@ describe.skipIf(!mongoAvailable)('vault MCP handlers — connected flow (criteri
     delete process.env.KATRA_VAULT_MASTER_KEY;
     try {
       await expect(
-        as(LILLY, () => handleVaultRotateSecret({ secret_id: secretId })),
+        as(AGENT_C, () => handleVaultRotateSecret({ secret_id: secretId })),
       ).rejects.toThrow('vault: master key not configured');
     } finally {
       process.env.KATRA_VAULT_MASTER_KEY = MK;

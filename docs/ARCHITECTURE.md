@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-Katra is a self-hosted **cognitive memory appliance** — an extraction and productization of the cognitive memory system originally built inside the Solomon/cognitive-memory-chat project. It provides **persistent, multi-layered memory infrastructure** for any AI agent or LLM application via the Model Context Protocol (MCP) and an admin REST API.
+Katra is a self-hosted **cognitive memory appliance** — an extraction and productization of the cognitive memory system originally built inside the Katra/cognitive-memory-chat project. It provides **persistent, multi-layered memory infrastructure** for any AI agent or LLM application via the Model Context Protocol (MCP) and an admin REST API.
 
 The memory system's agent identity is **named by its owner** — a name that
 lives in the memory store rather than in code. The appliance itself is
@@ -15,7 +15,7 @@ The core insight: every agent framework (Kolega Code, OpenCode, OpenClaw, LangCh
 
 ## Architecture Analysis: What to Extract
 
-*(Historical record of the extraction from Solomon/cognitive-memory-chat. Kept for provenance; the current system is described in the sections below.)*
+*(Historical record of the extraction from Katra/cognitive-memory-chat. Kept for provenance; the current system is described in the sections below.)*
 
 ### Current System Topology
 
@@ -201,7 +201,7 @@ Each prints: the identity record, latest daily journal, unresolved threads, memo
 `integrations/kolega-code/` connects Kolega Code and OpenCode sessions to Katra:
 
 - `ensure-bridge.sh` provisions the per-machine identity (`KATRA_USER_ID`), a platform-aware state dir (macOS: `~/Library/Application Support/kolega-code`), and key-file fallback (`~/.katra/keys/katra-<user>.key`).
-- `satori-hook.json` holds `mcp_url` / `api_key` / `user_id` / `sources`; `ensure-bridge.sh` rewrites it when `user_id` **or** the `mcp_url` host differ from `KATRA_HOST`.
+- `katra-hook.json` holds `mcp_url` / `api_key` / `user_id` / `sources`; `ensure-bridge.sh` rewrites it when `user_id` **or** the `mcp_url` host differ from `KATRA_HOST`.
 - The Python package `kolega_katra_bridge` injects relevant memories on `UserPromptSubmit` from sources `working_memory`, `temporal_context`, `vector_search`, `temporal_recall`, plus the agent-message bulletin.
 - Per-agent guidance files (`AGENTS.<name>.md`) hold each agent's wake guidance — keep yours in the git-ignored `private/` folder.
 
@@ -350,7 +350,7 @@ Tier 2b — Self-Managed (IaC):
 
 **Provided artifacts:**
 - `terraform/aws/` — Terraform module (VPC, ECS, Atlas, ElastiCache, S3)
-- `helm/satori/` — Helm chart for Kubernetes (any cloud)
+- `helm/katra/` — Helm chart for Kubernetes (any cloud)
 
 **Config:** Cloud-specific env vars, managed secrets, auto-scaling policies
 
@@ -414,7 +414,7 @@ katra/
 ├── dashboard/                # Lightweight web UI (static HTML served at /dashboard/)
 │
 ├── helm/                     # Kubernetes Helm chart
-│   └── satori/
+│   └── katra/
 │
 ├── terraform/                # Cloud deployment templates
 │   └── aws/
@@ -430,7 +430,7 @@ katra/
 │       ├── adaptive_heartbeat.py
 │       ├── agent_executor.py
 │       ├── wake_service.py
-│       ├── satori_pubsub.py
+│       ├── katra_pubsub.py
 │       └── inter_agent_bridge.py
 │
 ├── integrations/
@@ -439,7 +439,7 @@ katra/
 │       ├── scripts/          # per-agent wake helpers (wake-<agent>.sh)
 │       └── kolega_katra_bridge/   # Python hook package
 │
-├── watcher/                  # Passive session-log extractors (Solomem)
+├── watcher/                  # Passive session-log extractors (Katra)
 │   ├── katra_watcher.py
 │   ├── katra_opencode_extractor.py
 │   ├── claude_history_extractor.py

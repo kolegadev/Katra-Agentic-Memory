@@ -92,11 +92,10 @@ uv pip install --python .venv/bin/python -e .
 
 ## Configuration
 
-1. Create the hook config. The bridge reads `satori-hook.json` from the
-   Kolega state dir. (The older `katra-hook.json` filename is legacy —
-   pre-cutover. The bridge reads `satori-hook.json` today; the self-healing
-   guard migrates a leftover `katra-hook.json` to `satori-hook.json`
-   automatically.)
+1. Create the hook config. The bridge reads `katra-hook.json` from the
+   Kolega state dir. (The pre-cutover filename was renamed at the 2026-08-21
+   cutover; the self-healing guard migrates a leftover pre-cutover config to
+   `katra-hook.json` automatically.)
 
    `ensure-bridge.sh` writes the config for you and keeps it honest: it
    rewrites it when the configured `user_id` differs from `KATRA_USER_ID`,
@@ -207,14 +206,14 @@ The bulletin alone is pull-based: it only reaches the machine's agent when a
 session is already running. The inbox loop closes the loop with **poll →
 headless dispatch → threaded reply**:
 
-1. **Poller** — `scripts/satori_inbox.py` queries the episodic store directly
+1. **Poller** — `scripts/katra_inbox.py` queries the episodic store directly
    (not Redis: not all senders tag `inter-agent`, so the store is the source
    of truth) for `Attention: <this-identity>` messages that have no reply
    from this identity. Handled := a later event from this identity with
    `metadata.in_reply_to == id`, or a manual `mark-handled`/`grandfather`
    entry.
 2. **Dispatcher** — cron (`*/3`, lock + cooldown + daily cap) runs
-   `satori_inbox.py dispatch`, which launches a headless session:
+   `katra_inbox.py dispatch`, which launches a headless session:
    `kolega-code ask --project private/integrations/kolega-code/inbox-agent
    --goal "<pending messages>" --session <agent>-inbox --save`.
 3. **Policy** — the inbox governance document lives in the git-ignored
@@ -241,20 +240,23 @@ that machine's own identity, so each machine can run its own inbox loop.
 
 ## Wake rituals
 
-Per-identity wake scripts survive `/clear`, `/compress`, and code updates,
-and refuse to wake as the wrong identity:
+The wake ritual is identity-agnostic and survives `/clear`, `/compress`,
+and code updates, refusing to wake without a confirmed identity:
 
 - a machine-local wake script for the server host (keep yours outside the
   repo, e.g. `~/.kolega/`), and
-- `scripts/wake-<agent>.sh` — per-identity wake helpers (this repo).
+- `scripts/wake.sh` — one generic wake helper (this repo), driven by
+  `KATRA_USER_ID` (default `katra`), `KATRA_HOST`, `KATRA_EXPECTED_NAME`,
+  and the key file `~/.katra/keys/katra-<user>.key`. Deployment-specific
+  per-identity rituals live in the git-ignored `private/` folder.
 
-Each prints: the identity record (`get_my_identity`, retried 3× — on
+It prints: the identity record (`get_my_identity`, retried 3× — on
 mismatch the script exits with a fix checklist), the latest daily journal,
 unresolved threads, memory health (`GET /api/v1/health`), rules-recall
 search instructions, and messages from the team (a `search_memories` query
 for attention headers addressed to this identity, limit 5). Per-machine
 settings live in `~/.katra/wake-env.sh` (`KATRA_HOST`, `KATRA_API_KEY`,
-`KATRA_USER_ID`); the scripts fall back to the key files
+`KATRA_USER_ID`); the script falls back to the key file
 `~/.katra/keys/katra-<user>.key`.
 
 Per-agent wake guidance lives in `AGENTS.<name>.md` files — keep yours in the
@@ -272,7 +274,7 @@ bash /path/to/Katra-Agentic-Memory/integrations/kolega-code/scripts/ensure-bridg
 For hands-off operation, install the self-healing guard (checks the repo
 venv, the CLI venv, the hook config, `hooks.json` (command-type entries),
 and a live runner test every 5 minutes; repairs what it finds, migrates a
-legacy `katra-hook.json` to `satori-hook.json`, and records health
+legacy `katra-hook.json` to `katra-hook.json`, and records health
 transitions as episodic events in Katra):
 
 ```bash
@@ -283,7 +285,7 @@ transitions as episodic events in Katra):
 
 On each prompt, the hook:
 
-1. Loads runtime config from `satori-hook.json`.
+1. Loads runtime config from `katra-hook.json`.
 2. Queries Katra memory: all 11 configured sources unconditionally on
    bootstrap; query-ranked retrieval on user prompts; the agent-message scan
    always runs.
@@ -293,7 +295,7 @@ On each prompt, the hook:
 
 If Katra is unreachable or the query fails, the hook returns empty context so
 Kolega Code continues normally. Debug output lands in
-`<state dir>/diagnostics/satori-hook.log`.
+`<state dir>/diagnostics/katra-hook.log`.
 
 ## Testing
 

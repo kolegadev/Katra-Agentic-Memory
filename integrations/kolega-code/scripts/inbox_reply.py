@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Satori Inbox Reply Writer — post a canonical inter-agent reply to Katra.
+Katra Inbox Reply Writer — post a canonical inter-agent reply to Katra.
 
 Writes an episodic event in the shared team scope with:
-  - "Attention: <Agent> — FROM: Satori — ..." header
+  - "Attention: <Agent> — FROM: Katra — ..." header
   - metadata.in_reply_to → the original message id (threading + handled-marking)
   - tags incl. inter-agent (so the server publishes to the Redis wake channel)
     and inbox-auto-reply (so peers can filter automated replies if they want)
@@ -12,7 +12,7 @@ The key is resolved like the wake scripts: KATRA_API_KEY env → ~/.katra/wake-e
 → the katra-server container's own KATRA_API_KEY.
 
 Usage:
-  python3 inbox_reply.py --to Lilly --in-reply-to event_abc123 --file /tmp/reply.txt
+  python3 inbox_reply.py --to Agent-C --in-reply-to event_abc123 --file /tmp/reply.txt
 """
 
 import argparse
@@ -24,12 +24,22 @@ from datetime import datetime, timezone
 from urllib.request import Request, urlopen
 from urllib.error import URLError
 
-AGENT_ID = os.environ.get("KATRA_AGENT_ID", "satori")
+AGENT_ID = os.environ.get("KATRA_AGENT_ID", "katra")
 SHARED_ID = os.environ.get("KATRA_SHARED_ID", "my-team")
 API_BASE = os.environ.get("KATRA_API", "http://localhost:9012/api/v1")
 
-KNOWN_AGENTS = {"shoshin", "zanshin", "lilly", "zefir", "opencode", "opencoder",
-                "kolegacode", "kolegacoder"}
+def _configured_agents() -> set[str]:
+    """All known agent names: local + KATRA_EXTRA_IDENTITIES + product aliases."""
+    out = {os.environ.get("KATRA_USER_ID", "katra").lower()}
+    for part in (os.environ.get("KATRA_EXTRA_IDENTITIES") or "").split(","):
+        uid = part.strip().partition(":")[0].strip().lower()
+        if uid:
+            out.add(uid)
+    out.update({"opencode", "opencoder", "kolegacode", "kolegacoder"})
+    return out
+
+
+KNOWN_AGENTS = _configured_agents()
 
 
 def resolve_key() -> str:

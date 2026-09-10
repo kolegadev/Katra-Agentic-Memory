@@ -39,7 +39,7 @@ import {
   hashApiKey,
 } from '../../src/utils/api-key-manager.js';
 
-const SHOSHIN_KEY = 'katra-shoshin-enforcement-test-key';
+const AGENT_A_KEY = 'katra-agent-a-enforcement-test-key';
 const LEGACY_MCP_KEY = 'katra-mcp-legacy-enforcement-key';
 const ADMIN_KEY = 'katra-admin-enforcement-test-key';
 
@@ -71,7 +71,7 @@ describe('REST ingestion — caller enforcement', () => {
     state.inserts = [];
     clearClientKeyIdentities();
     for (const name of envNames) delete process.env[name];
-    registerClientKeyIdentity(hashApiKey(SHOSHIN_KEY), 'shoshin');
+    registerClientKeyIdentity(hashApiKey(AGENT_A_KEY), 'agent-a');
   });
 
   afterEach(() => {
@@ -80,7 +80,7 @@ describe('REST ingestion — caller enforcement', () => {
   });
 
   it('untrusted caller writing ANOTHER user_id is rejected with 403', async () => {
-    const res = await postEvent(SHOSHIN_KEY, validEvent('zanshin'));
+    const res = await postEvent(AGENT_A_KEY, validEvent('agent-b'));
     expect(res.status).toBe(403);
     const body = await res.json();
     expect(body.success).toBe(false);
@@ -88,18 +88,18 @@ describe('REST ingestion — caller enforcement', () => {
   });
 
   it('untrusted caller writing their OWN user_id is allowed and attributed', async () => {
-    const res = await postEvent(SHOSHIN_KEY, validEvent('shoshin'));
+    const res = await postEvent(AGENT_A_KEY, validEvent('agent-a'));
     expect(res.status).toBe(201);
     expect(state.inserts).toHaveLength(1);
     expect(state.inserts[0].collection).toBe('episodic_events');
-    expect(state.inserts[0].doc.user_id).toBe('shoshin');
+    expect(state.inserts[0].doc.user_id).toBe('agent-a');
   });
 
   it('untrusted caller omitting user_id is attributed to their own', async () => {
-    const res = await postEvent(SHOSHIN_KEY, validEvent());
+    const res = await postEvent(AGENT_A_KEY, validEvent());
     expect(res.status).toBe(201);
     expect(state.inserts).toHaveLength(1);
-    expect(state.inserts[0].doc.user_id).toBe('shoshin');
+    expect(state.inserts[0].doc.user_id).toBe('agent-a');
   });
 
   it('trusted caller (admin key) may write for any user_id', async () => {
@@ -107,24 +107,24 @@ describe('REST ingestion — caller enforcement', () => {
     process.env.KATRA_API_KEY = ADMIN_KEY;
     await ensureApiKeys();
 
-    const res = await postEvent(ADMIN_KEY, validEvent('zanshin'));
+    const res = await postEvent(ADMIN_KEY, validEvent('agent-b'));
     expect(res.status).toBe(201);
     expect(state.inserts).toHaveLength(1);
-    expect(state.inserts[0].doc.user_id).toBe('zanshin');
+    expect(state.inserts[0].doc.user_id).toBe('agent-b');
   });
 
   it('legacy env key is REJECTED with 401 (no backward-compat fallback after cutover)', async () => {
     process.env.MCP_API_KEY = LEGACY_MCP_KEY;
 
     // The legacy shared key no longer maps to any identity — any write with
-    // it must be rejected loudly instead of landing under Satori.
-    const res = await postEvent(LEGACY_MCP_KEY, validEvent('satori'));
+    // it must be rejected loudly instead of landing under Katra.
+    const res = await postEvent(LEGACY_MCP_KEY, validEvent('katra'));
     expect(res.status).toBe(401);
     expect(state.inserts).toHaveLength(0);
   });
 
   it('valid-but-unmapped keys are rejected with 401 at the app boundary', async () => {
-    const res = await postEvent('katra-unmapped-random-key', validEvent('shoshin'));
+    const res = await postEvent('katra-unmapped-random-key', validEvent('agent-a'));
     expect(res.status).toBe(401);
     expect(state.inserts).toHaveLength(0);
   });
