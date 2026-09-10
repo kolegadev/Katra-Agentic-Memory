@@ -380,8 +380,23 @@ export class IndexManager {
         }
       }
     } catch (error) {
-      // Collection might not exist yet, which is fine
-      if (!(error instanceof Error && error.message.includes('ns not found'))) {
+      // Collection might not exist yet, which is fine: createIndex
+      // auto-creates the namespace (MongoDB 4.2+), so createCollectionIndexes
+      // below will build the indexes on a brand-new collection. Detect
+      // NamespaceNotFound by the error code (26) AND by both message
+      // variants the driver has produced — "ns does not exist" (MongoDB
+      // 7.x shells) and "ns not found" (older wording). Matching only the
+      // legacy wording made this catch silently re-throw, aborting index
+      // creation for every not-yet-existing collection (notably the vault
+      // auth_sessions replay-guard index on pre-existing deployments).
+      const isNamespaceMissing =
+        (typeof error === 'object' &&
+          error !== null &&
+          (error as { code?: unknown }).code === 26) ||
+        (error instanceof Error &&
+          (error.message.includes('ns not found') ||
+            error.message.includes('ns does not exist')));
+      if (!isNamespaceMissing) {
         throw error;
       }
     }

@@ -187,6 +187,10 @@ const AUDIT_COLLECTION = 'vault_audit';
 const HOUR_MS = 3_600_000;
 const TOKEN_BYTES = 32;
 const PREFIX_MIN_LENGTH = 8;
+/** Replay-guard index — name and spec MUST match the boot-time index entry
+ *  declared for auth_sessions in database/index-management.ts. */
+const REPLAY_INDEX_NAME = 'identity_last_counter';
+const REPLAY_INDEX_SPEC: Record<string, 1> = { identity: 1, last_counter: 1 };
 
 /** Static reason strings — never echo submitted input. */
 const REASON_OPERATOR_ONLY = 'operator only';
@@ -196,6 +200,7 @@ const REASON_INVALID_CODE = 'invalid TOTP code';
 const REASON_NOT_FOUND = 'session not found';
 const REASON_EXPIRED = 'session expired';
 const REASON_REVOKED = 'session revoked';
+const REASON_REPLAY_GUARD_UNAVAILABLE = 'replay guard unavailable';
 
 export interface AuthService {
   enrollTotp(op: {
@@ -303,6 +308,67 @@ export function createAuthService(opts: AuthServiceOptions = {}): AuthService {
   const store: VaultStore = opts.store ?? createVaultStore();
   const now: () => number = opts.now ?? Date.now;
   const writeAudit = auditWriter(db, auditCollectionName);
+
+  // ── Replay-guard index bootstrap (F9 criterion 8) ───────────────────────
+  // The unique sparse index on (identity, last_counter) is what makes a TOTP
+  // code claimable at most once per identity — MongoDB enforces the claim
+  // atomically at insertOne. Boot-time index management normally creates it,
+  // but it can skip collections that do not exist yet at boot (pre-existing
+  // deployments), which would leave replay protection silently inert. This
+  // service therefore guarantees the index itself before the first session
+  // is minted: idempotent (no-op when present), single-flight per service
+  // instance, and cleared on failure so a later attempt can retry.
+  let replayIndexReady: Promise<void> | null = null;
+  /** MongoDB refuses a createIndex whose key pattern already exists under a
+   *  different name (IndexOptionsConflict, code 85). */
+  function isIndexNameConflict(error: unknown): boolean {
+    return (
+      (typeof error === 'object' &&
+        error !== null &&
+        (error as { code?: unknown }).code === 85) ||
+      (error instanceof Error && error.message.includes('IndexOptionsConflict'))
+    );
+  }
+  /** True when an EQUIVALENT unique+sparse (identity, last_counter) index
+   *  exists under any name — it provides the same atomic replay guard. */
+  async function hasEquivalentReplayIndex(): Promise<boolean> {
+    const indexes = await sessionsCol.listIndexes().toArray();
+    return indexes.some((idx) => {
+      const key = idx.key as unknown;
+      return (
+        typeof key === 'object' &&
+        key !== null &&
+        (key as Record<string, unknown>).identity === 1 &&
+        (key as Record<string, unknown>).last_counter === 1 &&
+        idx.unique === true &&
+        idx.sparse === true
+      );
+    });
+  }
+  function ensureReplayIndex(): Promise<void> {
+    if (replayIndexReady === null) {
+      replayIndexReady = sessionsCol
+        .createIndex(REPLAY_INDEX_SPEC, {
+          name: REPLAY_INDEX_NAME,
+          unique: true,
+          sparse: true,
+          background: true,
+        })
+        .then(() => undefined)
+        .catch(async (error: unknown) => {
+          // A name conflict with an equivalent index — e.g. one created with
+          // the default name on a pre-existing deployment, or by the
+          // boot-time manager before it adopted the canonical name — means
+          // the guard is already in place under another name: treat as ready.
+          if (isIndexNameConflict(error) && (await hasEquivalentReplayIndex())) {
+            return;
+          }
+          replayIndexReady = null; // allow a retry on the next attempt
+          throw error;
+        });
+    }
+    return replayIndexReady;
+  }
 
   function sha256Hex(value: string): string {
     return createHash('sha256').update(value, 'utf8').digest('hex');
@@ -501,6 +567,29 @@ export function createAuthService(opts: AuthServiceOptions = {}): AuthService {
       const ttlMs = policy.session_ttl_hours * HOUR_MS;
       const createdMs = now();
       const expiresAt = new Date(createdMs + ttlMs).toISOString();
+      // Ensure the replay-guard index exists before minting. If the build
+      // fails — e.g. duplicate (identity, last_counter) rows minted while
+      // the guard was inert on an old deployment — FAIL CLOSED: never mint
+      // a session that replay protection cannot cover.
+      try {
+        await ensureReplayIndex();
+      } catch {
+        await writeAudit({
+          at,
+          actor,
+          action: 'session_issue',
+          secret_id: secretId,
+          outcome: 'error',
+          error: REASON_REPLAY_GUARD_UNAVAILABLE,
+        });
+        return {
+          issued: false,
+          token: null,
+          expires_at: null,
+          reason: REASON_REPLAY_GUARD_UNAVAILABLE,
+        };
+      }
+
       // 32 random bytes → base64url; ONLY the SHA-256 hash is persisted.
       const token = randomBytes(TOKEN_BYTES).toString('base64url');
       const tokenHash = sha256Hex(token);
