@@ -1466,7 +1466,7 @@ async function saveIdentity() {
   const body = {
     name,
     chosen_by: document.getElementById('identity-chosen').value.trim() || 'dashboard',
-    confirmed_by: 'John',
+    confirmed_by: 'operator',
     rationale: 'The memory carries the agent\'s own name so the agent recognizes it as itself.',
   };
   const d = await api('PUT', '/admin/identity', body);

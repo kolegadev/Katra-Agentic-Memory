@@ -484,8 +484,8 @@ export async function ensureClientKeys(options: {
         console.log(`  ${entry.user_id.padEnd(9)} ${entry.key}`);
       }
       console.log('');
-      console.log('  Hand these keys to the named machines (iMac trading → shoshin,');
-      console.log('  iMac OpenCode → zanshin, natasha-macbook-pro → zefir).');
+      console.log('  Hand each key to the machine that runs that identity (see the');
+      console.log('  deployment notes in private/ for the identity→machine map).');
       console.log('  Only sha256 hashes are stored in the');
       console.log('  database (system_settings.client_keys) — plaintext is not.');
       console.log('═══════════════════════════════════════════════════════════');

@@ -61,13 +61,13 @@ the sitemap or requests indexing.
 ## Live-Verified Lessons (apply these before inventing new theories)
 
 1. **GSC APIs require the EXACT property URL.** The stored `gsc.site_url`
-   (`https://www.depositback247.com/` — trailing slash matters) is the only
+   (`https://www.example.com/` — trailing slash matters) is the only
    value GSC accepts for sitemap/inspection calls. Passing the site row's
    base URL returns "User does not have sufficient permission" / "You do
    not own this site". The audit resolves the property URL from the stored
    connector config — keep it in sync with the GSC property.
 2. **apex vs www must match.** If the site canonical/GSC property is
-   `www.depositback247.com` but RankPilot's site `site_base_url` is the
+   `www.example.com` but RankPilot's site `site_base_url` is the
    apex, every GSC call and fetch fails. Symptom in the audit: all checks
    `fetch failed` + GSC permission errors. Fix: set `site_base_url` to the
    www URL (Settings → Site & Repo).

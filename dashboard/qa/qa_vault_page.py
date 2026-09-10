@@ -5,8 +5,8 @@ Reusable regression harness — run against the live stack:
     python3 dashboard/qa/qa_vault_page.py
 Requires: playwright + chromium (pip install playwright && playwright install chromium),
 the stack running (health at localhost:9012), and KATRA_API_KEY in the repo .env
-(the script reads it from /home/johnpellew/Katra-Agentic-Memory/.env — override
-the ENV_PATH constant for other checkouts).
+(the script reads it from the repo-root .env — override with the
+KATRA_ENV_PATH env var for other checkouts).
 
 Covers: meta-only list rendering + DOM redaction, form validation, password input
 type + clear-after-submit, owner-row visibility toggling, private-with-owner and
@@ -16,25 +16,17 @@ localStorage hygiene, console errors, throwaway cleanup (real secrets untouched)
 
 Exit code 0 = all checks pass; 1 = at least one check failed.
 """
-Mechanical QA of the Katra Vault Secrets/Approvals dashboard page (Playwright).
-
-Covers what manual testing may have missed:
-- list rendering (meta-only, no secret material anywhere in the DOM)
-- create-form validation, password input type, value cleared after submit
-- owner-row visibility toggling (the F10c fix)
-- private-with-owner and team creation flows
-- XSS adversarial names (quote-breakout + HTML injection) — the F4 fix
-- rotate flow (rotation_due_at appears)
-- approvals grant/revoke flow
-- localStorage hygiene, console errors
-- cleanup of all throwaway secrets; REAL secrets never touched.
-"""
+import os
 import re
 import sys
+from pathlib import Path
+
 from playwright.sync_api import sync_playwright
 
-BASE = "http://localhost:9012/dashboard/"
-ENV_PATH = "/home/johnpellew/Katra-Agentic-Memory/.env"
+BASE = os.environ.get("KATRA_DASHBOARD_URL", "http://localhost:9012/dashboard/")
+ENV_PATH = os.environ.get("KATRA_ENV_PATH") or str(
+    Path(__file__).resolve().parents[2] / ".env"
+)
 
 def env(key):
     for line in open(ENV_PATH):

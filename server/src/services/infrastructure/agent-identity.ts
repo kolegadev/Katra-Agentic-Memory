@@ -1,7 +1,7 @@
 /**
  * Agent Identity — the name the memory holds for its own inhabitant.
  *
- * John's design (2026-08-19): the agent's identity must live INSIDE the
+ * Design (2026-08-19): the agent's identity must live INSIDE the
  * memory, not in the code. The MCP server, the dashboard, and every
  * identity-bearing surface ask the memory who they are; the memory
  * answers with the stored name. The LLM bodies change; the memory and

@@ -41,21 +41,21 @@ Give every project a durable identity in Satori's memory: a unique slug, a struc
 ### Workflow Process
 
 **Phase 1 — Establish Project Identity:**
-1. Derive a `project_slug` from the project name — lowercase, kebab-case, unique within Satori (e.g. `rankpilot`, `katra-agentic-memory`). Use `search_memories(query="project:<slug>")` to check it doesn't already exist. If it does, warn the user and ask whether to update or abort.
+1. Derive a `project_slug` from the project name — lowercase, kebab-case, unique within Satori (e.g. `my-project`, `katra-agentic-memory`). Use `search_memories(query="project:<slug>")` to check it doesn't already exist. If it does, warn the user and ask whether to update or abort.
 2. Build a `project_meta` object:
 
 ```json
 {
-  "project_slug": "rankpilot",
-  "full_name": "RankPilot",
+  "project_slug": "my-project",
+  "full_name": "My Project",
   "description_one_liner": "...",
-  "repo_url": "https://github.com/kolegadev/RankPilot",
-  "local_path": "/home/johnpellew/RankPilot",
+  "repo_url": "https://github.com/your-org/my-project",
+  "local_path": "/home/you/my-project",
   "status": "planning",
   "created_at": "2026-08-12",
   "tech_stack": ["Node", "TypeScript", "SQLite", "MCP"],
   "parent_initiative": null,
-  "related_projects": ["Satori-Agentic-Memory"]
+  "related_projects": ["Katra-Agentic-Memory"]
 }
 ```
 
@@ -73,7 +73,7 @@ Give every project a durable identity in Satori's memory: a unique slug, a struc
    - **Key entities:** services, databases, APIs, tools, connectors, repos — each becomes a named entity
 2. Store a **structured project briefing** as a fact:
    - `store_memory(content=<full briefing in structured form>, category="insight", confidence=0.90, tags=["project:<slug>", "project-briefing"])`
-3. For each **key entity** discovered (e.g. "rankpilot-mcp server", "SQLite rankpilot.db", "GSC connector"), store a fact establishing it as a project-owned entity:
+3. For each **key entity** discovered (e.g. "my-project-mcp server", "SQLite my-project.db", "GSC connector"), store a fact establishing it as a project-owned entity:
    - `store_memory(content="Entity <name>: <type>. Owned by project <slug>. <description>.", category="fact", confidence=0.90, tags=["project:<slug>", "entity"])`
 
 **Phase 3 — Create Mission Scaffold:**
@@ -112,17 +112,17 @@ Output a summary of what was created:
 
 ### Project Meta Tag Convention
 All project memories use the tag `project:<slug>`. This creates a virtual "project namespace" that can be queried at any time:
-- `search_memories(query="project:rankpilot")` — discover everything known about RankPilot
-- `search_memories(query="project:rankpilot briefing")` — find the project briefing
-- `search_memories(query="project:rankpilot entity")` — list all entities owned by the project
+- `search_memories(query="project:<slug>")` — discover everything known about the project
+- `search_memories(query="project:<slug> briefing")` — find the project briefing
+- `search_memories(query="project:<slug> entity")` — list all entities owned by the project
 
-When future sessions store memories about this project (actions, decisions, outcomes), they MUST continue to use the `project:<slug>` tag. The optimise session prompt in RankPilot's own spec reinforces this: actions always carry the RP ledger ID, and Satori memories about an action always include that ID.
+When future sessions store memories about this project (actions, decisions, outcomes), they MUST continue to use the `project:<slug>` tag. The project's own optimisation spec reinforces this: actions always carry the ledger ID, and Satori memories about an action always include that ID.
 
-### Example: RankPilot
-The canonical first run of this skill seeded the `rankpilot` project with:
-- Project meta: slug `rankpilot`, repo `kolegadev/RankPilot`, status `planning`
-- 15+ facts covering architecture, tools (40 MCP tools across 9 namespaces), connectors (GSC, GA4, DataForSEO), scheduled jobs, and the action-ledger innovation
-- Key entities: rankpilot-mcp server, SQLite rankpilot.db, dashboard SPA, 8 skills, 6 scheduled cron jobs, 3 session prompts, Satori integration bridge
-- Mission: 3 milestones (Sense+See, Act, Loop) with 6 tasks each, mirroring BUILD.md
-- Cross-links: depends on Satori via MCP, integrates with Kolega-Code CLI, referenced in Skills Library
-- Roadmap: USB vault swap-in, Bing/ATP connectors, PR gates, Postgres migration, A/B testing, multi-agent role split
+### Example: my-project
+The canonical first run of this skill seeded the `my-project` project with:
+- Project meta: slug `my-project`, repo `your-org/my-project`, status `planning`
+- 15+ facts covering architecture, tools, connectors, scheduled jobs, and the action-ledger innovation
+- Key entities: the project's MCP server, its SQLite database, its dashboard, its skills, cron jobs, session prompts, and the Satori integration bridge
+- Mission: 3 milestones (Sense+See, Act, Loop) with 6 tasks each, mirroring the build plan
+- Cross-links: depends on Satori via MCP, integrates with the Kolega-Code CLI, referenced in the Skills Library
+- Roadmap: connector swap-ins, new data sources, PR gates, migrations, A/B testing, multi-agent role split

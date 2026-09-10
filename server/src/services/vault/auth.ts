@@ -11,8 +11,8 @@
  *
  * ENFORCEMENT (requiring sessions on the existing MCP/REST paths) is a
  * separate cutover step — this module only delivers the mechanism and the
- * policy lookup (`require_totp` defaults to false; John flips it when the
- * team is enrolled).
+ * policy lookup (`require_totp` defaults to false; the operator flips it
+ * when the team is enrolled).
  *
  * Hard rules (violation = FAIL):
  *  - The TOTP secret appears only inside the sealed envelope; the raw token
@@ -71,7 +71,7 @@ const TRUSTED: AuthPolicy = Object.freeze({
  * enforcement is the separate cutover step.
  */
 export const DEFAULT_AUTH_POLICY: Record<string, AuthPolicy> = {
-  // Interactive — laptops/iMac, human present.
+  // Interactive — laptops, human present.
   shoshin: INTERACTIVE,
   zanshin: INTERACTIVE,
   lilly: INTERACTIVE,
@@ -79,7 +79,7 @@ export const DEFAULT_AUTH_POLICY: Record<string, AuthPolicy> = {
   // Unattended — device-bound, narrow scope, 720 h sessions.
   satori: UNATTENDED,
   'gas-law-watcher': UNATTENDED,
-  // Trusted — loopback / admin key (thebrick).
+  // Trusted — loopback / admin key (the host machine).
   loopback: TRUSTED,
   admin: TRUSTED,
 };
