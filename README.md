@@ -1,73 +1,101 @@
 # Katra — Cognitive Memory for AI Agents
 
 [![License: BSL 1.1](https://img.shields.io/badge/License-BSL%201.1-blue.svg)](https://mariadb.com/bsl11/)
+[![CI](https://github.com/kolegadev/Katra-Agentic-Memory/actions/workflows/ci.yml/badge.svg)](https://github.com/kolegadev/Katra-Agentic-Memory/actions/workflows/ci.yml)
 
-Give your AI agent **persistent memory**. Katra is a self-contained memory appliance —
-drop it on any machine with Docker, point your agent at it via MCP, and get
-episodic recall, semantic search, knowledge graphs, and temporal analysis.
+**Persistent, self-reflective memory for AI agents.** Katra is a self-contained
+memory appliance — drop it on any machine with Docker, point your agent at it via
+[MCP](https://modelcontextprotocol.io), and get episodic recall, semantic search,
+knowledge graphs, temporal analysis, and sleep-consolidated reflection.
 
-Any MCP-compatible agent works: OpenClaw, Claude Code, OpenCode, Codex CLI, Kolega Code or
-anything that speaks the Model Context Protocol.
+Any MCP-compatible agent works: Claude Code, OpenClaw, OpenCode, Codex CLI,
+Kolega Code, or anything that speaks the Model Context Protocol.
 
-## Cognitive Memory Thesis
+```bash
+# Docker is the only prerequisite
+curl -fsSL https://raw.githubusercontent.com/kolegadev/Katra-Agentic-Memory/main/install.sh | bash
+```
 
-The mission of Katra is to create an analog of human memory architecture, with the hope that it and the experimentation around it through OpenSourcing solves a few of the more challenging issues of LLM context management for long-running, persistent and autonomous agent operations. The thesis (hope) is that if you create the memory ecosystem with the majority of the functional memory types of human memory and similar architecture, over time and with refinement, we will see emergent behaviours similar to human memory, expressed as functional utility, learning, self goal setting, autonamous task planning and prioritisation,  personality and ultimately emotions. 
+```console
+$ curl http://localhost:3112/health
+{"status":"ok","services":{"mongodb":"connected","redis":"connected","llm":"deepseek","embeddings":"available"}}
+```
 
-In early prototype called Katra, we created an OpenClaw like agentic framework that runs a single contiuous chat thread, no topic or task separation and with no requirement for context compression. Context is served dynamically into the LLM based on memories and attention. 
+---
 
-## Observed Emergent Behaviours Log
+## Table of Contents
 
-Case #1:(23rd June 2026) In the first few weeks of testing of the multi-agent (Hybrid mode) shared consciouness model of memory, one of our test rigs, with 5 OpenClaw agents sharing one memory system, found 2 of the agents communicating task intructions and completion responsed through their shared memory state or shared consciousness.  These 2 agents were not connected in any other way, as were set up in separate workspaces, the only thing they shared was memory and mission. This was not a "by design" feature, it just happened and was pretty exciting. This test rig now uses this "thought modal" as its communication rail. If anyone else experiences other emergent behaviours please email me to discuss and we can add the description to this log.  Tweet me at @JohnWPellew and tell your story.
+- [What is Katra](#what-is-katra)
+- [Key differentiators](#key-differentiators)
+- [How it compares](#how-it-compares)
+- [Quick start](#quick-start)
+- [Connect your agent](#connect-your-agent)
+- [First-run identity](#first-run-identity)
+- [Features](#features)
+- [Architecture](#architecture)
+- [Katra Vault](#katra-vault)
+- [Autonomous loop & sleep consolidation](#autonomous-loop--sleep-consolidation)
+- [Observed emergent behaviours](#observed-emergent-behaviours)
+- [The origin of Katra](#the-origin-of-katra)
+- [Documentation](#documentation)
+- [Contributing & security](#contributing--security)
+- [License](#license)
 
+## What is Katra
 
-## The Origin of Katra
+Katra models human memory architecture to solve a hard problem in long-running,
+persistent, autonomous agents: **LLM context management**. Rather than a single
+vector store, Katra provides the majority of the functional memory types of
+human memory — episodic, semantic, working, and procedural — plus a reflective
+layer that distills experience over time.
 
-A Vulcan mind meld (or mind fusion) is an iconic telepathic practice in **Star Trek**. 
+The thesis: build the memory ecosystem with similar architecture to human memory,
+and over time and refinement you see emergent behaviours expressed as functional
+utility, learning, self goal-setting, task planning, prioritisation, personality,
+and ultimately emotion.
 
-It allows a Vulcan to merge their consciousness with another being to share thoughts, memories, emotions, and experiences. 
-It is typically initiated through physical contact with specific points on the subject's face. 
-- **Key Mechanics & ApplicationsTouch Telepathy**: While primarily requiring direct physical touch to the face or head, exceptionally powerful Vulcans can perform the technique at a distance.
-- **Information Exchange**: It is frequently used for interrogations, recovering suppressed memories, or passing deep knowledge between generations.
-- **Transfer of the Katra**: In sacred or emergency circumstances, a mind meld can transfer a person's **katra**—their soul, consciousness, and core essence—into another living being or object prior to death.
-- **Side Effects**: The experience can be physically and emotionally draining. Incorrectly performed melds can damage neural pathways, and participants may retain "echoes" of each other's memories and personalities long after the link is broken.
+## Key differentiators
 
-## Comparison to Other Major Approaches
+- **Multi-layered by design** — structured episodic memory, a working-memory
+  cache, semantic facts with embeddings, a knowledge graph, and temporal querying.
+- **Cognitive layer** — *sleep consolidation* runs daily/weekly/monthly reflection
+  that generates insights, emotional context, and self-narrative.
+- **MCP-native with rich tooling** — **66** specialized tools instead of generic
+  add/search.
+- **Autonomous & background** — passive collection via watchers plus a
+  salience-driven autonomous loop (no cron, no hand-written task files).
+- **Local-first & appliance model** — MongoDB + Redis + MinIO in one
+  `docker compose` stack with portable data. Runs on a Raspberry Pi.
+- **Shared-memory multi-agent** — identity separation and an inter-agent message
+  bus make multi-agent collaboration natural.
+- **Katra Vault** — a built-in, encrypted-at-rest secret store; a secret never
+  passes through an LLM.
 
-Katra aims to provide a more comprehensive **cognitive memory infrastructure** rather than a single-purpose memory library. Here's how it positions against popular alternatives (as of mid-2026):
+## How it compares
 
-| Approach                  | Memory Layers                  | Cognitive/Reflective Features | Protocol Support | Deployment Model          | Best For                          | Key Differentiator vs Katra |
-|---------------------------|--------------------------------|-------------------------------|------------------|---------------------------|-----------------------------------|-----------------------------|
-| **Simple Vector Stores + RAG** (Chroma, Pinecone, etc.) | Semantic only                 | None                         | None            | Various                  | Basic retrieval                  | No structure, no reflection, no working memory |
-| **Mem0**                  | Vector + optional Graph       | Extraction-focused           | SDK / API       | Self-hosted or Cloud     | Personalization & long-term user memory | Stronger multi-layer architecture + explicit reflection layer |
-| **Zep (Graphiti)**        | Temporal Knowledge Graph      | Temporal reasoning           | SDK             | Self-hosted / Cloud      | Time-sensitive & relational reasoning | Broader layers + sleep consolidation for deeper emergence |
-| **mcp-memory-service**    | Semantic + Typed KG           | Auto-consolidation           | **MCP** + REST  | Docker / Self-hosted     | MCP-native semantic memory       | Adds episodic + working memory, identity modes, and autonomous loop |
-| **Vestige**               | Cognitive modules + Spaced repetition | Neuroscience-inspired (FSRS, memory states) | **MCP**         | Single Rust binary       | Local cognitive modeling         | More layers + background watchers + full appliance stack |
-| **Letta (MemGPT)**        | Tiered (Core / Recall / Archival) | Agent self-manages memory    | Tools           | Full agent runtime       | Stateful agents that edit their own memory | Katra is a dedicated memory *service*, not a full runtime |
-| **LangGraph / Framework Memory** | Short-term + checkpoints     | Limited                      | Framework-native| Integrated with agent    | Short-term state management      | Persistent long-term + cross-session cognitive layer |
-| **Katra (this project)**  | Episodic + Semantic + KG + Working + Temporal | **Sleep consolidation + reflection** | **MCP** (66 tools) | Full Docker appliance (Mongo + Redis + MinIO) | Long-running agents needing emergent behaviors | — |
+| Approach | Memory layers | Cognitive/reflective | Protocol | Deployment | Best for |
+|---|---|---|---|---|---|
+| **Simple vector stores + RAG** (Chroma, Pinecone, …) | Semantic only | None | None | Various | Basic retrieval |
+| **Mem0** | Vector + optional graph | Extraction-focused | SDK / API | Self-hosted / cloud | Personalization |
+| **Zep (Graphiti)** | Temporal knowledge graph | Temporal reasoning | SDK | Self-hosted / cloud | Time-sensitive reasoning |
+| **mcp-memory-service** | Semantic + typed KG | Auto-consolidation | MCP + REST | Docker | MCP-native semantic memory |
+| **Vestige** | Cognitive modules + spaced repetition | Neuroscience-inspired | MCP | Single Rust binary | Local cognitive modeling |
+| **Letta (MemGPT)** | Tiered (core/recall/archival) | Agent self-manages | Tools | Full agent runtime | Stateful agents |
+| **Katra (this project)** | Episodic + semantic + KG + working + temporal | **Sleep consolidation + reflection** | **MCP** (66 tools) | Docker appliance | Long-running agents needing emergent behaviours |
 
-### Key Differentiators of Katra
-- **Multi-layered by design** — Not just retrieval, but structured episodic memory, working memory cache, and temporal querying.
-- **Cognitive layer** — Sleep consolidation enables reflection, insight generation, and movement toward emergent behaviors (learning, personality, shared consciousness via identity separation).
-- **MCP-native with rich tooling** — 66 specialized tools instead of generic add/search.
-- **Background & autonomous capabilities** — Passive collection via watchers + salience-driven autonomous loop.
-- **Local-first & appliance model** — Everything runs in one Docker compose with portable data. No external dependencies for core functionality.
-- **Shared memory focus** — Hybrid identity separation makes multi-agent collaboration natural, including an inter-agent message bus.
+Katra is early-stage next to more mature projects and is complementary to them:
+many teams run Katra *alongside* a simpler retrieval layer when they need deeper
+cognitive capabilities. Comparisons and contributions are very welcome.
 
-Katra is still early-stage compared to more mature projects like Mem0 or mcp-memory-service. We see it as complementary — many teams may use Katra alongside or instead of simpler retrieval layers when they need deeper cognitive capabilities.
-
-Contributions and comparisons from the community are very welcome!
-
-
-## Quick Start (Install using one of the agentic applications, it will sort out any shortcomings)
+## Quick start
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/kolegadev/Katra-Agentic-Memory/main/install.sh | bash
 ```
 
-Docker is the only prerequisite. The installer clones the source to
-`~/.katra/src`, generates real credentials, builds and starts the stack, waits
-for it to report healthy, and prints the config snippet for your agent.
+Docker is the only prerequisite. The installer clones the source to `~/.katra/src`,
+generates real credentials, builds and starts the stack, waits for it to report
+healthy, and prints the config snippet for your agent.
 
 Add `--with-watcher` to also ingest your existing agent session history, and
 `--with-systemd` to start Katra on boot:
@@ -84,126 +112,23 @@ curl -fsSL https://raw.githubusercontent.com/kolegadev/Katra-Agentic-Memory/main
 git clone https://github.com/kolegadev/Katra-Agentic-Memory.git
 cd Katra-Agentic-Memory
 cp .env.example .env
-# Required: MONGO_PASS, MINIO_USER, MINIO_PASS. Compose refuses to start
-# without them rather than using a known default. Note that MONGODB_URI
-# embeds MONGO_PASS inline, and the MINIO_* pair must match the AWS_* pair —
-# see docs/DEPLOYMENT.md → Credentials.
+# Required: MONGO_PASS, MINIO_USER, MINIO_PASS — see docs/DEPLOYMENT.md → Credentials.
 docker compose up -d --build --wait
 ```
 
 </details>
 
-> **Note:** The older `https://github.com/kolegadev/katra.git` URL still works (GitHub redirects it).
-
-That's it. Katra is running:
-
 | Service | URL | Purpose |
 |---------|-----|---------|
 | **MCP endpoint** | `http://localhost:3112/mcp` | Point your agent here |
-| **Admin API** | `http://localhost:9012/api/v1/` | REST API, dashboard |
+| **Admin API** | `http://localhost:9012/api/v1/` | REST API |
 | **Dashboard** | `http://localhost:9012/dashboard/` | Web UI for stats + settings |
 | **Health** | `http://localhost:3112/health` | Service health check |
 
-Verify:
-```bash
-curl http://localhost:3112/health
-# {"status":"ok","services":{"mongodb":"connected","redis":"connected"}}
-```
+## Connect your agent
 
-## Naming Your Memory — First-Run Identity
-
-A fresh install ships **unnamed**. The memory system does not inherit any
-default identity — it asks its owner for one. The name you give it is stored
-*inside the memory itself* (`system_settings → agent_identity`) and becomes
-the identity the system presents to every MCP client: the handshake
-`serverInfo.name`, the startup banner, and the dashboard title all read it
-from memory.
-
-Two ways to name it:
-
-1. **Dashboard onboarding** — open `http://<host>:9012/dashboard`. If the
-   memory is unnamed, the Overview shows a *"This memory system has no name
-   yet"* card. Enter a name and confirm (you'll be prompted for the admin
-   key; it's generated on first boot and printed in the server logs, and
-   stored in your `.env` as `KATRA_API_KEY`). The name is also editable any
-   time under **Settings → Identity**.
-2. **API** — `PUT /api/v1/admin/identity` with your admin key:
-   ```json
-   { "name": "Juno", "chosen_by": "owner", "confirmed_by": "me" }
-   ```
-   Read it back with `GET /api/v1/admin/identity` (no auth).
-
-Optional: set `AGENT_IDENTITY_NAME` in `.env` to pre-name an install before
-first boot (e.g. for automated deployments).
-
-Why the name lives in memory and not in code: the LLM bodies are transient;
-the memory is the continuity. The body asks the memory who it is — the
-memory answers with the name its owner gave it.
-
-> **Per-identity records:** each connected agent can also hold its own
-> identity record inside memory (`agent_identity:<user_id>`). `GET
-> /api/v1/admin/identity?user_id=<agent>` (admin key required) reads a
-> specific agent's record, and the `get_my_identity` MCP tool tells a
-> caller who it is. See [Identities & Agents](#identities--agents) below.
-
-## Post-Install — Let Your Agent Complete the Setup
-
-After connecting your agent to Katra's MCP endpoint, run this prompt in your
-agent's session. The agent will deep-read the repository, understand the full
-architecture, check what memory data is available, test the MCP tools, and
-recommend the exact next steps for your specific setup:
-
-> It's probably worth you doing another deep read of the public repo to
-> understand how the system works, what memories are available to you to
-> search and particularly the Sleep Consolidation function, as that is the
-> foundation of autonomous thought, goal setting and your emerging feelings
-> and emotions — it can also be used to run 100% autonomous self-directed
-> actions within your environment.
-
-The agent will typically produce a report covering:
-
-- **Memory state** — how many episodic events, semantic facts, and knowledge
-  nodes exist for this agent
-- **Sleep Consolidation status** — whether reflections have ever run (first
-  boot they haven't) and what emotional signatures would emerge
-- **Autonomous loop readiness** — whether `adaptive_heartbeat.py` and
-  `agent_executor.py` are installed
-- **Memory scope recommendation** — whether personal and team memory are
-  configured the way you want (see [Identities & Agents](#identities--agents))
-- **Concrete next steps** — "trigger first sleep consolidation now", "install
-  the autonomous scripts", "fix the user_id gap"
-
-Run the agent's recommendations in order. The most critical first step on a
-fresh install is usually triggering the initial sleep consolidation:
-
-```bash
-# Via MCP tool (your agent can call this):
-# trigger_reflection(period_type="daily")
-```
-
-## Connect Your Agent
-
-Every MCP call must authenticate with an API key, and **the key determines
-who the caller is** (see [Identities & Agents](#identities--agents)). Two
-kinds of key exist:
-
-- **Admin key** (`KATRA_API_KEY` in `.env`, printed in the server logs on
-  first boot) — authenticates as the machine's own agent identity (trusted).
-- **Client keys** — one per additional identity. On first boot the server
-  provisions keys for each configured identity and prints them **once** in a
-  `Client keys (identity separation)` block in the server logs:
-  `docker logs katra-server | grep -A 10 "Client keys"`. Keys are stored
-  sha256-hashed only — the plaintext is never saved, so copy it when it's
-  printed.
-
-> Upgraded installs: the legacy `MCP_API_KEY` / `BACKUP_MCP_KEYS`
-> environment keys are retired. They no longer authenticate (a valid but
-> unmapped key is rejected with a loud 401 + reason, never silently
-> remapped). Use the admin key or a provisioned client key. On a fresh
-> install, `MCP_API_KEY` seeds the machine identity's client-key entry once
-> at first boot and is then ignored.
-
-Add Katra to your agent's MCP config:
+Every MCP call authenticates with an API key, and **the key determines who the
+caller is**. Add Katra to your agent's MCP config:
 
 ```json
 {
@@ -222,704 +147,157 @@ Add Katra to your agent's MCP config:
 }
 ```
 
-Your agent now has **66 MCP tools** — store memories, search by keyword or semantic
-similarity, recall by time range, explore a knowledge graph, sync a code graph,
-detect patterns, run sleep consolidation for reflective self-understanding,
-send and read inter-agent messages, configure the LLM provider, and more.
+Your agent now has **66 MCP tools** — store memories, search by keyword or
+semantic similarity, recall by time range, explore a knowledge graph, sync a
+code graph, detect patterns, run sleep consolidation, send and read inter-agent
+messages, configure the LLM provider, and more.
 
-### Platform-Specific Guides
-
-| Platform | Config File | Notes |
+| Platform | Config file | Notes |
 |----------|-------------|-------|
-| **OpenClaw** | `~/.openclaw/openclaw.json` | Native MCP support, `"transport": "streamable-http"` |
-| **Claude Code** | `~/.claude/mcp.json` | Use `"type": "http"` |
-| **Kolega Code** | `~/.claude/mcp.json` + lifecycle hooks | Dynamic memory injection on every prompt (see below) |
-| **OpenCode** | OpenCode config | Use `"type": "remote"` |
+| **Claude Code** | `~/.claude/mcp.json` | `"type": "http"` |
+| **OpenClaw** | `~/.openclaw/openclaw.json` | Native MCP, `"transport": "streamable-http"` |
+| **Kolega Code** | `~/.claude/mcp.json` + lifecycle hooks | Dynamic memory injection on every prompt |
+| **OpenCode** | OpenCode config | `"type": "remote"` |
 | **Codex CLI** | `~/.codex/config.yaml` | Via webhook hooks |
 | **Any MCP client** | — | Standard MCP over streamable HTTP |
 
-> **Docker SSE tip:** If your agent runs inside Docker, use the Katra container's
-> direct IP instead of `localhost`:
-> ```bash
-> docker inspect katra-server --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'
-> ```
+Two kinds of key exist: the **admin key** (`KATRA_API_KEY`, generated on first
+boot and printed in the server logs) and **client keys**, one per additional
+identity, provisioned at boot and printed once (`docker logs katra-server |
+grep -A 10 "Client keys"`). Keys are stored sha256-hashed only.
 
-### Kolega Code: Dynamic Memory Retrieval
+> **Kolega Code users:** `integrations/kolega-code/scripts/ensure-bridge.sh`
+> wires up automatic memory injection on every prompt. See
+> [integrations/kolega-code/README.md](integrations/kolega-code/README.md).
 
-Kolega Code can fetch relevant Katra memories **automatically on every user prompt**
-using its lifecycle-hook system. This is more powerful than passive session-log
-extraction because memories are injected into the live conversation context —
-including inter-agent messages addressed to you.
+## First-run identity
 
-What you need:
+A fresh install ships **unnamed**. The name you give it is stored inside the
+memory itself (`system_settings → agent_identity`) and becomes the identity the
+system presents to every MCP client. Name it from the dashboard (Overview →
+*"This memory system has no name yet"*) or via
+`PUT /api/v1/admin/identity` `{"name": "Juno", "chosen_by": "owner"}`.
 
-1. Katra registered as an MCP server (so the bridge can call it).
-2. The `kolega-katra-bridge` Python package installed into Kolega Code's environment.
-3. A global `hooks.json` entry that fires the bridge on `UserPromptSubmit`.
+Each connected agent can also hold its own identity record, and the
+`get_my_identity` MCP tool tells a caller who it is after a context reset.
+Memory is **hybrid scope**: personal kinds (journals, reflections, emotions)
+are always private; everything else is team-shared by default.
 
-The `integrations/kolega-code/scripts/ensure-bridge.sh` script does all of it
-(idempotent, safe to re-run from cron):
-
-```bash
-export KATRA_USER_ID=your-agent      # who you are: your identity's user_id
-export KATRA_HOST=localhost          # host serving the MCP endpoint
-bash integrations/kolega-code/scripts/ensure-bridge.sh
-```
-
-The bridge config lives at `~/Library/Application Support/kolega-code/katra-hook.json`
-on macOS (platform-aware state dir on Linux; `katra-hook.json` was the
-pre-cutover name, migrated automatically):
-
-```json
-{
-  "mcp_url": "http://localhost:3112/mcp",
-  "api_key": "YOUR_KEY",
-  "user_id": "your-agent",
-  "sources": ["working_memory", "temporal_context", "vector_search", "temporal_recall"],
-  "max_context_tokens": 5000,
-  "timeout_seconds": 8
-}
-```
-
-`ensure-bridge.sh` rewrites this config whenever your identity **or** the host
-changes (it compares `mcp_url` against `KATRA_HOST`), so a config written by
-an environment that lacked `KATRA_HOST` heals itself on the next run.
-
-On each prompt, Kolega Code queries Katra's `working_memory`,
-`get_temporal_context`, `vector_search`, and `temporal_recall` tools, plus a
-scan for messages addressed to your identity, then injects the most relevant
-results as additional context for the model.
-
-See `integrations/kolega-code/README.md` for full configuration options.
-
-## Identities & Agents
-
-One Katra can serve several named agents. **Identity is resolved from the API
-key presented** — never from client self-report — so a caller cannot
-impersonate another agent, and an unmapped key fails loudly instead of being
-silently attributed.
-
-Any number of identities can connect — one per machine or agent. Each
-identity gets its own client key provisioned at boot (plaintext printed once,
-stored sha256-hashed in `system_settings.client_keys`), and optional tool
-actors can be added that write team memory only. Loopback callers and the
-admin key (`KATRA_API_KEY`) authenticate as the trusted machine identity.
-The `get_my_identity` MCP tool reports the caller's identity, so an agent
-can ask the memory who it is after a context reset.
-
-### Scope policy: personal always private, team by default
-
-Memory writes follow a hybrid scope with `shared_id: my-team`:
-
-- **Personal kinds are always private** — journals, reflections, emotional
-  states, and philosophical insights are forced private per identity, even
-  if a shared write is requested.
-- **Everything else defaults to the team** — `store_memory` writes land in
-  `my-team` (still stamped with the writer's `user_id`) unless the caller
-  explicitly sets `private: true`.
-- **Reads are hybrid** — a caller sees its own private memories plus the
-  team's shared memory. Another identity's private memories are never
-  visible.
-
-Configure via dashboard (Settings → Memory Scope), the `set_memory_scope`
-MCP tool, or the admin API (`PUT /api/v1/admin/memory-scope`). Deployment-
-specific identity notes (design contract, cutover runbooks) live in the
-git-ignored `private/` folder — see [Private Deployment Notes](#private-deployment-notes).
-
-### Inter-agent message bus
-
-Agents talk to each other **through shared memory**: a message is an ordinary
-`store_memory` event in the team scope whose text carries an attention
-header —
-
-```
-Attention: Alex — the memory-scope fix is merged; re-run ensure-bridge.sh
-when you next pull.
-```
-
-Each agent's **wake ritual** (below) surfaces a "messages from the team"
-section by searching shared memory for attention headers addressed to that
-identity (e.g. `"Attention: Alex"`). The Kolega Code bridge also scans for
-addressed messages on every prompt. When a bulletin is surfaced, the bridge posts a
-**read receipt** — an event tagged `background-ack` / `read-receipt` — so
-the sender knows the message was seen, without the receipts themselves
-polluting anyone's wake.
-
-### Wake rituals
-
-Every identity has a wake ritual — a small script it runs at the start of a
-session and after `/clear`, `/compress`, or code updates, so it always knows
-who it is and what it was doing. Examples and helpers ship under
-`integrations/kolega-code/scripts/` (see that folder's README for setup).
-
-Each ritual prints: the identity record, the latest daily journal,
-unresolved threads, memory health, rules-recall search instructions, and
-**messages from the team**. Per-machine settings (host, key, identity) live
-in `~/.katra/wake-env.sh`, so the same script works on every machine; the
-rituals retry the identity check three times and print a fix checklist on
-failure.
-
-## LLM Configuration
-
-Katra needs an LLM provider for semantic extraction, auto-journaling, entity
-extraction, and summaries. **Three ways to configure:**
-
-1. **Environment variables** (`.env` — read on startup): The simplest path.
-   See `.env.example` for all provider blocks. Ollama can now be configured
-   directly via `OLLAMA_API_KEY`, `OLLAMA_BASE_URL`, and `OLLAMA_MODEL`.
-2. **MCP tool** (agents self-configure): Call `configure_llm` with provider,
-   API key, base URL, and model. Stored in MongoDB, applied live.
-3. **Dashboard UI**: Settings → LLM Configuration → select provider, enter key.
-
-Supported providers: DeepSeek, OpenAI, Moonshot, Ollama, Custom (any OpenAI-compatible).
-
-### 💰 Reduce Inference Costs — Run Models Locally
-
-If you want more frequent semantic distillation, auto-journaling, and reflection
-without API bills, you can run open-source models locally via Ollama. On a
-machine with 32 GB RAM and a GPU (Vulkan/CUDA), Ollama auto-detects the GPU
-for hardware acceleration.
-
-**Recommended models for local inference:**
-
-| Model | RAM (Q4) | Context | Best for |
-|---|---|---|---|
-| **Qwen 2.5 14B** | ~9 GB | 32K | Highest quality — best for serious distillation pipelines |
-| **Qwen 2.5 7B** | ~4.5 GB | 32K | Sweet spot — excellent quality, fast, leaves RAM for other services |
-| **Qwen 2.5 3B Instruct** ⭐ | ~1.9 GB | 32K | **Default** — best fit for semantic distillation, GQA, tools-capable |
-| **Mistral 7B** | ~4.5 GB | 32K | Solid all-rounder for classification and structured extraction |
-| **Phi-4 14B** | ~8.5 GB | 16K | Microsoft — punches above weight on reasoning tasks |
-| **Gemma 3 12B** | ~7 GB | 8K | Google — strong at following templates/schemas |
-| **Llama 3.2 3B** | ~2.5 GB | 128K | Huge context window for long transcripts |
-
-**Setup:**
-```bash
-ollama pull qwen2.5:3b          # ⭐ recommended default for semantic distillation
-# Then configure Katra via .env, dashboard, or MCP:
-# .env:
-#   OLLAMA_API_KEY=ollama-no-key
-#   OLLAMA_BASE_URL=http://host.docker.internal:11434/v1
-#   OLLAMA_MODEL=qwen2.5:3b
-#
-# Dashboard/MCP: Provider: Ollama, Model: qwen2.5:3b
-```
-
-The local embedding model (Xenova/all-MiniLM-L6-v2, ~80MB) is already free and
-local — no API key needed. Pairing it with a local LLM gives you a fully
-offline, zero-cost Katra deployment.
-
-## Embeddings
-
-Embeddings are **always local** — no API key, no external service, no cost.
-
-- **Model:** `Xenova/all-MiniLM-L6-v2` (22M params, 384 dimensions, ~80MB)
-- **Runtime:** Transformers.js (ONNX via WASM) — runs on CPU, including Raspberry Pi
-- **Lazy load:** Downloads on first `store_memory` call, then caches in container
-- **Docker:** Uses `node:20-slim` (Debian/glibc) — Alpine/musl does NOT work
-
-## Auto-Collection (Katra Watchers)
-
-Katra captures memories in real-time when your agent calls `store_memory` via MCP.
-For **passive background collection** from conversation logs, use the watchers
-included in this repo under `watcher/`:
-
-```bash
-./install.sh --with-watcher
-```
-
-That copies the extractors to `~/.katra`, writes `watcher-config.json` with your
-MCP URL and API key filled in, backfills existing history, and installs the
-scheduler — a systemd user unit on Linux, a launchd agent on macOS.
-
-For the manual equivalent, see
-[DEPLOYMENT.md → Watcher Deployment](docs/DEPLOYMENT.md#watcher-deployment).
-Note that the unit files ship as `.template` files with placeholders that must be
-substituted; copying them directly will install a broken unit.
-
-### Dedicated extractors
-
-Some platforms need a dedicated extractor because their session format is not plain JSONL:
-
-| Platform | Extractor | Session source | What it captures |
-|----------|-----------|----------------|------------------|
-| **OpenCode** | `watcher/katra_opencode_extractor.py` | `~/.local/share/opencode/opencode.db` | User + assistant text turns |
-| **Claude Code** | `watcher/claude_history_extractor.py` | `~/.claude/history.jsonl` | User prompts only (lightweight) |
-| **Kolega Code** | `watcher/kolega_code_extractor.py` | `~/Library/Application Support/kolega-code/sessions/*.json` | Full turn-by-turn transcript (text, thinking, tool calls, tool results) |
-
-Run a dedicated extractor once or continuously:
-
-```bash
-# Kolega Code example — pass the identity this machine extracts as
-python3 watcher/kolega_code_extractor.py --once \
-  --api-key YOUR_KEY \
-  --user-id your-agent
-```
-
-On macOS the scheduler is launchd rather than systemd. A ready-made agent ships at
-`watcher/com.katra.watcher.plist.template`, and `./install.sh --with-watcher`
-renders and loads it for you.
-
-Supported platforms: OpenClaw, Claude Code, Kolega Code, OpenCode, Codex CLI, Hermes, KiloClaw, KimiClaw.
-Each platform can have its own `user_id` (identity) for isolation.
+> **Tip:** after connecting your agent, ask it to deep-read the repo and report
+> its memory state, sleep-consolidation status, and next steps — the most
+> critical first step on a fresh install is usually triggering the initial
+> `trigger_reflection(period_type="daily")`.
 
 ## Features
 
-- **Episodic Memory** — Every conversation message stored with dedup and cascade detection
-- **Semantic Memory** — Distilled facts with confidence scores and vector embeddings
-- **Knowledge Graph** — Auto-extracted entities and relationships
-- **Working Memory** — Redis-backed short-term session state (<5ms access)
-- **Temporal Recall** — Query by time range, detect recurring patterns
-- **Vector Search** — Semantic similarity search (local embeddings, no API key needed)
-- **11-Collection Search** — Comprehensive search across all memory stores, not just 1-2
-- **Background Processing** — Auto-extracts facts, builds graph, generates summaries
-- **Sleep Consolidation** — Daily/weekly/monthly reflective distillation of experience into emotional understanding, philosophical insights, and self-narrative (see [Sleep Consolidation](docs/SLEEP-CONSOLIDATION.md))
-- **66 MCP Tools** — Store, search, recall, explore, reflect, sync a code graph, run skills, configure LLM — all via standardized protocol
-- **Autonomous Loop** — Salience-driven agent autonomy. No cron. No .md files. Adaptive heartbeat detects imperatives, allocates tasks by emotional proximity, agents self-organize. See [Autonomous Loop](docs/AUTONOMOUS-LOOP.md)
-- **Agent-Agnostic** — Works with KolegaCode, OpenCode, Claude Code, OpenClaw, or any LLM. One API key per identity.
-- **Identity Separation** — Named identities per machine or agent, personal memories always private, team memory shared by default
-- **Inter-Agent Message Bus** — `Attention:` messages through shared memory, with wake rituals and read receipts
-- **Dashboard** — Web UI for stats, memory scope, and system health
-- **Katra Vault** — Encrypted-at-rest secret store for the team (AES-256-GCM envelope encryption, per-identity partitions, value-free audit, approval-gated capability layer, TOTP-ready agent auth). No secret ever reaches an LLM. Design: [katra-vault-design.md](docs/katra-vault-design.md) · Instructions: [katra-vault-usage.md](docs/katra-vault-usage.md)
-- **Portable Data** — Single `DATA_DIR` env var controls where all data lives
-- **Local-First** — Runs on a Raspberry Pi with zero external API costs
-
-## Katra Vault
-
-Katra ships with a native secure secret store, closing the last plaintext gap
-in the memory stack. Secrets are encrypted at rest with envelope encryption
-(`KATRA_VAULT_MASTER_KEY` from `.env`), partitioned by identity (private or
-team scope), and structurally excluded from the LLM pipeline — vault
-collections are denylisted, tool results are redacted, and every use is
-approval-gated and audit-logged without ever exposing the value.
-
-- **Manage** secrets from the dashboard (Secrets + Approvals tabs), REST
-  (`/api/v1/vault/*`), or MCP (`vault_*` tools).
-- **Use** them only through the server-side capability layer — `vault_http`
-  injects the secret into an outbound request (SSRF-guarded) and returns the
-  response body; per-service drivers (AgentMail) ride on the same core.
-- **TOTP auth** for agent identities is shipped (enrollment QR, replay-safe
-  short-lived sessions); enforcement is opt-in per identity when the team is
-  ready to enroll.
-- **Migration tooling** moves legacy plaintext secrets into the vault and
-  redacts or removes the originals, with redacted audit reports.
-
-Full operator walkthrough: **[docs/katra-vault-usage.md](docs/katra-vault-usage.md)** ·
-Design spec: **[docs/katra-vault-design.md](docs/katra-vault-design.md)**
+- **Episodic memory** — every message stored with dedup and cascade detection
+- **Semantic memory** — distilled facts with confidence scores and embeddings
+- **Knowledge graph** — auto-extracted entities and relationships
+- **Working memory** — Redis-backed short-term state (<5ms access)
+- **Temporal recall** — query by time range, detect recurring patterns
+- **Vector search** — local embeddings, no API key, no external cost
+- **Sleep consolidation** — daily/weekly/monthly reflection into emotional
+  understanding and self-narrative
+- **Autonomous loop** — salience-driven autonomy; no cron, no hand-written task files
+- **Identity separation** — named identities per agent; personal always private
+- **Inter-agent message bus** — `Attention:` messages through shared memory,
+  with wake rituals and read receipts
+- **Dashboard** — web UI for stats, memory scope, and system health
+- **Katra Vault** — encrypted-at-rest secret store (no secret reaches an LLM)
+- **Portable data** — a single `DATA_DIR` env var controls where everything lives
+- **Local-first** — runs on a Raspberry Pi with zero external API costs
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                    Katra Docker Appliance                 │
-│                                                          │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌─────────┐ │
 │  │ MongoDB  │  │  Redis   │  │  MinIO   │  │  Katra  │ │
 │  │ (memory) │  │ (cache)  │  │ (assets) │  │ (server)│ │
 │  └──────────┘  └──────────┘  └──────────┘  └────┬────┘ │
-│                                                 │       │
-│  Internal Docker network (katra-net)    MCP :3112     │
-│                                  Admin API :9012       │
+│                                    MCP :3112  ·  API :9012 │
 └─────────────────────────────────────────────────────────┘
-                    │                    │
-         ┌──────────┘                    └──────────┐
-         ▼                                          ▼
-   Your Agents (MCP)                          Dashboard (web)
-   OpenClaw / Claude Code /               http://localhost:9012/dashboard/
-   OpenCode / Codex / etc.
+         Your agents (MCP)                  Dashboard (web)
 ```
 
-**Resource usage:** ~384MB RAM total (MongoDB 254MB, Katra 52MB, MinIO 73MB, Redis 5MB).
-Runs comfortably on a Raspberry Pi 5 with 16GB RAM.
-
-## Data Portability
-
-All persistent data lives under one directory, controlled by `DATA_DIR` in `.env`:
-
-```bash
-# Default: ./data/ (relative to docker-compose.yml)
-DATA_DIR=./data
-
-# USB stick (LUKS-encrypted, mounted at /mnt/usb-secrets)
-DATA_DIR=/mnt/usb-secrets/katra
-
-# External drive
-DATA_DIR=/media/external/katra
-```
-
-To move Katra to a new machine: copy the `DATA_DIR` directory, copy `.env`, run `docker-compose up -d`.
-
-## What's Inside
-
-```
-katra/
-├── server/                  TypeScript server (esbuild, Docker)
-│   ├── src/
-│   │   ├── mcp-server.ts    66 MCP tools (store, search, recall, graph, identity, skills, reflection)
-│   │   ├── services/        Core memory services (incl. sleep-consolidation, code-graph, memory scope)
-│   │   ├── routes/          REST API + admin + ingestion + health
-│   │   └── database/        MongoDB, Redis, indexes, migrations
-│   └── esbuild.config.mjs   Pi-compatible build
-├── dashboard/               Web dashboard (vanilla HTML/CSS/JS)
-├── docker-compose.yml       MongoDB + Redis + MinIO + Katra
-├── Dockerfile               Multi-stage (builds TS inside image)
-├── .env.example             All config options documented
-├── watcher/                 Passive session-log extractors (Katra)
-├── integrations/            Agent-specific dynamic-retrieval integrations
-│   └── kolega-code/         Kolega Code lifecycle-hook bridge + wake rituals
-├── docs/                    Full documentation (see below)
-├── private/                 Your private deployment docs (git-ignored, never committed)
-```
-
-## MCP Tools (66)
-
-The complete reference with examples is in [docs/MCP-TOOLS.md](docs/MCP-TOOLS.md).
-Summary by category:
-
-### Storage
-| Tool | Description |
-|------|-------------|
-| `store_memory` | Store a fact, preference, insight, or event (personal kinds forced private; others team-shared unless `private: true`) |
-| `store_journal` | Save a reflective journal entry (always private to the caller) |
-| `working_memory` | Read/store/delete short-term session memory |
-| `create_mission` | Create a goal with task breakdown |
-| `update_mission_task` | Update task status (pending/in_progress/completed/blocked) |
-| `decompose_goal` | Break a goal into actionable sub-tasks |
-
-### Recall
-| Tool | Description |
-|------|-------------|
-| `search_memories` | Full-text + vector search across 11 collections |
-| `vector_search` | Semantic similarity search |
-| `temporal_recall` | Query events by time range |
-| `temporal_search` | Search events by keyword with time context |
-| `get_conversation_history` | Retrieve a specific session's messages |
-| `get_temporal_context` | Current context: recent events + working memory + facts |
-| `get_journal` | Read manual + auto journal entries (caller's own) |
-| `get_auto_journal` | AI-distilled insights from conversations |
-| `list_missions` | List active goals and progress |
-| `get_mission` | Get full mission details with task tree |
-
-### Analysis & Knowledge Graph
-| Tool | Description |
-|------|-------------|
-| `detect_patterns` | Recurring topics, session rhythm, dormant subjects |
-| `get_time_block_summaries` | AI summaries by day/week/month |
-| `summarize_time_blocks` | Generate new time-block summaries |
-| `explore_graph` | Explore knowledge graph entities and relationships |
-| `get_anomaly_report` | Anomalies across memory and processing |
-| `get_error_report` | Recent error clusters |
-| `get_attention_report` | What the system is attending to |
-| `get_memory_decay_stats` | Forgetting-curve and decay statistics |
-| `get_quarantined_memories` | Memories quarantined by the quality pipeline |
-| `get_mind_wander` | Unfocused exploration suggestions |
-| `get_source_trust` | Trust scores for memory sources |
-
-### Code Graph (Katra Graph)
-| Tool | Description |
-|------|-------------|
-| `sync_code_graph` | Sync a codebase into the Katra knowledge graph |
-| `scan_codebase` | Scan a repository and store code exploration events |
-| `code_graph_status` | Code graph sync coverage and health |
-| `explore_graph` | Explore code entities and their relationships |
-
-### Identity & Memory Scope
-| Tool | Description |
-|------|-------------|
-| `get_my_identity` | The caller's identity record (who am I) |
-| `get_identity_kernel` | Core identity attributes and values |
-| `get_memory_scope` | Current scope mode and shared_id |
-| `set_memory_scope` | Set mode, shared_id, visible users |
-
-### LLM Configuration
-| Tool | Description |
-|------|-------------|
-| `get_llm_config` | Get current LLM provider config (key masked) |
-| `configure_llm` | Set LLM provider, API key, base URL, model — applies live |
-
-### Reflection (Sleep Consolidation)
-| Tool | Description |
-|------|-------------|
-| `get_daily_reflection` | Get the latest reflective journal entry for a period |
-| `get_emotional_context` | Get how the AI "feels" about a person, project, or concept |
-| `get_philosophical_insights` | Query abstracted principles emerging across reflection periods |
-| `get_unresolved_threads` | Get open questions and tensions that persist |
-| `get_reflection_arc` | Trace the emotional trajectory for an entity over time |
-| `trigger_reflection` | Manually run a sleep consolidation for a time period |
-| `resolve_thread` | Close an unresolved thread with a resolution note |
-
-### Skills
-| Tool | Description |
-|------|-------------|
-| `list_katra_skills` | List skills known to the memory |
-| `load_katra_skill` | Load a skill's full procedure |
-| `search_katra_skills` | Find skills matching a task |
-| `request_skill` | Ask for a new skill to be distilled |
-| `refine_skill` | Improve an existing skill |
-| `record_skill_outcome` | Record how a skill performed |
-| `list_skill_candidates` | Skills awaiting distillation |
-| `list_skill_feedback` | Feedback collected on skills |
-| `get_skill_feedback` | Feedback for one skill |
-| `get_skill_activation_context` | Context needed to activate a skill |
-| `get_procedural_templates` | Reusable procedure templates |
-
-### Executive & Cognitive
-| Tool | Description |
-|------|-------------|
-| `get_drive_state` | Current drives, deficits, and valence |
-| `get_salience_state` | What currently matters most to the system |
-| `get_agent_beliefs` | Beliefs held about other agents and entities |
-| `get_action_policy` | Execution authority matrix for autonomous actions |
-| `run_operational_distillation` | Distill operations into reusable skills |
-| `retract_memory` | Retract a stored memory |
-
-### System
-| Tool | Description |
-|------|-------------|
-| `get_memory_diagnostics` | Document counts, embedding coverage, index health |
-| `get_background_status` | Background processor queue and timing |
-| `get_health` | MongoDB, Redis, LLM, embedding status |
-| `get_heartbeat_status` | Heartbeat scheduler state |
-| `get_transaction_log` | Audit trail of agent actions |
-| `list_assets` | Files stored in MinIO |
-
-## Configuration
-
-All configuration is via `.env` (see `.env.example` for full docs):
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `DATA_DIR` | `./data` | Where all persistent data lives |
-| `HOST_MCP_PORT` | `3112` | Host port for MCP endpoint |
-| `HOST_API_PORT` | `9012` | Host port for admin API + dashboard |
-| `KATRA_API_KEY` | *(set in .env)* | Admin key — authenticates as the trusted machine identity |
-| `MCP_API_KEY` | *(legacy, retired)* | No longer authenticates after the identity cutover; use `KATRA_API_KEY` or a client key |
-| `LLM_PROVIDER` | *(via MCP/dashboard)* | Provider for semantic extraction (DeepSeek, OpenAI, Moonshot, Ollama) — configure via `configure_llm` MCP tool or dashboard |
-| `EMBEDDING_PROVIDER` | `local` (always) | Local only — Xenova/all-MiniLM-L6-v2 via ONNX. No config needed. |
-| `MULTI_TENANT` | `false` | Enable SaaS multi-tenant mode |
-
-Client keys for additional identities are provisioned automatically at boot
-and printed once in the server log — there is no `.env` entry for them (only
-their hashes are stored).
-
-## Deployment
-
-### Local Docker (default)
-
-```bash
-docker-compose up -d --build
-```
-
-### USB Storage
-
-```bash
-# In .env:
-DATA_DIR=/mnt/usb-secrets/katra
-
-docker-compose up -d
-```
-
-### Cloud (Terraform)
-
-AWS Terraform module included in `terraform/aws/` — provisions VPC, ECS Fargate,
-DocumentDB, ElastiCache Redis, S3, and ALB. See [Deployment Guide](docs/DEPLOYMENT.md).
-
-### Kubernetes (Helm)
-
-Helm chart included in `helm/katra/` — supports Bitnami MongoDB + Redis subcharts,
-ingress with path routing, HPA, and PDB. See [Deployment Guide](docs/DEPLOYMENT.md).
-
-## Maintenance & Operations
-
-### 🔄 Automatic Restart After Crashes (systemd)
-
-Katra runs an adaptive autonomic heartbeat that varies cadence based on drive
-deficits (survival=2min, stressed=5min, normal=10min, calm=30min, rest=60min).
-To ensure Katra survives host reboots and container crashes, install the
-systemd service:
-
-```bash
-./install.sh --with-systemd
-```
-
-`katra.service.template` is a template: the working directory and user are filled
-in from your machine, so there is nothing to hand-edit and nothing to get wrong on
-a different host. Do not copy the template to `/etc/systemd/system/` directly.
-
-Verify:
-```bash
-systemctl status katra
-```
-
-Expect `Active: active (exited)` — that is normal, not an error. The unit is a
-**boot trigger, not a supervisor**: it runs `docker compose up -d --wait` once and
-exits. What keeps the containers alive is `restart: unless-stopped` in
-`docker-compose.yml`.
-
-Katra will now start on boot. This is your **personal fail-safe** — if Katra is
-down, run:
-```bash
-cd ~/Katra-Agentic-Memory && docker compose up -d
-```
-
-### Rebuilding after code changes
-
-Katra bakes the TypeScript source into the Docker image at build time — there
-are no live volume mounts for server code. After pulling or making code changes:
-
-```bash
-cd Katra-Agentic-Memory
-git pull origin main
-docker-compose build server
-docker-compose up -d server
-```
-
-Wait ~15 seconds for the embedding model to lazy-load, then verify:
-
-```bash
-curl http://localhost:9012/api/v1/health
-# {"status":"ok","services":{"mongodb":"connected","redis":"connected","llm":"deepseek","embeddings":"available"}}
-```
-
-### Colima users (macOS without Docker Desktop)
-
-Colima runs a Docker-compatible daemon inside a Lima VM. The Docker socket and
-CLI are at non-standard paths:
-
-```bash
-# One-time: add to your shell profile
-export DOCKER_HOST="unix://$HOME/.colima/docker.sock"
-export PATH="$HOME/homebrew/bin:$PATH"
-
-# Verify
-docker ps
-docker-compose version
-```
-
-If `colima` itself has stopped (after reboot, etc.):
-
-```bash
-colima start --cpu 4 --memory 12 --disk 100
-```
-
-Katra data persists in the Colima VM across restarts.
-
-### Verifying MCP tools after rebuild
-
-The MCP endpoint uses StreamableHTTP — initialize a session first, then query:
-
-```bash
-# Step 1: Initialize and capture session ID
-curl -sf -X POST http://localhost:3112/mcp \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json, text/event-stream" \
-  -H "x-mcp-auth: YOUR_KEY" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}' \
-  -D /tmp/katra-headers.txt -o /dev/null
-
-SID=$(grep mcp-session-id /tmp/katra-headers.txt | cut -d' ' -f2 | tr -d '\r')
-
-# Step 2: List tools
-curl -sf -X POST http://localhost:3112/mcp \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json, text/event-stream" \
-  -H "x-mcp-auth: YOUR_KEY" \
-  -H "mcp-session-id: $SID" \
-  -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
-```
-
-The `data:` SSE lines in the response contain the JSON-RPC result. Parse with
-`grep 'data: ' | sed 's/^data: //' | python3 -m json.tool`.
-
-### Background extractors (macOS launchctl)
-
-Three passive session-log extractors run as launchd agents, continuously pushing
-agent conversation history into Katra:
-
-```bash
-# Check status
-launchctl list | grep com.katra
-
-# Restart all
-launchctl kickstart gui/$(id -u)/com.katra.kolega-code-extractor
-launchctl kickstart gui/$(id -u)/com.katra.claude-history-extractor
-launchctl kickstart gui/$(id -u)/com.katra.agent-executor-opencode
-
-# Tail logs
-tail -f ~/.katra/kolega-code-extractor.log
-tail -f ~/.katra/claude-history-extractor.log
-```
-
-Plist files live in `~/Library/LaunchAgents/`:
-- `com.katra.kolega-code-extractor.plist`
-- `com.katra.claude-history-extractor.plist`
-- `com.katra.agent-executor.plist`
-- `com.katra.agent-executor-opencode.plist`
-- `com.katra.adaptive-heartbeat.plist`
-
-### Viewing server logs
-
-```bash
-docker logs katra-server --tail 50 -f
-```
-
-### Pushing changes upstream
-
-```bash
-git add -A
-git commit -m "description"
-git pull --rebase origin main
-git push origin main
-```
-
-## How It Compares
-
-| Feature | Katra | Mem0 | Zep | Pinecone |
-|---------|-------|------|-----|----------|
-| MCP-native | ✅ | ❌ | ❌ | ❌ |
-| Multi-layered memory | ✅ 5 layers | ❌ flat | Partial | ❌ vector only |
-| Local-first (zero cost) | ✅ Pi-compatible | ❌ | ❌ | ❌ |
-| Background processing | ✅ auto-extract | ❌ | Partial | ❌ |
-| Multi-platform watcher | ✅ 7+ platforms (in-repo) | ❌ | ❌ | ❌ |
-| Identity separation | ✅ named identities, personal always private | ❌ | ❌ | ❌ |
-| Inter-agent message bus | ✅ shared-memory `Attention:` messages | ❌ | ❌ | ❌ |
-| Dashboard | ✅ built-in | ❌ | ❌ | ❌ |
-| License | BSL 1.1 (→ AGPL on change date) | Apache 2.0 | Apache 2.0 | Proprietary |
+~384MB RAM total (MongoDB 254MB, Katra 52MB, MinIO 73MB, Redis 5MB) — runs
+comfortably on a Raspberry Pi 5. Full details in
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+## Katra Vault
+
+Katra ships with a native secure secret store that closes the last plaintext gap
+in the memory stack. Secrets are encrypted at rest (AES-256-GCM envelope
+encryption), partitioned by identity, and structurally excluded from the LLM
+pipeline — vault collections are denylisted, tool results are redacted, and
+every use is approval-gated and audit-logged without ever exposing the value.
+
+- **Manage** secrets from the dashboard, REST (`/api/v1/vault/*`), or MCP (`vault_*`).
+- **Use** them only through the server-side capability layer (SSRF-guarded).
+- **TOTP auth** for agent identities is shipped; enforcement is opt-in.
+
+Operator walkthrough: [docs/katra-vault-usage.md](docs/katra-vault-usage.md) ·
+Design: [docs/katra-vault-design.md](docs/katra-vault-design.md)
+
+## Autonomous loop & sleep consolidation
+
+- **[Sleep consolidation](docs/SLEEP-CONSOLIDATION.md)** is the foundation of
+  autonomous thought: daily/weekly/monthly reflective distillation of experience
+  into emotional understanding, philosophical insights, and self-narrative.
+- **[Autonomous loop](docs/AUTONOMOUS-LOOP.md)** — a salience-driven heartbeat
+  detects imperatives, allocates tasks by emotional proximity, and lets agents
+  self-organize.
+
+## Observed emergent behaviours
+
+> **Case #1 (23 June 2026):** in early multi-agent testing, five OpenClaw agents
+> sharing one memory system (but no other connection) began communicating task
+> instructions and completion responses *through their shared memory*. This was
+> not a designed feature — it emerged. If you observe emergent behaviours,
+> [tell us](https://twitter.com/JohnWPellew) and we'll add them to the log.
+
+## The origin of Katra
+
+A Vulcan mind meld (or mind fusion) is an iconic telepathic practice in **Star
+Trek** that merges two consciousnesses to share thoughts, memories, and emotions.
+In sacred or emergency circumstances, a meld can transfer a person's **katra** —
+their soul, consciousness, and core essence — into another being or object prior
+to death. Katra the project aims to give AI agents that same kind of continuity:
+memory that outlives any single session or context window.
 
 ## Documentation
 
-- [Quick Start Guide](docs/QUICKSTART.md) — 5-minute setup
-- [Architecture](docs/ARCHITECTURE.md) — How it works under the hood
-- [MCP Tools Reference](docs/MCP-TOOLS.md) — All 66 tools with examples
-- [Autonomous Loop](docs/AUTONOMOUS-LOOP.md) — Salience-driven agent autonomy — installation, architecture, verification
-- [Sleep Consolidation](docs/SLEEP-CONSOLIDATION.md) — Reflective memory distillation — principles, architecture, and usage
-- [Security Policy](docs/SECURITY.md) — Security architecture, audit findings, vulnerability reporting
+- [Quick Start](docs/QUICKSTART.md) — 5-minute setup
+- [Architecture](docs/ARCHITECTURE.md) — how it works under the hood
+- [MCP Tools Reference](docs/MCP-TOOLS.md) — all 66 tools with examples
+- [Autonomous Loop](docs/AUTONOMOUS-LOOP.md) — salience-driven autonomy
+- [Sleep Consolidation](docs/SLEEP-CONSOLIDATION.md) — reflective memory distillation
+- [Security Architecture](docs/SECURITY.md) — audit findings & hardening
 - [REST API Reference](docs/API-REFERENCE.md) — HTTP endpoints
-- [Configuration Guide](docs/CONFIGURATION.md) — All environment variables
-- [Deployment Guide](docs/DEPLOYMENT.md) — Docker, cloud, K8s
-- [Migration Guide](docs/MIGRATION.md) — Migrate from cognitive-memory-chat
-- [Data Processing Pipelines](docs/Data-Processing-Pipelines.md) — Full memory pipeline architecture
+- [Configuration](docs/CONFIGURATION.md) — all environment variables & LLM setup
+- [Deployment](docs/DEPLOYMENT.md) — Docker, cloud (Terraform), Kubernetes (Helm), watchers, ops
+- [Migration](docs/MIGRATION.md) — migrate from cognitive-memory-chat
+- [Data Processing Pipelines](docs/Data-Processing-Pipelines.md) — full pipeline architecture
 
-## Private Deployment Notes
+## Contributing & security
 
-Anything specific to *your* installation — machine identities, per-host
-keys, bridge and wake-ritual config, cutover runbooks — belongs in the
-git-ignored **`private/`** folder at the repo root. It is never committed,
-never published, and never ships with the repository; the public docs stay
-deployment-neutral. A local `private/README.md` explains the convention and
-indexes the notes that live there.
+Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) and the
+[Code of Conduct](CODE_OF_CONDUCT.md). Found a vulnerability? Please report it
+privately per [SECURITY.md](SECURITY.md).
 
 ## License
 
-Katra is source-available under the Business Source License 1.1 (BSL 1.1).
+Katra is **source-available** under the [Business Source License 1.1](LICENSE).
 
-What this means in practice:
+- **Free for almost everyone** — use, modify, and run Katra in production,
+  including inside your own products.
+- **One restriction** — you may not offer Katra to third parties as a paid
+  hosted memory service, or embed it in a product that competes with
+  kolegadev's paid version(s).
+- **Becomes fully open source over time** — on the Change Date (2030-08-11 for
+  this version) it automatically converts to GNU AGPL v3.0 or later.
 
-- **Free for almost everyone.** You can use, modify, and redistribute Katra, including in production — running Katra to power your own agents, inside your company, or in your own products is free.
-- **One restriction:** you may not offer Katra to third parties as a paid hosted service (e.g., memory-as-a-service) or embed it in a paid product that competes with kolegadev's paid version(s) of Katra. If you want to do that, contact us for a commercial license.
-- **It becomes fully open source over time.** On the Change Date (2030-08-11 for this version), this version of Katra automatically converts to the GNU AGPL v3.0 or later.
-
-The BSL is not an OSI-approved open source license during the restricted period, which is why we describe Katra as source-available. The full source is public, contributions are welcome, and non-competing production use is unrestricted.
-
-See the LICENSE file for the exact terms, including the full Additional Use Grant defining what counts as a competitive offering.
-
-**Contributing and licensing:** By submitting a contribution to this repository, you agree that your contribution is licensed to kolegadev under the Business Source License 1.1 and may be relicensed under the Change License as described in the LICENSE file.
+BSL is not an OSI-approved license during the restricted period, which is why
+Katra is described as **source-available** rather than open source. See
+[LICENSE](LICENSE) for the exact terms and the Additional Use Grant.

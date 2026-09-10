@@ -14,7 +14,7 @@ Thank you for your interest in contributing to Katra! This document provides gui
 
 ## Code of Conduct
 
-This project is committed to providing a welcoming and inclusive experience for everyone. We expect all contributors to be respectful and constructive in all interactions.
+This project is committed to providing a welcoming and inclusive experience for everyone. We expect all contributors to be respectful and constructive in all interactions. All participants are expected to follow the [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Getting Started
 
@@ -35,12 +35,16 @@ This project is committed to providing a welcoming and inclusive experience for 
 ### Local Development
 
 ```bash
-# Install server dependencies
+# Install server dependencies (npm >= 11 required)
 cd server
 npm install
 
 # Run tests
 npm test
+
+# Typecheck and build (what CI runs)
+npm run typecheck
+npm run build
 
 # Start development server (requires MongoDB + Redis running)
 npm run dev
@@ -58,7 +62,8 @@ docker-compose up -d --build
 ### TypeScript
 
 - Use TypeScript strict mode
-- Follow existing code style (ESLint + Prettier)
+- Follow the existing code style (`npm run format` uses Prettier)
+- Run `npm run typecheck` before committing — CI enforces it
 - Use meaningful variable and function names
 - Add JSDoc comments for public APIs
 - Write unit tests for new functionality
