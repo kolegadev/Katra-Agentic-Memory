@@ -29,6 +29,10 @@ const EMBEDDING_VERSION = 1;
 interface EmbeddingDocument {
   _id?: any;
   content?: string;
+  name?: string;
+  narrative?: string;
+  fact?: string;
+  user_id?: string;
   embedding?: number[];
   embedding_model?: string;
   embedding_version?: number;
@@ -335,12 +339,10 @@ export class EmbeddingService {
     try {
       const db = get_database();
 
-      // Build filter: user + has embedding + optional keyword pre-filter
-      // Use $and to prevent keywordFilter from overriding user_id scoping
-      const filterConditions: any[] = [
-        { user_id: userId },
-        { embedding: { $exists: true } },
-      ];
+      // Build filter: (optional) user scope + has embedding + optional keyword
+      // pre-filter. userId may be empty for cross-user admin search.
+      const filterConditions: any[] = [{ embedding: { $exists: true } }];
+      if (userId) filterConditions.unshift({ user_id: userId });
       if (Object.keys(keywordFilter).length > 0) {
         filterConditions.push(keywordFilter);
       }
@@ -358,7 +360,7 @@ export class EmbeddingService {
       // At 3K-10K scale this is fast enough; add keyword pre-filter for larger datasets
       const candidates = await db.collection(collection)
         .find(baseFilter)
-        .project({ content: 1, embedding: 1, timestamp: 1, created_at: 1 })
+        .project({ content: 1, embedding: 1, timestamp: 1, created_at: 1, name: 1, narrative: 1, fact: 1, user_id: 1 })
         .limit(500)
         .toArray();
 

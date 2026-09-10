@@ -16,6 +16,75 @@ import { validateKatraKey } from '../utils/api-key-manager.js';
 import { SleepConsolidationService } from '../services/processing/sleep-consolidation-service.js';
 import { escape_regex } from '../utils/regex-escape.js';
 import { PROFILES, ALL_SOURCES, AGENT_MESSAGE_WEIGHT, RECOMMENDED_BUDGETS } from '../services/integration/personality-profiles.js';
+import { embeddingService } from '../services/infrastructure/embedding-service.js';
+
+// ---- Admin memory-search helpers ----------------------------------------
+// The admin search spans the four canonical memory collections. Keyword
+// filtering (escaped token regex) is the deterministic bottom layer — no model
+// dependency, so wake-ritual rule recall never breaks. The embedding service
+// augments it with semantic matches when the model is available.
+
+const MEMORY_COLLECTIONS: string[] = ['episodic_events', 'semantic_facts', 'knowledge_nodes', 'reflective_journals'];
+
+const normalizeCollection = (col: string): string =>
+  col.replace('_events', '').replace('_facts', '').replace('_nodes', '').replace('_journals', '').replace('reflective', 'reflections');
+
+const sortFieldFor = (col: string): string =>
+  col === 'episodic_events' ? 'timestamp' : col === 'knowledge_nodes' ? 'updated_at' : 'created_at';
+
+// Deterministic, escaped token regex over the searchable text fields.
+const buildTextClauses = (query: string): Array<Record<string, any>> => {
+  const escaped = escape_regex(query.slice(0, 200));
+  const terms = escaped.split(/\s+/).slice(0, 10).join('|');
+  return [
+    { 'content.message': { $regex: terms, $options: 'i' } },
+    { 'content': { $regex: terms, $options: 'i' } },
+    { 'name': { $regex: terms, $options: 'i' } },
+    { 'narrative': { $regex: terms, $options: 'i' } },
+  ];
+};
+
+// Build the per-collection Mongo filter. Knowledge nodes and reflective
+// journals only carry name/narrative text (no content.message), so their
+// clauses are reduced accordingly — and combined with an OR, not an AND.
+const buildCollectionFilter = (
+  col: string,
+  base: Record<string, any>,
+  textClauses: Array<Record<string, any>> | null,
+): Record<string, any> => {
+  if (col === 'knowledge_nodes' || col === 'reflective_journals') {
+    if (!textClauses) return {};
+    const clauses = textClauses.filter((c) => {
+      const k = Object.keys(c)[0];
+      return k === 'name' || k === 'narrative';
+    });
+    return clauses.length > 0 ? { $or: clauses } : {};
+  }
+  return { ...base, ...(textClauses ? { $or: textClauses } : {}) };
+};
+
+// Map a raw Mongo doc to the response shape. `content` is polymorphic across
+// collections (object with .message for episodic, string for semantic facts,
+// name for knowledge nodes, narrative for reflective journals).
+const mapMemoryItem = (col: string, item: any): any => {
+  const c = item.content;
+  let content: string;
+  if (c && typeof c === 'object' && c.message) content = c.message;
+  else if (typeof c === 'string' && c) content = c;
+  else if (c && typeof c === 'object' && c.fact) content = c.fact;
+  else if (item.fact) content = item.fact;
+  else if (item.name) content = item.name;
+  else if (item.narrative) content = item.narrative;
+  else if (item.label) content = item.label;
+  else if (item.title) content = item.title;
+  else content = JSON.stringify(item);
+  return {
+    collection: normalizeCollection(col),
+    timestamp: item.timestamp || item.created_at || item.updated_at,
+    user_id: item.user_id || 'system',
+    content: content.substring(0, 300),
+  };
+};
 
 export const create_admin_routes = (): Hono => {
   const router = new Hono();
@@ -292,6 +361,10 @@ export const create_admin_routes = (): Hono => {
    * GET /api/v1/admin/memory-search
    * Public read-only search across memory collections — no auth required.
    * Params: ?query=... &collection=episodic|semantic|knowledge|reflections|all &user_id=... &limit=20
+   *
+   * Hybrid search: deterministic keyword (escaped token regex) first, then
+   * semantic vector augmentation when the embedding model is available.
+   * Query + collection are honored with or without user_id.
    */
   router.get('/memory-search', async (c) => {
     try {
@@ -301,67 +374,49 @@ export const create_admin_routes = (): Hono => {
       const user_id = c.req.query('user_id') || '';
       const limit = Math.min(parseInt(c.req.query('limit') || '20'), 100);
 
-      if (!user_id) {
-        // Return recent events across collections when no user_id specified
-        const [episodic, semantic, knowledge, reflections] = await Promise.all([
-          db.collection('episodic_events').find({}).sort({ timestamp: -1 }).limit(limit).toArray(),
-          db.collection('semantic_facts').find({}).sort({ created_at: -1 }).limit(limit).toArray(),
-          db.collection('knowledge_nodes').find({}).sort({ updated_at: -1 }).limit(limit).toArray(),
-          db.collection('reflective_journals').find({}).sort({ created_at: -1 }).limit(limit).toArray(),
-        ]);
+      const cols = collection === 'all' ? [...MEMORY_COLLECTIONS] : [collection];
 
-        const results: any[] = [];
-        episodic.forEach((e: any) => results.push({ collection: 'episodic', timestamp: e.timestamp, user_id: e.user_id, content: e.content?.message || JSON.stringify(e.content || {}).substring(0, 200) }));
-        semantic.forEach((s: any) => results.push({ collection: 'semantic', timestamp: s.created_at, user_id: s.user_id, content: s.content || s.fact || JSON.stringify(s).substring(0, 200) }));
-        knowledge.forEach((k: any) => results.push({ collection: 'knowledge', timestamp: k.updated_at, user_id: k.user_id || 'system', content: k.name || k.label || JSON.stringify(k).substring(0, 200) }));
-        reflections.forEach((r: any) => results.push({ collection: 'reflections', timestamp: r.created_at, user_id: r.user_id || 'system', content: r.narrative || r.title || JSON.stringify(r).substring(0, 200) }));
+      // Deterministic keyword pass — honors query + collection regardless of
+      // user_id (this is the contract fix).
+      const base: Record<string, any> = user_id ? { user_id } : {};
+      const textClauses = query ? buildTextClauses(query) : null;
 
-        results.sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
-        return c.json({ success: true, results: results.slice(0, limit) });
-      }
-
-      // Build search filter by user
-      const userFilter: any = { user_id };
-      if (query) {
-        const escaped = escape_regex(query.slice(0, 200));
-        const terms = escaped.split(/\s+/).slice(0, 10).join('|');
-        userFilter.$or = [
-          { 'content.message': { $regex: terms, $options: 'i' } },
-          { 'content': { $regex: terms, $options: 'i' } },
-          { 'name': { $regex: terms, $options: 'i' } },
-          { 'narrative': { $regex: terms, $options: 'i' } },
-        ];
+      const keyword: Array<{ key: string; item: any }> = [];
+      for (const col of cols) {
+        const colFilter = buildCollectionFilter(col, base, textClauses);
+        const items = await db.collection(col).find(colFilter).sort({ [sortFieldFor(col)]: -1 }).limit(limit).toArray();
+        items.forEach((item: any) => keyword.push({ key: `${col}:${String(item._id ?? '')}`, item: mapMemoryItem(col, item) }));
       }
 
       const results: any[] = [];
-      const cols = collection === 'all' ? ['episodic_events', 'semantic_facts', 'knowledge_nodes', 'reflective_journals'] : [collection];
 
-      for (const col of cols) {
-        let items: any[] = [];
-        const colFilter = col === 'knowledge_nodes' || col === 'reflective_journals' ? query ? userFilter.$or.reduce((acc: any, clause: any) => {
-          const k = Object.keys(clause)[0];
-          const v = Object.values(clause)[0];
-          if (k === 'name' || k === 'narrative') { acc[k] = v; }
-          return acc;
-        }, {}) : {} : { ...userFilter };
+      // Semantic augmentation (best-effort): vector-ranked matches help fuzzy
+      // and paraphrase queries. Any failure falls back to keyword results.
+      if (query && embeddingService.isReady) {
+        try {
+          const semantic: Array<{ key: string; score: number; item: any }> = [];
+          for (const col of cols) {
+            const hits = await embeddingService.searchSimilar(col, user_id, query, { limit });
+            for (const hit of hits) {
+              const key = `${col}:${String(hit._id ?? '')}`;
+              if (semantic.some((s) => s.key === key)) continue;
+              semantic.push({ key, score: hit.score ?? 0, item: mapMemoryItem(col, hit) });
+            }
+          }
+          semantic.sort((a, b) => b.score - a.score);
 
-        if (col === 'episodic_events') {
-          items = await db.collection(col).find(colFilter).sort(query ? { timestamp: -1 } : { timestamp: -1 }).limit(limit).toArray();
-        } else {
-          items = await db.collection(col).find(colFilter).sort({ created_at: -1 }).limit(limit).toArray();
+          const seen = new Set<string>();
+          for (const s of semantic) { if (!seen.has(s.key)) { seen.add(s.key); results.push(s.item); } }
+          for (const k of keyword) { if (!seen.has(k.key)) { seen.add(k.key); results.push(k.item); } }
+        } catch (err: any) {
+          console.warn('Memory search semantic augmentation failed, using keyword results:', err.message);
+          keyword.forEach((k) => results.push(k.item));
         }
-
-        items.forEach((item: any) => {
-          results.push({
-            collection: col.replace('_events', '').replace('_facts', '').replace('_nodes', '').replace('_journals', '').replace('reflective', 'reflections'),
-            timestamp: item.timestamp || item.created_at || item.updated_at,
-            user_id: item.user_id || 'system',
-            content: (item.content?.message || item.content?.fact || item.name || item.narrative || JSON.stringify(item)).substring(0, 300),
-          });
-        });
+      } else {
+        keyword.forEach((k) => results.push(k.item));
       }
 
-      // If query, sort by relevance; otherwise by time
+      // With no query, order by recency desc (legacy behavior).
       if (!query) {
         results.sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
       }
