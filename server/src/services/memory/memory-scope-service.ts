@@ -17,7 +17,7 @@ import { getTenantContext } from '../../database/tenant-context.js';
  */
 // F3 (identity separation): the legacy pre-separation default user id was
 // migrated to 'satori' — deployments override via SOLOMEM_USER_ID
-// (docker-compose sets satori). See docs/contracts/identity-separation.md.
+// (docker-compose sets satori). Deployment notes live in the git-ignored private/ folder.
 export const DEFAULT_USER_ID = process.env.SOLOMEM_USER_ID || 'satori';
 
 export interface MemoryScopeConfig {

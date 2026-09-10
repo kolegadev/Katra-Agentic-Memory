@@ -17,15 +17,15 @@ and every registered tool is reachable through `list_tools()` /
   param) — never from a client-declared `user_id`. The SDK sends
   `Authorization: Bearer <api_key>`.
 - `api_key` must be a valid client key provisioned by the server (the admin
-  `KATRA_API_KEY` authenticates as the trusted `satori` identity; per-agent
-  keys exist for `shoshin` and `zanshin`). A valid-but-unmapped key is
+  `KATRA_API_KEY` authenticates as the trusted machine identity; per-agent
+  keys exist for each additional identity). A valid-but-unmapped key is
   rejected with 401 — no silent fallback. The legacy `MCP_API_KEY` /
   `BACKUP_MCP_KEYS` env keys no longer authenticate.
 - `user_id` arguments are scoping hints within what your identity may see:
   Katra runs in hybrid mode (`shared_id` `my-team`), reads return your own
   private memories plus the shared team scope, and personal kinds (journal,
   reflection, emotional, insight) are always private. Pass a named identity
-  (`"satori"`, `"shoshin"`, `"zanshin"`) to query that identity's slice of
+  (e.g. `"your-agent"`) to query that identity's slice of
   the shared scope.
 
 ## Installation
@@ -58,22 +58,22 @@ results = client.search_memories("Python", limit=5)
 similar = client.vector_search("machine learning pipelines")
 
 # ── Temporal memory ────────────────────────────────
-history = client.temporal_recall("satori", from_date="2026-05-01")
-ctx = client.get_temporal_context("satori", "sess-456")
+history = client.temporal_recall("your-agent", from_date="2026-05-01")
+ctx = client.get_temporal_context("your-agent", "sess-456")
 
 # ── Patterns & summaries ───────────────────────────
-patterns = client.detect_patterns("satori", lookback_weeks=4)
-blocks = client.get_time_block_summaries("satori", block_type="week")
+patterns = client.detect_patterns("your-agent", lookback_weeks=4)
+blocks = client.get_time_block_summaries("your-agent", block_type="week")
 
 # ── Journal ────────────────────────────────────────
-client.store_journal("satori", "Finished the API refactor",
+client.store_journal("your-agent", "Finished the API refactor",
                      tags=["coding", "milestone"])
-entries = client.get_journal("satori", source="auto")
+entries = client.get_journal("your-agent", source="auto")
 
 # ── Missions ───────────────────────────────────────
-mission = client.create_mission("satori", "Build a trading bot",
+mission = client.create_mission("your-agent", "Build a trading bot",
                                 tasks=["Research APIs", "Implement core"])
-client.update_mission_task("satori", mission["id"], "task-1", "completed")
+client.update_mission_task("your-agent", mission["id"], "task-1", "completed")
 
 # ── Health ─────────────────────────────────────────
 health = client.get_health()

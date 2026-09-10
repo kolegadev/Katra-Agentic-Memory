@@ -28,7 +28,7 @@ appears in any tool result, response, log, or audit row.
 ```ts
 export interface CapabilityInput {
   caller: CallerIdentity;
-  secretId: string;            // full secret_id (e.g. 'lilly/agentmail-api-key')
+  secretId: string;            // full secret_id (e.g. 'alex/agentmail-api-key')
   service: string;             // approval service name (e.g. 'agentmail')
   method: string;              // whitelist: GET POST PUT PATCH DELETE HEAD
   url: string;                 // https:// only
@@ -166,5 +166,5 @@ cd server && npx vitest run tests/unit/vault/capability.test.ts && npm test && n
    Discovered when a valid GitHub PAT (stored as a team secret) returned 401
    from api.github.com/user because GitHub requires the Bearer prefix. Wired
    through REST `inject_scheme` and MCP `vault_http`; covered by criterion 2b.
-   Live end-to-end proof: lilly + github approval + team PAT + inject_scheme
-   Bearer → api.github.com/user 200 (login kolegadev), PAT never in response.
+   Live end-to-end proof: an identity + github approval + team PAT +
+   inject_scheme Bearer → api.github.com/user 200, PAT never in response.

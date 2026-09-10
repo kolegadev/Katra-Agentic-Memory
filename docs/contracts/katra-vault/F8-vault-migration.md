@@ -4,8 +4,8 @@ Source of truth: `docs/katra-vault-design.md` §10, §13 (open items).
 
 ## Goal
 A tested, idempotent, DRY-RUN-FIRST migration toolchain that (a) imports the
-AgentMail key from `~/.katra/keys/agentmail-lilly.key` into the vault as
-`lilly/agentmail-api-key` (service `agentmail`, kind `api_key`, private scope),
+AgentMail key from `~/.katra/keys/agentmail-alex.key` into the vault as
+`alex/agentmail-api-key` (service `agentmail`, kind `api_key`, private scope),
 (b) hard-deletes legacy plaintext secret docs + any referencing embedding docs,
 (c) produces a REDACTED audit report of other plaintext secrets found in
 shared memory (WiFi passwords etc.) for John to decide on. Nothing destructive
@@ -97,7 +97,7 @@ export function runMigration(opts: { db: Db; store: VaultStore; caller: CallerId
    never prints secrets.
 7. The runner reads `KATRA_VAULT_MASTER_KEY` and Mongo config from the server
    `.env` via the same mechanism the server uses (dotenv), and KATRA_HOME keys
-   default path `~/.katra/keys/agentmail-lilly.key`.
+   default path `~/.katra/keys/agentmail-alex.key`.
 
 ## Success criteria (tests — all must pass)
 1. findLegacyAgentmailDocs: seeded fake docs — key-token doc (score 1), term-only
@@ -106,7 +106,7 @@ export function runMigration(opts: { db: Db; store: VaultStore; caller: CallerId
 2. hardDeleteDocsWithEmbeddings: seeded source docs + seeded `embeddings`
    docs with doc_id refs → both deleted; second call deletes 0; returns counts.
 3. importAgentmailKey: temp key file → putSecret called with service
-   'agentmail', kind 'api_key', owner lilly, private scope; the stored
+   'agentmail', kind 'api_key', owner alex, private scope; the stored
    envelope decrypts (F1 openSecret) to the file contents; audit row exists;
    missing file → reason 'key file not found', no throw.
 4. scanPlaintextSecrets: seeded doc with `wifi password = MySecret12345` →
@@ -135,6 +135,6 @@ cd server && npx vitest run tests/unit/vault/migration.test.ts && npm test && np
 - `import.meta.dirname`-style path handling is NOT needed — the runner takes
   explicit paths; defaults resolved from `os.homedir()`.
 - The key file path default: `path.join(os.homedir(), '.katra', 'keys',
-  'agentmail-lilly.key')`.
+  'agentmail-alex.key')`.
 - No console.log of key material anywhere; redaction helpers centralized
   (`redactToken()` internal).

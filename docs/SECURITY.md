@@ -11,11 +11,11 @@ Katra implements defense-in-depth across multiple layers:
 ### Authentication — key-based identity
 
 - **Identity from the presented key**: every request's caller is resolved by `resolveCallerIdentity()` from the key presented in `X-MCP-Auth`, `Authorization: Bearer ...`, or `?token=` — never from client self-report.
-- **SHA-256-only client keys**: `system_settings.client_keys` stores only key hashes, mapped to identities (`satori`, `shoshin`, `zanshin`). Plaintext keys are never stored at rest; the shoshin/zanshin keys are printed exactly once at provisioning.
-- **Trusted satori**: loopback callers and the admin key (`KATRA_API_KEY`) authenticate as trusted satori; key-mapped clients are untrusted identities.
+- **SHA-256-only client keys**: `system_settings.client_keys` stores only key hashes, mapped to identities. Plaintext keys are never stored at rest; per-identity keys are printed exactly once at provisioning.
+- **Trusted machine identity**: loopback callers and the admin key (`KATRA_API_KEY`) authenticate as the trusted machine identity; key-mapped clients are untrusted identities.
 - **Timing-safe comparison**: All key validation uses `timingSafeEqual` to prevent timing side-channel attacks.
 - **Loud rejection**: a valid-but-unmapped key is rejected with **401 + reason** (and an explanatory log line with the presented key's sha256 prefix) — no silent fallback to another identity.
-- **Retired legacy env keys**: `MCP_API_KEY`, `ADMIN_API_KEY`, and `BACKUP_MCP_KEYS` no longer authenticate. They were deliberately unmapped at the 2026-08-21 cutover so machines still holding them fail loudly instead of writing memories under Satori's identity.
+- **Retired legacy env keys**: `MCP_API_KEY`, `ADMIN_API_KEY`, and `BACKUP_MCP_KEYS` no longer authenticate. They were deliberately unmapped at the 2026-08-21 cutover so machines still holding them fail loudly instead of writing memories under the wrong identity.
 - **Auto-generation**: If no admin key is set, a cryptographically random key is generated on first boot (256-bit entropy) and its hash persisted.
 
 ### Authorization & Per-Caller Scoping (the IDOR boundary)
@@ -62,7 +62,7 @@ The 2026-08-21 identity separation release replaced the dual-key model with call
 
 - **F1 — caller-bound identities**: `resolveCallerIdentity()` + `client_keys` (sha256-only) + AsyncLocalStorage propagation. Identity is never taken from client self-report; valid-but-unmapped keys are rejected loudly with 401.
 - **F2 — write scope policy**: personal kinds forced private, `my-team` shared default, `hybrid_visible_user_ids` pinned to `[]` at boot.
-- **F3 — allocation candidates**: the autonomous executive allocates work only to `satori`, `shoshin`, `zanshin`; the `gas-law-watcher` tool actor is never allocated.
+- **F3 — allocation candidates**: the autonomous executive allocates work only to the configured identities; tool actors are never allocated.
 - **Legacy key retirement**: `MCP_API_KEY` / `ADMIN_API_KEY` / `BACKUP_MCP_KEYS` no longer authenticate (see above). Non-loopback consumers must hold a `client_keys`-mapped key.
 
 ## Security Fixes Applied (June 2026 Audit)
@@ -118,7 +118,7 @@ These verify:
 
 ## Acknowledgments
 
-Security review and fixes by the Satori team. Particular attention to:
+Security review and fixes by the Katra team. Particular attention to:
 - Per-caller scoping on all database queries (the IDOR boundary)
 - Empty filter prevention in memory scope service
 - Write scope policy (personal kinds forced private, `my-team` default)

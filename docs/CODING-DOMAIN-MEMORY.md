@@ -1,7 +1,7 @@
 # Design Note — Coding-Domain Memory
 
 **Status:** draft for review · **Source:** CTO meeting notes, 2026-07-22
-**One-liner:** Specialize Satori for software development by biasing the *semantic distillation* prompts toward code-domain facts — kept minimal, optionally run on a coding-specialized model — with a light dev system-prompt fragment.
+**One-liner:** Specialize Katra for software development by biasing the *semantic distillation* prompts toward code-domain facts — kept minimal, optionally run on a coding-specialized model — with a light dev system-prompt fragment.
 
 This note interprets the meeting notes and maps them to concrete integration points. It is deliberately small: the guiding constraint from the notes is **"not too many rules."**
 
@@ -9,7 +9,7 @@ This note interprets the meeting notes and maps them to concrete integration poi
 
 ## What we're trying to do
 
-Make Satori a better memory for engineering work: capture and surface the things that matter in a codebase — conventions, architectural decisions, API/interface contracts, library choices, "we do X this way" — instead of treating code sessions as generic conversation.
+Make Katra a better memory for engineering work: capture and surface the things that matter in a codebase — conventions, architectural decisions, API/interface contracts, library choices, "we do X this way" — instead of treating code sessions as generic conversation.
 
 Two sub-goals, ordered by priority:
 
@@ -24,7 +24,7 @@ Distillation is the layer that turns raw episodic events into structured, reusab
 
 ### Current-system note (2026-08-21)
 
-Since this note was written, Katra shipped a native code graph — the Satori Graph MCP tools `scan_codebase`, `sync_code_graph`, and `code_graph_status` (documented in `scripts/README-code-graph.md`). They capture code structure directly rather than through conversation distillation, so they complement the distillation bias proposed here: the graph maps the codebase, while distillation decides which code-domain facts are worth remembering. The plan below (Phases 1-3) is unchanged by this.
+Since this note was written, Katra shipped a native code graph — the Katra Graph MCP tools `scan_codebase`, `sync_code_graph`, and `code_graph_status` (documented in `scripts/README-code-graph.md`). They capture code structure directly rather than through conversation distillation, so they complement the distillation bias proposed here: the graph maps the codebase, while distillation decides which code-domain facts are worth remembering. The plan below (Phases 1-3) is unchanged by this.
 
 ## Integration points (where to add in)
 

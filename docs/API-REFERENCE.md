@@ -4,7 +4,7 @@ Katra exposes a REST API under `/api/v1/` on port 9012 (host-mapped from contain
 
 ## Authentication & Identity Separation
 
-Katra resolves **who is calling** from the API key presented on the request — never from anything the client self-reports. One Katra hosts three named identities (`satori`, `shoshin`, `zanshin`) plus a `gas-law-watcher` tool actor.
+Katra resolves **who is calling** from the API key presented on the request — never from anything the client self-reports. One Katra hosts any number of named identities (one per machine or agent) plus optional tool actors.
 
 All requests present a key via:
 
@@ -15,13 +15,13 @@ Authorization: Bearer <your-api-key>
 (Some routes — memory and reflection among them — also accept `?token=<key>` as a query parameter.)
 
 **Caller resolution:**
-- **Loopback** (127.0.0.1/::1) → trusted `satori`, no key needed.
-- **Admin key** (`KATRA_API_KEY`) → trusted `satori`.
+- **Loopback** (127.0.0.1/::1) → the trusted machine identity, no key needed.
+- **Admin key** (`KATRA_API_KEY`) → the trusted machine identity.
 - **Client key** (mapped in `system_settings.client_keys`) → that identity, untrusted — writes are pinned to the caller's own `user_id`; per-endpoint `user_id` parameters are documented below.
 - **Valid but unmapped key** → **401**, loudly. No silent fallback to a default identity.
 - **Legacy env keys** (`MCP_API_KEY`, `BACKUP_MCP_KEYS`) were retired after the identity-separation cutover (2026-08-21) and no longer authenticate as REST credentials; only keys with an identity mapping in `client_keys` (or the admin key) are accepted. If no key is configured at all, the API runs in open-access mode (local dev only).
 
-API keys are stored as **SHA-256 hashes** in MongoDB (`system_settings.generated_api_keys`, `system_settings.client_keys`) — plaintext keys never touch the database. Shoshin/Zanshin client keys are generated once at boot and their plaintext printed once in the server log. Timing-safe comparison is used for all key validation.
+API keys are stored as **SHA-256 hashes** in MongoDB (`system_settings.generated_api_keys`, `system_settings.client_keys`) — plaintext keys never touch the database. Client keys for additional identities are generated once at boot and their plaintext printed once in the server log. Timing-safe comparison is used for all key validation.
 
 **No-auth endpoints** (caller identity is still resolved, but no key is required):
 `/api/v1/health`, `/api/v1/admin/dashboard-stats`, `/api/v1/admin/memory-search`, `/api/v1/admin/pubsub/presence`, `/api/v1/admin/pubsub/topics`, `/api/v1/admin/pubsub/muted`, `/api/v1/admin/personality`, `/api/v1/admin/personality/profiles`, and `GET /api/v1/admin/identity` (caller's own record).
@@ -108,15 +108,15 @@ Test ingestion with rule-based and LLM extraction configurations (`{text: ...}`)
 
 ## Identity
 
-Identity records live in `system_settings` under `agent_identity` (the legacy record — this **is** satori's) and `agent_identity:<user_id>` (per-identity records for shoshin, zanshin, …).
+Identity records live in `system_settings` under `agent_identity` (the legacy record — the machine's own identity) and `agent_identity:<user_id>` (per-identity records for every other identity).
 
 ### GET /api/v1/admin/identity
 
-No auth required. Returns the **caller's** identity record — each machine reads the record for its own resolved `user_id` (loopback/admin key → satori's record; a client key → that identity's record).
+No auth required. Returns the **caller's** identity record — each machine reads the record for its own resolved `user_id` (loopback/admin key → the machine identity's record; a client key → that identity's record).
 
 **Response:**
 ```json
-{"success": true, "identity": {"name": "Satori", "user_id": "satori", "established": "2026-08-19", "chosen_by": "..."}}
+{"success": true, "identity": {"name": "YourAgent", "user_id": "your-agent", "established": "2026-08-19", "chosen_by": "..."}}
 ```
 
 ### GET /api/v1/admin/identity?user_id=X
@@ -129,11 +129,11 @@ No auth required. Returns the **caller's** identity record — each machine read
 
 **Body:**
 ```json
-{"name": "Satori", "chosen_by": "owner", "confirmed_by": "owner", "rationale": "...", "established": "2026-08-19"}
+{"name": "YourAgent", "chosen_by": "owner", "confirmed_by": "owner", "rationale": "...", "established": "2026-08-19"}
 ```
 
 - `name` is required (max 80 chars).
-- Pass `?user_id=X` (or `user_id` in the body) to write that identity's per-user record instead of the legacy satori record.
+- Pass `?user_id=X` (or `user_id` in the body) to write that identity's per-user record instead of the legacy machine-identity record.
 
 ### GET /api/v1/admin/system-identity
 
@@ -152,7 +152,7 @@ Store a new episodic event. Content-hash deduplicated.
 {
   "session_id": "session-1",
   "event_type": "user_message",
-  "content": {"role": "user", "message": "Hello Satori"},
+  "content": {"role": "user", "message": "Hello Katra"},
   "metadata": {},
   "private": false
 }
@@ -174,7 +174,7 @@ Search episodic events (MongoDB text index with regex fallback).
 
 **Body:**
 ```json
-{"query": "search terms", "user_id": "satori", "limit": 20}
+{"query": "search terms", "user_id": "your-agent", "limit": 20}
 ```
 
 `user_id` is accepted in the body. Untrusted callers (client keys) are pinned to their own identity regardless of the supplied value; trusted callers (loopback/admin key) may search on behalf of any identity.

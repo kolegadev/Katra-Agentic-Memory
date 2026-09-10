@@ -1,4 +1,4 @@
-# Satori Memory — Data Processing Pipelines
+# Katra Memory — Data Processing Pipelines
 
 ## System Architecture
 
@@ -46,7 +46,7 @@ A conversation turn enters through one of:
 **File:** `services/episodic-event-manager.js`
 **Collection:** `episodic_events`
 
-**Write scope (identity separation, 2026-08-21):** the writer's `user_id` is resolved from the client key presented (satori / shoshin / zanshin) — never from client self-report. `resolveWriteScope()` (`services/memory/write-scope-policy.js`) stamps every event: personal kinds (`journal`, `reflection`, `emotional`, `insight`) are always private (`shared_id: null`), every other write defaults to `shared_id: "my-team"` unless `private: true` is passed.
+**Write scope (identity separation, 2026-08-21):** the writer's `user_id` is resolved from the client key presented — never from client self-report. `resolveWriteScope()` (`services/memory/write-scope-policy.js`) stamps every event: personal kinds (`journal`, `reflection`, `emotional`, `insight`) are always private (`shared_id: null`), every other write defaults to `shared_id: "my-team"` unless `private: true` is passed.
 
 `EpisodicEventManager.createEvent()` for each message:
 

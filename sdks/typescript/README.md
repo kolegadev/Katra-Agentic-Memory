@@ -1,9 +1,8 @@
 # @satori/sdk
 
-TypeScript SDK for [Satori](../../README.md) — the Katra memory system's
-founding identity name — Cognitive Memory as a Service.
+TypeScript SDK for [Katra](../../README.md) — Cognitive Memory as a Service.
 
-Typed async API for the core Satori memory tools, built on the MCP (Model
+Typed async API for the core Katra memory tools, built on the MCP (Model
 Context Protocol) Streamable HTTP transport with automatic session
 handling. The current Katra server registers 66 MCP tools; this SDK wraps
 the core memory subset listed below, and any registered tool is reachable
@@ -16,15 +15,15 @@ through the low-level `MCPClient`.
   param) — never from a client-declared `user_id`. The SDK sends
   `Authorization: Bearer <apiKey>`.
 - The key must be a valid client key provisioned by the server (the admin
-  `KATRA_API_KEY` authenticates as the trusted `satori` identity; per-agent
-  keys exist for `shoshin` and `zanshin`). A valid-but-unmapped key is
+  `KATRA_API_KEY` authenticates as the trusted machine identity; per-agent
+  keys exist for each additional identity). A valid-but-unmapped key is
   rejected with 401 — no silent fallback. The legacy `MCP_API_KEY` /
   `BACKUP_MCP_KEYS` env keys no longer authenticate.
 - `user_id` fields are scoping hints within what your identity may see:
   Katra runs in hybrid mode (`shared_id` `my-team`), reads return your own
   private memories plus the shared team scope, and personal kinds (journal,
   reflection, emotional, insight) are always private. Use a named identity
-  (`'satori'`, `'shoshin'`, `'zanshin'`) to address that identity's slice
+  (e.g. `'your-agent'`) to address that identity's slice
   of the shared scope.
 
 ## Quick Start
@@ -52,7 +51,7 @@ console.log(`Stored: ${result.insertedId}`);
 // Search memories
 const hits = await katra.searchMemories({
   query: 'Bun API',
-  user_id: 'satori',
+  user_id: 'your-agent',
 });
 console.log(`${hits.episodic.length} events, ${hits.semantic.length} facts`);
 
@@ -64,7 +63,7 @@ const similar = await katra.vectorSearch({
 
 // Create a mission with tasks
 const mission = await katra.createMission({
-  user_id: 'satori',
+  user_id: 'your-agent',
   goal: 'Migrate to Bun',
   title: 'Bun Migration',
   tasks: ['Benchmark', 'Write tests', 'Deploy'],

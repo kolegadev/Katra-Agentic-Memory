@@ -3,7 +3,7 @@
 - **Spec version:** v1.0
 - **Status:** Approved (design only — no code written)
 - **Date:** 2026-09-03
-- **Author:** Lilly (with John)
+- **Author:** the Katra team
 - **Applies to:** `kolegadev/Katra-Agentic-Memory`, informed by `kolegadev/Secure-Vault`
 
 ## 1. Purpose and objectives
@@ -63,7 +63,7 @@ improves on it with field-level encryption.
 3. **Per-identity auth policy** (§6 table).
 4. **Per-service approval** for secret use (§7.3).
 5. **Migration defers hard-delete** of legacy plaintext secrets; keys may be rotated
-   out-of-band by John.
+   out-of-band by the operator.
 
 ## 4. Data model
 
@@ -71,11 +71,11 @@ New MongoDB collection `secrets`:
 
 ```jsonc
 {
-  "secret_id": "lilly/agentmail-api-key",   // <scope>/<name>
+  "secret_id": "alex/agentmail-api-key",   // <scope>/<name>
   "name": "agentmail-api-key",
-  "owner": { "user_id": "lilly" },           // private partition
+  "owner": { "user_id": "alex" },           // private partition
   //  or  { "shared_id": "my-team" },          // team partition
-  "acl": { "readers": ["lilly"] },           // optional finer grain (defaults to owner)
+  "acl": { "readers": ["alex"] },           // optional finer grain (defaults to owner)
   "service": "agentmail",                    // service linking (Secure-Vault)
   "kind": "api_key",                         // api_key | password | token | totp_secret | env
   "envelope": {
@@ -86,7 +86,7 @@ New MongoDB collection `secrets`:
     "dek_wrapped": "<b64>"                   // DEK wrapped by the scope KEK
   },
   "meta": {
-    "created_by": "lilly", "created_at": "<ts>",
+    "created_by": "alex", "created_at": "<ts>",
     "updated_at": "<ts>", "last_used_at": "<ts>",
     "rotation_due_at": "<ts>"
   },
@@ -169,9 +169,9 @@ Replaces "static key = permanent access" with enrollment + short-lived sessions.
 
 | Identity class | Auth | Compromise mitigation |
 |---|---|---|
-| **Interactive** — `shoshin`, `zanshin`, `lilly` (laptops/iMac, human present) | TOTP-gated, short-lived sessions | stolen key useless without TOTP; token expiry |
-| **Unattended** — satori heartbeat loop, `gas-law-watcher` | device-bound long-lived credential, least-privilege scope | narrow job scope; rotation; anomaly detection; instant revocation |
-| **Trusted** — loopback / admin key (thebrick) | loopback trusted; admin key rotated + shorter-lived | admin key rotation |
+| **Interactive** — laptop/desktop agents (human present) | TOTP-gated, short-lived sessions | stolen key useless without TOTP; token expiry |
+| **Unattended** — heartbeat loops and tool actors | device-bound long-lived credential, least-privilege scope | narrow job scope; rotation; anomaly detection; instant revocation |
+| **Trusted** — loopback / admin key (the server host) | loopback trusted; admin key rotated + shorter-lived | admin key rotation |
 
 ## 9. Surface (MCP + REST)
 
@@ -184,11 +184,10 @@ REST: `/api/v1/vault/*` and `/api/v1/auth/*`, admin-key gated for admin operatio
 
 ## 10. Migration
 
-On ship (Phase 3): import the AgentMail key (from `~/.katra/keys/agentmail-lilly.key`,
+On ship (Phase 3): import the AgentMail key (from `~/.katra/keys/agentmail-<agent>.key`,
 operator-side) into the vault; hard-delete the two legacy plaintext `semantic_facts`
-AgentMail docs and their embeddings; rotate the key (John rotates if desired). Audit other
-plaintext secrets currently in shared memory (notably the home WiFi passwords in the Tivat
-network notes) and decide whether to vault them.
+AgentMail docs and their embeddings; rotate the key if desired. Audit other plaintext
+secrets currently in shared memory and decide whether to vault them.
 
 ## 11. Threat model
 

@@ -122,7 +122,7 @@ export interface VaultStore {
 cd server && npx vitest run tests/unit/vault/store.test.ts && npm test
 ```
 Full suite: **zero NEW failures**. The 5 known pre-existing failures
-(ensure-client-keys, executive-allocation — `lilly` identity drift) are the
+(ensure-client-keys, executive-allocation — `alex` identity drift) are the
 only allowed failures; everything else must pass identically to main.
 
 ## Implementation notes
