@@ -193,8 +193,9 @@ async function initializeServices(): Promise<void> {
     } else {
       console.error(`🔐 MCP authentication ENABLED (via stored key hash)`);
     }
-    // F1: provision client_keys (satori → legacy key hash; shoshin/zanshin →
-    // freshly generated once). Idempotent; hashes only in the DB.
+    // F1: provision client_keys (local identity → legacy key hash;
+    // KATRA_EXTRA_IDENTITIES → freshly generated once). Idempotent; hashes
+    // only in the DB.
     await ensureClientKeys();
   } catch (e) {
     console.error('  ⚠️ MongoDB connection failed — service limited');
@@ -424,7 +425,7 @@ const VaultPutSecretInput = z.object({
 const VaultListSecretsInput = z.object({});
 
 const VaultGetSecretInput = z.object({
-  secret_id: z.string().min(1).describe('Secret ID, e.g. "lilly/agentmail-api-key"'),
+  secret_id: z.string().min(1).describe('Secret ID, e.g. "agent-a/agentmail-api-key"'),
 });
 
 const VaultDeleteSecretInput = z.object({
@@ -441,7 +442,7 @@ const VaultAuditInput = z.object({
 });
 
 const VaultApproveServiceInput = z.object({
-  identity: z.string().min(1).describe('User id the approval is granted to, e.g. "lilly"'),
+  identity: z.string().min(1).describe('User id the approval is granted to, e.g. "agent-a"'),
   service: z.string().min(1).describe('Service the approval gates, e.g. "agentmail" — "*" grants any service'),
   ttlDays: z.number().int().positive().optional().describe('Grant validity in days (default 30)'),
 });
@@ -457,7 +458,7 @@ const VaultListApprovalsInput = z.object({});
 // Types only — the capability core enforces approval, RBAC, SSRF and limit
 // rules and returns static blocked reasons, never echoed content.
 const VaultHttpInput = z.object({
-  secret_id: z.string().min(1).describe('Full secret ID, e.g. "lilly/agentmail-api-key"'),
+  secret_id: z.string().min(1).describe('Full secret ID, e.g. "agent-a/agentmail-api-key"'),
   service: z.string().min(1).describe('Approval service name, e.g. "agentmail"'),
   method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD']).describe('HTTP method whitelist'),
   url: z.string().min(1).describe('Absolute https:// URL (port 443, no userinfo)'),
@@ -603,7 +604,7 @@ const tools = [
   // ── Knowledge Graph ───────────────────────────────────────
   {
     name: 'explore_graph',
-    description: 'Explore the knowledge graph: nodes (entities) and edges (relationships) extracted from conversations via LLM compaction. Use to traverse entity-relationship connections, find related concepts, or see what Solomon has learned.',
+    description: 'Explore the knowledge graph: nodes (entities) and edges (relationships) extracted from conversations via LLM compaction. Use to traverse entity-relationship connections, find related concepts, or see what Katra has learned.',
     inputSchema: zodToJsonSchema(ExploreGraphInput) as Record<string, unknown>,
   },
   // ── Working Memory ────────────────────────────────────────
@@ -615,13 +616,13 @@ const tools = [
   // ── Auto Journal ──────────────────────────────────────────
   {
     name: 'get_auto_journal',
-    description: 'Query auto-generated journal entries distilled from conversations by Solomon\'s self-reflection loop. These are different from manual journal entries — they contain AI-distilled insights, patterns, and observations.',
+    description: 'Query auto-generated journal entries distilled from conversations by Katra\'s self-reflection loop. These are different from manual journal entries — they contain AI-distilled insights, patterns, and observations.',
     inputSchema: zodToJsonSchema(GetAutoJournalInput) as Record<string, unknown>,
   },
   // ── Transaction Log ───────────────────────────────────────
   {
     name: 'get_transaction_log',
-    description: 'Query the audit trail of Solomon\'s actions: heartbeat runs, autonomous ticks, tool executions, and system events. Use for debugging or reviewing what the agent did and when.',
+    description: 'Query the audit trail of Katra\'s actions: heartbeat runs, autonomous ticks, tool executions, and system events. Use for debugging or reviewing what the agent did and when.',
     inputSchema: zodToJsonSchema(GetTransactionLogInput) as Record<string, unknown>,
   },
   // ── Heartbeat Status ──────────────────────────────────────
@@ -1734,7 +1735,7 @@ async function handleRetractMemory(args: unknown): Promise<TextContent[]> {
 /**
  * Semantic-facts filter for vector passes. MUST always include the caller's
  * scope filter — a vector pass without it scans every user's private facts
- * (cross-identity leak observed by Zanshin 2026-08-21).
+ * (cross-identity leak observed 2026-08-21).
  */
 export function buildSemanticVectorFilter(
   baseFilter: Record<string, unknown>,
@@ -1751,7 +1752,7 @@ export function buildSemanticVectorFilter(
  * In hybrid mode the scope filter is {$or: [...]} — MongoDB forbids $text
  * combined with a top-level $or, and naively setting regexFilter['$or'] to
  * the content conditions OVERWRITES the scope $or (dropping the scope and
- * leaking private memories across identities — Zanshin's keyword-pass
+ * leaking private memories across identities — the keyword-pass
  * report 2026-08-21). Both shapes therefore nest under $and.
  */
 export function buildScopedTextQueries(
@@ -1785,7 +1786,7 @@ async function handleSearchMemories(args: unknown): Promise<TextContent[]> {
   const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   // OR-aware query regex — the text-index branch handles 'A OR B' queries,
   // but the regex fallback previously treated the whole string as ONE
-  // literal pattern ("Attention: Satori" OR "Attention: Shoshin" → 0
+  // literal pattern ("Attention: Katra" OR "Attention: Agent-A" → 0
   // matches). Split alternatives and OR them as a single regex.
   const buildQueryRegex = (q: string): RegExp => {
     const parts = q
@@ -1832,7 +1833,7 @@ async function handleSearchMemories(args: unknown): Promise<TextContent[]> {
         // F-identity-fix: the vector pass MUST carry the same scope filter
         // as the text pass — previously it scanned semantic_facts from ALL
         // users and leaked private memories across identities in hybrid
-        // mode (Zanshin verification report 2026-08-21).
+        // mode (verification report 2026-08-21).
         const factsFilter = buildSemanticVectorFilter(baseFilter, input.include_retracted);
         const facts = await db.collection('semantic_facts')
           .find(factsFilter)

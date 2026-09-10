@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Bridge Guard — self-healing for the Kolega Code ⇄ Katra (Satori) bridge.
+Bridge Guard — self-healing for the Kolega Code ⇄ Katra (Katra) bridge.
 
 Why this exists
 ---------------
@@ -11,11 +11,11 @@ every piece of the bridge every few minutes and repairs it automatically:
 
   1. Repo venv   integrations/kolega-code/.venv (command-hook runner)
   2. CLI venv    editable bridge install (best-effort, dropped by updates)
-  3. Hook config satori-hook.json (bridge config filename)
+  3. Hook config katra-hook.json (bridge config filename)
   4. hooks.json  bridge entries must be command-type (runner), not python-type
   5. Live test   spawn the runner with a SessionStart event → expect context
 
-On any repair or failure it writes an episodic event to Satori so the memory
+On any repair or failure it writes an episodic event to Katra so the memory
 system records its own health transitions (search: bridge_guard).
 
 Runs with stdlib only (system python3). Usage:
@@ -43,7 +43,7 @@ RUNNER = INTEGRATION / "scripts" / "hook_runner.py"
 ENSURE = INTEGRATION / "scripts" / "ensure-bridge.sh"
 CLI_PY = Path(os.environ.get("KOLEGA_CLI_PY", Path.home() / ".local" / "share" / "uv" / "tools" / "kolega-code" / "bin" / "python"))
 STATE_DIR = Path(os.environ.get("KOLEGA_STATE_DIR", Path.home() / ".local" / "state" / "kolega-code"))
-HOOK_CFG = STATE_DIR / "satori-hook.json"
+HOOK_CFG = STATE_DIR / "katra-hook.json"
 LEGACY_HOOK_CFG = STATE_DIR / "katra-hook.json"
 HOOKS_JSON = STATE_DIR / "hooks.json"
 GUARD_STATE = Path.home() / ".katra" / "bridge-guard-state.json"
@@ -115,7 +115,7 @@ def fix_hook_config() -> bool:
     if LEGACY_HOOK_CFG.exists():
         try:
             shutil.copyfile(LEGACY_HOOK_CFG, HOOK_CFG)
-            log("repair: satori-hook.json restored from katra-hook.json")
+            log("repair: katra-hook.json restored from katra-hook.json")
             return True
         except OSError as exc:
             log(f"repair failed: cannot write {HOOK_CFG}: {exc}", "ERROR")
@@ -186,7 +186,7 @@ def read_admin_key() -> str:
 
 
 def record_event(message: str) -> None:
-    """Episodic event into Satori so health transitions live in memory."""
+    """Episodic event into Katra so health transitions live in memory."""
     key = read_admin_key()
     if not key:
         log("cannot record event: no admin key", "WARN")
@@ -204,9 +204,9 @@ def record_event(message: str) -> None:
     )
     try:
         urllib.request.urlopen(req, timeout=10)
-        log("health transition recorded in Satori")
+        log("health transition recorded in Katra")
     except Exception as exc:
-        log(f"could not record event in Satori: {exc}", "WARN")
+        log(f"could not record event in Katra: {exc}", "WARN")
 
 
 def state_hash(results: dict) -> str:

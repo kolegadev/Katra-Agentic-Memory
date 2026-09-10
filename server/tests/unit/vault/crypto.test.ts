@@ -23,7 +23,7 @@ import {
 import type { GcmParts, VaultEnvelope } from '../../../src/services/vault/crypto.js';
 
 const MK = generateMasterKey();
-const SCOPE = 'user:lilly';
+const SCOPE = 'user:agent-c';
 const SECRET = 'agentmail-api-key: sk-live-4f9c2b7a1e8d3c5f6a0b9d8e7c6f5a4b3c2d1e0f';
 
 function expectVaultError(fn: () => unknown): void {
@@ -93,9 +93,9 @@ describe('tamper detection — every envelope field is authenticated', () => {
 });
 
 describe('partition isolation (crypto-enforced)', () => {
-  it('a secret sealed for user:lilly throws when opened with user:shoshin', () => {
-    const env = sealSecret(SECRET, 'user:lilly', MK);
-    expectVaultError(() => openSecret(env, 'user:shoshin', MK));
+  it('a secret sealed for user:agent-c throws when opened with user:agent-a', () => {
+    const env = sealSecret(SECRET, 'user:agent-c', MK);
+    expectVaultError(() => openSecret(env, 'user:agent-a', MK));
   });
 
   it('a shared secret throws when opened with a user scope (and vice versa)', () => {
@@ -135,12 +135,12 @@ describe('non-determinism of seals, determinism of KEKs', () => {
   });
 
   it('deriveScopeKek differs across scopes', () => {
-    const user = deriveScopeKek(MK, 'user:lilly');
-    const shoshin = deriveScopeKek(MK, 'user:shoshin');
+    const user = deriveScopeKek(MK, 'user:agent-c');
+    const agentA = deriveScopeKek(MK, 'user:agent-a');
     const shared = deriveScopeKek(MK, 'shared:my-team');
-    expect(user).not.toEqual(shoshin);
+    expect(user).not.toEqual(agentA);
     expect(user).not.toEqual(shared);
-    expect(shoshin).not.toEqual(shared);
+    expect(agentA).not.toEqual(shared);
   });
 
   it('deriveScopeKek differs across kek_versions', () => {
@@ -258,7 +258,7 @@ describe('low-level primitives', () => {
     expectVaultError(() =>
       unwrapDek({ ...wrapped, dek_tag: flipOneByte(wrapped.dek_tag) }, kek),
     );
-    expectVaultError(() => unwrapDek(wrapped, deriveScopeKek(MK, 'user:shoshin')));
+    expectVaultError(() => unwrapDek(wrapped, deriveScopeKek(MK, 'user:agent-a')));
     expectVaultError(() => unwrapDek(wrapped, deriveScopeKek(generateMasterKey(), SCOPE)));
   });
 });

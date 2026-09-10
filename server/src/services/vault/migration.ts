@@ -15,9 +15,9 @@
  *    then delete embedding docs referencing the ids via their `doc_id`
  *    field (only when that collection exists and carries `doc_id` rows).
  *    Idempotent: a second call over the same docs deletes 0 and reports it.
- * 3. `importAgentmailKey` — reads `~/.katra/keys/agentmail-lilly.key` (or an
+ * 3. `importAgentmailKey` — reads `~/.katra/keys/agentmail-owner.key` (or an
  *    explicit path), trims it, and stores it via `store.putSecret` as
- *    `lilly/agentmail-api-key` (service agentmail, kind api_key, private).
+ *    `<owner>/agentmail-api-key` (service agentmail, kind api_key, private).
  *    A missing file is a result, never a throw; reasons are static strings
  *    that can never contain key material.
  * 4. `scanPlaintextSecrets` — audit pass over the same collections for other

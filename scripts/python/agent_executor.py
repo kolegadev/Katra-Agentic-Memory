@@ -25,7 +25,7 @@ from urllib.error import URLError
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from authority_matrix import gate_action, can_act_autonomously
 
-AGENT_ID = os.environ.get("KATRA_AGENT_ID", "satori")
+AGENT_ID = os.environ.get("KATRA_AGENT_ID", "katra")
 STATE_FILE = os.path.expanduser(f"~/.katra/agent-executor-{AGENT_ID}.json")
 PULSE_INTERVAL = 60
 
@@ -111,7 +111,7 @@ def execute_task(task):
         ok = all(v in ("connected","available","deepseek") for v in svc.values())
         return {"status": "completed" if ok else "action_needed", "output": output}
     elif "opencode_extractor" in entity.lower() or "extractor" in entity.lower():
-        ep = os.path.expanduser("~/.solomem/opencode_extractor.py")
+        ep = os.path.expanduser("~/.katra/opencode_extractor.py")
         exists = os.path.exists(ep)
         return {"status": "completed" if exists else "action_needed", "output": f"opencode_extractor.py: {'EXISTS' if exists else 'MISSING'}"}
     else:

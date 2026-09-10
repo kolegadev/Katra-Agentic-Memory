@@ -27,9 +27,13 @@ import { createVaultStore } from './store.js';
 import { runMigration } from './migration.js';
 import type { MigrationReport } from './migration.js';
 
-export const DEFAULT_KEY_FILE = '~/.katra/keys/agentmail-lilly.key';
-export const RUNNER_CALLER = Object.freeze({ user_id: 'satori', trusted: true });
-export const RUNNER_OWNER_USER_ID = 'lilly';
+export const DEFAULT_KEY_FILE = '~/.katra/keys/agentmail-owner.key';
+export const RUNNER_CALLER = Object.freeze({
+  user_id: process.env.KATRA_USER_ID || 'katra',
+  trusted: true,
+});
+/** Vault secrets this runner owns (deployment data — via env, default generic). */
+export const RUNNER_OWNER_USER_ID = process.env.KATRA_MIGRATION_OWNER || 'owner';
 
 export interface RunnerArgs {
   mode: 'dry-run' | 'apply';
@@ -172,7 +176,7 @@ async function main(): Promise<number> {
 
   const databaseName = process.env.DATABASE_NAME || 'katra';
   const home = os.homedir();
-  const keyFilePath = args.keyFile ?? path.join(home, '.katra', 'keys', 'agentmail-lilly.key');
+  const keyFilePath = args.keyFile ?? path.join(home, '.katra', 'keys', 'agentmail-owner.key');
   const reportPath = path.resolve(
     args.reportOut ?? path.join(process.cwd(), buildReportFileName(args.mode)),
   );

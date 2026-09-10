@@ -193,7 +193,7 @@ def execute_action(action: dict, dry_run: bool = False) -> dict:
     
     elif "opencode_extractor" in entity.lower() or "extractor" in entity.lower():
         # Check if the file exists and is recent
-        extractor_path = os.path.expanduser("~/.solomem/opencode_extractor.py")
+        extractor_path = os.path.expanduser("~/.katra/opencode_extractor.py")
         if os.path.exists(extractor_path):
             mtime = os.path.getmtime(extractor_path)
             age_hours = (time.time() - mtime) / 3600

@@ -1,15 +1,15 @@
 /**
- * Satori SDK — High-Level Client
+ * Katra SDK — High-Level Client
  *
- * The `SatoriClient` class provides typed, ergonomic access to all 29 MCP
- * tools exposed by the Satori cognitive memory server. It manages the MCP
+ * The `KatraClient` class provides typed, ergonomic access to all 29 MCP
+ * tools exposed by the Katra cognitive memory server. It manages the MCP
  * session handshake automatically — just construct, call a method, and go.
  *
  * @example
  * ```ts
- * import { SatoriClient } from '@satori/sdk';
+ * import { KatraClient } from '@katra/sdk';
  *
- * const katra = new SatoriClient({ url: 'http://localhost:3112', apiKey: 'sk-...' });
+ * const katra = new KatraClient({ url: 'http://localhost:3112', apiKey: 'sk-...' });
  *
  * const mem = await katra.storeMemory({
  *   content: 'The user prefers dark mode for all applications',
@@ -23,7 +23,7 @@
 
 import { MCPClient } from './mcp-client.js';
 import type {
-  SatoriClientOptions,
+  KatraClientOptions,
   StoreMemoryParams,
   StoreMemoryResult,
   SearchMemoriesParams,
@@ -73,29 +73,29 @@ import type {
 } from './types.js';
 
 /**
- * High-level client for the Satori Cognitive Memory MCP server.
+ * High-level client for the Katra Cognitive Memory MCP server.
  *
  * Wraps the low-level MCP protocol details (JSON-RPC, SSE, sessions) behind
- * typed, async methods matching each of the 29 Satori tools.
+ * typed, async methods matching each of the 29 Katra tools.
  */
-export class SatoriClient {
+export class KatraClient {
   readonly #mcp: MCPClient;
   #closed = false;
 
   /**
-   * Create a new SatoriClient.
+   * Create a new KatraClient.
    *
    * @param options - Server URL, API key, and optional fetch override.
    *
    * @example
    * ```ts
-   * const katra = new SatoriClient({
+   * const katra = new KatraClient({
    *   url: 'http://localhost:3112',
    *   apiKey: 'sk-my-secret',
    * });
    * ```
    */
-  constructor(options: SatoriClientOptions) {
+  constructor(options: KatraClientOptions) {
     this.#mcp = new MCPClient({
       url: options.url,
       apiKey: options.apiKey,
@@ -115,7 +115,7 @@ export class SatoriClient {
    * ```
    */
   async initialize(): Promise<void> {
-    if (this.#closed) throw new Error('SatoriClient is closed');
+    if (this.#closed) throw new Error('KatraClient is closed');
     await this.#mcp.initialize();
   }
 
@@ -623,7 +623,7 @@ export class SatoriClient {
   // ── Response Parsers ─────────────────────────────────────────────
   //
   // Each parser extracts structured data from the text/plain MCP tool
-  // responses. The Satori server returns Markdown-formatted responses,
+  // responses. The Katra server returns Markdown-formatted responses,
   // so we extract key fields via regex and line iteration.
 
   #parseStoreMemoryResult(text: string): StoreMemoryResult {

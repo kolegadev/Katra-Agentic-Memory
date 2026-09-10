@@ -1,4 +1,4 @@
-# Satori Memory — Data Processing Pipelines
+# Katra Memory — Data Processing Pipelines
 
 ## System Architecture
 
@@ -9,7 +9,7 @@ Pi5 (Docker, aarch64)
 │ :27017   │  │ :6379    │  │ :9000    │  │ :3100 (MCP)  │
 └──────────┘  └──────────┘  └──────────┘  │ :9002 (API)  │
                                            └──────┬───────┘
-                                          satori_watcher.py
+                                          katra_watcher.py
                                           (host-side daemon)
 ```
 
@@ -29,11 +29,11 @@ A conversation turn enters through one of:
 
 | Path | Source | Format |
 |------|--------|--------|
-| **A** — `satori_watcher.py` | Watches `.jsonl` files from OpenCode, Claude Code, OpenClaw, etc. | Batches per-session into `store_memory` MCP call |
+| **A** — `katra_watcher.py` | Watches `.jsonl` files from OpenCode, Claude Code, OpenClaw, etc. | Batches per-session into `store_memory` MCP call |
 | **B** — Session Ingestion Service | Reads `.jsonl` from `/sessions/` or `~/.katra/sessions/` | Per-message `createEvent()` |
 | **C** — REST API | `POST /api/v1/ingestion/ingest` | Direct message submission |
 
-**satori_watcher.py** (host-side Python daemon at `watcher/satori_watcher.py`; autonomous loop scripts — `adaptive_heartbeat.py`, `agent_executor.py`, `wake_service.py`, `satori_pubsub.py`, `inter_agent_bridge.py` — live in `scripts/python/`):
+**katra_watcher.py** (host-side Python daemon at `watcher/katra_watcher.py`; autonomous loop scripts — `adaptive_heartbeat.py`, `agent_executor.py`, `wake_service.py`, `katra_pubsub.py`, `inter_agent_bridge.py` — live in `scripts/python/`):
 - Watches session directories for OpenClaw, Claude Code, OpenCode, Codex, KiloClaw, KimiClaw, Hermes
 - Parses `.jsonl` files extracting user/assistant turns
 - Batches each session's turns into a single `store_memory` MCP call to `http://localhost:3112/mcp` (configurable via `KATRA_MCP_URL`)
@@ -46,7 +46,7 @@ A conversation turn enters through one of:
 **File:** `services/episodic-event-manager.js`
 **Collection:** `episodic_events`
 
-**Write scope (identity separation, 2026-08-21):** the writer's `user_id` is resolved from the client key presented (satori / shoshin / zanshin) — never from client self-report. `resolveWriteScope()` (`services/memory/write-scope-policy.js`) stamps every event: personal kinds (`journal`, `reflection`, `emotional`, `insight`) are always private (`shared_id: null`), every other write defaults to `shared_id: "my-team"` unless `private: true` is passed.
+**Write scope (identity separation, 2026-08-21):** the writer's `user_id` is resolved from the client key presented — never from client self-report. `resolveWriteScope()` (`services/memory/write-scope-policy.js`) stamps every event: personal kinds (`journal`, `reflection`, `emotional`, `insight`) are always private (`shared_id: null`), every other write defaults to `shared_id: "my-team"` unless `private: true` is passed.
 
 `EpisodicEventManager.createEvent()` for each message:
 

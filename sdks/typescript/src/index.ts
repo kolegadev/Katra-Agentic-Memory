@@ -1,14 +1,14 @@
 /**
- * Satori SDK for TypeScript
+ * Katra SDK for TypeScript
  *
- * Typed client for the Satori Cognitive Memory server.
+ * Typed client for the Katra Cognitive Memory server.
  * Provides access to all 29 MCP tools via a clean async API.
  *
  * @example
  * ```ts
- * import { SatoriClient } from '@satori/sdk';
+ * import { KatraClient } from '@katra/sdk';
  *
- * const katra = new SatoriClient({ url: 'http://localhost:3112' });
+ * const katra = new KatraClient({ url: 'http://localhost:3112' });
  *
  * // Store a memory
  * await katra.storeMemory({ content: 'User likes dark mode', category: 'preference' });
@@ -21,16 +21,16 @@
  * console.log(health);
  * ```
  *
- * @module @satori/sdk
+ * @module @katra/sdk
  */
 
-export { SatoriClient } from './client.js';
+export { KatraClient } from './client.js';
 
 // Re-export error classes for consumers who want to catch specific errors
 export {
-  SatoriError,
-  SatoriAuthError,
-  SatoriConnectionError,
+  KatraError,
+  KatraAuthError,
+  KatraConnectionError,
 } from './errors.js';
 
 // Re-export the low-level MCP client for advanced usage
@@ -46,7 +46,7 @@ export type {
   MCPInitializeResult,
 
   // Client config
-  SatoriClientOptions,
+  KatraClientOptions,
 
   // Core Memory
   StoreMemoryParams,

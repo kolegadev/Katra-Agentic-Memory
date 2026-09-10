@@ -1,0 +1,27 @@
+apiVersion: v2
+name: katra
+description: Cognitive Memory as a Service for AI Agents
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+icon: https://raw.githubusercontent.com/openclaw/katra/main/docs/katra-icon.png
+keywords:
+  - cognitive-memory
+  - ai-agents
+  - memory-service
+  - mcp
+home: https://github.com/openclaw/katra
+sources:
+  - https://github.com/openclaw/katra
+maintainers:
+  - name: OpenClaw
+    email: hello@openclaw.ai
+dependencies:
+  - name: mongodb
+    version: "~15.6"
+    repository: "oci://registry-1.docker.io/bitnamicharts"
+    condition: mongodb.enabled
+  - name: redis
+    version: "~19.6"
+    repository: "oci://registry-1.docker.io/bitnamicharts"
+    condition: redis.enabled

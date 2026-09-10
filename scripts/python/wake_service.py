@@ -5,7 +5,8 @@ Subscribes to Redis pub-sub channel katra:events:{shared_id}.
 On inter-agent message, determines the target agent and:
   1. Stores in Katra working_memory for the target agent
   2. Writes to a wake file the agent's hook checks
-  3. For Satori/Shoshin/Zanshin/Lilly/Zefir: writes to ~/.katra/bulletins/<name>.json
+  3. For each configured identity (KATRA_USER_ID + KATRA_EXTRA_IDENTITIES):
+     writes to ~/.katra/bulletins/<user_id>.json
   4. Legacy aliases: OpenCode → opencode.json, KolegaCode → kolegacode.json
 
 Also runs a periodic semantic fallback scan so bullets stored with a
@@ -57,25 +58,60 @@ SEMSCAN_STATE = os.path.expanduser("~/.katra/wake-service-semscan.json")
 SEMSCAN_LIMIT = int(os.environ.get("WAKE_SEMSCAN_LIMIT", "50"))
 
 # Attention pattern: "Attention: AgentName — ..." or "Attention: AgentName\n..."
-# F3 (identity separation): the three identities first, then the newer team
-# members (Lilly, Zefir); legacy aliases (OpenCoder/OpenCode/KolegaCoder/
-# KolegaCode) kept for old messages.
+# Identities are deployment data: the local identity (KATRA_USER_ID) plus
+# KATRA_EXTRA_IDENTITIES ('user_id:Display Name' pairs). Legacy aliases
+# (OpenCoder/OpenCode/KolegaCoder/KolegaCode) kept for old messages.
+LOCAL_ID = os.environ.get("KATRA_USER_ID", "katra")
+
+
+def _configured_identities() -> dict[str, str]:
+    """{canonical display name: user_id} from the deployment environment."""
+    out: dict[str, str] = {}
+
+    def add(user_id: str, display: str) -> None:
+        uid = user_id.strip()
+        if not uid:
+            return
+        out[(display or uid).strip()] = uid
+
+    add(LOCAL_ID, LOCAL_ID.title())
+    for part in (os.environ.get("KATRA_EXTRA_IDENTITIES") or "").split(","):
+        if not part.strip():
+            continue
+        uid, sep, disp = part.strip().partition(":")
+        add(uid, disp if sep else uid)
+    return out
+
+
+IDENTITY_ALIASES: dict[str, str] = {
+    "OpenCoder": "opencode",
+    "OpenCode": "opencode",
+    "KolegaCoder": "kolegacode",
+    "KolegaCode": "kolegacode",
+}
+
+AGENT_WAKE_FILES: dict[str, str] = {}
+_MATCH_LOOKUP: dict[str, str] = {}
+
+
+def _build_wake_files() -> None:
+    for display, uid in _configured_identities().items():
+        AGENT_WAKE_FILES[display] = os.path.expanduser(f"~/.katra/bulletins/{uid}.json")
+    for alias, uid in IDENTITY_ALIASES.items():
+        AGENT_WAKE_FILES.setdefault(alias, os.path.expanduser(f"~/.katra/bulletins/{uid}.json"))
+    for display in AGENT_WAKE_FILES:
+        _MATCH_LOOKUP[display.lower()] = display
+    # Also addressable by raw user_id (e.g. "Attention: agent-a").
+    for display, uid in _configured_identities().items():
+        _MATCH_LOOKUP.setdefault(uid.lower(), display)
+
+
+_build_wake_files()
+
 ATTN_PATTERN = re.compile(
-    r"Attention:\s*(Satori|Shoshin|Zanshin|Lilly|Zefir|OpenCoder|OpenCode|KolegaCoder|KolegaCode)",
+    r"Attention:\s*(" + "|".join(sorted(_MATCH_LOOKUP, key=len, reverse=True)) + ")",
     re.IGNORECASE,
 )
-
-AGENT_WAKE_FILES = {
-    "Satori": os.path.expanduser("~/.katra/bulletins/satori.json"),
-    "Shoshin": os.path.expanduser("~/.katra/bulletins/shoshin.json"),
-    "Zanshin": os.path.expanduser("~/.katra/bulletins/zanshin.json"),
-    "Lilly": os.path.expanduser("~/.katra/bulletins/lilly.json"),
-    "Zefir": os.path.expanduser("~/.katra/bulletins/zefir.json"),
-    "OpenCoder": os.path.expanduser("~/.katra/bulletins/opencode.json"),
-    "OpenCode": os.path.expanduser("~/.katra/bulletins/opencode.json"),
-    "KolegaCoder": os.path.expanduser("~/.katra/bulletins/kolegacode.json"),
-    "KolegaCode": os.path.expanduser("~/.katra/bulletins/kolegacode.json"),
-}
 
 
 def _api_post(path: str, data: dict) -> bool:
@@ -103,7 +139,7 @@ def store_wake_memory(agent: str, content_preview: str, event_id: str) -> None:
     _api_post("memory/working", {
         "session_id": f"wake-{agent.lower()}",
         "action": "store",
-        "user_id": "satori",
+        "user_id": "katra",
         "content": json.dumps({
             "type": "inter-agent-wake",
             "from": "wake-service",
@@ -168,22 +204,7 @@ def determine_target(content_preview: str) -> Optional[str]:
     """Extract target agent from 'Attention: AgentName' pattern."""
     match = ATTN_PATTERN.search(content_preview)
     if match:
-        agent = match.group(1)
-        # Normalize names
-        if agent.lower() == "satori":
-            return "Satori"
-        if agent.lower() == "shoshin":
-            return "Shoshin"
-        if agent.lower() == "zanshin":
-            return "Zanshin"
-        if agent.lower() == "lilly":
-            return "Lilly"
-        if agent.lower() == "zefir":
-            return "Zefir"
-        if agent.lower() in ("opencoder", "opencode"):
-            return "OpenCode"
-        if agent.lower() in ("kolegacoder", "kolegacode"):
-            return "KolegaCode"
+        return _MATCH_LOOKUP.get(match.group(1).lower())
     return None
 
 
@@ -230,7 +251,7 @@ def semantic_fallback_scan() -> None:
 
     try:
         req = Request(
-            f"{KATRA_API}/memory/semantic/facts?user_id=satori&limit={SEMSCAN_LIMIT}",
+            f"{KATRA_API}/memory/semantic/facts?user_id=katra&limit={SEMSCAN_LIMIT}",
             headers={"Authorization": f"Bearer {KATRA_KEY}"},
         )
         with urlopen(req, timeout=10) as resp:

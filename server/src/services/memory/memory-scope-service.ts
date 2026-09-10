@@ -13,12 +13,12 @@ import { getTenantContext } from '../../database/tenant-context.js';
 /**
  * System-wide default user id. Used as the fallback for both store and search
  * when no user_id is supplied, so the two sides stay aligned. Reads from
- * SOLOMEM_USER_ID (set in .env) so deployments can configure it in one place.
+ * KATRA_USER_ID (set in .env) so deployments can configure it in one place.
  */
 // F3 (identity separation): the legacy pre-separation default user id was
-// migrated to 'satori' — deployments override via SOLOMEM_USER_ID
-// (docker-compose sets satori). See docs/contracts/identity-separation.md.
-export const DEFAULT_USER_ID = process.env.SOLOMEM_USER_ID || 'satori';
+// migrated to 'katra' — deployments override via KATRA_USER_ID
+// (docker-compose sets katra). Deployment notes live in the git-ignored private/ folder.
+export const DEFAULT_USER_ID = process.env.KATRA_USER_ID || 'katra';
 
 export interface MemoryScopeConfig {
   mode: 'personal' | 'shared' | 'hybrid';

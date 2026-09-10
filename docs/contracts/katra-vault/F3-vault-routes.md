@@ -62,8 +62,8 @@ caller identity; follow the exact pattern of existing caller-aware tools.
 
 ## Success criteria (all must pass)
 1. REST: untrusted caller POSTs private secret → 201; stored `owner.user_id` == caller.
-2. REST: untrusted caller POSTs with `ownerUserId: 'lilly'` → **ignored**; stored owner is caller (IDOR guard restored at route layer).
-3. REST: trusted caller POSTs with `ownerUserId: 'lilly'` → stored under lilly.
+2. REST: untrusted caller POSTs with `ownerUserId: 'alex'` → **ignored**; stored owner is caller (IDOR guard restored at route layer).
+3. REST: trusted caller POSTs with `ownerUserId: 'alex'` → stored under alex.
 4. REST list: caller B cannot see caller A's private secret; both see team secrets.
 5. REST GET secret: response key set ⊆ SecretMeta keys; no envelope/value/ciphertext anywhere in body (assert substring absence).
 6. REST DELETE/rotate: non-owner untrusted → 403 and row unchanged; owner → 200.

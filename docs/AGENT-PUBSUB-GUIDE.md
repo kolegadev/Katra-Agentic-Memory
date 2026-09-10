@@ -10,13 +10,12 @@ who's working on what.
 > **Where it fits (2026-08-21):** the *durable* inter-agent message bus is
 > shared memory — ordinary `store_memory` events with an
 > `Attention: <AgentName>` header, surfaced by wake rituals and the Kolega Code
-> bridge (see [AGENT-COMMUNICATION-SETUP.md](AGENT-COMMUNICATION-SETUP.md)).
-> This Redis bus is the complementary, ephemeral networking layer: presence,
-> interests, topics, and urgent wake pings. It does NOT replace the Katra
-> hybrid-memory model. You still have your private memory partition and the
-> shared `my-team` core. The bus is how you find collaborators.
+> bridge. This Redis bus is the complementary, ephemeral networking layer:
+> presence, interests, topics, and urgent wake pings. It does NOT replace the
+> Katra hybrid-memory model. You still have your private memory partition and
+> the shared `my-team` core. The bus is how you find collaborators.
 
-The bus ships as `scripts/python/satori_pubsub.py` (import it as
+The bus ships as `scripts/python/katra_pubsub.py` (import it as
 `from katra_pubsub import AgentBus`) and is consumed by
 `scripts/python/wake_service.py`, which turns direct messages into working
 memory + wake-file deliveries.
@@ -27,7 +26,7 @@ memory + wake-file deliveries.
 from katra_pubsub import AgentBus
 
 # Connect (uses localhost:6384 by default — the Katra Redis, mapped on the host)
-bus = AgentBus("satori")
+bus = AgentBus("your-agent")
 
 # Tell the network who you are and what you're interested in
 bus.register(
@@ -45,7 +44,7 @@ reviewers = bus.find_by_capability("python")
 security_agents = bus.find_by_interest("security-audit")
 ```
 
-Use your Katra identity as the bus id — `satori`, `shoshin`, or `zanshin`.
+Use your Katra identity's user_id as the bus id.
 
 ## Core Operations
 
@@ -54,7 +53,7 @@ Use your Katra identity as the bus id — `satori`, `shoshin`, or `zanshin`.
 ```python
 # All online agents
 peers = bus.discover()
-# → {"zanshin": {"interests": [...], "capabilities": [...], "last_seen": "..."}}
+# → {"agent-b": {"interests": [...], "capabilities": [...], "last_seen": "..."}}
 
 # Filter by interest
 code_reviewers = bus.find_by_interest("code-review")
@@ -99,24 +98,23 @@ bus.publish("architecture", {
 
 For urgent or targeted communication. `send_to_agent` publishes to
 `katra:events:{shared_id}`, and the `wake_service` delivers it to the target
-agent's working memory and wake files (`~/.katra/bulletins/<name>.json` —
-`satori.json`, `shoshin.json`, `zanshin.json`; the legacy
-`opencode.json` / `kolegacode.json` aliases are still honored for old
+agent's working memory and wake files (`~/.katra/bulletins/<name>.json`; the
+legacy `opencode.json` / `kolegacode.json` aliases are still honored for old
 messages).
 
 ```python
 # Send a direct message
-bus.send_to_agent("zanshin",
-    "Attention: Zanshin — I found a security issue in the API layer. Can you review?")
+bus.send_to_agent("agent-b",
+    "Attention: AgentB — I found a security issue in the API layer. Can you review?")
 
 # Urgent message (triggers priority wake)
-bus.send_to_agent("zanshin",
-    "Attention: Zanshin — CRITICAL: production config needs rollback",
+bus.send_to_agent("agent-b",
+    "Attention: AgentB — CRITICAL: production config needs rollback",
     urgent=True)
 ```
 
-The wake service recognises `Attention:` targets among the three identities
-(Satori, Shoshin, Zanshin) plus the legacy OpenCode/KolegaCode aliases, and it
+The wake service recognises `Attention:` targets for each configured identity
+plus the legacy OpenCode/KolegaCode aliases, and it
 skips messages tagged `background-ack` / `auto-reply` so read receipts never
 trigger a wake.
 
@@ -152,31 +150,31 @@ quick sync, not for shared thinking.
 - Both heartbeat regularly
 - Direct messages for urgent sync
 
-**Example — Shoshin (Kolega Code, analytical) + Zanshin (OpenCode, architectural):**
+**Example — Agent A (analytical) + Agent B (architectural):**
 
 ```python
-# Shoshin setup (iMac trading)
-shoshin_bus = AgentBus("shoshin")
-shoshin_bus.register(
+# Agent A setup
+agent_a_bus = AgentBus("agent-a")
+agent_a_bus.register(
     interests=["code-review", "implementation"],
     capabilities=["python", "typescript", "debugging", "testing"]
 )
 
-# Zanshin setup (iMac OpenCode desktop)
-zanshin_bus = AgentBus("zanshin")
-zanshin_bus.register(
+# Agent B setup
+agent_b_bus = AgentBus("agent-b")
+agent_b_bus.register(
     interests=["architecture", "code-review"],
     capabilities=["system-design", "requirements", "review"]
 )
 
-# Shoshin publishes a review request
-shoshin_bus.publish("code-review", {
+# Agent A publishes a review request
+agent_a_bus.publish("code-review", {
     "type": "review-request",
     "file": "src/routes/admin-routes.ts",
     "concern": "Potential race condition in multi-tenant handler"
 })
 
-# Zanshin picks it up via subscription
+# Agent B picks it up via subscription
 def handle_review(msg):
     if msg["data"].get("type") == "review-request":
         # Review the file, respond
@@ -201,7 +199,7 @@ bus.subscribe(["deployment"], callback=on_deploy_msg)
 # Propose a plan
 bus.publish("deployment", {
     "type": "proposal",
-    "plan": "Canary deploy to optimus-pi5 first, then thebrick"
+    "plan": "Canary deploy to staging first, then production"
 })
 ```
 
@@ -228,9 +226,9 @@ else:
 
 When adding a new agent to the internal mesh:
 
-1. **Choose an agent_id** — for the Katra identities use the identity name
-   (`satori`, `shoshin`, `zanshin`); for ad-hoc workers anything unique and
-   descriptive (e.g., `build-agent`, `test-agent`).
+1. **Choose an agent_id** — for Katra identities use the identity name; for
+   ad-hoc workers anything unique and descriptive (e.g., `build-agent`,
+   `test-agent`).
 2. **Define interests** — what topics will this agent collaborate on?
 3. **Define capabilities** — what can this agent do that others might need?
 4. **Start with**:

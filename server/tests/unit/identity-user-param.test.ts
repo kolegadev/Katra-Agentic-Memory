@@ -50,7 +50,7 @@ import {
 } from '../../src/utils/api-key-manager.js';
 
 const ADMIN_KEY = 'katra-admin-f3-test-key';
-const CLIENT_KEY = 'katra-shoshin-f3-test-key';
+const CLIENT_KEY = 'katra-agent-a-f3-test-key';
 const envNames = ['MCP_API_KEY', 'ADMIN_API_KEY', 'KATRA_API_KEY', 'BACKUP_MCP_KEYS', 'BACKUP_KATRA_KEYS'];
 
 const app = new Hono();
@@ -77,14 +77,14 @@ describe('Admin identity endpoint — ?user_id= (F3)', () => {
     process.env.MCP_API_KEY = 'katra-mcp-f3-test-key';
     process.env.KATRA_API_KEY = ADMIN_KEY;
     await ensureApiKeys();
-    registerClientKeyIdentity(hashApiKey(CLIENT_KEY), 'shoshin');
+    registerClientKeyIdentity(hashApiKey(CLIENT_KEY), 'agent-a');
     store.set('agent_identity', {
-      name: 'Satori',
+      name: 'Katra',
       chosen_by: 'the agent',
       established: '2026-08-19',
     });
-    store.set('agent_identity:shoshin', {
-      name: 'Shoshin',
+    store.set('agent_identity:agent-a', {
+      name: 'Agent-A',
       chosen_by: 'the agent',
       established: '2026-08-21',
     });
@@ -97,83 +97,83 @@ describe('Admin identity endpoint — ?user_id= (F3)', () => {
   });
 
   it('GET ?user_id= without a key → 401', async () => {
-    const res = await getIdentity('http://localhost/api/v1/admin/identity?user_id=shoshin');
+    const res = await getIdentity('http://localhost/api/v1/admin/identity?user_id=agent-a');
     expect(res.status).toBe(401);
     const body = await res.json();
     expect(body.message).toContain('Admin API key required');
   });
 
   it('GET ?user_id= with a client key (not admin) → 401', async () => {
-    const res = await getIdentity('http://localhost/api/v1/admin/identity?user_id=shoshin', CLIENT_KEY);
+    const res = await getIdentity('http://localhost/api/v1/admin/identity?user_id=agent-a', CLIENT_KEY);
     expect(res.status).toBe(401);
   });
 
-  it('GET ?user_id=shoshin with the admin key returns the Shoshin record', async () => {
-    const res = await getIdentity('http://localhost/api/v1/admin/identity?user_id=shoshin', ADMIN_KEY);
+  it('GET ?user_id=agent-a with the admin key returns the Agent-A record', async () => {
+    const res = await getIdentity('http://localhost/api/v1/admin/identity?user_id=agent-a', ADMIN_KEY);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.success).toBe(true);
-    expect(body.identity.user_id).toBe('shoshin');
-    expect(body.identity.name).toBe('Shoshin');
+    expect(body.identity.user_id).toBe('agent-a');
+    expect(body.identity.name).toBe('Agent-A');
     expect(body.identity.established).toBe('2026-08-21');
   });
 
-  it('GET ?user_id=zanshin with the admin key returns an unnamed default identity when the record is absent', async () => {
-    const res = await getIdentity('http://localhost/api/v1/admin/identity?user_id=zanshin', ADMIN_KEY);
+  it('GET ?user_id=agent-b with the admin key returns an unnamed default identity when the record is absent', async () => {
+    const res = await getIdentity('http://localhost/api/v1/admin/identity?user_id=agent-b', ADMIN_KEY);
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.identity.user_id).toBe('zanshin');
+    expect(body.identity.user_id).toBe('agent-b');
     // F3: a missing per-user record must NEVER fall back to another agent's
-    // identity (the legacy record is Satori's).
-    expect(body.identity.name).toBe('zanshin');
-    expect(body.identity.name).not.toBe('Satori');
+    // identity (the legacy record is Katra's).
+    expect(body.identity.name).toBe('agent-b');
+    expect(body.identity.name).not.toBe('Katra');
     expect(body.identity.is_default).toBe(true);
     expect(body.identity.chosen_by).toBe('default (unnamed)');
   });
 
-  it('GET ?user_id=shoshin with the admin key returns an unnamed default identity when the record is absent', async () => {
-    store.delete('agent_identity:shoshin');
-    const res = await getIdentity('http://localhost/api/v1/admin/identity?user_id=shoshin', ADMIN_KEY);
+  it('GET ?user_id=agent-a with the admin key returns an unnamed default identity when the record is absent', async () => {
+    store.delete('agent_identity:agent-a');
+    const res = await getIdentity('http://localhost/api/v1/admin/identity?user_id=agent-a', ADMIN_KEY);
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.identity.user_id).toBe('shoshin');
-    expect(body.identity.name).toBe('shoshin');
-    expect(body.identity.name).not.toBe('Satori');
+    expect(body.identity.user_id).toBe('agent-a');
+    expect(body.identity.name).toBe('agent-a');
+    expect(body.identity.name).not.toBe('Katra');
     expect(body.identity.is_default).toBe(true);
   });
 
   it('PUT ?user_id= without a key → 401 (router auth middleware)', async () => {
     const res = await putIdentity(
-      'http://localhost/api/v1/admin/identity?user_id=zanshin',
-      { name: 'Zanshin' },
+      'http://localhost/api/v1/admin/identity?user_id=agent-b',
+      { name: 'Agent-B' },
     );
     expect(res.status).toBe(401);
   });
 
-  it('PUT ?user_id=zanshin with the admin key writes agent_identity:zanshin', async () => {
+  it('PUT ?user_id=agent-b with the admin key writes agent_identity:agent-b', async () => {
     const res = await putIdentity(
-      'http://localhost/api/v1/admin/identity?user_id=zanshin',
-      { name: 'Zanshin', chosen_by: 'the agent', established: '2026-08-21' },
+      'http://localhost/api/v1/admin/identity?user_id=agent-b',
+      { name: 'Agent-B', chosen_by: 'the agent', established: '2026-08-21' },
       ADMIN_KEY,
     );
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.success).toBe(true);
-    expect(body.identity.name).toBe('Zanshin');
-    expect(body.identity.user_id).toBe('zanshin');
-    expect(store.get('agent_identity:zanshin')?.name).toBe('Zanshin');
-    // The legacy satori record is untouched.
-    expect(store.get('agent_identity')?.name).toBe('Satori');
+    expect(body.identity.name).toBe('Agent-B');
+    expect(body.identity.user_id).toBe('agent-b');
+    expect(store.get('agent_identity:agent-b')?.name).toBe('Agent-B');
+    // The legacy katra record is untouched.
+    expect(store.get('agent_identity')?.name).toBe('Katra');
   });
 
-  it('PUT without user_id keeps the legacy-record behavior (satori)', async () => {
+  it('PUT without user_id keeps the legacy-record behavior (katra)', async () => {
     const res = await putIdentity(
       'http://localhost/api/v1/admin/identity',
-      { name: 'Satori Renamed' },
+      { name: 'Katra Renamed' },
       ADMIN_KEY,
     );
     expect(res.status).toBe(200);
-    expect(store.get('agent_identity')?.name).toBe('Satori Renamed');
-    expect(store.has('agent_identity:satori')).toBe(false);
+    expect(store.get('agent_identity')?.name).toBe('Katra Renamed');
+    expect(store.has('agent_identity:katra')).toBe(false);
   });
 });

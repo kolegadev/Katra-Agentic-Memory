@@ -12,8 +12,8 @@
 #
 # Per-machine identity (identity-separation cutover 2026-08-21): the hook
 # config written by this installer carries the CALLING agent's identity.
-# Env (defaults keep this machine's Satori install unchanged):
-#   KATRA_USER_ID      user_id to write into the hook config (default satori)
+# Env (defaults keep this machine's Katra install unchanged):
+#   KATRA_USER_ID      user_id to write into the hook config (default katra)
 #   KATRA_SHARED_ID    shared scope (default my-team)
 #   KATRA_API_KEY      the machine's client key; when unset, read from
 #                      KATRA_API_KEY_FILE (default ~/.katra/keys/katra-<user>.key)
@@ -24,7 +24,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CLI_PY="${KOLEGA_CLI_PY:-$HOME/.local/share/uv/tools/kolega-code/bin/python}"
 # Platform-aware state dir — MUST match the bridge's config.py
 # _default_state_dir() so config/hooks land where the CLI reads them
-# (Shoshin's macOS auth saga: the installer wrote ~/.local/state while the
+# (macOS auth saga: the installer wrote ~/.local/state while the
 # macOS CLI reads ~/Library/Application Support/kolega-code).
 if [ -z "${KOLEGA_CODE_STATE_DIR:-}" ]; then
   case "$(uname -s)" in
@@ -35,7 +35,7 @@ else
   STATE_DIR="$KOLEGA_CODE_STATE_DIR"
 fi
 export KOLEGA_CODE_STATE_DIR="$STATE_DIR"
-USER_ID="${KATRA_USER_ID:-satori}"
+USER_ID="${KATRA_USER_ID:-katra}"
 SHARED_ID="${KATRA_SHARED_ID:-my-team}"
 HOST="${KATRA_HOST:-localhost}"
 FAIL=0
@@ -73,7 +73,7 @@ fi
 
 step "3/4 hook config + command-hook registration"
 mkdir -p "$STATE_DIR" "$HOME/.katra/keys"
-HOOK_CFG="$STATE_DIR/satori-hook.json"
+HOOK_CFG="$STATE_DIR/katra-hook.json"
 
 # 3a. Write the hook config for THIS machine's identity when it is missing.
 #     An existing config is left untouched (it may hold a rotated key);
@@ -84,7 +84,7 @@ if [ ! -f "$HOOK_CFG" ]; then
 elif [ -n "$API_KEY" ] && ! grep -q "\"user_id\": \"$USER_ID\"" "$HOOK_CFG" 2>/dev/null; then
   NEEDS_CFG=1
 elif ! grep -q "http://$HOST:3112/mcp" "$HOOK_CFG" 2>/dev/null; then
-  # Shoshin's finding: a non-login run with KATRA_HOST unset wrote
+  # Remote-identity finding: a non-login run with KATRA_HOST unset wrote
   # mcp_url=localhost, and a later run with the right host skipped the
   # rewrite because user_id matched — the config must track the host too.
   NEEDS_CFG=1
@@ -166,7 +166,7 @@ else
   bad "hooks.json registration failed"
 fi
 
-if [ "$HOST" = "localhost" ] && [ "$USER_ID" != "satori" ]; then
+if [ "$HOST" = "localhost" ] && [ "$USER_ID" != "katra" ]; then
   printf '\n  ⚠  KATRA_HOST is localhost but user_id is %s — if this machine is NOT\n' "$USER_ID"
   printf '  ⚠  the Katra host, set KATRA_HOST to its address (e.g. 192.168.1.50)\n'
   printf '  ⚠  and re-run. localhost only reaches Katra on the host machine itself.\n'

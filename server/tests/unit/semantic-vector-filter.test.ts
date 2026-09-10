@@ -1,6 +1,6 @@
 /**
  * buildSemanticVectorFilter — regression pin for the cross-identity
- * semantic-search leak (Zanshin verification report 2026-08-21).
+ * semantic-search leak (Agent-B verification report 2026-08-21).
  *
  * The vector pass of search_memories used to scan semantic_facts from ALL
  * users ({ embedding: { $exists: true } } only), leaking private memories
@@ -11,10 +11,10 @@ import { buildSemanticVectorFilter, buildScopedTextQueries } from '../../src/mcp
 
 describe('buildSemanticVectorFilter', () => {
   it('carries the caller scope filter alongside the embedding requirement', () => {
-    const base = { user_id: 'shoshin' };
+    const base = { user_id: 'agent-a' };
     const f = buildSemanticVectorFilter(base, false);
     expect(f).toEqual({
-      user_id: 'shoshin',
+      user_id: 'agent-a',
       embedding: { $exists: true },
       status: { $ne: 'retracted' },
     });
@@ -22,7 +22,7 @@ describe('buildSemanticVectorFilter', () => {
 
   it('hybrid scope ($or) survives into the vector filter', () => {
     const base = {
-      $or: [{ user_id: 'zanshin' }, { shared_id: 'my-team' }],
+      $or: [{ user_id: 'agent-b' }, { shared_id: 'my-team' }],
     };
     const f = buildSemanticVectorFilter(base, true);
     expect(f.$or).toEqual(base.$or);
@@ -41,7 +41,7 @@ describe('buildScopedTextQueries — keyword-pass scope preservation', () => {
 
   it('hybrid scope $or is nested under $and, never overwritten', () => {
     const colFilter = {
-      $or: [{ user_id: 'zanshin' }, { shared_id: 'my-team' }],
+      $or: [{ user_id: 'agent-b' }, { shared_id: 'my-team' }],
     };
     const { regexQuery, textQuery } = buildScopedTextQueries(colFilter, contentConditions, 'leak');
     // The scope $or must survive UNCHANGED inside the $and array.
@@ -52,7 +52,7 @@ describe('buildScopedTextQueries — keyword-pass scope preservation', () => {
   });
 
   it('personal-mode filter (plain user_id) survives in both shapes', () => {
-    const colFilter = { user_id: 'shoshin', status: { $ne: 'retracted' } };
+    const colFilter = { user_id: 'agent-a', status: { $ne: 'retracted' } };
     const { regexQuery, textQuery } = buildScopedTextQueries(colFilter, contentConditions, 'leak');
     expect(regexQuery.$and[0]).toEqual(colFilter);
     expect(textQuery.$and[0]).toEqual(colFilter);

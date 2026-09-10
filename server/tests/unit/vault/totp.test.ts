@@ -144,14 +144,14 @@ describe('totp.ts — replay guard (criterion 3)', () => {
 
 describe('totp.ts — otpauth URI format (criterion 4)', () => {
   it('matches the exact contract format', () => {
-    expect(otpauthUri('lilly', RFC_SECRET)).toBe(
-      `otpauth://totp/Katra:lilly?secret=${RFC_SECRET}&issuer=Katra&algorithm=SHA1&digits=6&period=30`,
+    expect(otpauthUri('agent-c', RFC_SECRET)).toBe(
+      `otpauth://totp/Katra:agent-c?secret=${RFC_SECRET}&issuer=Katra&algorithm=SHA1&digits=6&period=30`,
     );
   });
 
   it('honors a custom issuer and keeps the default period/digits', () => {
-    expect(otpauthUri('shoshin', 'JBSWY3DPEHPK3PXP', 'Katra Lab')).toBe(
-      'otpauth://totp/Katra Lab:shoshin?secret=JBSWY3DPEHPK3PXP&issuer=Katra Lab&algorithm=SHA1&digits=6&period=30',
+    expect(otpauthUri('agent-a', 'JBSWY3DPEHPK3PXP', 'Katra Lab')).toBe(
+      'otpauth://totp/Katra Lab:agent-a?secret=JBSWY3DPEHPK3PXP&issuer=Katra Lab&algorithm=SHA1&digits=6&period=30',
     );
   });
 });

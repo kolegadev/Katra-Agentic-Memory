@@ -74,8 +74,8 @@ describe.skipIf(!mongoAvailable)('Vault migration (F8) — contract criteria', (
   let client: MongoClient;
   let store: VaultStore;
   const MK = generateMasterKey();
-  const TRUSTED: CallerIdentity = { user_id: 'satori', trusted: true };
-  const LILLY: CallerIdentity = { user_id: 'lilly', trusted: false };
+  const TRUSTED: CallerIdentity = { user_id: 'katra', trusted: true };
+  const AGENT_C: CallerIdentity = { user_id: 'agent-c', trusted: false };
   const tmpFiles: string[] = [];
 
   const semCol = (): ReturnType<Db['collection']> => db.collection(SEM);
@@ -87,7 +87,7 @@ describe.skipIf(!mongoAvailable)('Vault migration (F8) — contract criteria', (
   function makeKeyFile(contents: string): string {
     const p = path.join(
       os.tmpdir(),
-      `agentmail-lilly-f8-${process.pid}-${tmpFiles.length}.key`,
+      `agentmail-agent-c-f8-${process.pid}-${tmpFiles.length}.key`,
     );
     fs.writeFileSync(p, contents, 'utf8');
     tmpFiles.push(p);
@@ -131,15 +131,15 @@ describe.skipIf(!mongoAvailable)('Vault migration (F8) — contract criteria', (
     it('scores key-token docs 1, term-only docs 0.5, ignores unrelated docs, and never leaks content', async () => {
       const keyTokenDoc = {
         content: `agentmail api_key = ${KEY_TOKEN} — sent by AgentMail support, keep private`,
-        user_id: 'lilly',
+        user_id: 'agent-c',
       };
       const termOnlyDoc = {
         content: 'agentmail api_key: shared with the team in the notes for now',
-        user_id: 'shoshin',
+        user_id: 'agent-a',
       };
       const unrelatedDoc = {
         content: 'the weather in Tivat today is warm and sunny',
-        user_id: 'lilly',
+        user_id: 'agent-c',
       };
       const inserted = await semCol().insertMany([keyTokenDoc, termOnlyDoc, unrelatedDoc]);
 
@@ -173,8 +173,8 @@ describe.skipIf(!mongoAvailable)('Vault migration (F8) — contract criteria', (
   describe('2. hardDeleteDocsWithEmbeddings', () => {
     it('deletes source docs + referencing embedding docs, leaves unrelated embeddings, and is idempotent', async () => {
       const inserted = await semCol().insertMany([
-        { content: 'agentmail api_key = legacy-one', user_id: 'lilly' },
-        { content: 'agentmail api_key = legacy-two', user_id: 'lilly' },
+        { content: 'agentmail api_key = legacy-one', user_id: 'agent-c' },
+        { content: 'agentmail api_key = legacy-two', user_id: 'agent-c' },
       ]);
       const oid1 = inserted.insertedIds[0] as unknown as ObjectId;
       const oid2 = inserted.insertedIds[1] as unknown as ObjectId;
@@ -186,7 +186,7 @@ describe.skipIf(!mongoAvailable)('Vault migration (F8) — contract criteria', (
       const legacyDocs: LegacySecretDoc[] = [oid1, oid2].map((oid) => ({
         collection: SEM,
         _id: String(oid),
-        user_id: 'lilly',
+        user_id: 'agent-c',
         matched: LEGACY_MATCHED,
         score: 1,
       }));
@@ -215,39 +215,39 @@ describe.skipIf(!mongoAvailable)('Vault migration (F8) — contract criteria', (
 
   // ── Criterion 3: importAgentmailKey ─────────────────────────────────────
   describe('3. importAgentmailKey', () => {
-    it('stores the key as lilly/agentmail-api-key (agentmail, api_key, private), audit row exists, envelope round-trips', async () => {
+    it('stores the key as agent-c/agentmail-api-key (agentmail, api_key, private), audit row exists, envelope round-trips', async () => {
       const keyFile = makeKeyFile(`${KEY_FILE_VALUE}\n`);
       const result = await importAgentmailKey({
         store,
         caller: TRUSTED,
-        ownerUserId: 'lilly',
+        ownerUserId: 'agent-c',
         keyFilePath: keyFile,
       });
 
       expect(result).toEqual({
         file_exists: true,
         imported: true,
-        secret_id: 'lilly/agentmail-api-key',
+        secret_id: 'agent-c/agentmail-api-key',
         reason: null,
       });
 
-      const doc = await secCol().findOne({ secret_id: 'lilly/agentmail-api-key' });
+      const doc = await secCol().findOne({ secret_id: 'agent-c/agentmail-api-key' });
       expect(doc).not.toBeNull();
       expect(doc!.name).toBe('agentmail-api-key');
-      expect(doc!.owner.user_id).toBe('lilly'); // private scope → lilly partition
+      expect(doc!.owner.user_id).toBe('agent-c'); // private scope → agent-c partition
       expect(doc!.owner.shared_id).toBeUndefined();
       expect(doc!.service).toBe('agentmail');
       expect(doc!.kind).toBe('api_key');
 
       // F1 openSecret round-trip: envelope decrypts to the trimmed file contents
-      const plaintext = openSecret(doc!.envelope, 'user:lilly', MK);
+      const plaintext = openSecret(doc!.envelope, 'user:agent-c', MK);
       expect(plaintext).toBe(KEY_FILE_VALUE);
       expect(plaintext).not.toContain('\n'); // trimmed
 
       // value-free audit row exists
-      const auditRow = await audCol().findOne({ action: 'put', secret_id: 'lilly/agentmail-api-key' });
+      const auditRow = await audCol().findOne({ action: 'put', secret_id: 'agent-c/agentmail-api-key' });
       expect(auditRow).not.toBeNull();
-      expect(auditRow!.actor).toBe('satori');
+      expect(auditRow!.actor).toBe('katra');
       expect(JSON.stringify(auditRow)).not.toContain(KEY_FILE_VALUE);
     });
 
@@ -256,7 +256,7 @@ describe.skipIf(!mongoAvailable)('Vault migration (F8) — contract criteria', (
       const result = await importAgentmailKey({
         store,
         caller: TRUSTED,
-        ownerUserId: 'lilly',
+        ownerUserId: 'agent-c',
         keyFilePath: missing,
       });
       expect(result).toEqual({
@@ -273,12 +273,12 @@ describe.skipIf(!mongoAvailable)('Vault migration (F8) — contract criteria', (
   describe('4. scanPlaintextSecrets', () => {
     it('reports plaintext-secret rows with matched_pattern and a redacted <=80-char preview — token never leaks', async () => {
       await semCol().insertMany([
-        { content: `wifi password = ${WIFI_TOKEN} for the Tivat home network`, user_id: 'lilly' },
+        { content: `wifi password = ${WIFI_TOKEN} for the Tivat home network`, user_id: 'agent-c' },
         {
           content: `agentmail api_key = ${KEY_TOKEN} used by the mail sync script`,
-          user_id: 'shoshin',
+          user_id: 'agent-a',
         },
-        { content: 'remember to buy milk and bread', user_id: 'lilly' },
+        { content: 'remember to buy milk and bread', user_id: 'agent-c' },
       ]);
 
       const rows = await scanPlaintextSecrets(db, { collections: [SEM], maxResults: 10 });
@@ -286,7 +286,7 @@ describe.skipIf(!mongoAvailable)('Vault migration (F8) — contract criteria', (
       expect(rows).toHaveLength(2);
       const wifiRow = rows.find((r) => r.matched_pattern === 'password=');
       expect(wifiRow).toBeDefined();
-      expect(wifiRow!.user_id).toBe('lilly');
+      expect(wifiRow!.user_id).toBe('agent-c');
       expect(wifiRow!.redacted_preview).not.toContain(WIFI_TOKEN);
       expect(wifiRow!.redacted_preview).toContain('***');
       expect(wifiRow!.redacted_preview.length).toBeLessThanOrEqual(80);
@@ -303,9 +303,9 @@ describe.skipIf(!mongoAvailable)('Vault migration (F8) — contract criteria', (
 
     it('ignores redaction markers left by a previous migration run', async () => {
       await semCol().insertMany([
-        { content: 'password: [REDACTED→team:my-team/migrated-password-team-abcd1234] for the router', user_id: 'lilly' },
-        { content: 'api_key: [REDACTED→team:my-team/migrated-api_key-team-ef567890] for the script', user_id: 'lilly' },
-        { content: `wifi password = ${WIFI_TOKEN} still present`, user_id: 'lilly' },
+        { content: 'password: [REDACTED→team:my-team/migrated-password-team-abcd1234] for the router', user_id: 'agent-c' },
+        { content: 'api_key: [REDACTED→team:my-team/migrated-api_key-team-ef567890] for the script', user_id: 'agent-c' },
+        { content: `wifi password = ${WIFI_TOKEN} still present`, user_id: 'agent-c' },
       ]);
 
       const rows = await scanPlaintextSecrets(db, { collections: [SEM], maxResults: 10 });
@@ -318,10 +318,10 @@ describe.skipIf(!mongoAvailable)('Vault migration (F8) — contract criteria', (
 
     it('ignores placeholder, masked, and too-short values after the labels', async () => {
       await semCol().insertMany([
-        { content: 'api_key: str = DEFAULT_API_KEY  # must be configured via katra-hook.json', user_id: 'lilly' },
-        { content: 'api_key = ""  # no key set yet', user_id: 'lilly' },
-        { content: 'password: katr****2026 (already masked)', user_id: 'lilly' },
-        { content: 'password: ab', user_id: 'lilly' }, // too short
+        { content: 'api_key: str = DEFAULT_API_KEY  # must be configured via katra-hook.json', user_id: 'agent-c' },
+        { content: 'api_key = ""  # no key set yet', user_id: 'agent-c' },
+        { content: 'password: katr****2026 (already masked)', user_id: 'agent-c' },
+        { content: 'password: ab', user_id: 'agent-c' }, // too short
       ]);
 
       const rows = await scanPlaintextSecrets(db, { collections: [SEM], maxResults: 10 });
@@ -334,9 +334,9 @@ describe.skipIf(!mongoAvailable)('Vault migration (F8) — contract criteria', (
     it('deletes NOTHING, imports NOTHING, reports mode dry-run', async () => {
       const agentmailDoc = {
         content: `agentmail api_key = ${KEY_TOKEN} — legacy plaintext doc`,
-        user_id: 'lilly',
+        user_id: 'agent-c',
       };
-      const wifiDoc = { content: `wifi password = ${WIFI_TOKEN} at home`, user_id: 'lilly' };
+      const wifiDoc = { content: `wifi password = ${WIFI_TOKEN} at home`, user_id: 'agent-c' };
       const inserted = await semCol().insertMany([agentmailDoc, wifiDoc]);
       const agentmailOid = inserted.insertedIds[0] as unknown as ObjectId;
       await embCol().insertMany([
@@ -349,7 +349,7 @@ describe.skipIf(!mongoAvailable)('Vault migration (F8) — contract criteria', (
         db,
         store,
         caller: TRUSTED,
-        ownerUserId: 'lilly',
+        ownerUserId: 'agent-c',
         keyFilePath: keyFile,
         mode: 'dry-run',
         collections: [SEM],
@@ -388,9 +388,9 @@ describe.skipIf(!mongoAvailable)('Vault migration (F8) — contract criteria', (
     it('deletes seeded legacy docs + embeddings, imports the key file, re-scan confirms gone; second apply is idempotent', async () => {
       const agentmailDoc = {
         content: `agentmail api_key = ${KEY_TOKEN} — legacy plaintext doc`,
-        user_id: 'lilly',
+        user_id: 'agent-c',
       };
-      const wifiDoc = { content: `wifi password = ${WIFI_TOKEN} at home`, user_id: 'lilly' };
+      const wifiDoc = { content: `wifi password = ${WIFI_TOKEN} at home`, user_id: 'agent-c' };
       const inserted = await semCol().insertMany([agentmailDoc, wifiDoc]);
       const agentmailOid = inserted.insertedIds[0] as unknown as ObjectId;
       await embCol().insertMany([
@@ -402,7 +402,7 @@ describe.skipIf(!mongoAvailable)('Vault migration (F8) — contract criteria', (
         db,
         store,
         caller: TRUSTED,
-        ownerUserId: 'lilly',
+        ownerUserId: 'agent-c',
         keyFilePath: keyFile,
         collections: [SEM],
         embeddingsCollection: EMB,
@@ -419,7 +419,7 @@ describe.skipIf(!mongoAvailable)('Vault migration (F8) — contract criteria', (
       expect(report.deleted[0].embeddings_removed).toBe(2);
       // key imported
       expect(report.key_import.imported).toBe(true);
-      expect(report.key_import.secret_id).toBe('lilly/agentmail-api-key');
+      expect(report.key_import.secret_id).toBe('agent-c/agentmail-api-key');
       expect(report.key_import.reason).toBeNull();
 
       // the full report never contains raw secret values
@@ -437,21 +437,21 @@ describe.skipIf(!mongoAvailable)('Vault migration (F8) — contract criteria', (
       expect(wifiRow!.redacted_preview).not.toContain(WIFI_TOKEN);
 
       // F1 openSecret round-trip on the imported secret
-      const secretDoc = await secCol().findOne({ secret_id: 'lilly/agentmail-api-key' });
+      const secretDoc = await secCol().findOne({ secret_id: 'agent-c/agentmail-api-key' });
       expect(secretDoc).not.toBeNull();
-      expect(openSecret(secretDoc!.envelope, 'user:lilly', MK)).toBe(KEY_FILE_VALUE);
-      const auditRow = await audCol().findOne({ action: 'put', secret_id: 'lilly/agentmail-api-key' });
+      expect(openSecret(secretDoc!.envelope, 'user:agent-c', MK)).toBe(KEY_FILE_VALUE);
+      const auditRow = await audCol().findOne({ action: 'put', secret_id: 'agent-c/agentmail-api-key' });
       expect(auditRow).not.toBeNull();
-      expect(auditRow!.actor).toBe('satori');
+      expect(auditRow!.actor).toBe('katra');
 
       // idempotent second apply: nothing new to delete, no duplicate secret row
       const second = await runMigration({ ...opts, mode: 'apply' as const });
       expect(second.legacy_agentmail_docs).toEqual([]);
       expect(second.deleted).toEqual([]);
       expect(second.key_import.imported).toBe(true);
-      expect(second.key_import.secret_id).toBe('lilly/agentmail-api-key');
+      expect(second.key_import.secret_id).toBe('agent-c/agentmail-api-key');
       expect(JSON.stringify(second)).not.toContain(KEY_TOKEN);
-      expect(await secCol().countDocuments({ secret_id: 'lilly/agentmail-api-key' })).toBe(1);
+      expect(await secCol().countDocuments({ secret_id: 'agent-c/agentmail-api-key' })).toBe(1);
     });
   });
 
@@ -493,7 +493,7 @@ describe.skipIf(!mongoAvailable)('Vault migration (F8) — contract criteria', (
       // constant), audit previews (values redacted) — token in neither.
       await semCol().insertOne({
         content: `agentmail api_key = ${KEY_TOKEN} wifi password = ${WIFI_TOKEN}`,
-        user_id: 'lilly',
+        user_id: 'agent-c',
       });
       const legacy = await findLegacyAgentmailDocs(db, { collections: [SEM] });
       const audit = await scanPlaintextSecrets(db, { collections: [SEM] });
@@ -503,14 +503,14 @@ describe.skipIf(!mongoAvailable)('Vault migration (F8) — contract criteria', (
       expect(legacy[0].matched).toBe(LEGACY_MATCHED);
     });
 
-    it('LILLY (untrusted, owner) can open the imported secret; the open never leaks into reports', async () => {
+    it('AGENT_C (untrusted, owner) can open the imported secret; the open never leaks into reports', async () => {
       // Guard: owner-scoped open works via the store RBAC for the real owner
       const keyFile = makeKeyFile(`${KEY_FILE_VALUE}\n`);
-      await importAgentmailKey({ store, caller: TRUSTED, ownerUserId: 'lilly', keyFilePath: keyFile });
+      await importAgentmailKey({ store, caller: TRUSTED, ownerUserId: 'agent-c', keyFilePath: keyFile });
       await expect(
-        store.openSecretValue(LILLY, 'lilly/agentmail-api-key'),
+        store.openSecretValue(AGENT_C, 'agent-c/agentmail-api-key'),
       ).resolves.toBe(KEY_FILE_VALUE);
-      const auditRows = await store.listAudit(TRUSTED, { secretId: 'lilly/agentmail-api-key' });
+      const auditRows = await store.listAudit(TRUSTED, { secretId: 'agent-c/agentmail-api-key' });
       expect(JSON.stringify(auditRows)).not.toContain(KEY_FILE_VALUE);
     });
   });

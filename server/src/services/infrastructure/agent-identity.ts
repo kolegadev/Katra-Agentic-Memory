@@ -11,12 +11,13 @@
  * when no record exists: AGENT_IDENTITY_NAME env → 'Katra'.
  *
  * F3 (identity separation, 2026-08-21): identity records are now PER USER.
- * The legacy `agent_identity` record is Satori's (the pre-separation single
- * identity, established 2026-08-19). Each additional identity (Shoshin,
- * Zanshin) is stored under `agent_identity:<user_id>`. Per-user lookups
+ * The legacy `agent_identity` record is the local identity's (the
+ * pre-separation single identity, established 2026-08-19). Each additional
+ * identity is stored under `agent_identity:<user_id>`. Per-user lookups
  * read ONLY the per-user record; when it is missing they return an unnamed
  * default identity named after the user_id — never the legacy record. The
- * legacy record is reachable only through the no-arg call (satori's chain).
+ * legacy record is reachable only through the no-arg call (the local
+ * identity's chain).
  */
 
 import { get_database } from '../../database/connection.js';
@@ -43,7 +44,7 @@ export interface AgentIdentity {
 
 const LEGACY_DEFAULT_NAME = 'Unnamed Memory';
 
-/** Legacy single-identity record key — this record IS satori's. */
+/** Legacy single-identity record key — this record IS katra's. */
 export const LEGACY_IDENTITY_KEY = 'agent_identity';
 
 /** Per-user identity record key: `agent_identity:<user_id>` (F3). */
@@ -67,13 +68,13 @@ async function getStoredIdentity(key: string): Promise<AgentIdentity | null> {
 /**
  * Resolve the identity record for a user.
  *
- * - `getAgentIdentity('shoshin')` reads `agent_identity:shoshin`. When no
+ * - `getAgentIdentity('agent-a')` reads `agent_identity:agent-a`. When no
  *   per-user record exists it returns an unnamed DEFAULT identity named
  *   after the user_id — it must NEVER fall back to the legacy record,
  *   because that would hand one agent another agent's identity.
  * - `getAgentIdentity()` (no-arg) keeps the existing behavior: the legacy
  *   `agent_identity` record → AGENT_IDENTITY_NAME env → built-in default.
- *   This is satori's chain (backward compatibility).
+ *   This is the local identity's chain (backward compatibility).
  */
 export async function getAgentIdentity(userId?: string): Promise<AgentIdentity> {
   if (userId) {
@@ -118,7 +119,7 @@ export async function getAgentIdentityName(userId?: string): Promise<string> {
  * Persist an identity record.
  *
  * - `setAgentIdentity(record)` — one-arg form (existing behavior): writes
- *   the legacy `agent_identity` record, i.e. satori's identity.
+ *   the legacy `agent_identity` record, i.e. katra's identity.
  * - `setAgentIdentity(userId, record)` — per-user form (F3): writes
  *   `agent_identity:<user_id>` for the given identity.
  */

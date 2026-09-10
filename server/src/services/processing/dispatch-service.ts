@@ -213,7 +213,7 @@ class DispatchService {
             content: `${fact.fact_key}: ${fact.fact_value}`,
             source: 'extraction',
             confidence: fact.confidence,
-            // Preserve the original event timestamp so Solomon can answer "when" questions
+            // Preserve the original event timestamp so Katra can answer "when" questions
             source_event_timestamp: (context as any).source_event_timestamp || context.timestamp,
             timestamp: context.timestamp,
             metadata: {

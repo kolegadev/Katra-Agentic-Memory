@@ -118,8 +118,8 @@ describe('vault capability — MCP + REST wiring (criterion 10)', () => {
 
 describe('vault drivers — registry + agentmail (criterion 9)', () => {
   const SECRET_VALUE = 'agentmail-driver-key-9f3c2d1e-0a4b-5c6d';
-  const LILLY: CallerIdentity = { user_id: 'lilly', trusted: false };
-  const secretId = 'lilly/agentmail-api-key';
+  const AGENT_C: CallerIdentity = { user_id: 'agent-c', trusted: false };
+  const secretId = 'agent-c/agentmail-api-key';
 
   function fakeContext() {
     const calls: Array<Record<string, unknown>> = [];
@@ -130,7 +130,7 @@ describe('vault drivers — registry + agentmail (criterion 9)', () => {
       },
     );
     return {
-      ctx: { vaultHttp, caller: LILLY, secretId },
+      ctx: { vaultHttp, caller: AGENT_C, secretId },
       calls,
     };
   }
@@ -164,7 +164,7 @@ describe('vault drivers — registry + agentmail (criterion 9)', () => {
 
     await driver.ops.inbox_list(ctx);
     expect(calls[0]).toMatchObject({
-      caller: LILLY,
+      caller: AGENT_C,
       secretId,
       service: 'agentmail',
       method: 'GET',
@@ -229,9 +229,9 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
   const MK = generateMasterKey();
   const runId = randomBytes(4).toString('hex');
   const SECRET_VALUE = 'sk-live-capability-7a1f2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c';
-  const LILLY: CallerIdentity = { user_id: 'lilly', trusted: false };
-  const SHOSHIN: CallerIdentity = { user_id: 'shoshin', trusted: false };
-  const SATORI: CallerIdentity = { user_id: 'satori', trusted: true };
+  const AGENT_C: CallerIdentity = { user_id: 'agent-c', trusted: false };
+  const AGENT_A: CallerIdentity = { user_id: 'agent-a', trusted: false };
+  const KATRA: CallerIdentity = { user_id: 'katra', trusted: true };
   const PUBLIC_IP = '93.184.216.34';
 
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -267,7 +267,7 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
   /** Grant + private secret for `identity`, service-linked as requested. */
   async function grant(identity: string, service: string): Promise<void> {
     const res = await store.grantApproval({
-      caller: SATORI,
+      caller: KATRA,
       identity,
       service,
     });
@@ -276,7 +276,7 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
 
   async function putSecretFor(owner: string, tag: string): Promise<string> {
     const result = await store.putSecret({
-      caller: SATORI,
+      caller: KATRA,
       name: nameOf(tag),
       value: SECRET_VALUE,
       service: 'agentmail',
@@ -330,7 +330,7 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
   });
 
   const inputFor = (secretId: string, over: Record<string, unknown> = {}): Record<string, unknown> => ({
-    caller: LILLY,
+    caller: AGENT_C,
     secretId,
     service: 'agentmail',
     method: 'POST',
@@ -342,7 +342,7 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
 
   // ── Criterion 1: approval gate FIRST ─────────────────────────────
   it('criterion 1: no active approval → blocked no active approval, fetch never called, audit denied', async () => {
-    const secretId = await putSecretFor('lilly', 'noapproval');
+    const secretId = await putSecretFor('agent-c', 'noapproval');
     const fetchSpy = mockFetch(OK_RESPONSE);
     const cap = createCapability({ store, fetchImpl: fetchSpy, resolveHost: resolveTo(PUBLIC_IP) });
 
@@ -354,7 +354,7 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       action: 'capability_use',
-      actor: 'lilly',
+      actor: 'agent-c',
       service: 'agentmail',
       secret_id: secretId,
       outcome: 'denied',
@@ -366,8 +366,8 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
 
   // ── Criterion 2: approval active → injected fetch once, audit ok ─
   it('criterion 2: approved call fetches once with method/url/body and the exact header value', async () => {
-    await grant('lilly', 'agentmail');
-    const secretId = await putSecretFor('lilly', 'approved');
+    await grant('agent-c', 'agentmail');
+    const secretId = await putSecretFor('agent-c', 'approved');
     const fetchSpy = mockFetch(async (url, init) => {
       expect(url).toBe('https://api.agentmail.to/v0/inboxes');
       expect(init.method).toBe('POST');
@@ -386,7 +386,7 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       action: 'capability_use',
-      actor: 'lilly',
+      actor: 'agent-c',
       secret_id: secretId,
       service: 'agentmail',
       outcome: 'ok',
@@ -396,8 +396,8 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
 
   // ── Criterion 2b: injectScheme composes the header value ────────
   it('criterion 2b: injectScheme prefixes the header value; absent → raw secret', async () => {
-    await grant('lilly', 'github');
-    const secretId = await putSecretFor('lilly', 'scheme');
+    await grant('agent-c', 'github');
+    const secretId = await putSecretFor('agent-c', 'scheme');
     let seen: string | undefined;
     const fetchSpy = mockFetch(async (url, init) => {
       seen = (init.headers as Record<string, string>)['Authorization'];
@@ -412,8 +412,8 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
 
   // ── Criterion 3: secret redaction everywhere ────────────────────
   it('criterion 3: secret appears in no result, audit row JSON, or thrown error', async () => {
-    await grant('lilly', 'agentmail');
-    const secretId = await putSecretFor('lilly', 'redact');
+    await grant('agent-c', 'agentmail');
+    const secretId = await putSecretFor('agent-c', 'redact');
     const fetchSpy = mockFetch(async () => {
       throw new Error(`network exploded with ${SECRET_VALUE}`); // hostile upstream error
     });
@@ -455,11 +455,11 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
   it.each(SSRF_CASES.map((row, index): [string, string, string, number] => [...row, index]))(
     'criterion 4: SSRF blocked for %s → %s (no fetch)',
     async (url, reason, ip, index) => {
-      await grant('lilly', 'agentmail');
+      await grant('agent-c', 'agentmail');
       // A unique secret per case so "exactly one capability_use row per
       // attempt" is asserted in isolation (rows live in the shared
       // vault_audit collection and are only swept in afterAll).
-      const secretId = await putSecretFor('lilly', `ssrf-${index}`);
+      const secretId = await putSecretFor('agent-c', `ssrf-${index}`);
       const fetchSpy = mockFetch(OK_RESPONSE);
       const cap = createCapability({ store, fetchImpl: fetchSpy, resolveHost: resolveTo(ip) });
 
@@ -478,8 +478,8 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
   );
 
   it('criterion 4: non-443 port, userinfo URL, unresolvable host, and private-resolving public hostname all block without fetch', async () => {
-    await grant('lilly', 'agentmail');
-    const secretId = await putSecretFor('lilly', 'ssrf2');
+    await grant('agent-c', 'agentmail');
+    const secretId = await putSecretFor('agent-c', 'ssrf2');
 
     const cases: Array<[string, string, ((h: string) => Promise<string[]>) | 'dns-fail']> = [
       ['https://api.agentmail.to:8443/v0/inboxes', 'port not allowed', resolveTo(PUBLIC_IP)],
@@ -524,8 +524,8 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
 
   // ── Criterion 5: no redirect following ──────────────────────────
   it('criterion 5: upstream 302 is returned as-is; fetch is called exactly once', async () => {
-    await grant('lilly', 'agentmail');
-    const secretId = await putSecretFor('lilly', 'redirect');
+    await grant('agent-c', 'agentmail');
+    const secretId = await putSecretFor('agent-c', 'redirect');
     const fetchSpy = mockFetch(async () =>
       new Response('', {
         status: 302,
@@ -551,8 +551,8 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
 
   // ── Criterion 6: limits ─────────────────────────────────────────
   it('criterion 6: response body over 5 MB → blocked response too large', async () => {
-    await grant('lilly', 'agentmail');
-    const secretId = await putSecretFor('lilly', 'huge');
+    await grant('agent-c', 'agentmail');
+    const secretId = await putSecretFor('agent-c', 'huge');
     const BIG = 5 * 1024 * 1024 + 1;
     const fetchSpy = mockFetch(async () => new Response('x'.repeat(BIG), { status: 200 }));
     const cap = createCapability({ store, fetchImpl: fetchSpy, resolveHost: resolveTo(PUBLIC_IP) });
@@ -571,8 +571,8 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
   }, 20000);
 
   it('criterion 6: response body at exactly 5 MB passes', async () => {
-    await grant('lilly', 'agentmail');
-    const secretId = await putSecretFor('lilly', 'boundary');
+    await grant('agent-c', 'agentmail');
+    const secretId = await putSecretFor('agent-c', 'boundary');
     const EXACT = 5 * 1024 * 1024;
     const fetchSpy = mockFetch(async () => new Response('y'.repeat(EXACT), { status: 200 }));
     const cap = createCapability({ store, fetchImpl: fetchSpy, resolveHost: resolveTo(PUBLIC_IP) });
@@ -589,8 +589,8 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
   }, 30000);
 
   it('criterion 6: upstream that never responds → blocked timeout once now() passes 30 s', async () => {
-    await grant('lilly', 'agentmail');
-    const secretId = await putSecretFor('lilly', 'slow');
+    await grant('agent-c', 'agentmail');
+    const secretId = await putSecretFor('agent-c', 'slow');
     const neverResolves = vi.fn(async () => new Promise<Response>(() => {}));
     let clock = Date.now();
     const now = () => clock;
@@ -620,8 +620,8 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
   }, 10000);
 
   it('criterion 6: method outside the whitelist → blocked method not allowed', async () => {
-    await grant('lilly', 'agentmail');
-    const secretId = await putSecretFor('lilly', 'method');
+    await grant('agent-c', 'agentmail');
+    const secretId = await putSecretFor('agent-c', 'method');
     const fetchSpy = mockFetch(OK_RESPONSE);
     const cap = createCapability({ store, fetchImpl: fetchSpy, resolveHost: resolveTo(PUBLIC_IP) });
 
@@ -639,8 +639,8 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
 
   // ── Criterion 7: RBAC via openSecretValue ───────────────────────
   it('criterion 7: another user\'s private secret → blocked secret not available (no fetch)', async () => {
-    await grant('lilly', 'agentmail');
-    const otherSecret = await putSecretFor('shoshin', 'notyours');
+    await grant('agent-c', 'agentmail');
+    const otherSecret = await putSecretFor('agent-a', 'notyours');
     const fetchSpy = mockFetch(OK_RESPONSE);
     const cap = createCapability({ store, fetchImpl: fetchSpy, resolveHost: resolveTo(PUBLIC_IP) });
 
@@ -656,8 +656,8 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
 
   // ── Criterion 8: '*' wildcard approval ──────────────────────────
   it('criterion 8: a "*" wildcard approval gates the service call', async () => {
-    await grant('lilly', '*');
-    const secretId = await putSecretFor('lilly', 'wildcard');
+    await grant('agent-c', '*');
+    const secretId = await putSecretFor('agent-c', 'wildcard');
     const fetchSpy = mockFetch(OK_RESPONSE);
     const cap = createCapability({ store, fetchImpl: fetchSpy, resolveHost: resolveTo(PUBLIC_IP) });
 
@@ -673,8 +673,8 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
 
   // ── Upstream non-2xx returned as-is (rule 8) + real local server ─
   it('upstream 5xx is returned as {status, body} (ok outcome, never followed/rewritten)', async () => {
-    await grant('lilly', 'agentmail');
-    const secretId = await putSecretFor('lilly', 'fivexx');
+    await grant('agent-c', 'agentmail');
+    const secretId = await putSecretFor('agent-c', 'fivexx');
     const fetchSpy = mockFetch(async () => new Response('{"error":"upstream down"}', { status: 503 }));
     const cap = createCapability({ store, fetchImpl: fetchSpy, resolveHost: resolveTo(PUBLIC_IP) });
 
@@ -690,8 +690,8 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
   });
 
   it('end-to-end against a REAL local mock upstream: header injection + body pass through sockets', async () => {
-    await grant('lilly', 'agentmail');
-    const secretId = await putSecretFor('lilly', 'live');
+    await grant('agent-c', 'agentmail');
+    const secretId = await putSecretFor('agent-c', 'live');
     const seen: Array<{ method: string; url: string; injectedHeader: string | null; body: string }> = [];
     const server = createServer((req, res) => {
       let raw = '';
@@ -754,14 +754,14 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
 
   // ── Criterion 10 (REST behaviour): caller from getCaller() ──────
   it('criterion 10: REST POST /capability/http resolves the caller from getCaller()', async () => {
-    await grant('lilly', 'agentmail');
-    const secretId = await putSecretFor('lilly', 'rest');
+    await grant('agent-c', 'agentmail');
+    const secretId = await putSecretFor('agent-c', 'rest');
     const fetchSpy = mockFetch(async () => new Response('{"via":"rest"}', { status: 200 }));
     const cap = createCapability({ store, fetchImpl: fetchSpy, resolveHost: resolveTo(PUBLIC_IP) });
     const app = new Hono();
     app.route('/api/v1/vault', create_vault_routes({ store, capability: cap }));
 
-    const response = await runWithCaller(LILLY, () =>
+    const response = await runWithCaller(AGENT_C, () =>
       app.request('http://localhost/api/v1/vault/capability/http', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -777,12 +777,12 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
 
     expect(response.status).toBe(200);
     const result = (await response.json()) as CapabilityResult;
-    // Approval was granted to lilly and the secret is lilly's — this only
-    // succeeds if the handler used getCaller() (lilly), not a fallback.
+    // Approval was granted to agent-c and the secret is agent-c's — this only
+    // succeeds if the handler used getCaller() (agent-c), not a fallback.
     expect(result.status).toBe(200);
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     const rows = await auditRowsFor(secretId);
-    const restRows = rows.filter((r) => r.actor === 'lilly');
+    const restRows = rows.filter((r) => r.actor === 'agent-c');
     expect(restRows).toHaveLength(1);
     await assertNoSecretText(result, rows);
   });

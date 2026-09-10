@@ -33,8 +33,8 @@ vi.mock('../../src/database/connection.js', () => ({
   }),
 }));
 
-const SHOSHIN: CallerIdentity = { user_id: 'shoshin', trusted: false };
-const TRUSTED_SATORI: CallerIdentity = { user_id: 'satori', trusted: true };
+const AGENT_A: CallerIdentity = { user_id: 'agent-a', trusted: false };
+const TRUSTED_KATRA: CallerIdentity = { user_id: 'katra', trusted: true };
 
 describe('resolveWriteScope — personal kinds are forced private', () => {
   it('exposes the contract personal kinds list', () => {
@@ -43,22 +43,22 @@ describe('resolveWriteScope — personal kinds are forced private', () => {
 
   it.each(PERSONAL_KINDS)('%s → shared_id null even when shared is requested', (kind) => {
     const result = resolveWriteScope({
-      caller: SHOSHIN,
+      caller: AGENT_A,
       kind,
       requested: { shared_id: 'my-team', private: false },
     });
-    expect(result.user_id).toBe('shoshin');
+    expect(result.user_id).toBe('agent-a');
     expect(result.shared_id).toBeNull();
   });
 
   it.each(PERSONAL_KINDS)('%s → shared_id null with no request at all', (kind) => {
-    const result = resolveWriteScope({ caller: SHOSHIN, kind });
+    const result = resolveWriteScope({ caller: AGENT_A, kind });
     expect(result.shared_id).toBeNull();
   });
 
   it('personal kinds ignore an explicit requested shared_id', () => {
     const result = resolveWriteScope({
-      caller: SHOSHIN,
+      caller: AGENT_A,
       kind: 'journal',
       requested: { shared_id: 'team-x' },
     });
@@ -70,21 +70,21 @@ describe('resolveWriteScope — default shared for everything else', () => {
   it.each(['fact', 'preference', 'event', 'general'])(
     '%s defaults to shared_id %s',
     (kind) => {
-      const result = resolveWriteScope({ caller: SHOSHIN, kind });
+      const result = resolveWriteScope({ caller: AGENT_A, kind });
       expect(result.shared_id).toBe(DEFAULT_SHARED_ID);
       expect(result.shared_id).toBe('my-team');
     },
   );
 
   it('still stamps the writer user_id when shared', () => {
-    const result = resolveWriteScope({ caller: SHOSHIN, kind: 'event' });
-    expect(result.user_id).toBe('shoshin');
+    const result = resolveWriteScope({ caller: AGENT_A, kind: 'event' });
+    expect(result.user_id).toBe('agent-a');
     expect(result.shared_id).toBe('my-team');
   });
 
   it('honors an explicit requested shared_id', () => {
     const result = resolveWriteScope({
-      caller: SHOSHIN,
+      caller: AGENT_A,
       kind: 'event',
       requested: { shared_id: 'team-x' },
     });
@@ -93,7 +93,7 @@ describe('resolveWriteScope — default shared for everything else', () => {
 
   it('private: true opts out of the shared default', () => {
     const result = resolveWriteScope({
-      caller: SHOSHIN,
+      caller: AGENT_A,
       kind: 'event',
       requested: { private: true },
     });
@@ -102,7 +102,7 @@ describe('resolveWriteScope — default shared for everything else', () => {
 
   it('private: true wins over an explicit shared_id', () => {
     const result = resolveWriteScope({
-      caller: SHOSHIN,
+      caller: AGENT_A,
       kind: 'fact',
       requested: { private: true, shared_id: 'team-x' },
     });
@@ -111,10 +111,10 @@ describe('resolveWriteScope — default shared for everything else', () => {
 
   it('only a strict boolean true opts out', () => {
     expect(
-      resolveWriteScope({ caller: SHOSHIN, kind: 'fact', requested: { private: false } }).shared_id,
+      resolveWriteScope({ caller: AGENT_A, kind: 'fact', requested: { private: false } }).shared_id,
     ).toBe('my-team');
     expect(
-      resolveWriteScope({ caller: SHOSHIN, kind: 'fact', requested: { private: undefined } }).shared_id,
+      resolveWriteScope({ caller: AGENT_A, kind: 'fact', requested: { private: undefined } }).shared_id,
     ).toBe('my-team');
   });
 });
@@ -122,47 +122,47 @@ describe('resolveWriteScope — default shared for everything else', () => {
 describe('resolveWriteScope — user attribution', () => {
   it('untrusted callers are always pinned to their own user_id', () => {
     const result = resolveWriteScope({
-      caller: SHOSHIN,
+      caller: AGENT_A,
       kind: 'event',
-      requested: { user_id: 'zanshin' },
+      requested: { user_id: 'agent-b' },
     });
-    expect(result.user_id).toBe('shoshin');
+    expect(result.user_id).toBe('agent-a');
   });
 
   it('trusted callers may name a user_id', () => {
     const result = resolveWriteScope({
-      caller: TRUSTED_SATORI,
+      caller: TRUSTED_KATRA,
       kind: 'event',
-      requested: { user_id: 'zanshin' },
+      requested: { user_id: 'agent-b' },
     });
-    expect(result.user_id).toBe('zanshin');
+    expect(result.user_id).toBe('agent-b');
   });
 
   it('trusted callers fall back to their own user_id', () => {
-    const result = resolveWriteScope({ caller: TRUSTED_SATORI, kind: 'event', requested: {} });
-    expect(result.user_id).toBe('satori');
+    const result = resolveWriteScope({ caller: TRUSTED_KATRA, kind: 'event', requested: {} });
+    expect(result.user_id).toBe('katra');
   });
 
   it('blank user_id is ignored even for trusted callers', () => {
     const result = resolveWriteScope({
-      caller: TRUSTED_SATORI,
+      caller: TRUSTED_KATRA,
       kind: 'event',
       requested: { user_id: '   ' },
     });
-    expect(result.user_id).toBe('satori');
+    expect(result.user_id).toBe('katra');
   });
 });
 
 describe('stripSharedId', () => {
   it('removes shared_id and keeps every other field', () => {
-    const doc = { user_id: 'shoshin', entry: 'x', shared_id: 'my-team' };
+    const doc = { user_id: 'agent-a', entry: 'x', shared_id: 'my-team' };
     const stripped = stripSharedId(doc);
-    expect(stripped).toEqual({ user_id: 'shoshin', entry: 'x' });
+    expect(stripped).toEqual({ user_id: 'agent-a', entry: 'x' });
     expect('shared_id' in stripped).toBe(false);
   });
 
   it('returns the same document untouched when no shared_id is present', () => {
-    const doc = { user_id: 'shoshin', entry: 'x' };
+    const doc = { user_id: 'agent-a', entry: 'x' };
     expect(stripSharedId(doc)).toBe(doc);
   });
 });

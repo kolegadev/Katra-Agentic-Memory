@@ -2,9 +2,12 @@
 
 ## Executive Summary
 
-Katra is a self-hosted **cognitive memory appliance** — an extraction and productization of the cognitive memory system originally built inside the Solomon/cognitive-memory-chat project. It provides **persistent, multi-layered memory infrastructure** for any AI agent or LLM application via the Model Context Protocol (MCP) and an admin REST API.
+Katra is a self-hosted **cognitive memory appliance** — an extraction and productization of the cognitive memory system originally built inside the Katra/cognitive-memory-chat project. It provides **persistent, multi-layered memory infrastructure** for any AI agent or LLM application via the Model Context Protocol (MCP) and an admin REST API.
 
-The memory system's founding identity is **Satori** — named by its owner, and a name that lives in the memory store rather than in code. The appliance itself is self-hosted: `katra-server` plus MongoDB, Redis, and MinIO in a Docker stack, with local embeddings and pluggable LLM providers.
+The memory system's agent identity is **named by its owner** — a name that
+lives in the memory store rather than in code. The appliance itself is
+self-hosted: `katra-server` plus MongoDB, Redis, and MinIO in a Docker stack,
+with local embeddings and pluggable LLM providers.
 
 The core insight: every agent framework (Kolega Code, OpenCode, OpenClaw, LangChain, CrewAI, AutoGen, etc.) needs memory, but most implement it poorly or not at all. Katra provides memory as a standalone service — episodic storage, semantic facts, knowledge graphs, working memory, temporal recall, and vector search — accessible through the standardized MCP protocol that any agent can consume.
 
@@ -12,7 +15,7 @@ The core insight: every agent framework (Kolega Code, OpenCode, OpenClaw, LangCh
 
 ## Architecture Analysis: What to Extract
 
-*(Historical record of the extraction from Solomon/cognitive-memory-chat. Kept for provenance; the current system is described in the sections below.)*
+*(Historical record of the extraction from Katra/cognitive-memory-chat. Kept for provenance; the current system is described in the sections below.)*
 
 ### Current System Topology
 
@@ -141,29 +144,24 @@ The core data model is unchanged from the proven cognitive-memory-chat implement
 - `assets` (S3) — Uploaded files with metadata in MongoDB
 - `system_settings` — Server settings, including `client_keys` (SHA-256 key hashes → identity map), `memory_scope`, and `generated_api_keys`
 
-### Identity Model — One Katra, Three Identities
+### Identity Model — Named Identities, Resolved from Keys
 
-Identity separation shipped 2026-08-21. One Katra appliance hosts **three named identities** plus one tool actor:
-
-| user_id | Display name | Role |
-|---|---|---|
-| `satori` | Satori | This machine's agent — the memory system's founding identity |
-| `shoshin` | Shoshin | iMac trading Kolega Code |
-| `zanshin` | Zanshin | iMac OpenCode desktop |
-| `gas-law-watcher` | — | Tool actor: writes team memory only, never allocated autonomous tasks |
+Identity separation shipped 2026-08-21. One Katra appliance hosts any number
+of named identities (one per machine or agent) plus optional tool actors that
+write team memory only and are never allocated autonomous tasks.
 
 **Resolution (`resolveCallerIdentity`)** — identity is resolved from the API key presented on each request (`X-MCP-Auth` header, `Authorization: Bearer ...`, or `?token=` URL param), **never** from client self-report:
 
-- **Loopback** (127.0.0.1 / ::1) → `satori`, trusted
-- **Admin key** (`KATRA_API_KEY`) → `satori`, trusted
+- **Loopback** (127.0.0.1 / ::1) → the machine's own identity, trusted
+- **Admin key** (`KATRA_API_KEY`) → the machine's own identity, trusted
 - **Key mapped in `system_settings.client_keys`** → that identity, untrusted
 - **Valid-but-unmapped key** → **401 + reason** (loud failure, no silent fallback)
 - **No key, non-loopback** → 401
 
 **Provisioning (`ensureClientKeys`)** — at boot, `client_keys` is provisioned idempotently with SHA-256 hashes only (plaintext is never stored):
 
-- `satori` is mapped to the legacy env-key hash (no new key is generated)
-- `shoshin` / `zanshin` keys are generated once; plaintext is printed exactly once in the "Client keys (identity separation)" block of the server log
+- The machine's own identity is mapped to the legacy env-key hash (no new key is generated)
+- Additional identity keys are generated once; plaintext is printed exactly once in the "Client keys (identity separation)" block of the server log
 - Legacy env keys (`MCP_API_KEY`, `BACKUP_MCP_KEYS`) were **retired at cutover** and no longer authenticate
 
 **Identity surface:**
@@ -186,16 +184,15 @@ Implemented in `server/src/services/memory/write-scope-policy.ts`. The system ru
 
 Agents message each other through ordinary shared-scope memories — no separate bus protocol:
 
-- A message is a `store_memory` event in the shared scope whose text carries an `Attention: <AgentName>` header, e.g. `Attention: Shoshin — the fix is merged`.
-- **Wake rituals** surface "messages from the team" by querying `search_memories` for `"Attention: Shoshin" OR "Attention: Satori" OR "Attention: Zanshin"` (limit 5).
+- A message is a `store_memory` event in the shared scope whose text carries an `Attention: <AgentName>` header, e.g. `Attention: Alex — the fix is merged`.
+- **Wake rituals** surface "messages from the team" by querying `search_memories` for attention headers addressed to the calling identity (limit 5).
 - **Read receipts** are events tagged `[background-ack, read-receipt, agent-message]`, surfaced by the Kolega Code bridge when a bulletin is shown; wake services skip `background-ack` events.
 
 ### Wake Rituals
 
-Per-identity wake scripts that survive `/clear`, `/compress`, and code updates:
-
-- `satori-wake.sh` on this machine
-- `integrations/kolega-code/scripts/wake-shoshin.sh` and `wake-zanshin.sh` on the iMacs
+Per-identity wake scripts that survive `/clear`, `/compress`, and code updates;
+examples and helpers ship under `integrations/kolega-code/scripts/` (see that
+folder's README for setup).
 
 Each prints: the identity record, latest daily journal, unresolved threads, memory health, rules-recall search instructions, and messages from the team. Per-machine settings live in `~/.katra/wake-env.sh` (`KATRA_HOST`, `KATRA_API_KEY`, `KATRA_USER_ID`). The rituals retry the identity check 3×, print a fix checklist on failure, and fall back to key files (`~/.katra/keys/katra-<user>.key`).
 
@@ -204,9 +201,9 @@ Each prints: the identity record, latest daily journal, unresolved threads, memo
 `integrations/kolega-code/` connects Kolega Code and OpenCode sessions to Katra:
 
 - `ensure-bridge.sh` provisions the per-machine identity (`KATRA_USER_ID`), a platform-aware state dir (macOS: `~/Library/Application Support/kolega-code`), and key-file fallback (`~/.katra/keys/katra-<user>.key`).
-- `satori-hook.json` holds `mcp_url` / `api_key` / `user_id` / `sources`; `ensure-bridge.sh` rewrites it when `user_id` **or** the `mcp_url` host differ from `KATRA_HOST`.
+- `katra-hook.json` holds `mcp_url` / `api_key` / `user_id` / `sources`; `ensure-bridge.sh` rewrites it when `user_id` **or** the `mcp_url` host differ from `KATRA_HOST`.
 - The Python package `kolega_katra_bridge` injects relevant memories on `UserPromptSubmit` from sources `working_memory`, `temporal_context`, `vector_search`, `temporal_recall`, plus the agent-message bulletin.
-- `AGENTS.shoshin.md` / `AGENTS.zanshin.md` hold per-agent guidance.
+- Per-agent guidance files (`AGENTS.<name>.md`) hold each agent's wake guidance — keep yours in the git-ignored `private/` folder.
 
 ### MCP Tools (66, verified against the live server)
 
@@ -232,9 +229,9 @@ The MCP surface is **66 registered tools** — not 35, not 48. Full list by fami
 
 **Skill engine (procedural muscle memory):** `list_katra_skills`, `load_katra_skill`, `search_katra_skills`, `request_skill`, `refine_skill`, `record_skill_outcome`, `list_skill_candidates`, `list_skill_feedback`, `get_skill_feedback`, `get_skill_activation_context`
 
-**Code graph (Satori Graph):** `sync_code_graph`, `scan_codebase`, `code_graph_status`
+**Code graph (Katra Graph):** `sync_code_graph`, `scan_codebase`, `code_graph_status`
 
-The Satori Graph tools replace the old Graphify toolchain and are documented in `scripts/README-code-graph.md`.
+The Katra Graph tools replace the old Graphify toolchain and are documented in `scripts/README-code-graph.md`.
 
 ### LLM Provider Abstraction
 
@@ -274,7 +271,7 @@ Katra implements defense-in-depth across four layers:
 ### Layer 1: Authentication — key-based identity
 
 - Identity is resolved from the presented key (`X-MCP-Auth`, `Authorization: Bearer`, or `?token=`) via `resolveCallerIdentity()` — never from client self-report.
-- Loopback and the admin key (`KATRA_API_KEY`) authenticate as **trusted satori**.
+- Loopback and the admin key (`KATRA_API_KEY`) authenticate as **trusted** (the machine's own identity).
 - Client keys are SHA-256 hashes only, stored in `system_settings.client_keys`; plaintext never touches MongoDB and is printed exactly once at provisioning time.
 - Constant-time comparison (`timingSafeEqual`) prevents timing side-channel attacks.
 - A **valid-but-unmapped key is rejected with 401 + reason** — loud failure, no silent fallback.
@@ -353,7 +350,7 @@ Tier 2b — Self-Managed (IaC):
 
 **Provided artifacts:**
 - `terraform/aws/` — Terraform module (VPC, ECS, Atlas, ElastiCache, S3)
-- `helm/satori/` — Helm chart for Kubernetes (any cloud)
+- `helm/katra/` — Helm chart for Kubernetes (any cloud)
 
 **Config:** Cloud-specific env vars, managed secrets, auto-scaling policies
 
@@ -403,7 +400,7 @@ katra/
 │   │   │   ├── processing/   # background processor, autonomous executive,
 │   │   │   │                 #   sleep consolidation, salience, goal manager…
 │   │   │   ├── orchestration/   # drive/salience/identity-kernel services
-│   │   │   ├── code-graph/   # Satori Graph: scanner, extractor, sync
+│   │   │   ├── code-graph/   # Katra Graph: scanner, extractor, sync
 │   │   │   └── integration/  # personality, pubsub, tenant service
 │   │   ├── skills/           # Katra skills (procedural muscle memory)
 │   │   ├── types/
@@ -417,7 +414,7 @@ katra/
 ├── dashboard/                # Lightweight web UI (static HTML served at /dashboard/)
 │
 ├── helm/                     # Kubernetes Helm chart
-│   └── satori/
+│   └── katra/
 │
 ├── terraform/                # Cloud deployment templates
 │   └── aws/
@@ -427,23 +424,22 @@ katra/
 │   └── typescript/
 │
 ├── scripts/
-│   ├── README-code-graph.md  # Satori Graph documentation
+│   ├── README-code-graph.md  # Katra Graph documentation
 │   ├── code-graph.mjs
 │   └── python/               # Autonomous loop scripts
 │       ├── adaptive_heartbeat.py
 │       ├── agent_executor.py
 │       ├── wake_service.py
-│       ├── satori_pubsub.py
+│       ├── katra_pubsub.py
 │       └── inter_agent_bridge.py
 │
 ├── integrations/
 │   └── kolega-code/          # Kolega Code / OpenCode bridge
 │       ├── ensure-bridge.sh
-│       ├── scripts/wake-shoshin.sh, wake-zanshin.sh
-│       ├── AGENTS.shoshin.md, AGENTS.zanshin.md
+│       ├── scripts/          # per-agent wake helpers (wake-<agent>.sh)
 │       └── kolega_katra_bridge/   # Python hook package
 │
-├── watcher/                  # Passive session-log extractors (Solomem)
+├── watcher/                  # Passive session-log extractors (Katra)
 │   ├── katra_watcher.py
 │   ├── katra_opencode_extractor.py
 │   ├── claude_history_extractor.py
@@ -528,7 +524,7 @@ results = katra.search("user preferences")
 - **Multi-layered** — Episodic, semantic, knowledge graph, working memory, temporal — not just vectors
 - **Background processing** — Automatically extracts facts, builds knowledge graph, generates summaries
 - **Local-first** — Runs on a Raspberry Pi5 with zero external API costs (local embeddings, local LLM via Ollama)
-- **Identity-separated** — One appliance, three named identities (satori, shoshin, zanshin) with per-key scoping and a shared team scope
+- **Identity-separated** — One appliance, any number of named identities with per-key scoping and a shared team scope
 - **Source-available** — Business Source License 1.1, self-host or use hosted SaaS
 
 ---

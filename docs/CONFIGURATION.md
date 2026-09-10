@@ -14,16 +14,16 @@ Katra resolves **who is calling** from the API key presented on each request —
 
 | Variable | Default | Description |
 |---|---|---|
-| `KATRA_API_KEY` | (auto-generated) | Admin API key. Authenticates as **trusted satori** — required for admin REST operations (e.g. `PUT /api/v1/admin/identity`, per-identity `?user_id=` lookups) and privileged MCP tools (`set_memory_scope`, `configure_llm`) |
+| `KATRA_API_KEY` | (auto-generated) | Admin API key. Authenticates as the **trusted machine identity** — required for admin REST operations (e.g. `PUT /api/v1/admin/identity`, per-identity `?user_id=` lookups) and privileged MCP tools (`set_memory_scope`, `configure_llm`) |
 | `MCP_API_KEY` | — | **Legacy — retired.** Pre-cutover shared agent key. No longer authenticates: since the 2026-08-21 identity cutover, keys must map to an identity in `client_keys`. A valid-but-unmapped key is rejected with **401 + reason** (loud failure, no silent fallback) |
 | `ADMIN_API_KEY` | — | **Legacy — retired.** Old alias for `KATRA_API_KEY`, kept only for historical installs |
 | `BACKUP_MCP_KEYS` | — | **Legacy — retired.** Comma-separated backup keys from the pre-cutover era; no longer authenticate |
 
 **Client key provisioning**: at boot, `ensureClientKeys()` idempotently provisions `system_settings.client_keys`:
 
-- `satori` — mapped to the legacy env-key hash (no new key generated)
-- `shoshin` (iMac trading Kolega Code) and `zanshin` (iMac OpenCode desktop) — freshly generated **once**; plaintext is printed exactly once in the "Client keys (identity separation)" block of the server log; only SHA-256 hashes are stored in the database
-- `gas-law-watcher` — tool actor that writes team memory only and is never allocated autonomous tasks
+- The machine's own identity — mapped to the legacy env-key hash (no new key generated)
+- Each additional identity — freshly generated **once**; plaintext is printed exactly once in the "Client keys (identity separation)" block of the server log; only SHA-256 hashes are stored in the database
+- Optional tool actors — write team memory only and are never allocated autonomous tasks
 
 **Key storage**: Only SHA-256 hashes are persisted to MongoDB `system_settings`. Validation hashes the incoming token and compares against the stored digest using constant-time comparison — the database never holds a value that grants API access directly.
 
@@ -136,12 +136,12 @@ These are consumed by the integration and wake scripts, not by the server:
 
 | Variable / File | Description |
 |---|---|
-| `KATRA_HOST` | Katra host for the bridge self-test and wake rituals (default `localhost`; on the iMacs, set it to this machine's address) |
-| `KATRA_USER_ID` | `user_id` to write into the hook config — `satori`, `shoshin`, or `zanshin` (default `satori`) |
+| `KATRA_HOST` | Katra host for the bridge self-test and wake rituals (default `localhost`; on remote machines, set it to the server's address) |
+| `KATRA_USER_ID` | `user_id` to write into the hook config — your identity's user_id (defaults to the machine identity) |
 | `~/.katra/wake-env.sh` | Per-machine wake settings (`KATRA_HOST`, `KATRA_API_KEY`, `KATRA_USER_ID`); sourced by the wake scripts when env vars are unset |
 | `~/.katra/keys/katra-<user>.key` | Per-machine client key file (chmod 600) — fallback when the key isn't in the environment |
 
-The bridge hook config (`integrations/kolega-code/satori-hook.json`) holds `mcp_url` / `api_key` / `user_id` / `sources`; `ensure-bridge.sh` rewrites it when `user_id` or the `mcp_url` host differ from `KATRA_HOST`.
+The bridge hook config (`integrations/kolega-code/katra-hook.json`) holds `mcp_url` / `api_key` / `user_id` / `sources`; `ensure-bridge.sh` rewrites it when `user_id` or the `mcp_url` host differ from `KATRA_HOST`.
 
 ## Docker Compose
 
