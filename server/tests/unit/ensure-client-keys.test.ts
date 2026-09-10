@@ -1,8 +1,9 @@
 /**
  * Unit tests: ensureClientKeys (F1 — client_keys provisioning)
  *
- * Provisions satori (legacy key hash) + shoshin/zanshin (freshly generated)
- * into system_settings.client_keys. Asserts: idempotency, hashes-only in the
+ * Provisions satori (legacy key hash) + identities declared in
+ * KATRA_EXTRA_IDENTITIES (freshly generated) into
+ * system_settings.client_keys. Asserts: idempotency, hashes-only in the
  * database, plaintext printed exactly once, and that the stored hashes feed
  * resolveCallerIdentity end to end.
  *
@@ -49,6 +50,7 @@ describe('ensureClientKeys', () => {
     process.env.MONGODB_URI = TEST_URI;
     process.env.DATABASE_NAME = TEST_DB;
     process.env.MCP_API_KEY = LEGACY_MCP_KEY;
+    process.env.KATRA_EXTRA_IDENTITIES = 'shoshin:Shoshin,zanshin:Zanshin';
     try {
       const db = await connect_to_mongodb();
       mongoReady = !!db;
@@ -82,9 +84,10 @@ describe('ensureClientKeys', () => {
     delete process.env.MONGODB_URI;
     delete process.env.DATABASE_NAME;
     delete process.env.MCP_API_KEY;
+    delete process.env.KATRA_EXTRA_IDENTITIES;
   });
 
-  it('provisions satori (legacy hash), shoshin and zanshin entries', async (ctx) => {
+  it('provisions satori (legacy hash) plus the identities declared in KATRA_EXTRA_IDENTITIES', async (ctx) => {
     if (!mongoReady) return ctx.skip();
     const doc = await readStoredRecord();
     expect(doc).toBeTruthy();
@@ -100,6 +103,8 @@ describe('ensureClientKeys', () => {
     // satori maps to the legacy env key hash — no new key generated for satori.
     expect(byUser.get('satori')!.key_hash).toBe(hashApiKey(LEGACY_MCP_KEY));
     expect(byUser.get('satori')!.display_name).toBe('Satori');
+    expect(byUser.get('shoshin')!.display_name).toBe('Shoshin');
+    expect(byUser.get('zanshin')!.display_name).toBe('Zanshin');
 
     // All hashes are sha256 hex digests.
     for (const r of records) {
