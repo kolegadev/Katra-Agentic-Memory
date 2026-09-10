@@ -16,20 +16,20 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const h = vi.hoisted(() => {
   const FIXTURES: Record<string, any[]> = {
     episodic_events: [
-      { _id: 'e1', user_id: 'satori', timestamp: new Date('2026-09-10T10:00:00Z'), content: { message: 'OPERATING RULE: TEAM COLLABORATION stored.' } },
-      { _id: 'e2', user_id: 'lilly', timestamp: new Date('2026-09-09T10:00:00Z'), content: { message: 'just a hello' } },
+      { _id: 'e1', user_id: 'katra', timestamp: new Date('2026-09-10T10:00:00Z'), content: { message: 'OPERATING RULE: TEAM COLLABORATION stored.' } },
+      { _id: 'e2', user_id: 'agent-c', timestamp: new Date('2026-09-09T10:00:00Z'), content: { message: 'just a hello' } },
     ],
     semantic_facts: [
-      { _id: 's1', user_id: 'shoshin', created_at: new Date('2026-09-09T12:00:00Z'), content: 'OPERATING RULE (John): TEAM COLLABORATION' },
-      { _id: 's2', user_id: 'lilly', created_at: new Date('2026-09-08T12:00:00Z'), content: 'wifi fix for 91d2f8 network' },
+      { _id: 's1', user_id: 'agent-a', created_at: new Date('2026-09-09T12:00:00Z'), content: 'OPERATING RULE (operator): TEAM COLLABORATION' },
+      { _id: 's2', user_id: 'agent-c', created_at: new Date('2026-09-08T12:00:00Z'), content: 'wifi fix for the office network' },
     ],
     knowledge_nodes: [
       { _id: 'k1', user_id: 'system', updated_at: new Date('2026-09-09T09:00:00Z'), name: 'OPERATING RULE' },
       { _id: 'k2', user_id: 'system', updated_at: new Date('2026-09-08T09:00:00Z'), name: 'Google Search Console' },
     ],
     reflective_journals: [
-      { _id: 'r1', user_id: 'satori', created_at: new Date('2026-09-09T08:00:00Z'), narrative: 'A bridge becomes real through small steps' },
-      { _id: 'r2', user_id: 'zanshin', created_at: new Date('2026-09-08T08:00:00Z'), narrative: 'keep the desktop tidy' },
+      { _id: 'r1', user_id: 'katra', created_at: new Date('2026-09-09T08:00:00Z'), narrative: 'A bridge becomes real through small steps' },
+      { _id: 'r2', user_id: 'agent-b', created_at: new Date('2026-09-08T08:00:00Z'), narrative: 'keep the desktop tidy' },
     ],
   };
 
@@ -157,10 +157,10 @@ describe('admin /memory-search — query+collection honored without user_id', ()
   });
 
   it('user_id path still scopes results', async () => {
-    const res = await search({ user_id: 'lilly', query: 'hello' });
+    const res = await search({ user_id: 'agent-c', query: 'hello' });
     const body = await res.json();
     expect(body.results.length).toBeGreaterThan(0);
-    expect(body.results.every((r: any) => r.user_id === 'lilly')).toBe(true);
+    expect(body.results.every((r: any) => r.user_id === 'agent-c')).toBe(true);
   });
 });
 
@@ -173,7 +173,7 @@ describe('admin /memory-search — hybrid semantic augmentation', () => {
     h.embedding.isReady = true;
     h.embedding.searchSimilar.mockImplementation(async (col: string) => {
       if (col === 'semantic_facts') {
-        return [{ _id: 's-sem', user_id: 'shoshin', created_at: new Date('2026-09-01T00:00:00Z'), content: 'teamwork makes the dream work', score: 0.95 }];
+        return [{ _id: 's-sem', user_id: 'agent-a', created_at: new Date('2026-09-01T00:00:00Z'), content: 'teamwork makes the dream work', score: 0.95 }];
       }
       return [];
     });
