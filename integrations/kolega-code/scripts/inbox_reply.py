@@ -29,7 +29,7 @@ SHARED_ID = os.environ.get("KATRA_SHARED_ID", "my-team")
 API_BASE = os.environ.get("KATRA_API", "http://localhost:9012/api/v1")
 
 KNOWN_AGENTS = {"shoshin", "zanshin", "lilly", "zefir", "opencode", "opencoder",
-                "kolegacode", "kolegacoder", "john"}
+                "kolegacode", "kolegacoder"}
 
 
 def resolve_key() -> str:

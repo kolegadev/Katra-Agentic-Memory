@@ -43,7 +43,7 @@ SHARED_ID = os.environ.get("KATRA_SHARED_ID", "my-team")
 STATE_FILE = os.path.expanduser(f"~/.katra/inbox/{AGENT_ID.lower()}.json")
 LOCK_FILE = os.path.expanduser(f"~/.katra/inbox/{AGENT_ID.lower()}.lock")
 DISPATCH_LOG = os.path.expanduser(f"~/.katra/inbox/dispatch.log")
-ESCALATE_FILE = os.path.expanduser("~/.katra/inbox/needs-john.md")
+ESCALATE_FILE = os.path.expanduser("~/.katra/inbox/needs-owner.md")
 
 # This machine's names, current + legacy pre-cutover aliases (matches the
 # bridge's bulletin scan). Override with KATRA_AGENT_NAMES for other agents.
@@ -265,7 +265,7 @@ def dispatch(args) -> int:
     # Rate caps
     if state_dispatch_count_today(state) >= MAX_DISPATCHES_PER_DAY:
         print(f"inbox: daily dispatch cap ({MAX_DISPATCHES_PER_DAY}) reached; "
-              f"{len(msgs)} pending -> needs-john")
+              f"{len(msgs)} pending -> needs-owner")
         escalate(state, msgs)
         return 0
     if state["dispatches"]:
@@ -300,8 +300,8 @@ def dispatch(args) -> int:
             # Cron's PATH is minimal; give the headless session the full
             # tool path (docker, gcloud SDK, uv-installed kolega-code, etc.).
             env = {**os.environ, "KATRA_AGENT_ID": AGENT_ID,
-                   "PATH": "/home/johnpellew/google-cloud-sdk/bin:"
-                           "/home/johnpellew/.local/bin:"
+                   "PATH": f"{os.path.expanduser('~/google-cloud-sdk/bin')}:"
+                           f"{os.path.expanduser('~/.local/bin')}:"
                            "/usr/local/bin:/usr/bin:/bin"}
             proc = subprocess.run(cmd, capture_output=True, text=True,
                                   timeout=ASK_TIMEOUT, env=env)
@@ -330,7 +330,7 @@ def dispatch(args) -> int:
 
 def build_goal(msgs: list[dict]) -> str:
     wake = "satori-wake.sh" if AGENT_ID == "satori" else f"wake-{AGENT_ID}.sh"
-    host = " on thebrick" if AGENT_ID == "satori" else ""
+    host = " on the Katra host" if AGENT_ID == "satori" else ""
     lines = [
         f"You are {AGENT_ID.title()}, the kolega-code agent{host}, processing your "
         "Katra inbox autonomously per the policy in this project's AGENTS.md "
@@ -353,9 +353,10 @@ def build_goal(msgs: list[dict]) -> str:
         f"   `python3 {INBOX_REPLY} --to <agent> --in-reply-to <message id> --file <tempfile>`",
         "   (exact spelling of the message id matters).",
         "4. Do NOT mark anything handled yourself — replies mark messages handled.",
-        "5. You have FULL write capability on thebrick (John 2026-09-09): act "
+        "5. You have FULL write capability on this host (operator mandate "
+        "   2026-09-09): act "
         "   on routine requests — repo edits, builds, restarts, merges, deploys "
-        "   within standing mandates. The needs-john category (destructive or "
+        "   within standing mandates. The needs-owner category (destructive or "
         "   access-change: deletions, IAM/credential grants, billing, "
         "   irreversible actions) gets an acknowledgement reply and a note "
         f"   appended to {ESCALATE_FILE}.",

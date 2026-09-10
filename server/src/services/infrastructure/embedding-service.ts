@@ -203,7 +203,7 @@ export class EmbeddingService {
 
     try {
       // Native batched inference — all texts processed in one GPU/CPU call.
-      // ~10-50x throughput vs sequential on thebrick (32GB RAM + GPU).
+      // ~10-50x throughput vs sequential (32GB RAM + GPU).
       const output = await this.model(qualified.map(q => q.text), {
         pooling: 'mean',
         normalize: true,

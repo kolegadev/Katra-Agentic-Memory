@@ -7,7 +7,7 @@ KOLEGA_PID=$(pgrep -f "kolega-code" | head -1)
 
 if [ -z "$KOLEGA_PID" ]; then
   echo "KolegaCode not running. Starting new session..."
-  echo "$PROMPT" | /Users/johnpellew/.local/bin/kolega-code 2>/dev/null &
+  echo "$PROMPT" | "$HOME/.local/bin/kolega-code" 2>/dev/null &
   exit 0
 fi
 

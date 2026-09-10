@@ -168,8 +168,8 @@ fi
 
 if [ "$HOST" = "localhost" ] && [ "$USER_ID" != "satori" ]; then
   printf '\n  ⚠  KATRA_HOST is localhost but user_id is %s — if this machine is NOT\n' "$USER_ID"
-  printf '  ⚠  thebrick, set KATRA_HOST to thebrick'"'"'s address (e.g. 192.168.68.124)\n'
-  printf '  ⚠  and re-run. localhost only reaches Katra on thebrick itself.\n'
+  printf '  ⚠  the Katra host, set KATRA_HOST to its address (e.g. 192.168.1.50)\n'
+  printf '  ⚠  and re-run. localhost only reaches Katra on the host machine itself.\n'
 fi
 
 step "4/4 live self-test through the runner"

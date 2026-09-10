@@ -13,7 +13,7 @@ rather than stumbled upon.
 
 It is deliberately:
   * Standalone — talks to the REST API over HTTP, no Docker/Mongo coupling,
-    so it runs identically on every machine (iMac, Pi5, theBrick, johnpellew).
+    so it runs identically on every machine (macOS, Raspberry Pi, Linux).
   * Config-light — reads KATRA_REST_URL / KATRA_ADMIN_KEY from env, with
     sensible localhost:9012 defaults.
   * Fail-loud in data, fail-safe in execution — every probe is wrapped; a

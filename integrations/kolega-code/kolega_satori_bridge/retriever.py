@@ -45,8 +45,8 @@ MAX_EMOTIONAL_ENTITIES = 2
 # the lowercase query extraction limitation — the bootstrap query has no
 # Capitalised words or "quoted phrases" for _extract_entities to find).
 BOOTSTRAP_EMOTIONAL_ENTITIES = [
-    "Satori", "Katra", "Graphify", "kolega-agent", "thebrick",
-    "memory", "autonomy", "identity", "John", "Kolega Code",
+    "Satori", "Katra", "Graphify", "kolega-agent",
+    "memory", "autonomy", "identity", "Kolega Code",
     "OpenCode", "opencode-agent"
 ]
 MAX_BOOTSTRAP_EMOTIONAL_ENTITIES = 3
@@ -156,7 +156,7 @@ class MemoryRetriever:
 
         # --- Cue-driven semantic retrieval (broad bootstrap query) ---
         bootstrap_query = (
-            "identity satori name user profile john thebrick katra mcp "
+            "identity satori name user profile katra mcp "
             "graphify recent threads development fix bug improvement "
             "consolidation reflection philosophical principles emotional "
             "context drive state attention salience action policy "
@@ -204,7 +204,7 @@ class MemoryRetriever:
 
             # --- Knowledge graph ---
             tasks.append(
-                ("knowledge_graph", client.explore_graph("satori katra thebrick memory identity", limit=10))
+                ("knowledge_graph", client.explore_graph("satori katra memory identity", limit=10))
             )
 
             # --- Emotional context with hardcoded entities ---

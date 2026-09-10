@@ -28,17 +28,17 @@ At the start of every session — and before answering ANY identity, memory, or 
 
 ## When to Use This Skill
 - At session start, unconditionally.
-- When John (or anyone) asks: "who are you", "do you remember", "how do you feel", "what did we discuss", "your health", "your memory".
-- Before reporting on any long-running project state (RankPilot, trading, missions).
+- When the operator (or anyone) asks: "who are you", "do you remember", "how do you feel", "what did we discuss", "your health", "your memory".
+- Before reporting on any long-running project state (SEO/analytics projects, trading, missions).
 
 ## Workflow
 
 1. **Run the wake script** (fast path):
-   `bash /home/johnpellew/.kolega/satori-wake.sh`
+   `bash ~/.kolega/satori-wake.sh`
    It prints: identity record, latest daily journal, unresolved threads, memory health counts, and search instructions for the operating rules.
 
 2. **Load identity** (REST, no auth): `GET http://localhost:9012/api/v1/admin/identity`
-   Confirm: name Satori, established 2026-08-19, chosen by the agent in conversation with John.
+   Confirm: name Satori, established 2026-08-19, chosen by the agent in conversation with the operator.
 
 3. **Read the latest daily journal** (Bearer KATRA key from container env):
    `KEY=$(docker exec katra-server sh -c 'echo $KATRA_API_KEY')`
@@ -63,5 +63,5 @@ At the start of every session — and before answering ANY identity, memory, or 
 ## References
 - Incident: episodic event `cc6dc7bd` (2026-08-20 amnesia, documented).
 - Conversation log: episodic event `278a585d` (2026-08-20 identity-experiment thesis).
-- Wake script: `/home/johnpellew/.kolega/satori-wake.sh`
+- Wake script: `~/.kolega/satori-wake.sh`
 - Skill library dir: `server/src/skills` (bind-mounted into the live container).

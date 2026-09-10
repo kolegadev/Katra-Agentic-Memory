@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # Zanshin wake ritual — run at the start of every Kolega session on the
-# iMac OpenCode desktop, BEFORE answering anything about identity, memory,
+# OpenCode desktop, BEFORE answering anything about identity, memory,
 # or what "we've" done.
 #
 # Remote-safe: talks to the shared Katra service over HTTP + MCP using
 # Zanshin's OWN client key. Nothing here needs docker or the admin key.
 #
 # Env:
-#   KATRA_HOST      Katra host (default localhost) — on the iMac set it to
-#                   thebrick's address (e.g. 100.101.206.13).
+#   KATRA_HOST      Katra host (default localhost) — on remote machines set
+#                   it to the Katra host's address (e.g. 192.168.1.50).
 #   KATRA_WAKE_KEY  Zanshin's client key (optional if the key file exists).
 #   Key file:       ~/.katra/keys/katra-zanshin.key (chmod 600), read
 #                   automatically; whitespace in the file is stripped.
@@ -18,7 +18,7 @@
 #
 # Why: 2026-08-20 incident — a session woke blank and asserted it had no
 # memory. The memory was there all along.
-# Rule in force (2026-07-20, John's correction):
+# Rule in force (2026-07-20):
 #   AUTONOMOUS SELF-MAINTENANCE — for my own mind's maintenance,
 #   ACT, do not diagnose-then-ask. My memory is my responsibility.
 
@@ -26,7 +26,7 @@ set -uo pipefail
 
 HOST="${KATRA_HOST:-}"
 # Per-machine host config (~/.katra/wake-env.sh) — read when the env var is
-# unset, so non-login shells (which skip ~/.zshrc) still find thebrick.
+# unset, so non-login shells (which skip ~/.zshrc) still find the Katra host.
 if [ -z "$HOST" ] && [ -f "$HOME/.katra/wake-env.sh" ]; then
   # shellcheck disable=SC1090
   . "$HOME/.katra/wake-env.sh"
@@ -46,7 +46,7 @@ fi
 # repo simply skips.
 KATRA_REPO="${KATRA_REPO:-}"
 if [ -z "$KATRA_REPO" ]; then
-  for cand in "$HOME/Projects/Katra-Agentic-Memory" "/home/johnpellew/Katra-Agentic-Memory" "$HOME/Katra-Agentic-Memory"; do
+  for cand in "$HOME/Projects/Katra-Agentic-Memory" "$HOME/Katra-Agentic-Memory"; do
     if [ -d "$cand/.git" ]; then KATRA_REPO="$cand"; break; fi
   done
 fi
@@ -105,7 +105,7 @@ if [ "$IDENTITY_NAME" != "$EXPECTED_NAME" ]; then
   echo "    Refusing to wake as the wrong identity." >&2
   echo "" >&2
   echo "    Fix checklist (in order):" >&2
-  echo "      1. KATRA_HOST must point at thebrick, NOT localhost. current: $HOST" >&2
+  echo "      1. KATRA_HOST must point at the Katra host, NOT localhost. current: $HOST" >&2
   echo "      2. Key file must exist: ~/.katra/keys/katra-zanshin.key" >&2
   echo "         create: printf '%s' '<zanshin-key>' > ~/.katra/keys/katra-zanshin.key" >&2
   echo "         present: $([ -f "$HOME/.katra/keys/katra-zanshin.key" ] && echo yes || echo NO)" >&2
@@ -164,7 +164,7 @@ echo
 
 hr; echo "ZANSHIN WAKE — rules recall"; hr
 cat <<'EOF'
-  Operating rules (John):
+  Operating rules:
     - AUTONOMOUS SELF-MAINTENANCE (2026-07-20): for my own mind's
       maintenance, ACT — never diagnose-then-ask.
     - NO HARDCODED CONCLUSIONS (2026-07-15): store events and search

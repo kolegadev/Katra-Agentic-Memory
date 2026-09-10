@@ -38,11 +38,10 @@ const SURVIVAL_URGENCY_THRESHOLD = 0.2; // survival deficit > 0.2 → adrenaline
 
 /**
  * F3 (identity separation): allocation candidate set — the four identities.
- * satori is local (this machine, the executive's own user); shoshin (iMac
- * trading terminal), zanshin (iMac OpenCode desktop) and lilly (MacBook
- * Pro) are remote peers reached via bulletin. `gas-law-watcher` is
- * deliberately absent: it is a tool actor that writes shared memory but is
- * never allocated autonomous tasks.
+ * satori is local (this machine, the executive's own user); shoshin,
+ * zanshin and lilly are remote peers reached via bulletin.
+ * `gas-law-watcher` is deliberately absent: it is a tool actor that writes
+ * shared memory but is never allocated autonomous tasks.
  */
 export const ALLOCATION_CANDIDATES = ['satori', 'shoshin', 'zanshin', 'lilly'] as const;
 

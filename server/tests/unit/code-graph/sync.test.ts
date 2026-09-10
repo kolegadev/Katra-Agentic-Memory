@@ -729,7 +729,7 @@ describe.skipIf(!mongoAvailable)('CodeGraphSync', () => {
     expect(keyA).toMatch(/^[0-9a-f]{12}$/);
     expect(keyA).not.toBe(keyB);
 
-    // RankPilot and Katra both contain server/src/index.ts: identical
+    // Two scanned repos both contain server/src/index.ts: identical
     // relPath AND identical extractor ids in both roots.
     const relPath = 'server/src/index.ts';
     const fragment = fileExtraction(relPath, ['handler']);
