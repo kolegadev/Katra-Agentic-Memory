@@ -279,6 +279,7 @@ memory that outlives any single session or context window.
 - [Deployment](docs/DEPLOYMENT.md) — Docker, cloud (Terraform), Kubernetes (Helm), watchers, ops
 - [Migration](docs/MIGRATION.md) — migrate from cognitive-memory-chat
 - [Data Processing Pipelines](docs/Data-Processing-Pipelines.md) — full pipeline architecture
+- [Repository Maintenance](docs/REPO-MAINTENANCE.md) — maintainer checklist & promotion readiness
 
 ## Contributing & security
 
