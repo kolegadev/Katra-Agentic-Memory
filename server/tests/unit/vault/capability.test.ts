@@ -88,11 +88,14 @@ describe('vault capability — MCP + REST wiring (criterion 10)', () => {
     expect(MCP_SERVER_SOURCE).toContain(
       `inputSchema: zodToJsonSchema(VaultHttpInput) as Record<string, unknown>`,
     );
-    // Input contract: {secret_id, service, method, url, inject_header, body?}
+    // Input contract: {secret_id, service, method, url, inject_header,
+    // body? | body_template?, headers?}
     expect(MCP_SERVER_SOURCE).toMatch(/const VaultHttpInput = z\.object\(\{[\s\S]*secret_id: z\.string\(\)\.min\(1\)/);
     expect(MCP_SERVER_SOURCE).toMatch(/method: z\.enum\(\['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD'\]\)/);
     expect(MCP_SERVER_SOURCE).toMatch(/inject_header: z\.string\(\)\.min\(1\)/);
     expect(MCP_SERVER_SOURCE).toMatch(/body: z\.string\(\)\.optional\(\)/);
+    expect(MCP_SERVER_SOURCE).toMatch(/body_template: z\.string\(\)\.optional\(\)/);
+    expect(MCP_SERVER_SOURCE).toMatch(/headers: z\.record\(z\.string\(\), z\.string\(\)\)\.optional\(\)/);
   });
 
   it('mcp-server.ts exports handleVaultHttp and dispatches vault_http', () => {
@@ -111,6 +114,8 @@ describe('vault capability — MCP + REST wiring (criterion 10)', () => {
     // The capability input is parsed from the request body (never echoed).
     expect(endpoint).toContain('capability.vaultHttp(input)');
     expect(endpoint).toContain('inject_header');
+    expect(endpoint).toContain('body_template');
+    expect(endpoint).toContain('headers');
   });
 });
 
@@ -669,6 +674,200 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
     const rows = await auditRowsFor(secretId);
     expect(rows).toHaveLength(1);
     expect(rows[0].outcome).toBe('ok');
+  });
+
+  // ── Body-template injection (2026-09-12 Instagram feature) ──────
+  it('body_template: {{secret}} tokens are replaced with the resolved secret in the request body', async () => {
+    await grant('lilly', 'instagram');
+    const secretId = await putSecretFor('lilly', 'bodytpl');
+    let seenBody: unknown;
+    const fetchSpy = mockFetch(async (_url, init) => {
+      seenBody = init.body;
+      return new Response('{"authenticated":true}', { status: 200 });
+    });
+    const cap = createCapability({ store, fetchImpl: fetchSpy, resolveHost: resolveTo(PUBLIC_IP) });
+
+    const result = await cap.vaultHttp({
+      ...(inputFor(secretId) as Record<string, unknown>),
+      service: 'instagram',
+      body: undefined,
+      bodyTemplate: 'username=katra5432&password={{secret}}',
+    } as never);
+
+    expect(seenBody).toBe(`username=katra5432&password=${SECRET_VALUE}`);
+    expect(result).toEqual({ status: 200, body: '{"authenticated":true}' });
+    const rows = await auditRowsFor(secretId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].outcome).toBe('ok');
+    await assertNoSecretText(result, rows);
+  });
+
+  it('body_template: upstream Set-Cookie headers surface as setCookies; absent → no key', async () => {
+    await grant('lilly', 'instagram');
+    const secretId = await putSecretFor('lilly', 'cookies');
+    const cookieHeaders = new Headers();
+    cookieHeaders.append('Set-Cookie', 'sessionid=abc123; Path=/; HttpOnly');
+    cookieHeaders.append('Set-Cookie', 'csrftoken=xyz; Path=/');
+    const fetchSpy = mockFetch(async () =>
+      new Response('{"logged_in_user":{"pk":123}}', {
+        status: 200,
+        headers: cookieHeaders,
+      }),
+    );
+    const cap = createCapability({ store, fetchImpl: fetchSpy, resolveHost: resolveTo(PUBLIC_IP) });
+
+    const withCookies = await cap.vaultHttp({
+      ...(inputFor(secretId) as Record<string, unknown>),
+      service: 'instagram',
+      body: undefined,
+      bodyTemplate: 'password={{secret}}',
+    } as never);
+    expect(withCookies.status).toBe(200);
+    expect(withCookies.setCookies).toEqual([
+      'sessionid=abc123; Path=/; HttpOnly',
+      'csrftoken=xyz; Path=/',
+    ]);
+
+    const fetchNoCookies = mockFetch(async () => new Response('ok', { status: 200 }));
+    const cap2 = createCapability({ store, fetchImpl: fetchNoCookies, resolveHost: resolveTo(PUBLIC_IP) });
+    const withoutCookies = await cap2.vaultHttp({
+      ...(inputFor(secretId) as Record<string, unknown>),
+      service: 'instagram',
+      body: undefined,
+      bodyTemplate: 'password={{secret}}',
+    } as never);
+    expect(withoutCookies).toEqual({ status: 200, body: 'ok' });
+    expect('setCookies' in withoutCookies).toBe(false);
+  });
+
+  it('body + body_template together → blocked, fetch never called, audit denied', async () => {
+    await grant('lilly', 'instagram');
+    const secretId = await putSecretFor('lilly', 'conflict');
+    const fetchSpy = mockFetch(OK_RESPONSE);
+    const cap = createCapability({ store, fetchImpl: fetchSpy, resolveHost: resolveTo(PUBLIC_IP) });
+
+    const result = await cap.vaultHttp({
+      ...(inputFor(secretId) as Record<string, unknown>),
+      service: 'instagram',
+      body: 'plain',
+      bodyTemplate: 'password={{secret}}',
+    } as never);
+
+    expect(result).toEqual({
+      status: 0,
+      body: '',
+      blocked: { reason: 'body and body_template are mutually exclusive' },
+    });
+    expect(fetchSpy).not.toHaveBeenCalled();
+    const rows = await auditRowsFor(secretId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].outcome).toBe('denied');
+  });
+
+  it('extra headers: allowlisted names pass through; forbidden names block without fetch', async () => {
+    await grant('lilly', 'instagram');
+    const secretId = await putSecretFor('lilly', 'hdrs');
+    let seenHeaders: Record<string, string> = {};
+    const fetchSpy = mockFetch(async (_url, init) => {
+      seenHeaders = init.headers as Record<string, string>;
+      return new Response('ok', { status: 200 });
+    });
+    const cap = createCapability({ store, fetchImpl: fetchSpy, resolveHost: resolveTo(PUBLIC_IP) });
+
+    const ok = await cap.vaultHttp({
+      ...(inputFor(secretId) as Record<string, unknown>),
+      service: 'instagram',
+      body: undefined,
+      bodyTemplate: 'password={{secret}}',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'User-Agent': 'vault-test',
+        'x-ig-app-id': '1217981644879628',
+      },
+    } as never);
+    expect(ok.status).toBe(200);
+    expect(seenHeaders['Content-Type']).toBe('application/x-www-form-urlencoded');
+    expect(seenHeaders['User-Agent']).toBe('vault-test');
+    expect(seenHeaders['x-ig-app-id']).toBe('1217981644879628');
+    expect(seenHeaders['X-Api-Key']).toBe(SECRET_VALUE);
+
+    const fetchSpy2 = mockFetch(OK_RESPONSE);
+    const cap2 = createCapability({ store, fetchImpl: fetchSpy2, resolveHost: resolveTo(PUBLIC_IP) });
+    const blockedHost = await cap2.vaultHttp({
+      ...(inputFor(secretId) as Record<string, unknown>),
+      service: 'instagram',
+      headers: { host: 'evil.internal' },
+    } as never);
+    expect(blockedHost.blocked).toEqual({ reason: 'header not allowed' });
+    expect(fetchSpy2).not.toHaveBeenCalled();
+  });
+
+  it('extra headers: count/type/value bounds block with header not allowed', async () => {
+    await grant('lilly', 'instagram');
+    const secretId = await putSecretFor('lilly', 'hdrlimits');
+    const fetchSpy = mockFetch(OK_RESPONSE);
+    const cap = createCapability({ store, fetchImpl: fetchSpy, resolveHost: resolveTo(PUBLIC_IP) });
+
+    const tooMany: Record<string, string> = {};
+    for (let i = 0; i < 9; i += 1) tooMany[`x-extra-${i}`] = 'v';
+    // x-extra-* is not on the allowlist, so this must block regardless.
+    const result = await cap.vaultHttp({
+      ...(inputFor(secretId) as Record<string, unknown>),
+      service: 'instagram',
+      headers: tooMany,
+    } as never);
+    expect(result.blocked).toEqual({ reason: 'header not allowed' });
+    expect(fetchSpy).not.toHaveBeenCalled();
+
+    const oversized = await cap.vaultHttp({
+      ...(inputFor(secretId) as Record<string, unknown>),
+      service: 'instagram',
+      headers: { 'user-agent': 'x'.repeat(1025) },
+    } as never);
+    expect(oversized.blocked).toEqual({ reason: 'header not allowed' });
+  });
+
+  it('extra headers: the injected secret header always wins a name collision', async () => {
+    await grant('lilly', 'instagram');
+    const secretId = await putSecretFor('lilly', 'collide');
+    let seenValue: unknown;
+    const fetchSpy = mockFetch(async (_url, init) => {
+      seenValue = (init.headers as Record<string, string>)['User-Agent'];
+      return new Response('ok', { status: 200 });
+    });
+    const cap = createCapability({ store, fetchImpl: fetchSpy, resolveHost: resolveTo(PUBLIC_IP) });
+
+    await cap.vaultHttp({
+      ...(inputFor(secretId) as Record<string, unknown>),
+      service: 'instagram',
+      // Inject into an allowlisted extra-header name the caller also set —
+      // the injected secret must win the collision.
+      injectHeader: 'User-Agent',
+      headers: { 'User-Agent': 'caller-supplied-value' },
+    } as never);
+
+    expect(seenValue).toBe(SECRET_VALUE);
+  });
+
+  it('body_template: the secret appears in no result, audit row, or blocked reason', async () => {
+    await grant('lilly', 'instagram');
+    const secretId = await putSecretFor('lilly', 'redacttpl');
+    const fetchSpy = mockFetch(async () => {
+      throw new Error(`upstream exploded mid-login ${SECRET_VALUE}`);
+    });
+    const cap = createCapability({ store, fetchImpl: fetchSpy, resolveHost: resolveTo(PUBLIC_IP) });
+
+    const result = await cap.vaultHttp({
+      ...(inputFor(secretId) as Record<string, unknown>),
+      service: 'instagram',
+      body: undefined,
+      bodyTemplate: 'password={{secret}}&next=/home',
+    } as never);
+
+    expect(result.blocked).toEqual({ reason: 'request failed' });
+    const rows = await auditRowsFor(secretId);
+    expect(rows).toHaveLength(1);
+    await assertNoSecretText(result, rows);
   });
 
   // ── Upstream non-2xx returned as-is (rule 8) + real local server ─

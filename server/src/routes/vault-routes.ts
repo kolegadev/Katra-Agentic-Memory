@@ -295,10 +295,11 @@ export const create_vault_routes = (opts: VaultRoutesOptions = {}): Hono => {
 
   // ── F7 capability ──────────────────────────────────────────────
   // POST /capability/http — approval-gated, server-side secret use
-  // ({secret_id, service, method, url, inject_header, body?} →
-  // CapabilityResult {status, body, blocked?}). The caller comes from
-  // getCaller(); the resolved secret is injected only as the named header
-  // and never appears in any response, error, or audit row.
+  // ({secret_id, service, method, url, inject_header, body? | body_template?,
+  // headers?} → CapabilityResult {status, body, setCookies?, blocked?}). The
+  // caller comes from getCaller(); the resolved secret is injected only as
+  // the named header and/or via {{secret}} tokens in body_template, and never
+  // appears in any response, error, or audit row.
 
   router.post('/capability/http', async (c) => {
     let body: unknown;
@@ -344,6 +345,28 @@ export const create_vault_routes = (opts: VaultRoutesOptions = {}): Hono => {
     if (b.inject_scheme !== undefined && b.inject_scheme !== null && typeof b.inject_scheme !== 'string') {
       return c.json({ success: false, error: 'vault: inject_scheme must be a string' }, 400);
     }
+    if (b.body_template !== undefined && b.body_template !== null && typeof b.body_template !== 'string') {
+      return c.json({ success: false, error: 'vault: body_template must be a string' }, 400);
+    }
+    if (typeof b.body === 'string' && typeof b.body_template === 'string') {
+      return c.json(
+        { success: false, error: 'vault: body and body_template are mutually exclusive' },
+        400,
+      );
+    }
+    if (b.headers !== undefined && b.headers !== null) {
+      if (typeof b.headers !== 'object' || Array.isArray(b.headers)) {
+        return c.json({ success: false, error: 'vault: headers must be an object' }, 400);
+      }
+      for (const [name, value] of Object.entries(b.headers as Record<string, unknown>)) {
+        if (typeof name !== 'string' || typeof value !== 'string') {
+          return c.json(
+            { success: false, error: 'vault: headers must map names to string values' },
+            400,
+          );
+        }
+      }
+    }
     const input: CapabilityInput = {
       caller: getCaller(),
       secretId: b.secret_id,
@@ -353,6 +376,11 @@ export const create_vault_routes = (opts: VaultRoutesOptions = {}): Hono => {
       injectHeader: b.inject_header,
       injectScheme: typeof b.inject_scheme === 'string' ? b.inject_scheme : undefined,
       body: typeof b.body === 'string' ? b.body : undefined,
+      bodyTemplate: typeof b.body_template === 'string' ? b.body_template : undefined,
+      headers:
+        b.headers !== undefined && b.headers !== null
+          ? (b.headers as Record<string, string>)
+          : undefined,
     };
     try {
       // vaultHttp never throws for refused/blocked attempts; it returns the

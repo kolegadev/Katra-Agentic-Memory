@@ -463,7 +463,9 @@ const VaultHttpInput = z.object({
   url: z.string().min(1).describe('Absolute https:// URL (port 443, no userinfo)'),
   inject_header: z.string().min(1).describe('Header name the resolved secret is injected into, e.g. "Authorization"'),
   inject_scheme: z.string().optional().describe('Optional auth-scheme prefix for the header value (e.g. "Bearer" → "Bearer <secret>"); absent → raw secret'),
-  body: z.string().optional().describe('Optional request body (string)'),
+  body: z.string().optional().describe('Optional request body (string), passed through untouched. Mutually exclusive with body_template'),
+  body_template: z.string().optional().describe('Optional request-body template: every {{secret}} token is replaced with the resolved secret; nothing else is substituted. Mutually exclusive with body'),
+  headers: z.record(z.string(), z.string()).optional().describe('Optional extra request headers (allowlisted names only, e.g. content-type, user-agent, x-ig-app-id). Values are caller text — the secret is never substituted into them'),
 });
 
 // ── F9 auth tool input schemas ──────────────────────────────────
@@ -962,7 +964,7 @@ const tools = [
   // ── Katra Vault capability (F7) ───────────────────────────────
   {
     name: 'vault_http',
-    description: 'APPROVAL-GATED server-side secret use (the ONLY way a secret is ever used): opens the secret under the caller\'s RBAC scope, injects it as a single named request header into ONE outbound https:// request, and returns {status, body} — or {status: 0, blocked: {reason}} when refused (no active approval, secret not available, SSRF guard, method/port/scheme, limits, timeout). The secret NEVER appears in results, errors, logs, or audit rows.',
+    description: 'APPROVAL-GATED server-side secret use (the ONLY way a secret is ever used): opens the secret under the caller\'s RBAC scope and injects it into ONE outbound https:// request — as a single named request header (inject_header, optionally inject_scheme-prefixed) and/or by replacing every {{secret}} token in body_template with the secret value — and returns {status, body, setCookies?} — or {status: 0, blocked: {reason}} when refused (no active approval, secret not available, SSRF guard, method/port/scheme, header allowlist, body/body_template conflict, limits, timeout). setCookies carries upstream Set-Cookie session material only. Extra headers are allowlisted names with caller text. The secret NEVER appears in results, errors, logs, or audit rows.',
     inputSchema: zodToJsonSchema(VaultHttpInput) as Record<string, unknown>,
   },
   // ── Katra Vault agent auth (F9) ───────────────────────────────
@@ -3466,6 +3468,8 @@ export async function handleVaultHttp(args: unknown): Promise<TextContent[]> {
     injectHeader: input.inject_header,
     injectScheme: input.inject_scheme,
     body: input.body,
+    bodyTemplate: input.body_template,
+    headers: input.headers,
   });
   // CapabilityResult JSON only — blocked reasons, never the secret.
   return [{ type: 'text', text: JSON.stringify(result) }];

@@ -4,33 +4,44 @@
  * The ONLY way a secret is ever *used*: an approval-gated, server-side HTTP
  * capability (`vaultHttp`) that opens a secret under the caller's RBAC scope
  * (F2 `openSecretValue`), injects it into ONE outbound request as a single
- * named header, and returns only `{status, body}` (+ a `blocked` reason when
- * the request was refused). The raw secret never appears in results, thrown
- * errors, logs, or audit rows (design docs/katra-vault-design.md §7.3 guard
- * 3, §9; contract F7).
+ * named header and/or into the request body via a `{{secret}}` template
+ * token, and returns only `{status, body, setCookies?}` (+ a `blocked`
+ * reason when the request was refused). The raw secret never appears in
+ * results, thrown errors, logs, or audit rows (design docs/katra-vault-
+ * design.md §7.3 guard 3, §9; contract F7).
  *
  * Guard order (all hard rules — violation = FAIL):
  *   1. Approval gate FIRST — hasActiveApproval(caller.user_id, service)
  *      (honors the '*' wildcard). No active approval → no network activity.
- *   2. RBAC open — openSecretValue(caller, secretId); a caller can never use
- *      a secret outside their read scope.
- *   3. SSRF pre-flight (before ANY connection): https scheme only; host
+ *   2. Method whitelist GET POST PUT PATCH DELETE HEAD.
+ *   3. Content rules (before any network activity): extra request headers
+ *      are allowlisted names only (SAFE_EXTRA_HEADERS, case-insensitive;
+ *      host/connection/content-length/cookie/authorization and friends are
+ *      rejected), bounded count/value length, and `body` + `body_template`
+ *      are mutually exclusive.
+ *   4. SSRF pre-flight (before ANY connection): https scheme only; host
  *      resolved via resolveHost; ANY resolved private/loopback/link-local/
  *      reserved address (incl. IPv4-mapped IPv6) blocks; DNS failure blocks;
  *      port 443 only; absolute https URL with no userinfo.
- *   4. Limits: response body capped at 5 MB (stream counted, read aborted),
- *      upstream timeout 30 s (AbortSignal driven by injectable now());
- *      method whitelist GET POST PUT PATCH DELETE HEAD.
- *   5. No redirect following: fetch redirect 'manual' — a 3xx is returned
+ *   5. RBAC open — openSecretValue(caller, secretId); a caller can never use
+ *      a secret outside their read scope.
+ *   6. Limits: response body capped at 5 MB (stream counted, read aborted),
+ *      upstream timeout 30 s (AbortSignal driven by injectable now()).
+ *   7. No redirect following: fetch redirect 'manual' — a 3xx is returned
  *      as-is and never followed (redirects can smuggle SSRF past the
  *      pre-flight).
- *   6. Injection: the resolved secret is set ONLY as the named request
- *      header (`injectHeader`) of the outbound request.
- *   7. Audit: exactly ONE value-free `vault_audit` row per attempt: action
+ *   8. Injection: the resolved secret is set ONLY (a) as the named request
+ *      header (`injectHeader`, optionally `injectScheme`-prefixed) and/or
+ *      (b) by replacing every `{{secret}}` token in `body_template` with the
+ *      secret value. Extra header values are caller text — the secret is
+ *      NEVER substituted into them. Upstream `Set-Cookie` response headers
+ *      (session material, value-safe) are returned as `setCookies` when
+ *      present, bounded by count and total bytes.
+ *   9. Audit: exactly ONE value-free `vault_audit` row per attempt: action
  *      'capability_use', actor, service, secret_id, outcome
  *      'ok'|'denied'|'error', error only on exception. Keys ⊆ the F2
  *      whitelist {at, actor, action, secret_id, service, outcome, error}.
- *   8. Redaction on error: upstream non-2xx statuses are returned as
+ *  10. Redaction on error: upstream non-2xx statuses are returned as
  *      {status, body}; infrastructure failures return blocked reasons only —
  *      never the secret.
  *
@@ -63,8 +74,18 @@ export interface CapabilityInput {
   /** Optional auth-scheme prefix for the header value (e.g. 'Bearer' sends
    *  `Authorization: Bearer <secret>`); absent → raw secret is the value. */
   injectScheme?: string;
-  /** Optional request body (string). */
+  /** Optional request body (string) — passed through untouched. Mutually
+   *  exclusive with `bodyTemplate`. */
   body?: string;
+  /** Optional request-body template (string): every `{{secret}}` token is
+   *  replaced with the resolved secret value; nothing else is substituted.
+   *  Mutually exclusive with `body`. */
+  bodyTemplate?: string;
+  /** Optional extra request headers (allowlisted names only, enforced by
+   *  the capability core). Values are caller text — the secret is NEVER
+   *  substituted into them, and the injected header always wins on a name
+   *  collision. */
+  headers?: Record<string, string>;
 }
 
 export interface CapabilityResult {
@@ -72,6 +93,9 @@ export interface CapabilityResult {
   status: number;
   /** Upstream response body (never contains the secret). */
   body: string;
+  /** Upstream Set-Cookie headers (session material — never the secret),
+   *  present only when the upstream returned at least one. */
+  setCookies?: string[];
   /** Present when the request was refused (pre-flight or limits). */
   blocked?: { reason: string };
 }
@@ -110,6 +134,37 @@ const ALLOWED_METHODS: ReadonlySet<string> = new Set([
 ]);
 /** How often the timeout poller re-checks the injectable clock. */
 const TIMEOUT_POLL_MS = 50;
+
+// ── Body-injection + extra-header content rules (2026-09-12 feature) ─────
+
+/** Template token substituted with the resolved secret inside
+ *  `body_template`. Any other text passes through untouched. */
+const BODY_SECRET_TOKEN = '{{secret}}';
+/** Extra request-header names a caller may set (case-insensitive).
+ *  Deliberately excludes host, connection, content-length,
+ *  transfer-encoding, cookie, authorization, proxy-authorization and the
+ *  like — names that could smuggle SSRF past the pre-flight or bypass the
+ *  single header-injection path. */
+const SAFE_EXTRA_HEADERS: ReadonlySet<string> = new Set([
+  'content-type',
+  'accept',
+  'accept-language',
+  'user-agent',
+  'origin',
+  'referer',
+  'x-ig-app-id',
+  'x-ig-www-claim',
+  'x-requested-with',
+  'x-csrftoken',
+]);
+/** Maximum number of caller-supplied extra headers. */
+const MAX_EXTRA_HEADERS = 8;
+/** Maximum length of one caller-supplied extra-header value. */
+const MAX_HEADER_VALUE_LENGTH = 1024;
+/** Maximum number of upstream Set-Cookie headers surfaced in the result. */
+const MAX_SET_COOKIE_HEADERS = 32;
+/** Maximum total bytes of surfaced Set-Cookie values. */
+const MAX_SET_COOKIE_TOTAL_BYTES = 8 * 1024;
 
 // ── SSRF address guards (plain JS over address strings; no new deps) ──────
 
@@ -307,6 +362,32 @@ export function createCapability(opts: CapabilityOptions = {}): Capability {
           return finish('denied', blocked('method not allowed'));
         }
 
+        // 3 ── Content rules (before ANY network activity): extra headers
+        // are allowlisted names only, bounded; body and body_template are
+        // mutually exclusive.
+        if (input.headers !== undefined) {
+          const entries = Object.entries(input.headers as Record<string, unknown>);
+          const headerShapeInvalid =
+            entries.length > MAX_EXTRA_HEADERS ||
+            entries.some(
+              ([name, value]) =>
+                typeof name !== 'string' ||
+                name.trim().length === 0 ||
+                !SAFE_EXTRA_HEADERS.has(name.trim().toLowerCase()) ||
+                typeof value !== 'string' ||
+                value.length > MAX_HEADER_VALUE_LENGTH,
+            );
+          if (headerShapeInvalid) {
+            return finish('denied', blocked('header not allowed'));
+          }
+        }
+        if (input.bodyTemplate !== undefined && input.body !== undefined) {
+          return finish(
+            'denied',
+            blocked('body and body_template are mutually exclusive'),
+          );
+        }
+
         // 3 ── SSRF pre-flight (before any connection).
         let parsed: URL;
         try {
@@ -345,9 +426,20 @@ export function createCapability(opts: CapabilityOptions = {}): Capability {
           return finish('denied', blocked('secret not available'));
         }
 
-        // 5 ── Outbound request: secret ONLY as the named header; manual
-        // redirects; 30 s deadline enforced via AbortSignal + injectable
-        // now(); 5 MB body cap on the read.
+        // 5 ── Body assembly: body_template substitutes every {{secret}}
+        // token with the resolved secret; body passes through untouched.
+        let requestBody: string | undefined;
+        if (input.bodyTemplate !== undefined) {
+          requestBody = input.bodyTemplate.split(BODY_SECRET_TOKEN).join(secret);
+        } else {
+          requestBody = input.body;
+        }
+
+        // 6 ── Outbound request: secret ONLY as the named header and/or
+        // the substituted body template; manual redirects; 30 s deadline
+        // enforced via AbortSignal + injectable now(); 5 MB body cap on
+        // the read. The injected header is set LAST so it always wins a
+        // name collision with a caller-supplied extra header.
         const controller = new AbortController();
         const deadline = startAt + TIMEOUT_MS;
         let timedOut = false;
@@ -367,16 +459,23 @@ export function createCapability(opts: CapabilityOptions = {}): Capability {
         const headerValue = input.injectScheme
           ? `${input.injectScheme} ${secret}`
           : secret;
+        const outHeaders: Record<string, string> = {};
+        if (input.headers !== undefined) {
+          for (const [name, value] of Object.entries(input.headers)) {
+            outHeaders[name] = value;
+          }
+        }
+        outHeaders[input.injectHeader] = headerValue;
         const init: RequestInit = {
           method: input.method,
-          headers: { [input.injectHeader]: headerValue },
+          headers: outHeaders,
           redirect: 'manual',
           signal: controller.signal,
         };
         // Node forbids request bodies on GET/HEAD — the whitelist still
         // admits them, so a submitted body is simply not attached there.
-        if (input.body !== undefined && input.method !== 'GET' && input.method !== 'HEAD') {
-          init.body = input.body;
+        if (requestBody !== undefined && input.method !== 'GET' && input.method !== 'HEAD') {
+          init.body = requestBody;
         }
         try {
           const response = await Promise.race([
@@ -384,6 +483,27 @@ export function createCapability(opts: CapabilityOptions = {}): Capability {
             deadlineReached,
           ]);
           const status = response.status;
+          // Set-Cookie response headers are session material (value-safe)
+          // and are surfaced bounded by count and total bytes.
+          let setCookies: string[] | undefined;
+          try {
+            const rawCookies =
+              typeof (response.headers as Headers).getSetCookie === 'function'
+                ? (response.headers as Headers).getSetCookie()
+                : [];
+            const collected: string[] = [];
+            let totalBytes = 0;
+            for (const cookie of rawCookies) {
+              if (typeof cookie !== 'string' || cookie.length > 1024) continue;
+              if (collected.length >= MAX_SET_COOKIE_HEADERS) break;
+              totalBytes += cookie.length;
+              if (totalBytes > MAX_SET_COOKIE_TOTAL_BYTES) break;
+              collected.push(cookie);
+            }
+            setCookies = collected.length > 0 ? collected : undefined;
+          } catch {
+            setCookies = undefined;
+          }
           let body: string;
           try {
             body = await readBodyCapped(response);
@@ -393,7 +513,10 @@ export function createCapability(opts: CapabilityOptions = {}): Capability {
             }
             throw error;
           }
-          return finish('ok', { status, body });
+          return finish(
+            'ok',
+            setCookies !== undefined ? { status, body, setCookies } : { status, body },
+          );
         } catch (error) {
           if (timedOut) {
             return finish('error', blocked('timeout'), 'timeout');
