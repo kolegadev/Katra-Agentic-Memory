@@ -1,8 +1,8 @@
 /**
  * Unit tests: resolveCallerIdentity (F1 — caller-bound identities)
  *
- * Covers the four contract cases: loopback (trusted satori), key mapped in
- * client_keys (untrusted), legacy env keys (untrusted satori), and
+ * Covers the four contract cases: loopback (trusted katra), key mapped in
+ * client_keys (untrusted), legacy env keys (untrusted katra), and
  * valid-but-unmapped keys (null → rejected).
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -17,8 +17,8 @@ import {
   type CallerRequestParts,
 } from '../../src/utils/api-key-manager.js';
 
-const SHOSHIN_KEY = 'katra-shoshin-test-key-0001';
-const ZANSHIN_KEY = 'katra-zanshin-test-key-0001';
+const AGENT_A_KEY = 'katra-agent-a-test-key-0001';
+const AGENT_B_KEY = 'katra-agent-b-test-key-0001';
 const LEGACY_MCP_KEY = 'katra-mcp-legacy-test-key';
 const LEGACY_BACKUP_KEY = 'katra-mcp-backup-test-key';
 const ADMIN_KEY = 'katra-admin-test-key';
@@ -88,28 +88,28 @@ describe('resolveCallerIdentity', () => {
     for (const name of envNames) delete process.env[name];
   });
 
-  it('loopback → { user_id: satori, trusted: true } (no key required)', async () => {
+  it('loopback → { user_id: katra, trusted: true } (no key required)', async () => {
     const identity = await resolveCallerIdentity(remoteReq('127.0.0.1', {}));
-    expect(identity).toEqual({ user_id: 'satori', trusted: true });
+    expect(identity).toEqual({ user_id: 'katra', trusted: true });
   });
 
   it('loopback wins even when a key is presented', async () => {
-    const identity = await resolveCallerIdentity(remoteReq('::ffff:127.0.0.1', { 'x-mcp-auth': SHOSHIN_KEY }));
-    expect(identity).toEqual({ user_id: 'satori', trusted: true });
+    const identity = await resolveCallerIdentity(remoteReq('::ffff:127.0.0.1', { 'x-mcp-auth': AGENT_A_KEY }));
+    expect(identity).toEqual({ user_id: 'katra', trusted: true });
   });
 
   it('key mapped in client_keys → { user_id, trusted: false } (Bearer)', async () => {
-    registerClientKeyIdentity(hashApiKey(SHOSHIN_KEY), 'shoshin');
-    const identity = await resolveCallerIdentity(remoteReq('192.168.1.50', { authorization: `Bearer ${SHOSHIN_KEY}` }));
-    expect(identity).toEqual({ user_id: 'shoshin', trusted: false });
+    registerClientKeyIdentity(hashApiKey(AGENT_A_KEY), 'agent-a');
+    const identity = await resolveCallerIdentity(remoteReq('192.168.1.50', { authorization: `Bearer ${AGENT_A_KEY}` }));
+    expect(identity).toEqual({ user_id: 'agent-a', trusted: false });
   });
 
   it('key mapped in client_keys via x-mcp-auth and ?token=', async () => {
-    registerClientKeyIdentity(hashApiKey(ZANSHIN_KEY), 'zanshin');
-    expect(await resolveCallerIdentity(remoteReq('192.168.1.50', { 'x-mcp-auth': ZANSHIN_KEY })))
-      .toEqual({ user_id: 'zanshin', trusted: false });
-    expect(await resolveCallerIdentity(remoteReq('192.168.1.50', {}, `/mcp?token=${ZANSHIN_KEY}`)))
-      .toEqual({ user_id: 'zanshin', trusted: false });
+    registerClientKeyIdentity(hashApiKey(AGENT_B_KEY), 'agent-b');
+    expect(await resolveCallerIdentity(remoteReq('192.168.1.50', { 'x-mcp-auth': AGENT_B_KEY })))
+      .toEqual({ user_id: 'agent-b', trusted: false });
+    expect(await resolveCallerIdentity(remoteReq('192.168.1.50', {}, `/mcp?token=${AGENT_B_KEY}`)))
+      .toEqual({ user_id: 'agent-b', trusted: false });
   });
 
   it('legacy env keys (MCP_API_KEY) are REJECTED — no identity fallback (cutover policy)', async () => {
@@ -124,12 +124,12 @@ describe('resolveCallerIdentity', () => {
     expect(identity).toBeNull();
   });
 
-  it('admin key (KATRA_API_KEY) → { user_id: satori, trusted: true }', async () => {
+  it('admin key (KATRA_API_KEY) → { user_id: katra, trusted: true }', async () => {
     process.env.MCP_API_KEY = LEGACY_MCP_KEY;
     process.env.KATRA_API_KEY = ADMIN_KEY;
     await ensureApiKeys();
     const identity = await resolveCallerIdentity(remoteReq('192.168.1.50', { authorization: `Bearer ${ADMIN_KEY}` }));
-    expect(identity).toEqual({ user_id: 'satori', trusted: true });
+    expect(identity).toEqual({ user_id: 'katra', trusted: true });
   });
 
   it('no key, non-loopback → null', async () => {

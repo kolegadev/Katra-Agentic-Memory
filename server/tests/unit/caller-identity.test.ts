@@ -23,13 +23,13 @@ describe('Caller Identity (AsyncLocalStorage)', () => {
   });
 
   it('runWithCaller makes the identity visible to sync code inside', () => {
-    const identity: CallerIdentity = { user_id: 'shoshin', trusted: false };
+    const identity: CallerIdentity = { user_id: 'agent-a', trusted: false };
     const seen = runWithCaller(identity, () => getCaller());
     expect(seen).toEqual(identity);
   });
 
   it('runWithCaller propagates the identity across awaits', async () => {
-    const identity: CallerIdentity = { user_id: 'zanshin', trusted: false };
+    const identity: CallerIdentity = { user_id: 'agent-b', trusted: false };
     const seen = await runWithCaller(identity, async () => {
       await Promise.resolve();
       await new Promise(r => setTimeout(r, 5));
@@ -39,8 +39,8 @@ describe('Caller Identity (AsyncLocalStorage)', () => {
   });
 
   it('nested runWithCaller scopes restore the outer identity afterwards', async () => {
-    const outer: CallerIdentity = { user_id: 'satori', trusted: true };
-    const inner: CallerIdentity = { user_id: 'shoshin', trusted: false };
+    const outer: CallerIdentity = { user_id: 'katra', trusted: true };
+    const inner: CallerIdentity = { user_id: 'agent-a', trusted: false };
 
     await runWithCaller(outer, async () => {
       expect(getCaller()).toEqual(outer);

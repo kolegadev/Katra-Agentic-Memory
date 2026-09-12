@@ -3,7 +3,7 @@
  *
  * getAgentIdentity(userId) reads system_settings key `agent_identity:<user_id>`;
  * when that record is missing it returns an unnamed DEFAULT identity named
- * after the user_id — never the legacy `agent_identity` record (satori's).
+ * after the user_id — never the legacy `agent_identity` record (katra's).
  * Only the no-arg form keeps the legacy-record behavior; setAgentIdentity(
  * userId, record) writes the per-user record while the one-arg form keeps
  * writing the legacy record.
@@ -35,13 +35,13 @@ import {
 } from '../../src/services/infrastructure/agent-identity.js';
 
 const LEGACY_RECORD: AgentIdentity = {
-  name: 'Satori',
+  name: 'Katra',
   chosen_by: 'the agent',
   established: '2026-08-19',
 };
 
-const SHOSHIN_RECORD: AgentIdentity = {
-  name: 'Shoshin',
+const AGENT_A_RECORD: AgentIdentity = {
+  name: 'Agent-A',
   chosen_by: 'the agent',
   established: '2026-08-21',
 };
@@ -57,73 +57,73 @@ describe('per-user identity records (F3)', () => {
     delete process.env.AGENT_IDENTITY_NAME;
   });
 
-  it('no-arg getAgentIdentity keeps the legacy-record behavior (satori)', async () => {
+  it('no-arg getAgentIdentity keeps the legacy-record behavior (katra)', async () => {
     store.set(LEGACY_IDENTITY_KEY, LEGACY_RECORD);
     const identity = await getAgentIdentity();
-    expect(identity.name).toBe('Satori');
+    expect(identity.name).toBe('Katra');
     expect(identity.established).toBe('2026-08-19');
   });
 
-  it("getAgentIdentity('satori') returns an unnamed default identity when no per-user record exists (never the legacy record)", async () => {
+  it("getAgentIdentity('katra') returns an unnamed default identity when no per-user record exists (never the legacy record)", async () => {
     store.set(LEGACY_IDENTITY_KEY, LEGACY_RECORD);
-    const identity = await getAgentIdentity('satori');
-    expect(identity.name).toBe('satori');
-    expect(identity.name).not.toBe('Satori');
+    const identity = await getAgentIdentity('katra');
+    expect(identity.name).toBe('katra');
+    expect(identity.name).not.toBe('Katra');
     expect(identity.is_default).toBe(true);
     expect(identity.chosen_by).toBe('default (unnamed)');
-    expect(identity.user_id).toBe('satori');
+    expect(identity.user_id).toBe('katra');
   });
 
-  it("getAgentIdentity('satori') prefers agent_identity:satori over the legacy record", async () => {
+  it("getAgentIdentity('katra') prefers agent_identity:katra over the legacy record", async () => {
     store.set(LEGACY_IDENTITY_KEY, LEGACY_RECORD);
-    store.set(agentIdentityKey('satori'), { ...LEGACY_RECORD, name: 'Satori v2', established: '2026-08-21' });
-    const identity = await getAgentIdentity('satori');
-    expect(identity.name).toBe('Satori v2');
+    store.set(agentIdentityKey('katra'), { ...LEGACY_RECORD, name: 'Katra v2', established: '2026-08-21' });
+    const identity = await getAgentIdentity('katra');
+    expect(identity.name).toBe('Katra v2');
     expect(identity.established).toBe('2026-08-21');
   });
 
-  it("getAgentIdentity('shoshin') returns the agent_identity:shoshin record", async () => {
+  it("getAgentIdentity('agent-a') returns the agent_identity:agent-a record", async () => {
     store.set(LEGACY_IDENTITY_KEY, LEGACY_RECORD);
-    store.set(agentIdentityKey('shoshin'), SHOSHIN_RECORD);
-    const identity = await getAgentIdentity('shoshin');
-    expect(identity.name).toBe('Shoshin');
+    store.set(agentIdentityKey('agent-a'), AGENT_A_RECORD);
+    const identity = await getAgentIdentity('agent-a');
+    expect(identity.name).toBe('Agent-A');
     expect(identity.established).toBe('2026-08-21');
   });
 
-  it("getAgentIdentity('zanshin') returns an unnamed default identity when its own record is missing (never satori's)", async () => {
+  it("getAgentIdentity('agent-b') returns an unnamed default identity when its own record is missing (never katra's)", async () => {
     store.set(LEGACY_IDENTITY_KEY, LEGACY_RECORD);
-    const identity = await getAgentIdentity('zanshin');
-    expect(identity.name).toBe('zanshin');
-    expect(identity.name).not.toBe('Satori');
+    const identity = await getAgentIdentity('agent-b');
+    expect(identity.name).toBe('agent-b');
+    expect(identity.name).not.toBe('Katra');
     expect(identity.is_default).toBe(true);
     expect(identity.chosen_by).toBe('default (unnamed)');
   });
 
-  it("setAgentIdentity('shoshin', record) writes under agent_identity:shoshin", async () => {
-    await setAgentIdentity('shoshin', SHOSHIN_RECORD);
-    expect(store.has(agentIdentityKey('shoshin'))).toBe(true);
-    expect(store.get(agentIdentityKey('shoshin')).name).toBe('Shoshin');
+  it("setAgentIdentity('agent-a', record) writes under agent_identity:agent-a", async () => {
+    await setAgentIdentity('agent-a', AGENT_A_RECORD);
+    expect(store.has(agentIdentityKey('agent-a'))).toBe(true);
+    expect(store.get(agentIdentityKey('agent-a')).name).toBe('Agent-A');
     expect(store.has(LEGACY_IDENTITY_KEY)).toBe(false);
 
-    const identity = await getAgentIdentity('shoshin');
-    expect(identity.name).toBe('Shoshin');
+    const identity = await getAgentIdentity('agent-a');
+    expect(identity.name).toBe('Agent-A');
   });
 
-  it('one-arg setAgentIdentity keeps the existing legacy-record behavior (satori)', async () => {
+  it('one-arg setAgentIdentity keeps the existing legacy-record behavior (katra)', async () => {
     await setAgentIdentity(LEGACY_RECORD);
     expect(store.has(LEGACY_IDENTITY_KEY)).toBe(true);
-    expect(store.get(LEGACY_IDENTITY_KEY).name).toBe('Satori');
-    expect(store.has(agentIdentityKey('satori'))).toBe(false);
+    expect(store.get(LEGACY_IDENTITY_KEY).name).toBe('Katra');
+    expect(store.has(agentIdentityKey('katra'))).toBe(false);
 
     const identity = await getAgentIdentity();
-    expect(identity.name).toBe('Satori');
+    expect(identity.name).toBe('Katra');
   });
 
   it('setAgentIdentity(userId) without a record throws', async () => {
-    await expect(setAgentIdentity('shoshin' as any)).rejects.toThrow(/record is required/i);
+    await expect(setAgentIdentity('agent-a' as any)).rejects.toThrow(/record is required/i);
   });
 
   it('rejects an empty identity name', async () => {
-    await expect(setAgentIdentity('shoshin', { ...SHOSHIN_RECORD, name: '   ' })).rejects.toThrow(/must not be empty/i);
+    await expect(setAgentIdentity('agent-a', { ...AGENT_A_RECORD, name: '   ' })).rejects.toThrow(/must not be empty/i);
   });
 });

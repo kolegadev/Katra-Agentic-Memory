@@ -107,9 +107,9 @@ describe.skipIf(!mongoAvailable)('vault REST routes (F3) — contract criteria',
   let db: Db;
   const MK = generateMasterKey();
   const VALUE = 'sk-f3-live-9c4e2b7a1f8d3c5e6a0b9d8e7c6f5a4b3c2d1e0f';
-  const LILLY: CallerIdentity = { user_id: 'lilly', trusted: false };
-  const SHOSHIN: CallerIdentity = { user_id: 'shoshin', trusted: false };
-  const SATORI: CallerIdentity = { user_id: 'satori', trusted: true };
+  const AGENT_C: CallerIdentity = { user_id: 'agent-c', trusted: false };
+  const AGENT_A: CallerIdentity = { user_id: 'agent-a', trusted: false };
+  const KATRA: CallerIdentity = { user_id: 'katra', trusted: true };
 
   let app: Hono;
   let noKeyApp: Hono;
@@ -185,7 +185,7 @@ describe.skipIf(!mongoAvailable)('vault REST routes (F3) — contract criteria',
 
   // 1 ── untrusted private put: 201, owner pinned to caller ────────
   it('criterion 1: untrusted POST private secret → 201 and stored owner == caller', async () => {
-    const res = await req(app, LILLY, 'POST', '/secrets', {
+    const res = await req(app, AGENT_C, 'POST', '/secrets', {
       name: 'agentmail-api-key',
       value: VALUE,
       service: 'agentmail',
@@ -193,91 +193,91 @@ describe.skipIf(!mongoAvailable)('vault REST routes (F3) — contract criteria',
     expect(res.status).toBe(201);
     const text = await res.clone().text();
     const body: any = JSON.parse(text);
-    expect(body).toEqual({ secret_id: 'lilly/agentmail-api-key', created: true });
+    expect(body).toEqual({ secret_id: 'agent-c/agentmail-api-key', created: true });
     // Never echo the value anywhere in the response.
     expect(text).not.toContain(VALUE);
 
-    const raw = await rawSecret('lilly/agentmail-api-key');
+    const raw = await rawSecret('agent-c/agentmail-api-key');
     expect(raw).not.toBeNull();
-    expect(raw!.owner.user_id).toBe('lilly');
+    expect(raw!.owner.user_id).toBe('agent-c');
     expect(raw!.envelope).toBeDefined();
-    expect(raw!.meta.created_by).toBe('lilly');
+    expect(raw!.meta.created_by).toBe('agent-c');
   });
 
   // 2 ── untrusted ownerUserId override is IGNORED ────────────────
   it('criterion 2: untrusted POST with ownerUserId → ignored, owner stays caller', async () => {
-    // shoshin (untrusted) tries to create a secret owned by lilly — the
-    // override must be ignored and the secret pinned to shoshin.
-    const res = await req(app, SHOSHIN, 'POST', '/secrets', {
+    // agent-a (untrusted) tries to create a secret owned by agent-c — the
+    // override must be ignored and the secret pinned to agent-a.
+    const res = await req(app, AGENT_A, 'POST', '/secrets', {
       name: 'gh-token',
-      value: 'shoshin-token-value-1',
-      ownerUserId: 'lilly',
+      value: 'agent-a-token-value-1',
+      ownerUserId: 'agent-c',
     });
     expect(res.status).toBe(201);
     const body: any = await res.json();
-    expect(body.secret_id).toBe('shoshin/gh-token');
-    const raw = await rawSecret('shoshin/gh-token');
+    expect(body.secret_id).toBe('agent-a/gh-token');
+    const raw = await rawSecret('agent-a/gh-token');
     expect(raw).not.toBeNull();
-    expect(raw!.owner.user_id).toBe('shoshin');
-    // and nothing was created under lilly's partition
-    expect(await rawSecret('lilly/gh-token')).toBeNull();
+    expect(raw!.owner.user_id).toBe('agent-a');
+    // and nothing was created under agent-c's partition
+    expect(await rawSecret('agent-c/gh-token')).toBeNull();
   });
 
   // 3 ── trusted ownerUserId override is honored ──────────────────
-  it('criterion 3: trusted POST with ownerUserId lilly → stored under lilly', async () => {
-    const res = await req(app, SATORI, 'POST', '/secrets', {
-      name: 'trusted-puts-for-lilly',
-      value: 'value-sealed-for-lilly',
-      ownerUserId: 'lilly',
+  it('criterion 3: trusted POST with ownerUserId agent-c → stored under agent-c', async () => {
+    const res = await req(app, KATRA, 'POST', '/secrets', {
+      name: 'trusted-puts-for-agent-c',
+      value: 'value-sealed-for-agent-c',
+      ownerUserId: 'agent-c',
     });
     expect(res.status).toBe(201);
     const body: any = await res.json();
-    expect(body.secret_id).toBe('lilly/trusted-puts-for-lilly');
-    const raw = await rawSecret('lilly/trusted-puts-for-lilly');
+    expect(body.secret_id).toBe('agent-c/trusted-puts-for-agent-c');
+    const raw = await rawSecret('agent-c/trusted-puts-for-agent-c');
     expect(raw).not.toBeNull();
-    expect(raw!.owner.user_id).toBe('lilly');
-    expect(raw!.meta.created_by).toBe('satori'); // creator is still the caller
-    // Lilly can see it; shoshin cannot.
-    const shoshinList: any[] = await (await req(app, SHOSHIN, 'GET', '/secrets')).json();
-    expect(shoshinList.map((s) => s.secret_id)).not.toContain('lilly/trusted-puts-for-lilly');
+    expect(raw!.owner.user_id).toBe('agent-c');
+    expect(raw!.meta.created_by).toBe('katra'); // creator is still the caller
+    // Agent-C can see it; agent-a cannot.
+    const agentAList: any[] = await (await req(app, AGENT_A, 'GET', '/secrets')).json();
+    expect(agentAList.map((s) => s.secret_id)).not.toContain('agent-c/trusted-puts-for-agent-c');
   });
 
   // 4 ── list scoping: private per-caller, team shared ────────────
   it('criterion 4: caller B cannot see caller A private; both see team secrets', async () => {
-    await req(app, LILLY, 'POST', '/secrets', { name: 'lilly-only', value: 'v1' });
-    await req(app, LILLY, 'POST', '/secrets', {
+    await req(app, AGENT_C, 'POST', '/secrets', { name: 'agent-c-only', value: 'v1' });
+    await req(app, AGENT_C, 'POST', '/secrets', {
       name: 'team-token',
       value: 'v2',
       scope: 'team',
     });
-    await req(app, SHOSHIN, 'POST', '/secrets', { name: 'shoshin-only', value: 'v3' });
+    await req(app, AGENT_A, 'POST', '/secrets', { name: 'agent-a-only', value: 'v3' });
 
-    const lillyList: any[] = await (await req(app, LILLY, 'GET', '/secrets')).json();
-    const lillyIds = lillyList.map((s) => s.secret_id);
-    expect(lillyIds).toContain('lilly/lilly-only');
-    expect(lillyIds).toContain('team:my-team/team-token');
-    expect(lillyIds).not.toContain('shoshin/shoshin-only');
+    const agentCList: any[] = await (await req(app, AGENT_C, 'GET', '/secrets')).json();
+    const agentCIds = agentCList.map((s) => s.secret_id);
+    expect(agentCIds).toContain('agent-c/agent-c-only');
+    expect(agentCIds).toContain('team:my-team/team-token');
+    expect(agentCIds).not.toContain('agent-a/agent-a-only');
 
-    const shoshinList: any[] = await (await req(app, SHOSHIN, 'GET', '/secrets')).json();
-    const shoshinIds = shoshinList.map((s) => s.secret_id);
-    expect(shoshinIds).toContain('shoshin/shoshin-only');
-    expect(shoshinIds).toContain('team:my-team/team-token');
-    expect(shoshinIds).not.toContain('lilly/lilly-only');
+    const agentAList: any[] = await (await req(app, AGENT_A, 'GET', '/secrets')).json();
+    const agentAIds = agentAList.map((s) => s.secret_id);
+    expect(agentAIds).toContain('agent-a/agent-a-only');
+    expect(agentAIds).toContain('team:my-team/team-token');
+    expect(agentAIds).not.toContain('agent-c/agent-c-only');
 
     // Team rows carry only shared_id, never a user_id.
-    const team = shoshinList.find((s) => s.secret_id === 'team:my-team/team-token');
+    const team = agentAList.find((s) => s.secret_id === 'team:my-team/team-token');
     expect(team!.owner).toEqual({ shared_id: 'my-team' });
   });
 
   // 5 ── GET meta: SecretMeta key set only; no envelope/value ─────
   it('criterion 5: GET secret response is SecretMeta only — no envelope/ciphertext/value', async () => {
-    await req(app, LILLY, 'POST', '/secrets', {
+    await req(app, AGENT_C, 'POST', '/secrets', {
       name: 'meta-check',
       value: VALUE,
       service: 'agentmail',
       kind: 'api_key',
     });
-    const res = await req(app, LILLY, 'GET', `/secrets/${encodeURIComponent('lilly/meta-check')}`);
+    const res = await req(app, AGENT_C, 'GET', `/secrets/${encodeURIComponent('agent-c/meta-check')}`);
     expect(res.status).toBe(200);
     const text = await res.clone().text();
     const body: any = JSON.parse(text);
@@ -288,27 +288,27 @@ describe.skipIf(!mongoAvailable)('vault REST routes (F3) — contract criteria',
     expect(text.toLowerCase()).not.toContain('envelope');
     expect(text.toLowerCase()).not.toContain('ciphertext');
     expect(text.toLowerCase()).not.toContain('dek');
-    expect(text).toContain('"secret_id":"lilly/meta-check"');
+    expect(text).toContain('"secret_id":"agent-c/meta-check"');
   });
 
   // 6 ── delete/rotate RBAC: 403 non-owner + unchanged; owner 200 ─
   it('criterion 6: non-owner untrusted DELETE/rotate → 403, row unchanged; owner → 200', async () => {
-    await req(app, LILLY, 'POST', '/secrets', {
+    await req(app, AGENT_C, 'POST', '/secrets', {
       name: 'team-shared',
       value: 'shared-value',
       scope: 'team',
     });
-    await req(app, LILLY, 'POST', '/secrets', { name: 'own-private', value: 'mine' });
+    await req(app, AGENT_C, 'POST', '/secrets', { name: 'own-private', value: 'mine' });
 
-    // shoshin can SEE the team secret (shared scope) but does not own it.
+    // agent-a can SEE the team secret (shared scope) but does not own it.
     const teamId = 'team:my-team/team-shared';
-    const del = await req(app, SHOSHIN, 'DELETE', `/secrets/${encodeURIComponent(teamId)}`);
+    const del = await req(app, AGENT_A, 'DELETE', `/secrets/${encodeURIComponent(teamId)}`);
     expect(del.status).toBe(403);
     expect(await rawSecret(teamId)).not.toBeNull();
 
     const rot = await req(
       app,
-      SHOSHIN,
+      AGENT_A,
       'POST',
       `/secrets/${encodeURIComponent(teamId)}/rotate`,
     );
@@ -318,59 +318,59 @@ describe.skipIf(!mongoAvailable)('vault REST routes (F3) — contract criteria',
     // Owner: delete + rotate succeed.
     const ownerRot = await req(
       app,
-      LILLY,
+      AGENT_C,
       'POST',
-      `/secrets/${encodeURIComponent('lilly/own-private')}/rotate`,
+      `/secrets/${encodeURIComponent('agent-c/own-private')}/rotate`,
     );
     expect(ownerRot.status).toBe(200);
     expect(await ownerRot.json()).toEqual({ rotated: true });
 
     const ownerDel = await req(
       app,
-      LILLY,
+      AGENT_C,
       'DELETE',
-      `/secrets/${encodeURIComponent('lilly/own-private')}`,
+      `/secrets/${encodeURIComponent('agent-c/own-private')}`,
     );
     expect(ownerDel.status).toBe(200);
     expect(await ownerDel.json()).toEqual({ deleted: true });
-    expect(await rawSecret('lilly/own-private')).toBeNull();
+    expect(await rawSecret('agent-c/own-private')).toBeNull();
   });
 
   // 7 ── audit: untrusted own actor only; trusted sees all ────────
   it('criterion 7: REST audit is actor-scoped for untrusted and unrestricted for trusted', async () => {
-    const put1 = await req(app, LILLY, 'POST', '/secrets', { name: 'aud-a', value: 'va' });
+    const put1 = await req(app, AGENT_C, 'POST', '/secrets', { name: 'aud-a', value: 'va' });
     const put1Body: any = await put1.json();
-    const put2 = await req(app, SHOSHIN, 'POST', '/secrets', { name: 'aud-b', value: 'vb' });
+    const put2 = await req(app, AGENT_A, 'POST', '/secrets', { name: 'aud-b', value: 'vb' });
     const put2Body: any = await put2.json();
     await sleep(20);
-    await req(app, SATORI, 'POST', '/secrets', { name: 'aud-c', value: 'vc' });
+    await req(app, KATRA, 'POST', '/secrets', { name: 'aud-c', value: 'vc' });
 
-    const lillyRows: any[] = await (await req(app, LILLY, 'GET', '/audit')).json();
-    expect(lillyRows.length).toBeGreaterThan(0);
-    for (const row of lillyRows) {
-      expect(row.actor).toBe('lilly');
+    const agentCRows: any[] = await (await req(app, AGENT_C, 'GET', '/audit')).json();
+    expect(agentCRows.length).toBeGreaterThan(0);
+    for (const row of agentCRows) {
+      expect(row.actor).toBe('agent-c');
       for (const key of Object.keys(row)) expect(AUDIT_KEYS.has(key)).toBe(true);
     }
-    expect(lillyRows.map((r) => r.secret_id)).toContain(put1Body.secret_id);
-    expect(lillyRows.map((r) => r.secret_id)).not.toContain(put2Body.secret_id);
+    expect(agentCRows.map((r) => r.secret_id)).toContain(put1Body.secret_id);
+    expect(agentCRows.map((r) => r.secret_id)).not.toContain(put2Body.secret_id);
 
     // secret_id filter narrows trusted view.
-    const satoriRows: any[] = await (
-      await req(app, SATORI, 'GET', `/audit?secret_id=${encodeURIComponent(put2Body.secret_id)}`)
+    const katraRows: any[] = await (
+      await req(app, KATRA, 'GET', `/audit?secret_id=${encodeURIComponent(put2Body.secret_id)}`)
     ).json();
-    expect(satoriRows.length).toBeGreaterThan(0);
-    for (const row of satoriRows) expect(row.secret_id).toBe(put2Body.secret_id);
-    expect(satoriRows.map((r) => r.actor)).toContain('shoshin');
+    expect(katraRows.length).toBeGreaterThan(0);
+    for (const row of katraRows) expect(row.secret_id).toBe(put2Body.secret_id);
+    expect(katraRows.map((r) => r.actor)).toContain('agent-a');
   });
 
   it('REST audit is newest-first', async () => {
-    const first = await req(app, LILLY, 'POST', '/secrets', { name: 'order-1', value: 'x1' });
+    const first = await req(app, AGENT_C, 'POST', '/secrets', { name: 'order-1', value: 'x1' });
     const firstId: any = (await first.json()).secret_id;
     await sleep(25);
-    const second = await req(app, LILLY, 'POST', '/secrets', { name: 'order-2', value: 'x2' });
+    const second = await req(app, AGENT_C, 'POST', '/secrets', { name: 'order-2', value: 'x2' });
     const secondId: any = (await second.json()).secret_id;
 
-    const rows: any[] = await (await req(app, LILLY, 'GET', '/audit')).json();
+    const rows: any[] = await (await req(app, AGENT_C, 'GET', '/audit')).json();
     expect(rows.length).toBe(2);
     expect(rows[0].secret_id).toBe(secondId);
     expect(rows[1].secret_id).toBe(firstId);
@@ -381,17 +381,17 @@ describe.skipIf(!mongoAvailable)('vault REST routes (F3) — contract criteria',
 
   it('REST audit defaults to limit 100 and honors an explicit limit', async () => {
     for (let i = 0; i < 105; i++) {
-      await req(app, LILLY, 'POST', '/secrets', { name: `bulk-${i}`, value: `b${i}` });
+      await req(app, AGENT_C, 'POST', '/secrets', { name: `bulk-${i}`, value: `b${i}` });
     }
-    const all: any[] = await (await req(app, LILLY, 'GET', '/audit')).json();
+    const all: any[] = await (await req(app, AGENT_C, 'GET', '/audit')).json();
     expect(all).toHaveLength(100); // newest-first default cap
-    const fifty: any[] = await (await req(app, LILLY, 'GET', '/audit?limit=50')).json();
+    const fifty: any[] = await (await req(app, AGENT_C, 'GET', '/audit?limit=50')).json();
     expect(fifty).toHaveLength(50);
   });
 
   // 10 ── master key missing: put → 503, list still 200 ───────────
   it('criterion 10: POST without master key → 503 with the exact phrase; GET list still 200', async () => {
-    const res = await req(noKeyApp, LILLY, 'POST', '/secrets', {
+    const res = await req(noKeyApp, AGENT_C, 'POST', '/secrets', {
       name: 'no-key-secret',
       value: 'secret-value-no-key',
     });
@@ -400,42 +400,42 @@ describe.skipIf(!mongoAvailable)('vault REST routes (F3) — contract criteria',
     expect(bodyText).toContain('vault: master key not configured');
     expect(bodyText).not.toContain('secret-value-no-key');
 
-    const list = await req(noKeyApp, LILLY, 'GET', '/secrets');
+    const list = await req(noKeyApp, AGENT_C, 'GET', '/secrets');
     expect(list.status).toBe(200);
     expect(await list.json()).toEqual([]);
   });
 
   // ── 400/404 shapes ─────────────────────────────────────────────
   it('returns 400 for bad input and 404 for unknown ids', async () => {
-    expect((await req(app, LILLY, 'POST', '/secrets', {})).status).toBe(400);
-    expect((await req(app, LILLY, 'POST', '/secrets', { name: 'x' })).status).toBe(400);
+    expect((await req(app, AGENT_C, 'POST', '/secrets', {})).status).toBe(400);
+    expect((await req(app, AGENT_C, 'POST', '/secrets', { name: 'x' })).status).toBe(400);
     expect(
-      (await req(app, LILLY, 'POST', '/secrets', { name: 'x', value: 'v', scope: 'public' }))
+      (await req(app, AGENT_C, 'POST', '/secrets', { name: 'x', value: 'v', scope: 'public' }))
         .status,
     ).toBe(400);
     expect(
-      (await req(app, LILLY, 'POST', '/secrets', { name: 'x', value: 'v', kind: 'bogus' }))
+      (await req(app, AGENT_C, 'POST', '/secrets', { name: 'x', value: 'v', kind: 'bogus' }))
         .status,
     ).toBe(400);
-    expect((await req(app, LILLY, 'GET', `/secrets/${encodeURIComponent('lilly/ghost')}`)).status).toBe(404);
-    expect((await req(app, LILLY, 'DELETE', `/secrets/${encodeURIComponent('lilly/ghost')}`)).status).toBe(404);
+    expect((await req(app, AGENT_C, 'GET', `/secrets/${encodeURIComponent('agent-c/ghost')}`)).status).toBe(404);
+    expect((await req(app, AGENT_C, 'DELETE', `/secrets/${encodeURIComponent('agent-c/ghost')}`)).status).toBe(404);
     expect(
-      (await req(app, LILLY, 'POST', `/secrets/${encodeURIComponent('lilly/ghost')}/rotate`))
+      (await req(app, AGENT_C, 'POST', `/secrets/${encodeURIComponent('agent-c/ghost')}/rotate`))
         .status,
     ).toBe(404);
-    expect((await req(app, LILLY, 'GET', '/audit?limit=abc')).status).toBe(400);
-    expect((await req(app, LILLY, 'GET', '/audit?limit=0')).status).toBe(400);
-    expect((await req(app, LILLY, 'GET', '/audit?limit=1001')).status).toBe(400);
+    expect((await req(app, AGENT_C, 'GET', '/audit?limit=abc')).status).toBe(400);
+    expect((await req(app, AGENT_C, 'GET', '/audit?limit=0')).status).toBe(400);
+    expect((await req(app, AGENT_C, 'GET', '/audit?limit=1001')).status).toBe(400);
   });
 
   it('error bodies never echo the submitted value', async () => {
     const secretValue = 'ultra-secret-never-echo-9f2a';
-    const res = await req(app, LILLY, 'POST', '/secrets', { value: secretValue }); // no name
+    const res = await req(app, AGENT_C, 'POST', '/secrets', { value: secretValue }); // no name
     expect(res.status).toBe(400);
     const text = await res.clone().text();
     expect(text).not.toContain(secretValue);
 
-    const auditDenied = await req(app, LILLY, 'POST', '/secrets', {
+    const auditDenied = await req(app, AGENT_C, 'POST', '/secrets', {
       name: 'mine-for-echo-check',
       value: secretValue,
     });
@@ -444,7 +444,7 @@ describe.skipIf(!mongoAvailable)('vault REST routes (F3) — contract criteria',
     // Audit rows are value-free by construction.
     const auditDoc = await db
       .collection(AUDIT)
-      .findOne({ secret_id: 'lilly/mine-for-echo-check' });
+      .findOne({ secret_id: 'agent-c/mine-for-echo-check' });
     expect(JSON.stringify(auditDoc)).not.toContain(secretValue);
   });
 });

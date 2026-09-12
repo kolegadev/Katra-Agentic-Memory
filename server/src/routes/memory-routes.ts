@@ -41,7 +41,7 @@ export const create_memory_routes = (): Hono => {
             return next();
         }
         // F1: also accept callers whose identity was resolved by the app-level
-        // middleware (loopback → trusted satori; client_keys-mapped keys;
+        // middleware (loopback → trusted katra; client_keys-mapped keys;
         // legacy env keys). Requests that map to no identity stay rejected.
         const caller = await resolveCallerFromHono(c);
         if (caller) {

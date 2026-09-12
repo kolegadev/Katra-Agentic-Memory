@@ -1126,7 +1126,7 @@ export const create_admin_routes = (): Hono => {
     try {
       const os = await import('os');
       const hostname = os.hostname();
-      const userId = process.env.SOLOMEM_USER_ID || hostname + '-agent';
+      const userId = process.env.KATRA_USER_ID || hostname + '-agent';
       return c.json({
         success: true,
         identity: {
@@ -1699,7 +1699,7 @@ export const create_admin_routes = (): Hono => {
    * Body: { name: string, chosen_by?: string, confirmed_by?: string,
    *         rationale?: string, established?: string }
    * F3: pass ?user_id=<id> (or body.user_id) to write that user's per-user
-   * record (agent_identity:<user_id>) instead of the legacy satori record.
+   * record (agent_identity:<user_id>) instead of the legacy katra record.
    */
   router.put('/identity', async (c) => {
     try {

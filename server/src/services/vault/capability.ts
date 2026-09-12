@@ -61,7 +61,7 @@ import { createVaultStore, type VaultStore } from './store.js';
 
 export interface CapabilityInput {
   caller: CallerIdentity;
-  /** Full secret_id (e.g. 'lilly/agentmail-api-key'). */
+  /** Full secret_id (e.g. 'agent-a/agentmail-api-key'). */
   secretId: string;
   /** Approval service name (e.g. 'agentmail'). */
   service: string;

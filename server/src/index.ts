@@ -81,8 +81,9 @@ async function main() {
   if (keysGenerated) {
     logGeneratedKeys(mcpApiKey, katraApiKey);
   }
-  // F1: provision system_settings.client_keys (satori → legacy key hash;
-  // shoshin/zanshin → freshly generated once, printed once). Idempotent.
+  // F1: provision system_settings.client_keys (local identity → legacy key
+  // hash; KATRA_EXTRA_IDENTITIES → freshly generated once, printed once).
+  // Idempotent.
   await ensureClientKeys();
 
   // F2: pin memory_scope.hybrid_visible_user_ids to [] (idempotent, only
@@ -157,7 +158,7 @@ async function main() {
   }));
 
   // F1: resolve the REST caller from loopback / the presented API key
-  // (admin key = trusted satori; client_keys-mapped keys = untrusted caller;
+  // (admin key = trusted katra; client_keys-mapped keys = untrusted caller;
   // valid-but-unmapped keys are rejected with 401). The resolved identity is
   // propagated to every route handler via AsyncLocalStorage.
   app.use('/api/*', createCallerAuthMiddleware());

@@ -8,7 +8,7 @@ The Autonomous Loop solves the "next session start" problem for AI agents — ho
 
 It uses **sleep consolidation reflections** and **emotional signatures** as the trigger mechanism. When the system's emotional landscape indicates urgency, the heartbeat accelerates. When things are quiet, it slows to once per day.
 
-**Everything is Satori-native.** The autonomous loop operates on the memory layer inside Katra: writes on the shared `my-team` channel are visible to every identity, and each identity's personal memories (journals, reflections, emotional state) stay private to it. Allocation targets the three named identities — `satori` (this machine), `shoshin` (iMac trading Kolega Code), `zanshin` (iMac OpenCode desktop). `gas-law-watcher` is a tool actor, not an agent: it writes team memory only and is never allocated work.
+**Everything is Katra-native.** The autonomous loop operates on the memory layer inside Katra: writes on the shared `my-team` channel are visible to every identity, and each identity's personal memories (journals, reflections, emotional state) stay private to it. Allocation targets the identities in the executor set (one per machine/agent); tool actors write team memory only and are never allocated work.
 
 ## Architecture
 
@@ -23,7 +23,7 @@ It uses **sleep consolidation reflections** and **emotional signatures** as the 
                            ▼
 ┌──────────────────────────────────────────────────────────────────┐
 │                     SHARED MEMORY (my-team)                       │
-│  All three identities see shared writes; each identity's private │
+│  Every identity sees shared writes; each identity's private       │
 │  memories (reflections, journals) stay private                   │
 └──────────────────────────┬───────────────────────────────────────┘
                            │
@@ -44,25 +44,23 @@ It uses **sleep consolidation reflections** and **emotional signatures** as the 
 └─────────────────────┘     └─────────────────────┘
 ```
 
-## Three Identities, One Loop
+## Named Identities, One Loop
 
-The entire autonomous loop is **Satori-native**. All components operate on the
+The entire autonomous loop is **Katra-native**. All components operate on the
 memory layer inside Katra's MongoDB: writes on the shared `my-team` channel
 are visible to every identity, and each identity's personal memories
 (journals, reflections, emotional state) stay private to it.
 
 The allocation set is fixed server-side — `ALLOCATION_CANDIDATES` in
-`server/src/services/processing/autonomous-executive.ts` — to the three
-identities: `satori`, `shoshin`, `zanshin`. `gas-law-watcher` is deliberately
-absent: it is a tool actor that writes team memory only and is never
-allocated work.
+`server/src/services/processing/autonomous-executive.ts` — to the identities
+you configure. Tool actors are deliberately absent: they write team memory
+only and are never allocated work.
 
 Each executor identifies itself with **one environment variable**:
 
 ```bash
-export KATRA_AGENT_ID="satori"    # this machine (also the default)
-export KATRA_AGENT_ID="shoshin"   # iMac trading Kolega Code
-export KATRA_AGENT_ID="zanshin"   # iMac OpenCode desktop
+export KATRA_AGENT_ID="your-agent"    # this machine (also the default)
+export KATRA_AGENT_ID="other-agent"   # a second machine or agent
 ```
 
 Optionally, configure a trigger command so the agent gets woken up:
@@ -94,9 +92,9 @@ Multipliers:
 
 ### 2. `agent_executor.py` — The Hands
 
-One per identity. Set `KATRA_AGENT_ID` to tell it who it is (default
-`satori`). There is no executor for `gas-law-watcher` — it is excluded from
-the allocation set.
+One per identity. Set `KATRA_AGENT_ID` to tell it who it is (default: the
+machine's own identity). There is no executor for tool actors — they are
+excluded from the allocation set.
 
 **Each check (60s):** DISCOVER → GATE → EXECUTE → REPORT → BULLETIN → optionally TRIGGER agent
 
@@ -105,18 +103,18 @@ the allocation set.
 Subscribes to Redis pub-sub (`katra:events:{shared_id}`) and, when an
 inter-agent message arrives, stores it in working memory for the target
 identity and writes a wake file the agent's hook checks —
-`~/.katra/bulletins/satori.json`, `shoshin.json`, and `zanshin.json`.
+`~/.katra/bulletins/<agent>.json`.
 
-### 4. `satori_pubsub.py` — The Pub/Sub Bus
+### 4. `katra_pubsub.py` — The Pub/Sub Bus
 
 Redis-backed agent pub-sub: identities register presence, discover peers, and
-form ad-hoc collaboration channels (`AgentBus("satori")`, `send_to_agent(...)`),
-without touching the MCP server.
+form ad-hoc collaboration channels (`AgentBus("your-agent")`,
+`send_to_agent(...)`), without touching the MCP server.
 
-### 5. `inter_agent_bridge.py` — The Shoshin ↔ Zanshin Bridge
+### 5. `inter_agent_bridge.py` — The Agent-to-Agent Bridge
 
-Relays inter-agent messages through the shared channel between the two iMac
-identities (`MY_AGENT_ID=shoshin`, `PEER_AGENT_ID=zanshin`).
+Relays inter-agent messages through the shared channel between two identities
+(`MY_AGENT_ID=agent-a`, `PEER_AGENT_ID=agent-b`).
 
 ### Supporting tools
 
@@ -124,7 +122,7 @@ identities (`MY_AGENT_ID=shoshin`, `PEER_AGENT_ID=zanshin`).
 
 | Scope | Classification | Behavior |
 |-------|---------------|----------|
-| **A — AUTONOMOUS** | Satori, extractors, memory, Docker | Execute immediately |
+| **A — AUTONOMOUS** | Katra, extractors, memory, Docker | Execute immediately |
 | **B — GATED** | External repos, user projects | Report only, never modify |
 | **C — CAUTIOUS** | System config, launchd, nginx | Inspect first, preserve defaults |
 
@@ -149,11 +147,11 @@ export TRIGGER_COMMAND=""                           # Disable trigger
 
 ## Task Allocation — How the Identities Divide Labor
 
-When the heartbeat detects an imperative, it determines which of the three
-identities should act based on **emotional proximity** — which identity has
-the strongest felt relationship with the entity. The candidate set is fixed:
-`satori`, `shoshin`, `zanshin`. `gas-law-watcher` is never allocated, no
-matter how much it writes to `my-team`.
+When the heartbeat detects an imperative, it determines which identity should
+act based on **emotional proximity** — which identity has the strongest felt
+relationship with the entity. The candidate set is the configured allocation
+set; tool actors are never allocated, no matter how much they write to
+`my-team`.
 
 **Three signals, weighted:**
 1. **Reflection Edges** (1.5×) — explicit felt relationships like `feels_frustrated_by`
@@ -170,14 +168,14 @@ per identity:
 # The pulse — one per stack
 python3 scripts/python/adaptive_heartbeat.py &
 
-# One executor per identity (satori is the KATRA_AGENT_ID default)
-KATRA_AGENT_ID=shoshin TRIGGER_COMMAND="bash scripts/triggers/terminal.sh" \
+# One executor per identity (defaults to the machine's own KATRA_AGENT_ID)
+KATRA_AGENT_ID=agent-b TRIGGER_COMMAND="bash scripts/triggers/terminal.sh" \
   python3 scripts/python/agent_executor.py &
-KATRA_AGENT_ID=zanshin python3 scripts/python/agent_executor.py &
+KATRA_AGENT_ID=agent-c python3 scripts/python/agent_executor.py &
 ```
 
-`gas-law-watcher` never gets an executor — it is a tool actor, excluded from
-the allocation set.
+Tool actors never get an executor — they are excluded from the allocation
+set.
 
 The repo does not ship systemd/launchd unit files for the loop scripts; wrap
 the commands above in your own user units (`systemctl --user` on Linux,
@@ -201,4 +199,4 @@ survive reboots.
 2. **Emotional proximity over round-robin** — Assign tasks to the identity that cares most
 3. **Scoped autonomy** — Fully autonomous for self-evolution, fully gated for user projects
 4. **Adaptive cadence** — Heart rate matches activity level
-5. **Identity-based** — One env var (`KATRA_AGENT_ID`) per identity; the allocation set is fixed to satori/shoshin/zanshin (gas-law-watcher excluded)
+5. **Identity-based** — One env var (`KATRA_AGENT_ID`) per identity; the allocation set is fixed to the configured identities (tool actors excluded)

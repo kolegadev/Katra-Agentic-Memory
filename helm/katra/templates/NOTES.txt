@@ -1,0 +1,114 @@
+{{- $fullName := include "katra.fullname" . -}}
+{{- $restPort := .Values.service.ports.rest -}}
+{{- $mcpPort := .Values.service.ports.mcp -}}
+{{- $svcType := .Values.service.type -}}
+
+🎉 Katra is deploying! Cognitive Memory as a Service for AI Agents.
+
+{{ if eq $svcType "LoadBalancer" }}
+-------------------------------------------------------------------------------
+  ACCESS
+-------------------------------------------------------------------------------
+  Watch status until the LoadBalancer is provisioned:
+
+    kubectl get svc {{ $fullName }} --namespace {{ .Release.Namespace }} -w
+
+  Once the EXTERNAL-IP is assigned:
+
+    export KATRA_URL="http://$(kubectl get svc {{ $fullName }} --namespace {{ .Release.Namespace }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}'):{{ $restPort }}"
+
+{{ else if eq $svcType "NodePort" }}
+-------------------------------------------------------------------------------
+  ACCESS
+-------------------------------------------------------------------------------
+  Get the NodePort:
+
+    export REST_PORT=$(kubectl get svc {{ $fullName }} --namespace {{ .Release.Namespace }} -o jsonpath='{.spec.ports[?(@.name=="rest")].nodePort}')
+    export NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="ExternalIP")].address}')
+    export KATRA_URL="http://${NODE_IP}:${REST_PORT}"
+
+{{ else }}
+-------------------------------------------------------------------------------
+  LOCAL TESTING (port-forward)
+-------------------------------------------------------------------------------
+  Forward the REST API:
+
+    kubectl port-forward svc/{{ $fullName }} {{ $restPort }}:{{ $restPort }} --namespace {{ .Release.Namespace }}
+
+  Forward the MCP endpoint (separate terminal):
+
+    kubectl port-forward svc/{{ $fullName }} {{ $mcpPort }}:{{ $mcpPort }} --namespace {{ .Release.Namespace }}
+
+  Then access Katra:
+
+    REST API:  http://localhost:{{ $restPort }}/api/v1/health
+    MCP:       http://localhost:{{ $mcpPort }}/mcp
+
+{{ end }}
+{{- if .Values.ingress.enabled }}
+-------------------------------------------------------------------------------
+  INGRESS
+-------------------------------------------------------------------------------
+  Katra is reachable via Ingress:
+
+  {{- range .Values.ingress.hosts }}
+    REST API:  https://{{ .host }}/api
+    MCP:       https://{{ .host }}/mcp
+  {{- end }}
+
+  X-Katra-API-Key header required for agent connections.
+{{- end }}
+
+-------------------------------------------------------------------------------
+  MCP CLIENT CONFIGURATION
+-------------------------------------------------------------------------------
+  Add this to your MCP client configuration (Claude Desktop, OpenClaw, etc.):
+
+  {
+    "katra": {
+      "transport": "streamable",
+      "url": "http://{{ $fullName }}.{{ .Release.Namespace }}.svc.cluster.local:{{ $mcpPort }}/mcp",
+      "headers": {
+        "X-Katra-API-Key": "<your-api-key>"
+      }
+    }
+  }
+
+  To retrieve the auto-generated API key:
+
+    kubectl get secret {{ if .Values.envFromSecret }}{{ .Values.envFromSecret }}{{ else }}{{ $fullName }}-secret{{ end }} \
+      --namespace {{ .Release.Namespace }} \
+      -o jsonpath='{.data.KATRA_API_KEY}' | base64 -d
+
+-------------------------------------------------------------------------------
+  HEALTH CHECK
+-------------------------------------------------------------------------------
+    curl http://localhost:{{ $restPort }}/api/v1/health
+
+-------------------------------------------------------------------------------
+  LOGS
+-------------------------------------------------------------------------------
+    kubectl logs -f deployment/{{ $fullName }} --namespace {{ .Release.Namespace }}
+
+  For MongoDB logs:
+
+    kubectl logs -f svc/{{ .Release.Name }}-mongodb --namespace {{ .Release.Namespace }}
+
+  For Redis logs:
+
+    kubectl logs -f svc/{{ .Release.Name }}-redis-master --namespace {{ .Release.Namespace }}
+
+-------------------------------------------------------------------------------
+  USEFUL COMMANDS
+-------------------------------------------------------------------------------
+    # Get all resources
+    kubectl get all -n {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }}
+
+    # Describe deployment (check events)
+    kubectl describe deployment {{ $fullName }} -n {{ .Release.Namespace }}
+
+    # Upgrade with custom values
+    helm upgrade {{ .Release.Name }} ./helm/katra --namespace {{ .Release.Namespace }} -f my-values.yaml
+
+    # Uninstall
+    helm uninstall {{ .Release.Name }} --namespace {{ .Release.Namespace }}

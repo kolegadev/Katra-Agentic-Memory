@@ -28,7 +28,7 @@ dashboard section for the human operator to grant/revoke approvals.
 ```ts
 export interface ServiceApproval {
   _id?: unknown;                    // Mongo id (not exposed)
-  identity: string;                 // the user_id granted (e.g. 'lilly')
+  identity: string;                 // the user_id granted (e.g. 'alex')
   service: string;                  // e.g. 'agentmail' | 'gcloud' | '*'
   granted_by: string;
   granted_at: string;               // ISO

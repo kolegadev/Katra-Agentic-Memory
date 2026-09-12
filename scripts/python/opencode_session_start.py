@@ -20,7 +20,7 @@ from urllib.request import Request, urlopen
 from urllib.error import URLError
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from satori_env import get_key
+from katra_env import get_key
 
 KATRA_API = "http://localhost:9012/api/v1"
 # Secret sourced from environment / project .env (never hardcoded/committed).
@@ -99,7 +99,7 @@ def announce_session_start(session_id: str, pending: list[dict]) -> None:
         )
 
     result = _api_post("memory/episodic/events", {
-        "user_id": "zanshin",
+        "user_id": os.environ.get("KATRA_USER_ID", "katra"),
         "session_id": f"opencode-session-{session_id}",
         "event_type": "agent_bulletin",
         "content": {"role": "assistant", "message": body},

@@ -1,0 +1,61 @@
+name: 🐛 Bug report
+description: Report something that isn't working as expected
+title: "bug: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug report. The more detail you
+        provide, the faster we can help.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear, concise description of the bug and what you expected to happen instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Minimal, ordered steps so we can reproduce the issue on a clean install.
+      placeholder: |
+        1. Install with `curl -fsSL https://raw.githubusercontent.com/kolegadev/Katra-Agentic-Memory/main/install.sh | bash`
+        2. Run ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / error output
+      description: Paste any relevant logs or error output (redact secrets, tokens, and keys).
+      render: shell
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Katra version or git commit (e.g. `main @ 226ce6d`).
+      placeholder: "main @ 226ce6d"
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Environment
+      description: Where is Katra running?
+      options:
+        - Linux (Docker)
+        - macOS (Docker Desktop)
+        - macOS (Colima)
+        - Windows (Docker Desktop)
+        - Other
+    validations:
+      required: true
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Code of Conduct
+      description: By submitting this issue, you agree to follow our [Code of Conduct](https://github.com/kolegadev/Katra-Agentic-Memory/blob/main/CODE_OF_CONDUCT.md).
+      options:
+        - label: I agree to follow this project's Code of Conduct
+          required: true

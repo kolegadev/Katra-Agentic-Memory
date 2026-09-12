@@ -37,7 +37,7 @@ import {
   registerClientKeyIdentity,
 } from '../../src/utils/api-key-manager.js';
 
-const SHOSHIN_KEY = 'katra-shoshin-write-scope-test-key';
+const AGENT_A_KEY = 'katra-agent-a-write-scope-test-key';
 const envNames = ['MCP_API_KEY', 'ADMIN_API_KEY', 'KATRA_API_KEY', 'BACKUP_MCP_KEYS'];
 
 const app = new Hono();
@@ -67,7 +67,7 @@ describe('REST ingestion — write scope (F2)', () => {
     state.inserts = [];
     clearClientKeyIdentities();
     for (const name of envNames) delete process.env[name];
-    registerClientKeyIdentity(hashApiKey(SHOSHIN_KEY), 'shoshin');
+    registerClientKeyIdentity(hashApiKey(AGENT_A_KEY), 'agent-a');
   });
 
   afterEach(() => {
@@ -76,32 +76,32 @@ describe('REST ingestion — write scope (F2)', () => {
   });
 
   it('episodic insert defaults to shared_id my-team with the writer user_id', async () => {
-    const res = await postEvent(SHOSHIN_KEY, validEvent());
+    const res = await postEvent(AGENT_A_KEY, validEvent());
     expect(res.status).toBe(201);
     expect(state.inserts).toHaveLength(1);
-    expect(state.inserts[0].doc.user_id).toBe('shoshin');
+    expect(state.inserts[0].doc.user_id).toBe('agent-a');
     expect(state.inserts[0].doc.shared_id).toBe('my-team');
   });
 
   it('private: true omits shared_id entirely', async () => {
-    const res = await postEvent(SHOSHIN_KEY, validEvent({ private: true }));
+    const res = await postEvent(AGENT_A_KEY, validEvent({ private: true }));
     expect(res.status).toBe(201);
     expect(state.inserts).toHaveLength(1);
     expect(state.inserts[0].doc).not.toHaveProperty('shared_id');
-    expect(state.inserts[0].doc.user_id).toBe('shoshin');
+    expect(state.inserts[0].doc.user_id).toBe('agent-a');
   });
 
   it('an explicit shared_id is honored', async () => {
-    const res = await postEvent(SHOSHIN_KEY, validEvent({ shared_id: 'team-x' }));
+    const res = await postEvent(AGENT_A_KEY, validEvent({ shared_id: 'team-x' }));
     expect(res.status).toBe(201);
     expect(state.inserts).toHaveLength(1);
     expect(state.inserts[0].doc.shared_id).toBe('team-x');
   });
 
   it('untrusted callers are attributed to their own user_id even with default sharing', async () => {
-    const res = await postEvent(SHOSHIN_KEY, validEvent({ user_id: 'shoshin' }));
+    const res = await postEvent(AGENT_A_KEY, validEvent({ user_id: 'agent-a' }));
     expect(res.status).toBe(201);
-    expect(state.inserts[0].doc.user_id).toBe('shoshin');
+    expect(state.inserts[0].doc.user_id).toBe('agent-a');
     expect(state.inserts[0].doc.shared_id).toBe('my-team');
   });
 });

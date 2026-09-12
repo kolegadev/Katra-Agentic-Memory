@@ -1,0 +1,43 @@
+# Katra Multi-Platform Memory Watcher — systemd user unit (template)
+#
+# This is a TEMPLATE. The __PLACEHOLDERS__ are filled in per machine.
+#
+# Install it with:
+#   ./install.sh --with-watcher
+#
+# Or render it by hand:
+#   mkdir -p ~/.config/systemd/user
+#   sed -e "s|__PYTHON__|$(command -v python3)|g" \
+#       -e "s|__KATRA_HOME__|$HOME/.katra|g" \
+#       watcher/katra-watcher.service.template > ~/.config/systemd/user/katra-watcher.service
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now katra-watcher
+#
+# This is a USER unit, so it stops when you log out. To keep collecting
+# while logged out:
+#   sudo loginctl enable-linger $USER
+#
+# Configuration lives in __KATRA_HOME__/watcher-config.json, which is
+# authoritative: values there override any Environment= set in this unit,
+# so the MCP URL and API key belong in that file, not here.
+#
+# Note that the watcher runs on the HOST, outside Docker, so it must talk to
+# the host-mapped MCP port (3112 by default) — not the container-internal
+# 3100. An earlier version of this unit pinned KATRA_MCP_URL to 3100, which
+# was wrong; it is intentionally no longer set here.
+
+[Unit]
+Description=Katra Multi-Platform Memory Watcher
+Documentation=https://github.com/kolegadev/Katra-Agentic-Memory/blob/main/docs/DEPLOYMENT.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=__PYTHON__ __KATRA_HOME__/katra_watcher.py --config __KATRA_HOME__/watcher-config.json
+Restart=always
+RestartSec=30
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target

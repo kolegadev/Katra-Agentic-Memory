@@ -44,7 +44,7 @@ client-declared identity, and a valid-but-unmapped key is rejected with 401
 rather than falling back to a default. Action cards are written with
 `store_memory` (category `fact`, no `private` flag), so under Katra's hybrid
 scope policy they land in the shared `my-team` scope: every team identity
-(Satori, Shoshin, Zanshin) can see them, while personal kinds would stay
+can see them, while personal kinds would stay
 private to the writer. The conscious agent reads the same shared cards
 through its own identity's key via its session hook.
 

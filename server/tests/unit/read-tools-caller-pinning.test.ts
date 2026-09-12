@@ -5,7 +5,7 @@
  * The 2026-08-21 docs review found 14+ MCP tools (vector_search,
  * temporal_recall/search, get_journal, missions, transaction log, …) that
  * passed the raw `input.user_id` straight into `buildScopeFilter` or into
- * identity-scoped services. An untrusted caller (e.g. shoshin's client key)
+ * identity-scoped services. An untrusted caller (e.g. agent-a's client key)
  * could therefore read another identity's private journals, events, missions
  * and transaction logs — or trigger reflection consolidation under another
  * identity — simply by supplying `user_id`.

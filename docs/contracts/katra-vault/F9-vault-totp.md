@@ -53,8 +53,8 @@ base32 "GEZDGNBVGEZDGNBVGEZDGNBVGEZDGNBV"; expected codes at T=59/1111111111:
 export interface AuthPolicy { class: 'interactive' | 'unattended' | 'trusted';
   require_totp: boolean; session_ttl_hours: number; }
 export const DEFAULT_AUTH_POLICY: Record<string, AuthPolicy>;
-// interactive: shoshin, zanshin, lilly, satori-interactive-default
-// unattended: satori (heartbeat), gas-law-watcher
+// interactive: human-present laptop/desktop identities (interactive default)
+// unattended: heartbeat loops and tool actors
 // trusted: loopback + admin key (class trusted, require_totp false)
 // session_ttl_hours default 12; unattended 720 (device-bound, not session-based)
 export function getAuthPolicy(identity: string): AuthPolicy;       // defaults + system_settings['auth_policy'] overrides (cached ≤60s)
@@ -123,9 +123,9 @@ Hard rules:
 2. verifyTotp window ±1 accepted, ±2 rejected; wrong digits rejected.
 3. Replay guard: same code twice → second {ok:false}; older counter rejected.
 4. otpauthUri format exact (`otpauth://totp/Katra:<identity>?secret=<b32>&issuer=Katra&algorithm=SHA1&digits=6&period=30`).
-5. enrollTotp: operator enrolls for 'lilly' → enrolled, otpauth_uri present;
+5. enrollTotp: operator enrolls for 'alex' → enrolled, otpauth_uri present;
    stored secret is encrypted (raw doc has envelope, no base32 plaintext);
-   openSecretValue by lilly recovers the base32; re-enroll returns a NEW uri
+   openSecretValue by alex recovers the base32; re-enroll returns a NEW uri
    and the old code stops verifying.
 6. issueSession: correct code (computed from the enrolled secret via totpCode
    at fixed injected time) → token + expires_at = now + policy ttl; wrong code
@@ -135,7 +135,7 @@ Hard rules:
    beyond ttl) → invalid; revoked → invalid.
 8. Replay on issue: same TOTP code twice → second issue denied.
 9. Policy: getAuthPolicy defaults per table; override in system_settings
-   honored; unattended 'satori' → require_totp false.
+   honored; unattended 'agent-a' → require_totp false.
 10. revoke/list: caller revokes own session; operator revokes any (hash
     prefix ≥8 chars); list scoped.
 11. Audit: enroll/issue/revoke rows value-free (whitelist keys).

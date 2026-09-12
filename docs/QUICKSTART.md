@@ -2,9 +2,9 @@
 
 Get Katra running in 5 minutes.
 
-Katra is a self-hosted cognitive memory appliance. The memory system's founding
-identity — the agent that lives on this machine — is **Satori**, so don't be
-surprised when the server, scripts, and this guide use that name.
+Katra is a self-hosted cognitive memory appliance. On first boot it asks its
+owner to name its agent identity — the name lives in memory, not in code —
+so don't be surprised when the server and scripts refer to that name.
 
 ## Prerequisites
 
@@ -14,7 +14,7 @@ surprised when the server, scripts, and this guide use that name.
 ## 1. Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kolegadev/Satori-Agentic-Memory/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/kolegadev/Katra-Agentic-Memory/main/install.sh | bash
 ```
 
 That is the whole thing. It clones the source to `~/.katra/src`, generates a
@@ -26,7 +26,7 @@ Add `--with-watcher` to ingest your existing agent session history, and
 `--with-systemd` to start Katra on boot:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kolegadev/Satori-Agentic-Memory/main/install.sh \
+curl -fsSL https://raw.githubusercontent.com/kolegadev/Katra-Agentic-Memory/main/install.sh \
   | bash -s -- --with-watcher --with-systemd
 ```
 
@@ -39,10 +39,11 @@ yourself. The installer generates them.
 **Identity keys.** Katra resolves *who* is calling from the API key presented —
 never from what a client claims. On first boot the server provisions the
 per-identity client keys idempotently (`system_settings.client_keys`, sha256
-hashes only) and prints the freshly generated Shoshin/Zanshin keys exactly once,
-in a `Client keys (identity separation)` block in the server log. Hand those
-keys to the named machines and store nothing else — a valid key with no
-identity mapping is rejected with a loud 401, never silently accepted.
+hashes only) and prints the freshly generated keys for each configured
+identity exactly once, in a `Client keys (identity separation)` block in the
+server log. Hand each key to the machine it belongs to and store nothing else
+— a valid key with no identity mapping is rejected with a loud 401, never
+silently accepted.
 
 ## 2. Verify
 
@@ -57,13 +58,13 @@ curl http://localhost:3112/health
 curl http://localhost:9012/api/v1/admin/identity
 ```
 
-You should see `{"status":"ok",...}` and an identity record (`name: Satori`).
+You should see `{"status":"ok",...}` and an identity record (`name` — the
+identity you named on first boot).
 
 Your admin key is `KATRA_API_KEY` in `.env` — presenting it authenticates you
-as the trusted satori identity for admin operations. The installer also writes
+as the trusted machine identity for admin operations. The installer also writes
 a legacy `MCP_API_KEY` into `.env` (kept for the host-side watcher); the
-per-machine client keys for the other identities (Shoshin, Zanshin) are printed
-once in the server log:
+client keys for additional identities are printed once in the server log:
 
 ```bash
 grep '^KATRA_API_KEY=' ~/.katra/src/.env
@@ -75,8 +76,8 @@ Open the dashboard: **http://localhost:9012/dashboard/**
 ## 3. Store Your First Memory
 
 The MCP endpoint is POST-only streamable HTTP at `/mcp`. Identity comes from
-the key you present — a loopback call on this machine runs as trusted satori; a
-remote machine presents its own client key:
+the key you present — a loopback call on this machine runs as the trusted
+machine identity; a remote machine presents its own client key:
 
 ```bash
 curl -X POST http://localhost:3112/mcp \
@@ -110,7 +111,7 @@ curl -X POST http://localhost:3112/mcp \
     "params": {
       "name": "store_memory",
       "arguments": {
-        "content": "Hello Satori! This is my first memory.",
+        "content": "Hello Katra! This is my first memory.",
         "category": "event"
       }
     }
@@ -171,7 +172,7 @@ Add Katra to your agent's MCP config:
 
 Use the machine's own client key, not another identity's. Restart your agent.
 It now has **66** memory tools available — including the identity tools
-(`get_my_identity`), the Satori Graph code-graph tools (`sync_code_graph`,
+(`get_my_identity`), the Katra Graph code-graph tools (`sync_code_graph`,
 `scan_codebase`, `code_graph_status`), the Katra skill engine, and the
 executive/cognitive tools.
 
@@ -276,12 +277,12 @@ machine's client key; writes are then stamped with that machine's identity:
 
 | Platform | Command |
 |----------|---------|
-| **OpenCode** (iMac) | `python3 ~/.katra/satori_opencode_extractor.py --once --api-key <zanshin-key> --user-id zanshin` |
-| **Claude Code** (this machine) | `python3 ~/.katra/claude_history_extractor.py --once --api-key <satori-key> --user-id satori` |
-| **Kolega Code** (iMac trading) | `python3 ~/.katra/kolega_code_extractor.py --once --api-key <shoshin-key> --user-id shoshin` |
+| **OpenCode** | `python3 ~/.katra/katra_opencode_extractor.py --once --api-key <agent-key> --user-id <agent>` |
+| **Claude Code** | `python3 ~/.katra/claude_history_extractor.py --once --api-key <agent-key> --user-id <agent>` |
+| **Kolega Code** | `python3 ~/.katra/kolega_code_extractor.py --once --api-key <agent-key> --user-id <agent>` |
 
 On macOS the installer uses launchd instead of systemd. A ready-made agent
-template ships at `watcher/com.satori.watcher.plist.template` — there is no
+template ships at `watcher/com.katra.watcher.plist.template` — there is no
 longer anything to hand-write.
 
 ## Next Steps
@@ -291,10 +292,7 @@ longer anything to hand-write.
 - [Security Policy](SECURITY.md) — Security architecture and vulnerability reporting
 - [Configuration Guide](CONFIGURATION.md) — All environment variables
 - [Deployment Guide](DEPLOYMENT.md) — Cloud, K8s, Raspberry Pi
-- [OpenClaw Integration Guide](OPENCLAW-INTEGRATION.md) — Complete OpenClaw setup with lessons learned
-- [Agent Communication Setup](AGENT-COMMUNICATION-SETUP.md) — Inter-agent messaging over shared memory
 - [Agent Pub-Sub Guide](AGENT-PUBSUB-GUIDE.md) — The complementary Redis presence/topic bus
-- [Identity Separation Contract](contracts/identity-separation.md) — The key-based identity model
 - [Kolega Code Bridge](../integrations/kolega-code/README.md) — Automatic memory injection for Kolega Code
 - [Sleep Consolidation](SLEEP-CONSOLIDATION.md) — Reflective memory distillation
 - [Data Processing Pipelines](Data-Processing-Pipelines.md) — Full pipeline architecture

@@ -45,7 +45,7 @@ import {
   registerClientKeyIdentity,
 } from '../../src/utils/api-key-manager.js';
 
-const SHOSHIN_KEY = 'katra-shoshin-reflection-test-key';
+const AGENT_A_KEY = 'katra-agent-a-reflection-test-key';
 const ADMIN_KEY = 'katra-admin-reflection-test-key';
 const envNames = ['MCP_API_KEY', 'ADMIN_API_KEY', 'KATRA_API_KEY', 'BACKUP_MCP_KEYS'];
 
@@ -64,7 +64,7 @@ describe('Reflection routes — caller-resolved user_id (F2)', () => {
     state.journalFilters = [];
     clearClientKeyIdentities();
     for (const name of envNames) delete process.env[name];
-    registerClientKeyIdentity(hashApiKey(SHOSHIN_KEY), 'shoshin');
+    registerClientKeyIdentity(hashApiKey(AGENT_A_KEY), 'agent-a');
   });
 
   afterEach(() => {
@@ -72,21 +72,21 @@ describe('Reflection routes — caller-resolved user_id (F2)', () => {
     for (const name of envNames) delete process.env[name];
   });
 
-  it('reads journals for the caller resolved from the presented key (shoshin)', async () => {
-    const res = await getJournal(SHOSHIN_KEY);
+  it('reads journals for the caller resolved from the presented key (agent-a)', async () => {
+    const res = await getJournal(AGENT_A_KEY);
     expect(res.status).toBe(200);
     expect(state.journalFilters).toHaveLength(1);
-    expect(state.journalFilters[0]).toEqual({ user_id: 'shoshin' });
+    expect(state.journalFilters[0]).toEqual({ user_id: 'agent-a' });
   });
 
-  it('reads journals for the trusted admin caller (satori)', async () => {
+  it('reads journals for the trusted admin caller (katra)', async () => {
     process.env.KATRA_API_KEY = ADMIN_KEY;
     await ensureApiKeys();
 
     const res = await getJournal(ADMIN_KEY);
     expect(res.status).toBe(200);
     expect(state.journalFilters).toHaveLength(1);
-    expect(state.journalFilters[0]).toEqual({ user_id: 'satori' });
+    expect(state.journalFilters[0]).toEqual({ user_id: 'katra' });
   });
 
   it('rejects requests that resolve to no caller', async () => {

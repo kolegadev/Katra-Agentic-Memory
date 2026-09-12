@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: typecheck & build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      # npm >= 11 is required to resolve the server dependency graph
+      # (npm 10's arborist crashes on this lockfile).
+      - name: Upgrade npm
+        run: npm install -g npm@11
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+  privacy-lint:
+    name: privacy lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: private/ must stay untracked
+        run: |
+          tracked="$(git ls-files private/)"
+          if [ -n "$tracked" ]; then
+            echo "::error::Files under private/ are tracked in git — copy them with plain cp/mv, never 'git mv' or 'git add' (explicit adds bypass .gitignore)."
+            echo "$tracked"
+            exit 1
+          fi
+
+      - name: no personal paths or addresses in tracked files
+        run: |
+          # Absolute home paths (the generic /home/you/ example in docs is allowed).
+          hits="$(git grep -nE '/home/[A-Za-z0-9_.-]+/|/Users/[A-Za-z0-9_.-]+/' -- . ':!private' | grep -vE '/home/you/' || true)"
+          if [ -n "$hits" ]; then
+            echo "$hits"
+            echo "::error::absolute home paths found in tracked files — use ~ or \$HOME"
+            exit 1
+          fi
+          # Tailscale CGNAT addresses outside the vault SSRF-guard code/docs.
+          hits="$(git grep -nE '100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.[0-9]{1,3}\.[0-9]{1,3}' -- integrations scripts watcher helm dashboard sdks terraform docker-compose.yml install.sh README.md || true)"
+          if [ -n "$hits" ]; then
+            echo "$hits"
+            echo "::error::tailscale CGNAT address found in tracked files"
+            exit 1
+          fi
+          # Only .env.example may be tracked.
+          env_files="$(git ls-files | grep -E '(^|/)\.env$' || true)"
+          if [ -n "$env_files" ]; then
+            echo "::error::tracked .env file(s): $env_files"
+            exit 1
+          fi
+          echo "privacy lint: clean"
+

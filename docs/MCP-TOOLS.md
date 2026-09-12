@@ -1,17 +1,10 @@
 # MCP Tools Reference
 
-Katra (the self-hosted cognitive memory appliance whose inhabitant is **Satori**) exposes **66 tools** via the Model Context Protocol (MCP). All tools are accessible through the MCP endpoint at `http://<host>:3112/mcp` (host port 3112 → container port 3100). The transport is **POST-only streamable HTTP** — `GET /mcp` returns 405 (standalone SSE streams are not supported). A plain `GET /health` on the same port (3112) reports service health without authentication.
+Katra (the self-hosted cognitive memory appliance) exposes **66 tools** via the Model Context Protocol (MCP). All tools are accessible through the MCP endpoint at `http://<host>:3112/mcp` (host port 3112 → container port 3100). The transport is **POST-only streamable HTTP** — `GET /mcp` returns 405 (standalone SSE streams are not supported). A plain `GET /health` on the same port (3112) reports service health without authentication.
 
 ## Authentication & Identity Separation
 
-Katra resolves **who is calling** from the API key presented on the request — never from anything the client self-reports. One Katra hosts three named identities plus one tool actor:
-
-| user_id | Identity | Notes |
-|---|---|---|
-| `satori` | Satori | This machine's agent. Loopback requests and the admin key (`KATRA_API_KEY`) authenticate as **trusted** satori. |
-| `shoshin` | Shoshin | iMac trading Kolega Code. |
-| `zanshin` | Zanshin | iMac OpenCode desktop. |
-| `gas-law-watcher` | (tool actor) | Writes team memory only; never allocated autonomous tasks. |
+Katra resolves **who is calling** from the API key presented on the request — never from anything the client self-reports. One Katra hosts any number of named identities (one per machine or agent) plus optional tool actors that write team memory only.
 
 **Key presentation** — any one of:
 - `X-MCP-Auth: <key>` header
@@ -20,12 +13,12 @@ Katra resolves **who is calling** from the API key presented on the request — 
 
 **Key resolution:**
 - Keys live in `system_settings.client_keys` as **sha256 hashes only** — plaintext is never stored. Comparison is timing-safe.
-- Client keys are provisioned idempotently at boot by `ensureClientKeys()`. The shoshin/zanshin keys are generated once and their plaintext printed exactly once in the "Client keys (identity separation)" block of the server log.
-- Loopback callers (127.0.0.1/::1) authenticate as trusted satori without a key — host-side tools (bridge hooks, CLI scripts) rely on this.
-- The admin key (`KATRA_API_KEY`) authenticates as **trusted** satori.
+- Client keys are provisioned idempotently at boot by `ensureClientKeys()`. Keys for additional identities are generated once and their plaintext printed exactly once in the "Client keys (identity separation)" block of the server log.
+- Loopback callers (127.0.0.1/::1) authenticate as the trusted machine identity without a key — host-side tools (bridge hooks, CLI scripts) rely on this.
+- The admin key (`KATRA_API_KEY`) authenticates as the **trusted** machine identity.
 - A key mapped in `client_keys` authenticates as that identity, **untrusted** (see *Trusted vs untrusted callers* below).
 - A key that validates but has **no identity mapping** is rejected with **401** — loud failure with a logged sha256 prefix of the presented key, never a silent fallback to a default identity.
-- **Legacy env keys are retired**: the pre-cutover shared keys (`MCP_API_KEY`, `BACKUP_MCP_KEYS`) are no longer validated as MCP credentials in their own right. The only legacy material consulted at boot is the seeding of satori's own `client_keys` record from the legacy key hash; unmapped keys — including the retired backup keys — fail with 401.
+- **Legacy env keys are retired**: the pre-cutover shared keys (`MCP_API_KEY`, `BACKUP_MCP_KEYS`) are no longer validated as MCP credentials in their own right. The only legacy material consulted at boot is the seeding of the machine identity's own `client_keys` record from the legacy key hash; unmapped keys — including the retired backup keys — fail with 401.
 - Stdio transport (local `--stdio` mode) refuses to start unless `MCP_API_KEY` is configured.
 
 **Trusted vs untrusted callers:**
@@ -64,10 +57,10 @@ curl -X POST http://localhost:3112/mcp \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
   -H "mcp-session-id: $SESSION_ID" \
-  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"store_memory","arguments":{"content":"Hello Satori"}}}'
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"store_memory","arguments":{"content":"Hello Katra"}}}'
 ```
 
-`YOUR_IDENTITY_KEY` is the caller's own identity key (its hash in `client_keys`), or `KATRA_API_KEY` for trusted-satori access. A server restart invalidates session IDs; the server falls back to a stateless transport for non-initialize requests it cannot map to a session.
+`YOUR_IDENTITY_KEY` is the caller's own identity key (its hash in `client_keys`), or `KATRA_API_KEY` for trusted-machine-identity access. A server restart invalidates session IDs; the server falls back to a stateless transport for non-initialize requests it cannot map to a session.
 
 ---
 
@@ -102,7 +95,7 @@ Store a memory (fact, preference, insight, event, or general).
 
 **Episodic event example:**
 ```json
-{"name":"store_memory","arguments":{"content":"User asked about Satori memory fixes","category":"event","session_id":"thread-123","source":"kolega-code","tags":["conversation"]}}
+{"name":"store_memory","arguments":{"content":"User asked about Katra memory fixes","category":"event","session_id":"thread-123","source":"kolega-code","tags":["conversation"]}}
 ```
 
 **Private opt-out example:**
@@ -181,7 +174,7 @@ Decompose a goal into a dependency-ordered subtask graph. The Goal Manager (PFC 
 
 ### search_memories
 
-Full-text + vector search across **11 memory collections** (episodic, semantic, manual/auto journals, knowledge graph nodes/relationships, memory nodes/edges, missions, assets, working memory). Supports OR-queries (`"Attention: Satori" OR "Attention: Shoshin"`).
+Full-text + vector search across **11 memory collections** (episodic, semantic, manual/auto journals, knowledge graph nodes/relationships, memory nodes/edges, missions, assets, working memory). Supports OR-queries (e.g. `"Attention: Alex" OR "Attention: Dana"`).
 
 | Parameter | Type | Required | Default |
 |---|---|---|---|
@@ -599,7 +592,7 @@ Refine a challenged or degraded skill using LLM analysis of its feedback history
 
 ---
 
-## Code Graph (Satori Graph)
+## Code Graph (Katra Graph)
 
 The native code-graph toolchain replaces the legacy Graphify toolchain. Documented in `scripts/README-code-graph.md`. Roots are resolved on the server container filesystem (use the container mount paths, e.g. `/repos/<name>`).
 

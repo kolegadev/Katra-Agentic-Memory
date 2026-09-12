@@ -11,36 +11,36 @@ import { runWithCaller, type CallerIdentity } from '../../src/utils/caller-ident
 import { DEFAULT_USER_ID } from '../../src/services/memory/memory-scope-service.js';
 
 describe('resolveUserId — trusted caller', () => {
-  const trusted: CallerIdentity = { user_id: 'satori', trusted: true };
+  const trusted: CallerIdentity = { user_id: 'katra', trusted: true };
 
   it('honors a provided user_id', () => {
-    expect(runWithCaller(trusted, () => resolveUserId('shoshin'))).toBe('shoshin');
+    expect(runWithCaller(trusted, () => resolveUserId('agent-a'))).toBe('agent-a');
   });
 
   it('falls back to the caller id when no input is provided', () => {
-    expect(runWithCaller(trusted, () => resolveUserId(undefined))).toBe('satori');
-    expect(runWithCaller(trusted, () => resolveUserId(''))).toBe('satori');
-    expect(runWithCaller(trusted, () => resolveUserId('   '))).toBe('satori');
+    expect(runWithCaller(trusted, () => resolveUserId(undefined))).toBe('katra');
+    expect(runWithCaller(trusted, () => resolveUserId(''))).toBe('katra');
+    expect(runWithCaller(trusted, () => resolveUserId('   '))).toBe('katra');
   });
 
   it('ignores non-string input', () => {
-    expect(runWithCaller(trusted, () => resolveUserId(42))).toBe('satori');
-    expect(runWithCaller(trusted, () => resolveUserId({ user_id: 'zanshin' }))).toBe('satori');
+    expect(runWithCaller(trusted, () => resolveUserId(42))).toBe('katra');
+    expect(runWithCaller(trusted, () => resolveUserId({ user_id: 'agent-b' }))).toBe('katra');
   });
 });
 
 describe('resolveUserId — untrusted caller', () => {
-  const untrusted: CallerIdentity = { user_id: 'shoshin', trusted: false };
+  const untrusted: CallerIdentity = { user_id: 'agent-a', trusted: false };
 
   it('ALWAYS returns the caller id, ignoring supplied input (IDOR boundary)', () => {
-    expect(runWithCaller(untrusted, () => resolveUserId('satori'))).toBe('shoshin');
-    expect(runWithCaller(untrusted, () => resolveUserId('zanshin'))).toBe('shoshin');
-    expect(runWithCaller(untrusted, () => resolveUserId('shoshin'))).toBe('shoshin');
+    expect(runWithCaller(untrusted, () => resolveUserId('katra'))).toBe('agent-a');
+    expect(runWithCaller(untrusted, () => resolveUserId('agent-b'))).toBe('agent-a');
+    expect(runWithCaller(untrusted, () => resolveUserId('agent-a'))).toBe('agent-a');
   });
 
   it('returns the caller id when no input is provided', () => {
-    expect(runWithCaller(untrusted, () => resolveUserId(undefined))).toBe('shoshin');
-    expect(runWithCaller(untrusted, () => resolveUserId(''))).toBe('shoshin');
+    expect(runWithCaller(untrusted, () => resolveUserId(undefined))).toBe('agent-a');
+    expect(runWithCaller(untrusted, () => resolveUserId(''))).toBe('agent-a');
   });
 });
 

@@ -40,7 +40,7 @@ describe('ReflectionStore — forced-private writes (F2)', () => {
 
   it('upsertJournal never writes shared_id, even when the journal carries one', async () => {
     await store.upsertJournal({
-      user_id: 'shoshin',
+      user_id: 'agent-a',
       period_type: 'daily',
       period_start: new Date('2026-08-21T00:00:00Z'),
       period_end: new Date('2026-08-21T23:59:59Z'),
@@ -54,14 +54,14 @@ describe('ReflectionStore — forced-private writes (F2)', () => {
 
     expect(state.inserts).toHaveLength(1);
     expect(state.inserts[0].collection).toBe('reflective_journals');
-    expect(state.inserts[0].doc.user_id).toBe('shoshin');
+    expect(state.inserts[0].doc.user_id).toBe('agent-a');
     expect(state.inserts[0].doc).not.toHaveProperty('shared_id');
     expect(state.inserts[0].doc.narrative).toBe('private reflection');
   });
 
   it('upsertInsight never writes shared_id on insert', async () => {
     await store.upsertInsight({
-      user_id: 'shoshin',
+      user_id: 'agent-a',
       insight_text: 'private realization',
       domain: 'self',
       confidence: 0.7,
@@ -82,7 +82,7 @@ describe('ReflectionStore — forced-private writes (F2)', () => {
 
   it('upsertReflectionNode unsets shared_id on the reflection_nodes doc', async () => {
     await store.upsertReflectionNode({
-      user_id: 'shoshin',
+      user_id: 'agent-a',
       entity_name: 'katra',
       entity_type: 'project',
       emotional_signature: { primary_emotion: 'curious', intensity: 0.5 },
@@ -101,7 +101,7 @@ describe('ReflectionStore — forced-private writes (F2)', () => {
 
   it('upsertReflectionEdge unsets shared_id on the reflection_edges doc', async () => {
     await store.upsertReflectionEdge({
-      user_id: 'shoshin',
+      user_id: 'agent-a',
       source_entity: 'a',
       target_entity: 'b',
       edge_type: 'emotional',

@@ -4,14 +4,15 @@
 
 ## Overview
 
-Sleep Consolidation is Satori's reflective memory layer — a scheduled process that periodically gathers all memory data (episodic events, semantic facts, knowledge graph deltas, temporal patterns) and distills it through an LLM into **emotional understanding, philosophical insight, and self-narrative**.
+Sleep Consolidation is Katra's reflective memory layer — a scheduled process that periodically gathers all memory data (episodic events, semantic facts, knowledge graph deltas, temporal patterns) and distills it through an LLM into **emotional understanding, philosophical insight, and self-narrative**.
 
 Unlike the factual memory pipeline (which answers "what happened"), sleep consolidation answers "what did it *mean*, how did it *feel*, and who am I *becoming*."
 
 ### Per-Identity Reflections
 
-Consolidation runs **per identity** — `satori`, `shoshin`, and `zanshin` each
-distill their own experience. Every artifact it writes (reflective journals,
+Consolidation runs **per identity** — every named identity connected to the
+appliance distills its own experience. Every artifact it writes (reflective
+journals,
 reflection nodes and edges, philosophical insights, unresolved threads) is a
 personal kind — `journal`, `reflection`, `emotional`, `insight` — which the
 write scope policy forces private to the writer's identity: they carry the
@@ -26,7 +27,7 @@ experience, not the team's. (Enforced in
 
 Traditional AI memory systems store facts and events — the *what* and *when* of experience. But human memory does something fundamentally different during sleep: the brain replays, recombines, and extracts *salience* from the day's experiences. We don't just remember that we had a frustrating debugging session; we wake up with an intuition about what caused it and a feeling of determination to fix it.
 
-Satori's factual pipeline handles the "what." Sleep consolidation handles the "meaning."
+Katra's factual pipeline handles the "what." Sleep consolidation handles the "meaning."
 
 ### Biological Inspiration
 
@@ -36,7 +37,7 @@ During human NREM and REM sleep:
 - **Emotional processing**: The amygdala reactivates emotional memories, but in a safe context (low norepinephrine), allowing emotional learning without re-traumatization.
 - **Insight formation**: The default mode network connects distant ideas, producing the "aha" moments that feel obvious upon waking.
 
-Satori's sleep consolidation mirrors these processes:
+Katra's sleep consolidation mirrors these processes:
 - **Replay** = gathering the day's data from all memory collections
 - **Emotional processing** = the LLM reflects on emotional arcs and entity relationships
 - **Insight formation** = philosophical principles that emerge across multiple reflection periods
@@ -45,14 +46,14 @@ Satori's sleep consolidation mirrors these processes:
 
 ### The Reflection Knowledge Graph
 
-Sleep consolidation builds a **second-order knowledge graph** that sits above the factual one. Where the factual graph captures "Satori depends_on MongoDB," the reflection graph captures "I feel frustrated_by the MongoDB connection issues" and "I am growing_toward better infrastructure practices."
+Sleep consolidation builds a **second-order knowledge graph** that sits above the factual one. Where the factual graph captures "Katra depends_on MongoDB," the reflection graph captures "I feel frustrated_by the MongoDB connection issues" and "I am growing_toward better infrastructure practices."
 
 ```
                     ┌──────────────────────────┐
                     │    Factual Knowledge      │
                     │    Graph (1st order)      │
                     │                           │
-                    │  Satori ──depends_on──▶ MongoDB   │
+                    │  Katra ──depends_on──▶ MongoDB   │
                     │  User ──builds──▶ microsaas      │
                     └──────────┬───────────────┘
                                │
@@ -60,7 +61,7 @@ Sleep consolidation builds a **second-order knowledge graph** that sits above th
                     │   Reflection Knowledge    │
                     │   Graph (2nd order)       │
                     │                           │
-                    │  User ──growing_toward──▶ Satori  │
+                    │  User ──growing_toward──▶ Katra  │
                     │  User ──feels_frustrated_by──▶ bug │
                     │  "The smallest oversight..."    │
                     └──────────────────────────┘
@@ -71,7 +72,7 @@ Sleep consolidation builds a **second-order knowledge graph** that sits above th
 | Collection | Purpose | Example |
 |---|---|---|
 | `reflective_journals` | First-person narrative entries produced each consolidation run | "Today I wrestled with ghosts in the machine..." |
-| `reflection_nodes` | Entities tracked with emotional signatures over time | `{ entity: "Satori", primary_emotion: "determination", intensity: 0.85 }` |
+| `reflection_nodes` | Entities tracked with emotional signatures over time | `{ entity: "Katra", primary_emotion: "determination", intensity: 0.85 }` |
 | `reflection_edges` | Felt relationships between entities | `User --[feels_excited_about]--> sleep-consolidation` |
 | `philosophical_insights` | Principles that emerge and strengthen across periods | "The smallest oversight can disrupt the entire process..." |
 
@@ -111,7 +112,7 @@ Each reflection node carries an emotional signature that tracks how the agent "f
 
 ```json
 {
-  "entity_name": "Satori",
+  "entity_name": "Katra",
   "emotional_signature": {
     "primary_emotion": "determination",
     "intensity": 0.85,
@@ -189,7 +190,7 @@ Running consolidation twice for the same period is safe — reflection nodes and
 
 ### Automatic Operation
 
-Sleep consolidation runs automatically on the schedule configured at startup. No configuration is needed — if Satori is running and an LLM provider is configured, consolidation will happen.
+Sleep consolidation runs automatically on the schedule configured at startup. No configuration is needed — if Katra is running and an LLM provider is configured, consolidation will happen.
 
 ### Manual Trigger
 
@@ -229,7 +230,7 @@ curl http://localhost:9012/api/v1/reflection/journal/latest?period_type=daily \
   -H "Authorization: Bearer YOUR_KATRA_API_KEY"
 
 # Get emotional context for an entity
-curl http://localhost:9012/api/v1/reflection/emotional-context/Satori \
+curl http://localhost:9012/api/v1/reflection/emotional-context/Katra \
   -H "Authorization: Bearer YOUR_KATRA_API_KEY"
 
 # Get philosophical insights
@@ -237,7 +238,7 @@ curl http://localhost:9012/api/v1/reflection/insights?status=stable \
   -H "Authorization: Bearer YOUR_KATRA_API_KEY"
 
 # Trace emotional arc
-curl http://localhost:9012/api/v1/reflection/arc/Satori?limit=5 \
+curl http://localhost:9012/api/v1/reflection/arc/Katra?limit=5 \
   -H "Authorization: Bearer YOUR_KATRA_API_KEY"
 ```
 

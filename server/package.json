@@ -10,6 +10,7 @@
     "dev": "node --import dotenv/config build/index.js",
     "mcp:stdio": "node build/mcp-server.js --stdio",
     "format": "prettier --write 'src/**/*.{ts,tsx}'",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:unit": "vitest run tests/unit/",
