@@ -477,6 +477,12 @@ const VaultHttpInput = z.object({
   },
 );
 
+const VaultInstagramLoginInput = z.object({
+  secret_id: z.string().min(1).describe('Full secret ID holding the IG account password'),
+  service: z.string().min(1).describe('Approval service name, e.g. "Instagram katra account"'),
+  username: z.string().min(1).max(128).describe('IG account username (plaintext by design, e.g. "katra5432")'),
+});
+
 // ── F9 auth tool input schemas ──────────────────────────────────
 // Types only — content rules live in the auth service with static reason
 // strings; the otpauth URI and the raw session token are returned exactly
@@ -975,6 +981,11 @@ const tools = [
     name: 'vault_http',
     description: 'APPROVAL-GATED server-side secret use (the ONLY way a secret is ever used): opens the secret under the caller\'s RBAC scope and injects it into ONE outbound https:// request — as a single named request header (inject_header, optionally inject_scheme-prefixed) and/or by replacing every {{secret}} token in body_template with the secret value — and returns {status, body, setCookies?} — or {status: 0, blocked: {reason}} when refused (no active approval, secret not available, SSRF guard, method/port/scheme, header allowlist, body/body_template conflict, no injection target, limits, timeout). inject_header is OPTIONAL when body or body_template carries the injection target — body-only flows (e.g. form-encoded logins) never put the secret in a header. setCookies carries upstream Set-Cookie session material only. Extra headers are allowlisted names with caller text. The secret NEVER appears in results, errors, logs, or audit rows.',
     inputSchema: zodToJsonSchema(VaultHttpInput) as Record<string, unknown>,
+  },
+  {
+    name: 'vault_instagram_login',
+    description: 'APPROVAL-GATED typed server-side Instagram login: the vault opens the IG account password under the caller\'s RBAC scope and hands it ONLY to the server-side instagrapi driver (which performs Instagram\'s client-encrypted login itself) — the plaintext password never enters an LLM, a request body, results, errors, logs, or audit rows. Returns derived session material only: {ok, username, userIdPk?, sessionid?, csrftoken?} or {ok: false, blocked: {reason}} (no active approval, secret not available, driver not configured, login failed). The returned sessionid/csrftoken are session credentials — treat them with the same care as the secret and never log them.',
+    inputSchema: zodToJsonSchema(VaultInstagramLoginInput) as Record<string, unknown>,
   },
   // ── Katra Vault agent auth (F9) ───────────────────────────────
   {
@@ -3484,6 +3495,21 @@ export async function handleVaultHttp(args: unknown): Promise<TextContent[]> {
   return [{ type: 'text', text: JSON.stringify(result) }];
 }
 
+export async function handleVaultInstagramLogin(args: unknown): Promise<TextContent[]> {
+  const input = VaultInstagramLoginInput.parse(args);
+  const caller = getCaller();
+  if (!is_database_connected()) return VAULT_DISCONNECTED;
+  const result = await createCapability().instagramLogin({
+    caller,
+    secretId: input.secret_id,
+    service: input.service,
+    username: input.username,
+  });
+  // InstagramLoginResult JSON only — session material or blocked reason,
+  // never the password.
+  return [{ type: 'text', text: JSON.stringify(result) }];
+}
+
 // ── Katra Vault agent auth tools (F9) ──────────────────────────
 // Same conventions as the F3 vault tools: callers come from getCaller();
 // enrollment is operator-gated for OTHER identities (self-enrollment is the
@@ -3658,6 +3684,7 @@ function registerHandlers(server: Server, getIdentity?: () => CallerIdentity) {
         case 'vault_revoke_approval': result = await handleVaultRevokeApproval(args); break;
         case 'vault_list_approvals': result = await handleVaultListApprovals(args); break;
         case 'vault_http': result = await handleVaultHttp(args); break;
+        case 'vault_instagram_login': result = await handleVaultInstagramLogin(args); break;
         case 'auth_enroll_totp': result = await handleAuthEnrollTotp(args); break;
         case 'auth_issue_session': result = await handleAuthIssueSession(args); break;
         case 'auth_revoke_session': result = await handleAuthRevokeSession(args); break;

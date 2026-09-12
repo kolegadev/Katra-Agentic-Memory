@@ -403,6 +403,51 @@ export const create_vault_routes = (opts: VaultRoutesOptions = {}): Hono => {
     }
   });
 
+  // POST /capability/instagram-login — approval-gated, typed server-side
+  // Instagram login ({secret_id, service, username} → session material).
+  // The vault opens the password server-side and hands it only to the
+  // instagrapi driver; the password never appears in any response, error,
+  // or audit row.
+  router.post('/capability/instagram-login', async (c) => {
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ success: false, error: 'vault: invalid request body' }, 400);
+    }
+    if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+      return c.json({ success: false, error: 'vault: invalid request body' }, 400);
+    }
+    const b = body as Record<string, unknown>;
+    if (
+      typeof b.secret_id !== 'string' ||
+      typeof b.service !== 'string' ||
+      typeof b.username !== 'string'
+    ) {
+      return c.json(
+        { success: false, error: 'vault: secret_id, service, username are required strings' },
+        400,
+      );
+    }
+    if (
+      b.secret_id.length === 0 ||
+      b.service.length === 0 ||
+      b.username.length === 0
+    ) {
+      return c.json(
+        { success: false, error: 'vault: invalid capability request' },
+        400,
+      );
+    }
+    const result = await capability.instagramLogin({
+      caller: getCaller(),
+      secretId: b.secret_id,
+      service: b.service,
+      username: b.username,
+    });
+    return c.json(result);
+  });
+
   return router;
 };
 

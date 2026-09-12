@@ -92,10 +92,19 @@ describe('vault capability — MCP + REST wiring (criterion 10)', () => {
     // body? | body_template?, headers?}
     expect(MCP_SERVER_SOURCE).toMatch(/const VaultHttpInput = z\.object\(\{[\s\S]*secret_id: z\.string\(\)\.min\(1\)/);
     expect(MCP_SERVER_SOURCE).toMatch(/method: z\.enum\(\['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD'\]\)/);
-    expect(MCP_SERVER_SOURCE).toMatch(/inject_header: z\.string\(\)\.min\(1\)/);
+    expect(MCP_SERVER_SOURCE).toMatch(/inject_header: z\.string\(\)\.min\(1\)\.optional\(\)/);
     expect(MCP_SERVER_SOURCE).toMatch(/body: z\.string\(\)\.optional\(\)/);
     expect(MCP_SERVER_SOURCE).toMatch(/body_template: z\.string\(\)\.optional\(\)/);
     expect(MCP_SERVER_SOURCE).toMatch(/headers: z\.record\(z\.string\(\), z\.string\(\)\)\.optional\(\)/);
+    // Typed Instagram-login tool (2026-09-12).
+    expect(MCP_SERVER_SOURCE).toMatch(/const VaultInstagramLoginInput = z\.object\(\{[\s\S]*secret_id: z\.string\(\)\.min\(1\)/);
+    expect(MCP_SERVER_SOURCE).toMatch(/username: z\.string\(\)\.min\(1\)\.max\(128\)/);
+    expect(MCP_SERVER_SOURCE).toMatch(
+      /export async function handleVaultInstagramLogin\(args: unknown\): Promise<TextContent\[\]>/,
+    );
+    expect(MCP_SERVER_SOURCE).toContain(
+      `case 'vault_instagram_login': result = await handleVaultInstagramLogin(args); break;`,
+    );
   });
 
   it('mcp-server.ts exports handleVaultHttp and dispatches vault_http', () => {
@@ -263,6 +272,18 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
       .collection('vault_audit')
       .find(
         { action: 'capability_use', secret_id: secretId },
+        { projection: { _id: 0 } },
+      )
+      .sort({ at: 1 })
+      .toArray()) as unknown as Array<Record<string, unknown>>;
+  }
+
+  /** Audit rows for the typed instagram_login capability action. */
+  async function igAuditRows(secretId: string): Promise<Array<Record<string, unknown>>> {
+    return (await db
+      .collection('vault_audit')
+      .find(
+        { action: 'instagram_login', secret_id: secretId },
         { projection: { _id: 0 } },
       )
       .sort({ at: 1 })
@@ -678,8 +699,8 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
 
   // ── Body-template injection (2026-09-12 Instagram feature) ──────
   it('body_template: {{secret}} tokens are replaced with the resolved secret in the request body', async () => {
-    await grant('lilly', 'instagram');
-    const secretId = await putSecretFor('lilly', 'bodytpl');
+    await grant('agent-c', 'instagram');
+    const secretId = await putSecretFor('agent-c', 'bodytpl');
     let seenBody: unknown;
     const fetchSpy = mockFetch(async (_url, init) => {
       seenBody = init.body;
@@ -693,6 +714,7 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
       body: undefined,
       bodyTemplate: 'username=katra5432&password={{secret}}',
     } as never);
+    // TEMP DEBUG REMOVED
 
     expect(seenBody).toBe(`username=katra5432&password=${SECRET_VALUE}`);
     expect(result).toEqual({ status: 200, body: '{"authenticated":true}' });
@@ -703,8 +725,8 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
   });
 
   it('body_template: body-only login (no inject_header) substitutes {{secret}} and never puts the secret in a header', async () => {
-    await grant('lilly', 'instagram');
-    const secretId = await putSecretFor('lilly', 'bodyonly');
+    await grant('agent-c', 'instagram');
+    const secretId = await putSecretFor('agent-c', 'bodyonly');
     let seenBody: unknown;
     let seenHeaders: Record<string, string> = {};
     const fetchSpy = mockFetch(async (_url, init) => {
@@ -742,8 +764,8 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
   });
 
   it('body_template: no injection target (no inject_header, no body, no body_template) → blocked', async () => {
-    await grant('lilly', 'instagram');
-    const secretId = await putSecretFor('lilly', 'notarget');
+    await grant('agent-c', 'instagram');
+    const secretId = await putSecretFor('agent-c', 'notarget');
     const fetchSpy = mockFetch(async () => new Response('ok', { status: 200 }));
     const cap = createCapability({ store, fetchImpl: fetchSpy, resolveHost: resolveTo(PUBLIC_IP) });
 
@@ -760,9 +782,111 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  // ── Typed instagrapi login (2026-09-12 Instagram feature) ──────
+  it('instagramLogin: no active approval → blocked, driver never called', async () => {
+    const secretId = await putSecretFor('agent-c', 'igsecret');
+    let called = false;
+    const loginFn = vi.fn(async () => {
+      called = true;
+      return { ok: true, userIdPk: '1', sessionid: 's', csrftoken: 'c' };
+    });
+    const cap = createCapability({ store, instagramLoginFn: loginFn });
+
+    const result = await cap.instagramLogin({
+      caller: AGENT_C,
+      secretId,
+      service: 'instagram',
+      username: 'katra5432',
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.blocked?.reason).toBe('no active approval');
+    expect(called).toBe(false);
+    const rows = await igAuditRows(secretId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].outcome).toBe('denied');
+  });
+
+  it('instagramLogin: driver receives username + the opened password; result carries session material only, never the password', async () => {
+    await grant('agent-c', 'instagram');
+    const secretId = await putSecretFor('agent-c', 'igsecret2');
+    let seenArgs: { username: string; password: string } | undefined;
+    const loginFn = vi.fn(async (args) => {
+      seenArgs = args;
+      return { ok: true, userIdPk: '12345678', sessionid: 'session-material-abc', csrftoken: 'csrf-token-xyz' };
+    });
+    const cap = createCapability({ store, instagramLoginFn: loginFn });
+
+    const result = await cap.instagramLogin({
+      caller: AGENT_C,
+      secretId,
+      service: 'instagram',
+      username: 'katra5432',
+    });
+
+    expect(seenArgs?.username).toBe('katra5432');
+    expect(seenArgs?.password).toBe(SECRET_VALUE);
+    expect(result).toEqual({
+      ok: true,
+      username: 'katra5432',
+      userIdPk: '12345678',
+      sessionid: 'session-material-abc',
+      csrftoken: 'csrf-token-xyz',
+    });
+    // The password must never appear in the result or the audit row.
+    expect(JSON.stringify(result)).not.toContain(SECRET_VALUE);
+    const rows = await igAuditRows(secretId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].outcome).toBe('ok');
+    expect(JSON.stringify(rows[0])).not.toContain(SECRET_VALUE);
+    await assertNoSecretText(result, rows);
+  });
+
+  it('instagramLogin: driver failure → static blocked reason, error audit row, no secret echoed', async () => {
+    await grant('agent-c', 'instagram');
+    const secretId = await putSecretFor('agent-c', 'igsecret3');
+    const loginFn = vi.fn(async () => {
+      throw new Error(`instagram rejected the password ${SECRET_VALUE}`);
+    });
+    const cap = createCapability({ store, instagramLoginFn: loginFn });
+
+    const result = await cap.instagramLogin({
+      caller: AGENT_C,
+      secretId,
+      service: 'instagram',
+      username: 'katra5432',
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.blocked?.reason).toBe('instagram login failed');
+    expect(JSON.stringify(result)).not.toContain(SECRET_VALUE);
+    const rows = await igAuditRows(secretId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].outcome).toBe('error');
+    expect(JSON.stringify(rows[0])).not.toContain(SECRET_VALUE);
+  });
+
+  it('instagramLogin: invalid username (empty/multiline) → denied invalid username', async () => {
+    await grant('agent-c', 'instagram');
+    const secretId = await putSecretFor('agent-c', 'igsecret4');
+    const loginFn = vi.fn(async () => ({ ok: true }));
+    const cap = createCapability({ store, instagramLoginFn: loginFn });
+
+    const result = await cap.instagramLogin({
+      caller: AGENT_C,
+      secretId,
+      service: 'instagram',
+      username: 'bad\nname',
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.blocked?.reason).toBe('invalid username');
+    expect(loginFn).not.toHaveBeenCalled();
+  });
+
   it('body_template: upstream Set-Cookie headers surface as setCookies; absent → no key', async () => {
-    await grant('lilly', 'instagram');
-    const secretId = await putSecretFor('lilly', 'cookies');
+    await grant('agent-c', 'instagram');
+    const secretId = await putSecretFor('agent-c', 'cookies');
     const cookieHeaders = new Headers();
     cookieHeaders.append('Set-Cookie', 'sessionid=abc123; Path=/; HttpOnly');
     cookieHeaders.append('Set-Cookie', 'csrftoken=xyz; Path=/');
@@ -799,8 +923,8 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
   });
 
   it('body + body_template together → blocked, fetch never called, audit denied', async () => {
-    await grant('lilly', 'instagram');
-    const secretId = await putSecretFor('lilly', 'conflict');
+    await grant('agent-c', 'instagram');
+    const secretId = await putSecretFor('agent-c', 'conflict');
     const fetchSpy = mockFetch(OK_RESPONSE);
     const cap = createCapability({ store, fetchImpl: fetchSpy, resolveHost: resolveTo(PUBLIC_IP) });
 
@@ -823,8 +947,8 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
   });
 
   it('extra headers: allowlisted names pass through; forbidden names block without fetch', async () => {
-    await grant('lilly', 'instagram');
-    const secretId = await putSecretFor('lilly', 'hdrs');
+    await grant('agent-c', 'instagram');
+    const secretId = await putSecretFor('agent-c', 'hdrs');
     let seenHeaders: Record<string, string> = {};
     const fetchSpy = mockFetch(async (_url, init) => {
       seenHeaders = init.headers as Record<string, string>;
@@ -861,8 +985,8 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
   });
 
   it('extra headers: count/type/value bounds block with header not allowed', async () => {
-    await grant('lilly', 'instagram');
-    const secretId = await putSecretFor('lilly', 'hdrlimits');
+    await grant('agent-c', 'instagram');
+    const secretId = await putSecretFor('agent-c', 'hdrlimits');
     const fetchSpy = mockFetch(OK_RESPONSE);
     const cap = createCapability({ store, fetchImpl: fetchSpy, resolveHost: resolveTo(PUBLIC_IP) });
 
@@ -886,8 +1010,8 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
   });
 
   it('extra headers: the injected secret header always wins a name collision', async () => {
-    await grant('lilly', 'instagram');
-    const secretId = await putSecretFor('lilly', 'collide');
+    await grant('agent-c', 'instagram');
+    const secretId = await putSecretFor('agent-c', 'collide');
     let seenValue: unknown;
     const fetchSpy = mockFetch(async (_url, init) => {
       seenValue = (init.headers as Record<string, string>)['User-Agent'];
@@ -908,8 +1032,8 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
   });
 
   it('body_template: the secret appears in no result, audit row, or blocked reason', async () => {
-    await grant('lilly', 'instagram');
-    const secretId = await putSecretFor('lilly', 'redacttpl');
+    await grant('agent-c', 'instagram');
+    const secretId = await putSecretFor('agent-c', 'redacttpl');
     const fetchSpy = mockFetch(async () => {
       throw new Error(`upstream exploded mid-login ${SECRET_VALUE}`);
     });

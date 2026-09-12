@@ -102,6 +102,41 @@ export interface CapabilityResult {
   blocked?: { reason: string };
 }
 
+/** Typed Instagram-login capability (2026-09-12): the vault opens the IG
+ *  password server-side and hands it to an injectable driver that runs
+ *  instagrapi's client-encrypted login itself — the plaintext password
+ *  never leaves the server process and never appears in results, errors,
+ *  logs, or audit rows. Only derived session material is returned. */
+export interface InstagramLoginInput {
+  caller: CallerIdentity;
+  /** Full secret_id holding the IG account password. */
+  secretId: string;
+  /** Approval service name (e.g. 'Instagram katra account'). */
+  service: string;
+  /** IG account username (e.g. 'katra5432') — plaintext by design. */
+  username: string;
+}
+
+export interface InstagramLoginResult {
+  ok: boolean;
+  /** Present when the login was refused or failed (static reasons only). */
+  blocked?: { reason: string };
+  /** Session material only — the password is NEVER present. */
+  username?: string;
+  userIdPk?: string;
+  sessionid?: string;
+  csrftoken?: string;
+}
+
+/** Shape the injectable driver returns (or the default HTTP driver). */
+export interface InstagramDriverOutcome {
+  ok: boolean;
+  userIdPk?: string;
+  sessionid?: string;
+  csrftoken?: string;
+  error?: string;
+}
+
 export interface CapabilityOptions {
   /** Default: createVaultStore() (lazily, on first use). */
   store?: VaultStore;
@@ -111,10 +146,17 @@ export interface CapabilityOptions {
   resolveHost?: (host: string) => Promise<string[]>;
   /** Default Date.now. */
   now?: () => number;
+  /** Injectable instagrapi login driver (server-side). Default: an HTTP
+   *  driver POSTing to the operator-configured IG_DRIVER_URL endpoint. */
+  instagramLoginFn?: (args: {
+    username: string;
+    password: string;
+  }) => Promise<InstagramDriverOutcome>;
 }
 
 export interface Capability {
   vaultHttp(input: CapabilityInput): Promise<CapabilityResult>;
+  instagramLogin(input: InstagramLoginInput): Promise<InstagramLoginResult>;
 }
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -123,6 +165,8 @@ const AUDIT_COLLECTION = 'vault_audit';
 const CAPABILITY_ACTION = 'capability_use';
 /** 30 s upstream timeout. */
 const TIMEOUT_MS = 30_000;
+/** Typed instagrapi login timeout (the driver may hit IG rate limits). */
+const INSTAGRAM_LOGIN_TIMEOUT_MS = 45_000;
 /** 5 MB response body cap (bytes). */
 const MAX_RESPONSE_BYTES = 5 * 1024 * 1024;
 /** Method whitelist. */
@@ -136,6 +180,53 @@ const ALLOWED_METHODS: ReadonlySet<string> = new Set([
 ]);
 /** How often the timeout poller re-checks the injectable clock. */
 const TIMEOUT_POLL_MS = 50;
+
+// ── Typed instagrapi login driver (2026-09-12 feature) ────────────────────
+
+/** Operator-configured internal driver endpoint (host-side Python service
+ *  running instagrapi). Unset → the capability blocks with a static
+ *  'instagram driver not configured' reason. */
+function igDriverUrl(): string {
+  return (process.env.IG_DRIVER_URL ?? '').trim();
+}
+
+/**
+ * Default instagrapi login driver: POSTs {username, password} to the
+ * operator-configured IG_DRIVER_URL (token-gated with IG_DRIVER_TOKEN).
+ * The password travels ONLY over this operator-controlled hop, server to
+ * server — never through results, logs, or caller contexts.
+ */
+function defaultInstagramLoginFn(
+  fetchImpl: typeof fetch,
+): (args: { username: string; password: string }) => Promise<InstagramDriverOutcome> {
+  return async (args): Promise<InstagramDriverOutcome> => {
+    const url = igDriverUrl();
+    if (!url) {
+      throw new Error('instagram driver not configured');
+    }
+    const token = process.env.IG_DRIVER_TOKEN ?? '';
+    const response = await fetchImpl(url, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ username: args.username, password: args.password }),
+    });
+    if (!response.ok) {
+      throw new Error('instagram driver rejected the request');
+    }
+    const payload = (await response.json()) as InstagramDriverOutcome;
+    if (
+      typeof payload !== 'object' ||
+      payload === null ||
+      typeof payload.ok !== 'boolean'
+    ) {
+      throw new Error('instagram driver returned an invalid response');
+    }
+    return payload;
+  };
+}
 
 // ── Body-injection + extra-header content rules (2026-09-12 feature) ─────
 
@@ -546,6 +637,107 @@ export function createCapability(opts: CapabilityOptions = {}): Capability {
         // Unexpected infrastructure failure — blocked reason only, never
         // the secret, exactly one audit row.
         return finish('error', blocked('request failed'), 'request failed');
+      }
+    },
+
+    /** Typed Instagram login: approval-gated + RBAC-opened server-side.
+     *  The plaintext password is passed ONLY to the injected driver (never
+     *  into results/errors/logs/audit). Returns derived session material. */
+    async instagramLogin(input: InstagramLoginInput): Promise<InstagramLoginResult> {
+      const startAt = now();
+      const auditAt = new Date(startAt).toISOString();
+      const actor: string =
+        input && typeof input.caller === 'object' && input.caller !== null &&
+        typeof input.caller.user_id === 'string'
+          ? input.caller.user_id
+          : 'unknown';
+      let audited = false;
+      const blocked = (reason: string): InstagramLoginResult => ({
+        ok: false,
+        blocked: { reason },
+      });
+      async function finish(
+        outcome: 'ok' | 'denied' | 'error',
+        result: InstagramLoginResult,
+        errorText?: string,
+      ): Promise<InstagramLoginResult> {
+        if (!audited) {
+          audited = true;
+          await writeCapabilityAudit({
+            at: auditAt,
+            actor,
+            action: 'instagram_login',
+            secret_id: input.secretId,
+            service: input.service,
+            outcome,
+            ...(errorText !== undefined ? { error: errorText } : {}),
+          });
+        }
+        return result;
+      }
+
+      try {
+        // Shape gate: username is caller text, bounded, single line.
+        if (
+          typeof input.username !== 'string' ||
+          input.username.length === 0 ||
+          input.username.length > 128 ||
+          /[\r\n]/.test(input.username)
+        ) {
+          return finish('denied', blocked('invalid username'));
+        }
+        if (!input.secretId || input.secretId.length === 0 || !input.service) {
+          return finish('denied', blocked('invalid capability request'));
+        }
+
+        // Approval gate FIRST — identical to vaultHttp.
+        const store: VaultStore = opts.store ?? (lazyStore ??= createVaultStore());
+        const approved = await store.hasActiveApproval(
+          input.caller.user_id,
+          input.service,
+        );
+        if (!approved) {
+          return finish('denied', blocked('no active approval'));
+        }
+
+        // RBAC: open the password server-side; it never leaves this scope
+        // except into the driver call.
+        let secret: string;
+        try {
+          secret = await store.openSecretValue(input.caller, input.secretId);
+        } catch {
+          return finish('denied', blocked('secret not available'));
+        }
+
+        const driver = opts.instagramLoginFn ?? defaultInstagramLoginFn(fetchImpl);
+        try {
+          const outcome = await Promise.race([
+            driver({ username: input.username, password: secret }),
+            new Promise<never>((_, reject) =>
+              setTimeout(
+                () => reject(new Error('ig-login-timeout')),
+                INSTAGRAM_LOGIN_TIMEOUT_MS,
+              ),
+            ),
+          ]);
+          if (!outcome || outcome.ok !== true) {
+            return finish('error', blocked('instagram login failed'), 'instagram login failed');
+          }
+          const result: InstagramLoginResult = {
+            ok: true,
+            username: input.username,
+            userIdPk: outcome.userIdPk,
+            sessionid: outcome.sessionid,
+            csrftoken: outcome.csrftoken,
+          };
+          return finish('ok', result);
+        } catch {
+          // Static failure text only — driver errors may echo secret-adjacent
+          // context and must never surface.
+          return finish('error', blocked('instagram login failed'), 'instagram login failed');
+        }
+      } catch {
+        return finish('error', blocked('instagram login failed'), 'instagram login failed');
       }
     },
   };
