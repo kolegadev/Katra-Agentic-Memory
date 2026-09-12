@@ -295,10 +295,11 @@ export const create_vault_routes = (opts: VaultRoutesOptions = {}): Hono => {
 
   // ── F7 capability ──────────────────────────────────────────────
   // POST /capability/http — approval-gated, server-side secret use
-  // ({secret_id, service, method, url, inject_header, body?} →
-  // CapabilityResult {status, body, blocked?}). The caller comes from
-  // getCaller(); the resolved secret is injected only as the named header
-  // and never appears in any response, error, or audit row.
+  // ({secret_id, service, method, url, inject_header, body? | body_template?,
+  // headers?} → CapabilityResult {status, body, setCookies?, blocked?}). The
+  // caller comes from getCaller(); the resolved secret is injected only as
+  // the named header and/or via {{secret}} tokens in body_template, and never
+  // appears in any response, error, or audit row.
 
   router.post('/capability/http', async (c) => {
     let body: unknown;
@@ -318,23 +319,34 @@ export const create_vault_routes = (opts: VaultRoutesOptions = {}): Hono => {
       typeof b.secret_id !== 'string' ||
       typeof b.service !== 'string' ||
       typeof b.method !== 'string' ||
-      typeof b.url !== 'string' ||
-      typeof b.inject_header !== 'string'
+      typeof b.url !== 'string'
     ) {
       return c.json(
-        { success: false, error: 'vault: secret_id, service, method, url, inject_header are required strings' },
+        { success: false, error: 'vault: secret_id, service, method, url are required strings' },
         400,
       );
     }
+    if (b.inject_header !== undefined && b.inject_header !== null && typeof b.inject_header !== 'string') {
+      return c.json({ success: false, error: 'vault: inject_header must be a string' }, 400);
+    }
+    const hasInjectHeader =
+      typeof b.inject_header === 'string' && b.inject_header.length > 0;
+    const hasBody = typeof b.body === 'string';
+    const hasBodyTemplate = typeof b.body_template === 'string';
     if (
       !CAPABILITY_METHODS.has(b.method) ||
       b.secret_id.length === 0 ||
       b.service.length === 0 ||
-      b.url.length === 0 ||
-      b.inject_header.length === 0
+      b.url.length === 0
     ) {
       return c.json(
         { success: false, error: 'vault: invalid capability request' },
+        400,
+      );
+    }
+    if (!hasInjectHeader && !hasBody && !hasBodyTemplate) {
+      return c.json(
+        { success: false, error: 'vault: provide at least one injection target (inject_header, body_template or body)' },
         400,
       );
     }
@@ -344,15 +356,42 @@ export const create_vault_routes = (opts: VaultRoutesOptions = {}): Hono => {
     if (b.inject_scheme !== undefined && b.inject_scheme !== null && typeof b.inject_scheme !== 'string') {
       return c.json({ success: false, error: 'vault: inject_scheme must be a string' }, 400);
     }
+    if (b.body_template !== undefined && b.body_template !== null && typeof b.body_template !== 'string') {
+      return c.json({ success: false, error: 'vault: body_template must be a string' }, 400);
+    }
+    if (typeof b.body === 'string' && typeof b.body_template === 'string') {
+      return c.json(
+        { success: false, error: 'vault: body and body_template are mutually exclusive' },
+        400,
+      );
+    }
+    if (b.headers !== undefined && b.headers !== null) {
+      if (typeof b.headers !== 'object' || Array.isArray(b.headers)) {
+        return c.json({ success: false, error: 'vault: headers must be an object' }, 400);
+      }
+      for (const [name, value] of Object.entries(b.headers as Record<string, unknown>)) {
+        if (typeof name !== 'string' || typeof value !== 'string') {
+          return c.json(
+            { success: false, error: 'vault: headers must map names to string values' },
+            400,
+          );
+        }
+      }
+    }
     const input: CapabilityInput = {
       caller: getCaller(),
       secretId: b.secret_id,
       service: b.service,
       method: b.method,
       url: b.url,
-      injectHeader: b.inject_header,
+      injectHeader: hasInjectHeader ? (b.inject_header as string) : undefined,
       injectScheme: typeof b.inject_scheme === 'string' ? b.inject_scheme : undefined,
       body: typeof b.body === 'string' ? b.body : undefined,
+      bodyTemplate: typeof b.body_template === 'string' ? b.body_template : undefined,
+      headers:
+        b.headers !== undefined && b.headers !== null
+          ? (b.headers as Record<string, string>)
+          : undefined,
     };
     try {
       // vaultHttp never throws for refused/blocked attempts; it returns the
@@ -362,6 +401,51 @@ export const create_vault_routes = (opts: VaultRoutesOptions = {}): Hono => {
     } catch {
       return c.json({ success: false, error: 'vault: capability failed' }, 500);
     }
+  });
+
+  // POST /capability/instagram-login — approval-gated, typed server-side
+  // Instagram login ({secret_id, service, username} → session material).
+  // The vault opens the password server-side and hands it only to the
+  // instagrapi driver; the password never appears in any response, error,
+  // or audit row.
+  router.post('/capability/instagram-login', async (c) => {
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ success: false, error: 'vault: invalid request body' }, 400);
+    }
+    if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+      return c.json({ success: false, error: 'vault: invalid request body' }, 400);
+    }
+    const b = body as Record<string, unknown>;
+    if (
+      typeof b.secret_id !== 'string' ||
+      typeof b.service !== 'string' ||
+      typeof b.username !== 'string'
+    ) {
+      return c.json(
+        { success: false, error: 'vault: secret_id, service, username are required strings' },
+        400,
+      );
+    }
+    if (
+      b.secret_id.length === 0 ||
+      b.service.length === 0 ||
+      b.username.length === 0
+    ) {
+      return c.json(
+        { success: false, error: 'vault: invalid capability request' },
+        400,
+      );
+    }
+    const result = await capability.instagramLogin({
+      caller: getCaller(),
+      secretId: b.secret_id,
+      service: b.service,
+      username: b.username,
+    });
+    return c.json(result);
   });
 
   return router;

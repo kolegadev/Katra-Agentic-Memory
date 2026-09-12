@@ -4,33 +4,44 @@
  * The ONLY way a secret is ever *used*: an approval-gated, server-side HTTP
  * capability (`vaultHttp`) that opens a secret under the caller's RBAC scope
  * (F2 `openSecretValue`), injects it into ONE outbound request as a single
- * named header, and returns only `{status, body}` (+ a `blocked` reason when
- * the request was refused). The raw secret never appears in results, thrown
- * errors, logs, or audit rows (design docs/katra-vault-design.md §7.3 guard
- * 3, §9; contract F7).
+ * named header and/or into the request body via a `{{secret}}` template
+ * token, and returns only `{status, body, setCookies?}` (+ a `blocked`
+ * reason when the request was refused). The raw secret never appears in
+ * results, thrown errors, logs, or audit rows (design docs/katra-vault-
+ * design.md §7.3 guard 3, §9; contract F7).
  *
  * Guard order (all hard rules — violation = FAIL):
  *   1. Approval gate FIRST — hasActiveApproval(caller.user_id, service)
  *      (honors the '*' wildcard). No active approval → no network activity.
- *   2. RBAC open — openSecretValue(caller, secretId); a caller can never use
- *      a secret outside their read scope.
- *   3. SSRF pre-flight (before ANY connection): https scheme only; host
+ *   2. Method whitelist GET POST PUT PATCH DELETE HEAD.
+ *   3. Content rules (before any network activity): extra request headers
+ *      are allowlisted names only (SAFE_EXTRA_HEADERS, case-insensitive;
+ *      host/connection/content-length/cookie/authorization and friends are
+ *      rejected), bounded count/value length, and `body` + `body_template`
+ *      are mutually exclusive.
+ *   4. SSRF pre-flight (before ANY connection): https scheme only; host
  *      resolved via resolveHost; ANY resolved private/loopback/link-local/
  *      reserved address (incl. IPv4-mapped IPv6) blocks; DNS failure blocks;
  *      port 443 only; absolute https URL with no userinfo.
- *   4. Limits: response body capped at 5 MB (stream counted, read aborted),
- *      upstream timeout 30 s (AbortSignal driven by injectable now());
- *      method whitelist GET POST PUT PATCH DELETE HEAD.
- *   5. No redirect following: fetch redirect 'manual' — a 3xx is returned
+ *   5. RBAC open — openSecretValue(caller, secretId); a caller can never use
+ *      a secret outside their read scope.
+ *   6. Limits: response body capped at 5 MB (stream counted, read aborted),
+ *      upstream timeout 30 s (AbortSignal driven by injectable now()).
+ *   7. No redirect following: fetch redirect 'manual' — a 3xx is returned
  *      as-is and never followed (redirects can smuggle SSRF past the
  *      pre-flight).
- *   6. Injection: the resolved secret is set ONLY as the named request
- *      header (`injectHeader`) of the outbound request.
- *   7. Audit: exactly ONE value-free `vault_audit` row per attempt: action
+ *   8. Injection: the resolved secret is set ONLY (a) as the named request
+ *      header (`injectHeader`, optionally `injectScheme`-prefixed) and/or
+ *      (b) by replacing every `{{secret}}` token in `body_template` with the
+ *      secret value. Extra header values are caller text — the secret is
+ *      NEVER substituted into them. Upstream `Set-Cookie` response headers
+ *      (session material, value-safe) are returned as `setCookies` when
+ *      present, bounded by count and total bytes.
+ *   9. Audit: exactly ONE value-free `vault_audit` row per attempt: action
  *      'capability_use', actor, service, secret_id, outcome
  *      'ok'|'denied'|'error', error only on exception. Keys ⊆ the F2
  *      whitelist {at, actor, action, secret_id, service, outcome, error}.
- *   8. Redaction on error: upstream non-2xx statuses are returned as
+ *  10. Redaction on error: upstream non-2xx statuses are returned as
  *      {status, body}; infrastructure failures return blocked reasons only —
  *      never the secret.
  *
@@ -58,13 +69,25 @@ export interface CapabilityInput {
   method: string;
   /** https:// only. */
   url: string;
-  /** Header name the secret is injected into. */
-  injectHeader: string;
+  /** Header name the secret is injected into. Optional when `bodyTemplate`
+   *  or `body` carries the injection target — at least ONE injection target
+   *  is required. */
+  injectHeader?: string;
   /** Optional auth-scheme prefix for the header value (e.g. 'Bearer' sends
    *  `Authorization: Bearer <secret>`); absent → raw secret is the value. */
   injectScheme?: string;
-  /** Optional request body (string). */
+  /** Optional request body (string) — passed through untouched. Mutually
+   *  exclusive with `bodyTemplate`. */
   body?: string;
+  /** Optional request-body template (string): every `{{secret}}` token is
+   *  replaced with the resolved secret value; nothing else is substituted.
+   *  Mutually exclusive with `body`. */
+  bodyTemplate?: string;
+  /** Optional extra request headers (allowlisted names only, enforced by
+   *  the capability core). Values are caller text — the secret is NEVER
+   *  substituted into them, and the injected header always wins on a name
+   *  collision. */
+  headers?: Record<string, string>;
 }
 
 export interface CapabilityResult {
@@ -72,8 +95,46 @@ export interface CapabilityResult {
   status: number;
   /** Upstream response body (never contains the secret). */
   body: string;
+  /** Upstream Set-Cookie headers (session material — never the secret),
+   *  present only when the upstream returned at least one. */
+  setCookies?: string[];
   /** Present when the request was refused (pre-flight or limits). */
   blocked?: { reason: string };
+}
+
+/** Typed Instagram-login capability (2026-09-12): the vault opens the IG
+ *  password server-side and hands it to an injectable driver that runs
+ *  instagrapi's client-encrypted login itself — the plaintext password
+ *  never leaves the server process and never appears in results, errors,
+ *  logs, or audit rows. Only derived session material is returned. */
+export interface InstagramLoginInput {
+  caller: CallerIdentity;
+  /** Full secret_id holding the IG account password. */
+  secretId: string;
+  /** Approval service name (e.g. 'Instagram katra account'). */
+  service: string;
+  /** IG account username (e.g. 'katra5432') — plaintext by design. */
+  username: string;
+}
+
+export interface InstagramLoginResult {
+  ok: boolean;
+  /** Present when the login was refused or failed (static reasons only). */
+  blocked?: { reason: string };
+  /** Session material only — the password is NEVER present. */
+  username?: string;
+  userIdPk?: string;
+  sessionid?: string;
+  csrftoken?: string;
+}
+
+/** Shape the injectable driver returns (or the default HTTP driver). */
+export interface InstagramDriverOutcome {
+  ok: boolean;
+  userIdPk?: string;
+  sessionid?: string;
+  csrftoken?: string;
+  error?: string;
 }
 
 export interface CapabilityOptions {
@@ -85,10 +146,17 @@ export interface CapabilityOptions {
   resolveHost?: (host: string) => Promise<string[]>;
   /** Default Date.now. */
   now?: () => number;
+  /** Injectable instagrapi login driver (server-side). Default: an HTTP
+   *  driver POSTing to the operator-configured IG_DRIVER_URL endpoint. */
+  instagramLoginFn?: (args: {
+    username: string;
+    password: string;
+  }) => Promise<InstagramDriverOutcome>;
 }
 
 export interface Capability {
   vaultHttp(input: CapabilityInput): Promise<CapabilityResult>;
+  instagramLogin(input: InstagramLoginInput): Promise<InstagramLoginResult>;
 }
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -97,6 +165,8 @@ const AUDIT_COLLECTION = 'vault_audit';
 const CAPABILITY_ACTION = 'capability_use';
 /** 30 s upstream timeout. */
 const TIMEOUT_MS = 30_000;
+/** Typed instagrapi login timeout (the driver may hit IG rate limits). */
+const INSTAGRAM_LOGIN_TIMEOUT_MS = 45_000;
 /** 5 MB response body cap (bytes). */
 const MAX_RESPONSE_BYTES = 5 * 1024 * 1024;
 /** Method whitelist. */
@@ -110,6 +180,84 @@ const ALLOWED_METHODS: ReadonlySet<string> = new Set([
 ]);
 /** How often the timeout poller re-checks the injectable clock. */
 const TIMEOUT_POLL_MS = 50;
+
+// ── Typed instagrapi login driver (2026-09-12 feature) ────────────────────
+
+/** Operator-configured internal driver endpoint (host-side Python service
+ *  running instagrapi). Unset → the capability blocks with a static
+ *  'instagram driver not configured' reason. */
+function igDriverUrl(): string {
+  return (process.env.IG_DRIVER_URL ?? '').trim();
+}
+
+/**
+ * Default instagrapi login driver: POSTs {username, password} to the
+ * operator-configured IG_DRIVER_URL (token-gated with IG_DRIVER_TOKEN).
+ * The password travels ONLY over this operator-controlled hop, server to
+ * server — never through results, logs, or caller contexts.
+ */
+function defaultInstagramLoginFn(
+  fetchImpl: typeof fetch,
+): (args: { username: string; password: string }) => Promise<InstagramDriverOutcome> {
+  return async (args): Promise<InstagramDriverOutcome> => {
+    const url = igDriverUrl();
+    if (!url) {
+      throw new Error('instagram driver not configured');
+    }
+    const token = process.env.IG_DRIVER_TOKEN ?? '';
+    const response = await fetchImpl(url, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ username: args.username, password: args.password }),
+    });
+    if (!response.ok) {
+      throw new Error('instagram driver rejected the request');
+    }
+    const payload = (await response.json()) as InstagramDriverOutcome;
+    if (
+      typeof payload !== 'object' ||
+      payload === null ||
+      typeof payload.ok !== 'boolean'
+    ) {
+      throw new Error('instagram driver returned an invalid response');
+    }
+    return payload;
+  };
+}
+
+// ── Body-injection + extra-header content rules (2026-09-12 feature) ─────
+
+/** Template token substituted with the resolved secret inside
+ *  `body_template`. Any other text passes through untouched. */
+const BODY_SECRET_TOKEN = '{{secret}}';
+/** Extra request-header names a caller may set (case-insensitive).
+ *  Deliberately excludes host, connection, content-length,
+ *  transfer-encoding, cookie, authorization, proxy-authorization and the
+ *  like — names that could smuggle SSRF past the pre-flight or bypass the
+ *  single header-injection path. */
+const SAFE_EXTRA_HEADERS: ReadonlySet<string> = new Set([
+  'content-type',
+  'accept',
+  'accept-language',
+  'user-agent',
+  'origin',
+  'referer',
+  'x-ig-app-id',
+  'x-ig-www-claim',
+  'x-requested-with',
+  'x-csrftoken',
+]);
+/** Maximum number of caller-supplied extra headers. */
+const MAX_EXTRA_HEADERS = 8;
+/** Maximum length of one caller-supplied extra-header value. */
+const MAX_HEADER_VALUE_LENGTH = 1024;
+/** Maximum number of upstream Set-Cookie headers surfaced in the result. */
+const MAX_SET_COOKIE_HEADERS = 32;
+/** Maximum total bytes of surfaced Set-Cookie values. */
+const MAX_SET_COOKIE_TOTAL_BYTES = 8 * 1024;
 
 // ── SSRF address guards (plain JS over address strings; no new deps) ──────
 
@@ -307,6 +455,45 @@ export function createCapability(opts: CapabilityOptions = {}): Capability {
           return finish('denied', blocked('method not allowed'));
         }
 
+        // 3 ── Content rules (before ANY network activity): extra headers
+        // are allowlisted names only, bounded; body and body_template are
+        // mutually exclusive.
+        if (input.headers !== undefined) {
+          const entries = Object.entries(input.headers as Record<string, unknown>);
+          const headerShapeInvalid =
+            entries.length > MAX_EXTRA_HEADERS ||
+            entries.some(
+              ([name, value]) =>
+                typeof name !== 'string' ||
+                name.trim().length === 0 ||
+                !SAFE_EXTRA_HEADERS.has(name.trim().toLowerCase()) ||
+                typeof value !== 'string' ||
+                value.length > MAX_HEADER_VALUE_LENGTH,
+            );
+          if (headerShapeInvalid) {
+            return finish('denied', blocked('header not allowed'));
+          }
+        }
+        if (input.bodyTemplate !== undefined && input.body !== undefined) {
+          return finish(
+            'denied',
+            blocked('body and body_template are mutually exclusive'),
+          );
+        }
+        // At least one injection target is required: a named header, a
+        // body template, or a raw body. Body-only flows (e.g. form-encoded
+        // logins) must not be forced to leak the secret into a header.
+        if (
+          (!input.injectHeader || input.injectHeader.length === 0) &&
+          input.bodyTemplate === undefined &&
+          input.body === undefined
+        ) {
+          return finish(
+            'denied',
+            blocked('no injection target (inject_header, body_template or body)'),
+          );
+        }
+
         // 3 ── SSRF pre-flight (before any connection).
         let parsed: URL;
         try {
@@ -345,9 +532,20 @@ export function createCapability(opts: CapabilityOptions = {}): Capability {
           return finish('denied', blocked('secret not available'));
         }
 
-        // 5 ── Outbound request: secret ONLY as the named header; manual
-        // redirects; 30 s deadline enforced via AbortSignal + injectable
-        // now(); 5 MB body cap on the read.
+        // 5 ── Body assembly: body_template substitutes every {{secret}}
+        // token with the resolved secret; body passes through untouched.
+        let requestBody: string | undefined;
+        if (input.bodyTemplate !== undefined) {
+          requestBody = input.bodyTemplate.split(BODY_SECRET_TOKEN).join(secret);
+        } else {
+          requestBody = input.body;
+        }
+
+        // 6 ── Outbound request: secret ONLY as the named header and/or
+        // the substituted body template; manual redirects; 30 s deadline
+        // enforced via AbortSignal + injectable now(); 5 MB body cap on
+        // the read. The injected header is set LAST so it always wins a
+        // name collision with a caller-supplied extra header.
         const controller = new AbortController();
         const deadline = startAt + TIMEOUT_MS;
         let timedOut = false;
@@ -364,19 +562,28 @@ export function createCapability(opts: CapabilityOptions = {}): Capability {
           };
           pollerHandle = setTimeout(tick, TIMEOUT_POLL_MS);
         });
-        const headerValue = input.injectScheme
-          ? `${input.injectScheme} ${secret}`
-          : secret;
+        const outHeaders: Record<string, string> = {};
+        if (input.headers !== undefined) {
+          for (const [name, value] of Object.entries(input.headers)) {
+            outHeaders[name] = value;
+          }
+        }
+        if (input.injectHeader && input.injectHeader.length > 0) {
+          const headerValue = input.injectScheme
+            ? `${input.injectScheme} ${secret}`
+            : secret;
+          outHeaders[input.injectHeader] = headerValue;
+        }
         const init: RequestInit = {
           method: input.method,
-          headers: { [input.injectHeader]: headerValue },
+          headers: outHeaders,
           redirect: 'manual',
           signal: controller.signal,
         };
         // Node forbids request bodies on GET/HEAD — the whitelist still
         // admits them, so a submitted body is simply not attached there.
-        if (input.body !== undefined && input.method !== 'GET' && input.method !== 'HEAD') {
-          init.body = input.body;
+        if (requestBody !== undefined && input.method !== 'GET' && input.method !== 'HEAD') {
+          init.body = requestBody;
         }
         try {
           const response = await Promise.race([
@@ -384,6 +591,27 @@ export function createCapability(opts: CapabilityOptions = {}): Capability {
             deadlineReached,
           ]);
           const status = response.status;
+          // Set-Cookie response headers are session material (value-safe)
+          // and are surfaced bounded by count and total bytes.
+          let setCookies: string[] | undefined;
+          try {
+            const rawCookies =
+              typeof (response.headers as Headers).getSetCookie === 'function'
+                ? (response.headers as Headers).getSetCookie()
+                : [];
+            const collected: string[] = [];
+            let totalBytes = 0;
+            for (const cookie of rawCookies) {
+              if (typeof cookie !== 'string' || cookie.length > 1024) continue;
+              if (collected.length >= MAX_SET_COOKIE_HEADERS) break;
+              totalBytes += cookie.length;
+              if (totalBytes > MAX_SET_COOKIE_TOTAL_BYTES) break;
+              collected.push(cookie);
+            }
+            setCookies = collected.length > 0 ? collected : undefined;
+          } catch {
+            setCookies = undefined;
+          }
           let body: string;
           try {
             body = await readBodyCapped(response);
@@ -393,7 +621,10 @@ export function createCapability(opts: CapabilityOptions = {}): Capability {
             }
             throw error;
           }
-          return finish('ok', { status, body });
+          return finish(
+            'ok',
+            setCookies !== undefined ? { status, body, setCookies } : { status, body },
+          );
         } catch (error) {
           if (timedOut) {
             return finish('error', blocked('timeout'), 'timeout');
@@ -406,6 +637,107 @@ export function createCapability(opts: CapabilityOptions = {}): Capability {
         // Unexpected infrastructure failure — blocked reason only, never
         // the secret, exactly one audit row.
         return finish('error', blocked('request failed'), 'request failed');
+      }
+    },
+
+    /** Typed Instagram login: approval-gated + RBAC-opened server-side.
+     *  The plaintext password is passed ONLY to the injected driver (never
+     *  into results/errors/logs/audit). Returns derived session material. */
+    async instagramLogin(input: InstagramLoginInput): Promise<InstagramLoginResult> {
+      const startAt = now();
+      const auditAt = new Date(startAt).toISOString();
+      const actor: string =
+        input && typeof input.caller === 'object' && input.caller !== null &&
+        typeof input.caller.user_id === 'string'
+          ? input.caller.user_id
+          : 'unknown';
+      let audited = false;
+      const blocked = (reason: string): InstagramLoginResult => ({
+        ok: false,
+        blocked: { reason },
+      });
+      async function finish(
+        outcome: 'ok' | 'denied' | 'error',
+        result: InstagramLoginResult,
+        errorText?: string,
+      ): Promise<InstagramLoginResult> {
+        if (!audited) {
+          audited = true;
+          await writeCapabilityAudit({
+            at: auditAt,
+            actor,
+            action: 'instagram_login',
+            secret_id: input.secretId,
+            service: input.service,
+            outcome,
+            ...(errorText !== undefined ? { error: errorText } : {}),
+          });
+        }
+        return result;
+      }
+
+      try {
+        // Shape gate: username is caller text, bounded, single line.
+        if (
+          typeof input.username !== 'string' ||
+          input.username.length === 0 ||
+          input.username.length > 128 ||
+          /[\r\n]/.test(input.username)
+        ) {
+          return finish('denied', blocked('invalid username'));
+        }
+        if (!input.secretId || input.secretId.length === 0 || !input.service) {
+          return finish('denied', blocked('invalid capability request'));
+        }
+
+        // Approval gate FIRST — identical to vaultHttp.
+        const store: VaultStore = opts.store ?? (lazyStore ??= createVaultStore());
+        const approved = await store.hasActiveApproval(
+          input.caller.user_id,
+          input.service,
+        );
+        if (!approved) {
+          return finish('denied', blocked('no active approval'));
+        }
+
+        // RBAC: open the password server-side; it never leaves this scope
+        // except into the driver call.
+        let secret: string;
+        try {
+          secret = await store.openSecretValue(input.caller, input.secretId);
+        } catch {
+          return finish('denied', blocked('secret not available'));
+        }
+
+        const driver = opts.instagramLoginFn ?? defaultInstagramLoginFn(fetchImpl);
+        try {
+          const outcome = await Promise.race([
+            driver({ username: input.username, password: secret }),
+            new Promise<never>((_, reject) =>
+              setTimeout(
+                () => reject(new Error('ig-login-timeout')),
+                INSTAGRAM_LOGIN_TIMEOUT_MS,
+              ),
+            ),
+          ]);
+          if (!outcome || outcome.ok !== true) {
+            return finish('error', blocked('instagram login failed'), 'instagram login failed');
+          }
+          const result: InstagramLoginResult = {
+            ok: true,
+            username: input.username,
+            userIdPk: outcome.userIdPk,
+            sessionid: outcome.sessionid,
+            csrftoken: outcome.csrftoken,
+          };
+          return finish('ok', result);
+        } catch {
+          // Static failure text only — driver errors may echo secret-adjacent
+          // context and must never surface.
+          return finish('error', blocked('instagram login failed'), 'instagram login failed');
+        }
+      } catch {
+        return finish('error', blocked('instagram login failed'), 'instagram login failed');
       }
     },
   };

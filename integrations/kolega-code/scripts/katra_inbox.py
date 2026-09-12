@@ -47,9 +47,20 @@ ESCALATE_FILE = os.path.expanduser("~/.katra/inbox/needs-owner.md")
 
 # This machine's names, current + legacy pre-cutover aliases (matches the
 # bridge's bulletin scan). Override with KATRA_AGENT_NAMES for other agents.
+# Default derives from the local identity env — the loop must always match
+# its OWN identity ("Attention: Satori" on the satori loop). The hardcoded
+# 'katra,kolegacode,kolegacoder' default predates the identity cutover and
+# silently dropped every message addressed to the new identity
+# (2026-09-12: Lilly's Instagram feature request sat un-dispatched all day).
+def _default_my_names() -> str:
+    ids = {os.environ.get("KATRA_AGENT_ID", "katra"),
+           os.environ.get("KATRA_USER_ID", "katra")}
+    legacy = {"katra", "kolegacode", "kolegacoder"}
+    return ",".join(sorted({i.strip().lower() for i in ids if i} | legacy))
+
+
 MY_NAMES = {n.strip().lower() for n in
-            os.environ.get("KATRA_AGENT_NAMES",
-                           "katra,kolegacode,kolegacoder").split(",")
+            os.environ.get("KATRA_AGENT_NAMES", _default_my_names()).split(",")
             if n.strip()}
 
 
