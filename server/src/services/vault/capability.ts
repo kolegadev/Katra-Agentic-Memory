@@ -69,8 +69,10 @@ export interface CapabilityInput {
   method: string;
   /** https:// only. */
   url: string;
-  /** Header name the secret is injected into. */
-  injectHeader: string;
+  /** Header name the secret is injected into. Optional when `bodyTemplate`
+   *  or `body` carries the injection target — at least ONE injection target
+   *  is required. */
+  injectHeader?: string;
   /** Optional auth-scheme prefix for the header value (e.g. 'Bearer' sends
    *  `Authorization: Bearer <secret>`); absent → raw secret is the value. */
   injectScheme?: string;
@@ -387,6 +389,19 @@ export function createCapability(opts: CapabilityOptions = {}): Capability {
             blocked('body and body_template are mutually exclusive'),
           );
         }
+        // At least one injection target is required: a named header, a
+        // body template, or a raw body. Body-only flows (e.g. form-encoded
+        // logins) must not be forced to leak the secret into a header.
+        if (
+          (!input.injectHeader || input.injectHeader.length === 0) &&
+          input.bodyTemplate === undefined &&
+          input.body === undefined
+        ) {
+          return finish(
+            'denied',
+            blocked('no injection target (inject_header, body_template or body)'),
+          );
+        }
 
         // 3 ── SSRF pre-flight (before any connection).
         let parsed: URL;
@@ -456,16 +471,18 @@ export function createCapability(opts: CapabilityOptions = {}): Capability {
           };
           pollerHandle = setTimeout(tick, TIMEOUT_POLL_MS);
         });
-        const headerValue = input.injectScheme
-          ? `${input.injectScheme} ${secret}`
-          : secret;
         const outHeaders: Record<string, string> = {};
         if (input.headers !== undefined) {
           for (const [name, value] of Object.entries(input.headers)) {
             outHeaders[name] = value;
           }
         }
-        outHeaders[input.injectHeader] = headerValue;
+        if (input.injectHeader && input.injectHeader.length > 0) {
+          const headerValue = input.injectScheme
+            ? `${input.injectScheme} ${secret}`
+            : secret;
+          outHeaders[input.injectHeader] = headerValue;
+        }
         const init: RequestInit = {
           method: input.method,
           headers: outHeaders,

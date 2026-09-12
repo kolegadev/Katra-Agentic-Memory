@@ -702,6 +702,64 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
     await assertNoSecretText(result, rows);
   });
 
+  it('body_template: body-only login (no inject_header) substitutes {{secret}} and never puts the secret in a header', async () => {
+    await grant('lilly', 'instagram');
+    const secretId = await putSecretFor('lilly', 'bodyonly');
+    let seenBody: unknown;
+    let seenHeaders: Record<string, string> = {};
+    const fetchSpy = mockFetch(async (_url, init) => {
+      seenBody = init.body;
+      seenHeaders = Object.fromEntries(new Headers(init.headers).entries());
+      return new Response('{"authenticated":true,"userId":"123"}', {
+        status: 200,
+        headers: new Headers({ 'Set-Cookie': 'sessionid=sess123; Path=/' }),
+      });
+    });
+    const cap = createCapability({ store, fetchImpl: fetchSpy, resolveHost: resolveTo(PUBLIC_IP) });
+
+    const result = await cap.vaultHttp({
+      ...(inputFor(secretId) as Record<string, unknown>),
+      service: 'instagram',
+      injectHeader: undefined,
+      injectScheme: undefined,
+      body: undefined,
+      bodyTemplate: 'username=katra5432&password={{secret}}&queryParams={}',
+      headers: { 'content-type': 'application/x-www-form-urlencoded', 'x-ig-app-id': '936619743392459' },
+    } as never);
+
+    expect(seenBody).toBe(`username=katra5432&password=${SECRET_VALUE}&queryParams={}`);
+    // No request header may carry the secret on the body-only path.
+    for (const value of Object.values(seenHeaders)) {
+      expect(value).not.toContain(SECRET_VALUE);
+    }
+    expect(seenHeaders['content-type']).toBe('application/x-www-form-urlencoded');
+    expect(result.status).toBe(200);
+    expect(result.setCookies).toEqual(['sessionid=sess123; Path=/']);
+    const rows = await auditRowsFor(secretId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].outcome).toBe('ok');
+    await assertNoSecretText(result, rows);
+  });
+
+  it('body_template: no injection target (no inject_header, no body, no body_template) → blocked', async () => {
+    await grant('lilly', 'instagram');
+    const secretId = await putSecretFor('lilly', 'notarget');
+    const fetchSpy = mockFetch(async () => new Response('ok', { status: 200 }));
+    const cap = createCapability({ store, fetchImpl: fetchSpy, resolveHost: resolveTo(PUBLIC_IP) });
+
+    const result = await cap.vaultHttp({
+      ...(inputFor(secretId) as Record<string, unknown>),
+      service: 'instagram',
+      injectHeader: undefined,
+      body: undefined,
+    } as never);
+
+    expect(result.blocked?.reason).toBe(
+      'no injection target (inject_header, body_template or body)',
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
   it('body_template: upstream Set-Cookie headers surface as setCookies; absent → no key', async () => {
     await grant('lilly', 'instagram');
     const secretId = await putSecretFor('lilly', 'cookies');

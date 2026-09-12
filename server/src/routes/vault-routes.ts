@@ -319,23 +319,34 @@ export const create_vault_routes = (opts: VaultRoutesOptions = {}): Hono => {
       typeof b.secret_id !== 'string' ||
       typeof b.service !== 'string' ||
       typeof b.method !== 'string' ||
-      typeof b.url !== 'string' ||
-      typeof b.inject_header !== 'string'
+      typeof b.url !== 'string'
     ) {
       return c.json(
-        { success: false, error: 'vault: secret_id, service, method, url, inject_header are required strings' },
+        { success: false, error: 'vault: secret_id, service, method, url are required strings' },
         400,
       );
     }
+    if (b.inject_header !== undefined && b.inject_header !== null && typeof b.inject_header !== 'string') {
+      return c.json({ success: false, error: 'vault: inject_header must be a string' }, 400);
+    }
+    const hasInjectHeader =
+      typeof b.inject_header === 'string' && b.inject_header.length > 0;
+    const hasBody = typeof b.body === 'string';
+    const hasBodyTemplate = typeof b.body_template === 'string';
     if (
       !CAPABILITY_METHODS.has(b.method) ||
       b.secret_id.length === 0 ||
       b.service.length === 0 ||
-      b.url.length === 0 ||
-      b.inject_header.length === 0
+      b.url.length === 0
     ) {
       return c.json(
         { success: false, error: 'vault: invalid capability request' },
+        400,
+      );
+    }
+    if (!hasInjectHeader && !hasBody && !hasBodyTemplate) {
+      return c.json(
+        { success: false, error: 'vault: provide at least one injection target (inject_header, body_template or body)' },
         400,
       );
     }
@@ -373,7 +384,7 @@ export const create_vault_routes = (opts: VaultRoutesOptions = {}): Hono => {
       service: b.service,
       method: b.method,
       url: b.url,
-      injectHeader: b.inject_header,
+      injectHeader: hasInjectHeader ? (b.inject_header as string) : undefined,
       injectScheme: typeof b.inject_scheme === 'string' ? b.inject_scheme : undefined,
       body: typeof b.body === 'string' ? b.body : undefined,
       bodyTemplate: typeof b.body_template === 'string' ? b.body_template : undefined,
