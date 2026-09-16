@@ -50,8 +50,13 @@ def resolve_key() -> str:
         try:
             with open(wake_env) as f:
                 for line in f:
-                    if line.strip().startswith("KATRA_API_KEY="):
-                        return line.strip().split("=", 1)[1].strip("\"'")
+                    # wake-env.sh is written by the onboarding installer with
+                    # an `export ` prefix; accept both spellings.
+                    entry = line.strip()
+                    if entry.startswith("export "):
+                        entry = entry[len("export "):].lstrip()
+                    if entry.startswith("KATRA_API_KEY="):
+                        return entry.split("=", 1)[1].strip("\"'")
         except IOError:
             pass
     try:
