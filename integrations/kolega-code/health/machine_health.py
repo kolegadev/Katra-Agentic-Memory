@@ -4,7 +4,7 @@
 Runs on every team machine via cron (default cadence 15 min). Gathers machine
 facts + live checks, computes a status (ok / degraded / down), and POSTs a
 single episodic event (event_type "machine_health", tags
-[machine-health, health-log]) into the shared scope so thebrick's reviewer
+[machine-health, health-log]) into the shared scope so the host's reviewer
 (health_review.py) and every agent can see it.
 
 Design rules:
@@ -219,8 +219,8 @@ def resolve_identity() -> str:
     env = os.environ.get("KATRA_USER_ID", "").strip()
     if env:
         return env
-    # The machine's bridge config IS its identity (katra-hook.json carries the
-    # per-machine agent: satori on thebrick, zefir on natasha, ...).
+    # The machine's bridge config IS its identity (katra-hook.json carries
+    # the per-machine agent — identities are deployment data).
     state_dir = (Path.home() / "Library" / "Application Support" / "kolega-code"
                  if sys.platform == "darwin"
                  else Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state")) / "kolega-code")
