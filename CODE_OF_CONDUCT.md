@@ -60,8 +60,9 @@ representative at an online or offline event.
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
 reported to the community leaders responsible for enforcement at
-**john@kolega.ai**. All complaints will be reviewed and investigated promptly
-and fairly.
+**[CONTACT_EMAIL]** — the address configured at install time (set
+`CONTACT_EMAIL` in `.env`, then run `install.sh`). All complaints will be
+reviewed and investigated promptly and fairly.
 
 All community leaders are obligated to respect the privacy and security of the
 reporter of any incident.

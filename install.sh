@@ -301,6 +301,7 @@ configure_env() {
         ok "existing .env found — keeping your settings"
         ensure_vault_master_key
         audit_existing_secrets
+        personalise_contact
         return
     fi
 
@@ -342,6 +343,26 @@ configure_env() {
     ok "generated MCP_API_KEY and KATRA_API_KEY"
 
     ensure_vault_master_key
+    personalise_contact
+}
+
+# Substitute the maintainer contact into CODE_OF_CONDUCT.md from
+# CONTACT_EMAIL in .env. The repo ships the [CONTACT_EMAIL] placeholder —
+# never a real address — so every deployment publishes its own. Idempotent:
+# once substituted, re-runs leave the personalised line untouched.
+personalise_contact() {
+    local contact coc="$SRC_DIR/CODE_OF_CONDUCT.md"
+    [ -f "$coc" ] || return 0
+    grep -q "\[CONTACT_EMAIL\]" "$coc" || return 0   # already personalised
+
+    contact="$(env_get CONTACT_EMAIL || true)"
+    if [ -n "$contact" ]; then
+        sed -i '' "s|\[CONTACT_EMAIL\]|$contact|" "$coc" 2>/dev/null \
+            || sed -i "s|\[CONTACT_EMAIL\]|$contact|" "$coc"
+        ok "CODE_OF_CONDUCT.md personalised with CONTACT_EMAIL ($contact)"
+    else
+        warn "CONTACT_EMAIL not set — CODE_OF_CONDUCT.md keeps the [CONTACT_EMAIL] placeholder. Set it in $ENV_FILE and re-run the installer to personalise it."
+    fi
 }
 
 # Warn — never silently rewrite — when an existing install is on defaults.

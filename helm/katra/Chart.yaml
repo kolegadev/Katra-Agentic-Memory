@@ -4,18 +4,19 @@ description: Cognitive Memory as a Service for AI Agents
 type: application
 version: 0.1.0
 appVersion: "1.0.0"
-icon: https://raw.githubusercontent.com/openclaw/katra/main/docs/katra-icon.png
 keywords:
   - cognitive-memory
   - ai-agents
   - memory-service
   - mcp
-home: https://github.com/openclaw/katra
+home: https://github.com/kolegadev/Katra-Agentic-Memory
 sources:
-  - https://github.com/openclaw/katra
+  - https://github.com/kolegadev/Katra-Agentic-Memory
 maintainers:
-  - name: OpenClaw
-    email: hello@openclaw.ai
+  - name: Katra maintainers
+    # Set this to the maintainer contact for your published chart.
+    # No real address may ship in the repo.
+    email: maintainer-contact@example.invalid
 dependencies:
   - name: mongodb
     version: "~15.6"

@@ -1,11 +1,14 @@
 # Katra Helm Chart
 
-[Cognitive Memory as a Service](https://github.com/openclaw/katra) — a standalone memory server for AI agents, exposing a REST API and an MCP (Model Context Protocol) endpoint.
+[Cognitive Memory as a Service](https://github.com/kolegadev/Katra-Agentic-Memory) — a standalone memory server for AI agents, exposing a REST API and an MCP (Model Context Protocol) endpoint.
 
 This chart lives in `helm/katra/` (chart name `katra`, appVersion `1.0.0`).
 The server container exposes two ports: REST `9002` and MCP `3100`; when
 deployed in Kubernetes you reach them through the Service's `rest` and `mcp`
 ports.
+
+> **Before publishing this chart**, set the `maintainers[].email` in
+> `Chart.yaml` to your own contact address — the repo ships a placeholder.
 
 ## Prerequisites
 
@@ -320,4 +323,4 @@ kubectl delete pvc -n katra -l app.kubernetes.io/instance=katra
 
 ## License
 
-MIT — see the [Katra repository](https://github.com/openclaw/katra) for details.
+MIT — see the [Katra repository](https://github.com/kolegadev/Katra-Agentic-Memory) for details.
