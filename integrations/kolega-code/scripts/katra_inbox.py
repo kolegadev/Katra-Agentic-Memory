@@ -89,8 +89,15 @@ SKIP_TAGS = {"background-ack", "read-receipt", "auto-reply", "auto-ack",
 MAX_ATTEMPTS = 3
 MAX_DISPATCHES_PER_DAY = 30  # raised 2026-09-09: two loops + full-capability mandate
 MIN_DISPATCH_INTERVAL = 120      # seconds between dispatches
-LOCK_STALE_AFTER = 45 * 60       # seconds
-ASK_TIMEOUT = 1500               # seconds (25 min hard bound)
+LOCK_STALE_AFTER = 120 * 60      # seconds — must exceed ASK_TIMEOUT so a long
+                                 # dispatch's lock never goes stale mid-run
+                                 # (2026-09-17: 25-min tasks + 45-min stale lock
+                                 # let a second dispatch acquire concurrently)
+ASK_TIMEOUT = 5400               # seconds (90 min) — action tasks (GCP deploys,
+                                 # verification) legitimately exceed 25 min; the
+                                 # old 25-min cap killed them mid-work so the
+                                 # loop never replied (2026-09-17: Zefir's
+                                 # yt-transcript-fetch task timed out 2x)
 MAX_MSGS_PER_DISPATCH = 10
 MSG_PREVIEW_CHARS = 1200
 
