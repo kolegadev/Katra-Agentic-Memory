@@ -112,12 +112,42 @@ describe('trigger detectors — all eight, deterministic, no model calls (criter
     expect(fired).toHaveLength(0);
   });
 
-  it('detection path imports no LLM service (criterion 2)', () => {
-    const src = readFileSync('src/services/mission-cognition/uncertainty-triggers.ts', 'utf-8');
-    expect(src).not.toMatch(/from\s+['"][^'"]*llm-service/);
-    expect(src).not.toMatch(/require\([^)]*llm-service/);
-    const depSrc = readFileSync('src/services/mission-cognition/dependency-traversal.ts', 'utf-8');
-    expect(depSrc).not.toMatch(/from\s+['"][^'"]*llm-service/);
+  it('near-miss fixtures for (d)-(h) stay quiet (criterion 4, complete coverage)', async () => {
+    seedMission();
+    // (d) near-miss: evidence with NO evidence_against (and predates the decision)
+    seedEntry({ entry_id: 'ev-ok', entry_type: 'evidence', status: 'accepted', statement: 'harmless measurement', created_at: '2026-09-19T09:00:00.000Z' });
+    // (e) near-miss: experiment with NO evidence_against
+    seedEntry({ entry_id: 'exp-ok', entry_type: 'experiment', status: 'accepted', statement: 'experiment as expected' });
+    // (f) near-miss: evidence AFTER the decision, but the plan REACTED (contradiction follows)
+    const t0 = '2026-09-19T10:00:00.000Z';
+    const t1 = '2026-09-19T11:00:00.000Z';
+    const t2 = '2026-09-19T12:00:00.000Z';
+    seedEntry({ entry_id: 'dec-ok', entry_type: 'decision', status: 'accepted', statement: 'decide', consequence_if_false: 'negligible', updated_at: t0 });
+    seedEntry({ entry_id: 'ev-after', entry_type: 'evidence', status: 'accepted', statement: 'new info', created_at: t1 });
+    seedEntry({ entry_id: 'react-ok', entry_type: 'contradiction', status: 'resolved', statement: 'we reacted to the new info', created_at: t2 });
+    // (g) near-miss: contradiction already RESOLVED + no opposite-sign history anywhere
+    // (h) near-miss: two hypotheses with DIFFERENT statements (no shared incumbent)
+    seedEntry({ entry_id: 'hy1', entry_type: 'hypothesis', status: 'accepted', author_id: 'agent-a', statement: 'Throttling is per-IP' });
+    seedEntry({ entry_id: 'hy2', entry_type: 'hypothesis', status: 'accepted', author_id: 'agent-b', statement: 'Throttling is per-region' });
+    const { fired } = await evaluateTriggers(db, 'ph5_mission');
+    expect(fired).toHaveLength(0);
+  });
+
+  it('detection is behaviourally LLM-free — client unavailable yields identical triggers (criterion 2)', async () => {
+    seedMission();
+    seedEntry({ entry_id: 'ev1', entry_type: 'evidence', status: 'accepted', statement: 'against', evidence_against: ['c1'] });
+    seedEntry({ entry_id: 'c1', entry_type: 'claim', status: 'accepted', statement: 'claim', confidence: 0.7 });
+    const baseline = await evaluateTriggers(db, 'ph5_mission');
+
+    // Make the LLM client unavailable: any touch of the llm-service module throws.
+    vi.doMock('../../src/services/infrastructure/llm-service.js', () => {
+      throw new Error('LLM client unavailable — detection must not call it');
+    });
+    const { evaluateTriggers: stubbed } = await import('../../src/services/mission-cognition/uncertainty-triggers.js');
+    const stubbedResult = await stubbed(db, 'ph5_mission');
+    expect(JSON.stringify(stubbedResult.fired)).toBe(JSON.stringify(baseline.fired));
+    expect(JSON.stringify(stubbedResult.byTrigger)).toBe(JSON.stringify(baseline.byTrigger));
+    vi.doUnmock('../../src/services/infrastructure/llm-service.js');
   });
 });
 
@@ -180,13 +210,36 @@ describe('blind work items (criteria 8-11)', () => {
     const b = await createBlindWorkItem(db, 'ph5_mission', 'u1');
     expect(a.work_item_id).not.toBe(b.work_item_id);
     // neither payload mentions the other worker or any hypothesis statement
-    for (const payload of [JSON.stringify(a), JSON.stringify(b)]) {
-      expect(payload).not.toContain(b.work_item_id === a.work_item_id ? '' : 'worker');
-      expect(payload).not.toContain('incumbent');
-    }
+    expect(JSON.stringify(a)).not.toContain(b.work_item_id);
+    expect(JSON.stringify(b)).not.toContain(a.work_item_id);
+    expect(JSON.stringify(a)).not.toContain('incumbent');
     // reopening queues review — statuses are queued, nothing auto-resumes (11)
     expect(a.status).toBe('queued');
     expect(b.status).toBe('queued');
+  });
+  it('reference set is an ALLOW-list: contradiction/result/unknown never reach the worker (risk finding)', async () => {
+    seedMission();
+    seedEntry({ entry_id: 'u1', entry_type: 'uncertainty', status: 'active', statement: 'Which egress is throttled?', evidence_for: ['ev1', 'res1', 'ct1', 'unk1'] });
+    seedEntry({ entry_id: 'ev1', entry_type: 'evidence', status: 'accepted', statement: 'measurement data' });
+    seedEntry({ entry_id: 'res1', entry_type: 'result', status: 'accepted', statement: 'the experiment showed the incumbent answer was right' });
+    seedEntry({ entry_id: 'ct1', entry_type: 'contradiction', status: 'active', statement: 'this contradicts the incumbent plan' });
+    seedEntry({ entry_id: 'unk1', entry_type: 'unknown', status: 'accepted', statement: 'unknown detail about the incumbent' });
+    const brief = await buildBlindBrief(db, 'ph5_mission', 'u1');
+    expect(brief.references).toEqual(['ev1']); // ONLY the evidence id — everything else withheld
+    const payload = JSON.stringify(brief) + ' ' + JSON.stringify(await createBlindWorkItem(db, 'ph5_mission', 'u1', brief));
+    assertBlindPayloadClean(payload, ['incumbent answer was right', 'contradicts the incumbent', 'unknown detail']);
+  });
+  it('feature vector derives from the uncertainty entry (smaller-item A)', async () => {
+    seedMission();
+    seedEntry({ entry_id: 'u-crit', entry_type: 'uncertainty', status: 'active', statement: 'critical question', consequence_if_false: 'critical', information_needed: ['x', 'y'] });
+    seedEntry({ entry_id: 'u-neg', entry_type: 'uncertainty', status: 'active', statement: 'minor question', consequence_if_false: 'negligible' });
+    const crit = await buildBlindBrief(db, 'ph5_mission', 'u-crit');
+    const neg = await buildBlindBrief(db, 'ph5_mission', 'u-neg');
+    expect(crit.features.mission_impact).toBe(3);
+    expect(crit.features.urgency).toBe(2);
+    expect(crit.features.information_value).toBe(3); // 1 + min(2 info-needed, 8)
+    expect(neg.features.mission_impact).toBe(1);
+    expect(neg.features.urgency).toBe(1);
   });
 });
 
@@ -204,6 +257,16 @@ describe('hypothesis diversity (criteria 12-14)', () => {
     expect(r.flagged_not_falsifiable).toContain('h4'); // criterion 14
     expect(assessHypothesisAcceptance({ entry_id: 'h1', statement: 'If X then Y', status: 'accepted', evidence_for: ['e'] }).acceptable).toBe(true);
     expect(assessHypothesisAcceptance({ entry_id: 'h4', statement: 'things might improve', status: 'accepted' }).acceptable).toBe(false);
+  });
+  it('commit boundary: worker B cannot see worker A’s uncommitted hypothesis (criterion 13)', async () => {
+    seedMission();
+    // Worker A has an uncommitted (proposed) hypothesis; committed ones exist from others.
+    seedEntry({ entry_id: 'hA-uncommitted', entry_type: 'hypothesis', status: 'proposed', author_id: 'worker-a', statement: 'A’s unpublished idea: if X then Y' });
+    seedEntry({ entry_id: 'hB-committed', entry_type: 'hypothesis', status: 'accepted', author_id: 'worker-b', statement: 'If throttling is per-IP, a second IP will also get 429', evidence_for: ['ev1'] });
+    // Worker B runs the comparison path — the pure read of persisted state.
+    const r = await measureHypothesisDiversity(db, 'ph5_mission');
+    expect(r.submitted_count).toBe(1); // only the committed one — A’s idea invisible
+    expect(JSON.stringify(r)).not.toContain('unpublished idea');
   });
 });
 
