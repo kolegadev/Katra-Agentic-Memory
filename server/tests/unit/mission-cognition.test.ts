@@ -92,6 +92,26 @@ describe('schema registry', () => {
     const withMinor = { ...baseMission(), future_field_added_in_minor: { x: 1 } };
     expect(validateAgainst(SCHEMA_IDS.missionState, withMinor).valid).toBe(true);
   });
+  it('keeps append-only audit contracts strict (plan §3.3 split)', () => {
+    const delta = {
+      schema_version: '1.0', delta_id: 'd1', idempotency_key: 'idem-key-x1', mission_id: 'm',
+      base_mission_version: 1, author_id: 'satori', delta_type: 'CLAIM_ADDED',
+      operations: [{ op: 'add', path: '/x', value: 1 }], rationale: 'r', confidence: 0.5,
+      created_at: new Date().toISOString(),
+    };
+    expect(validateAgainst(SCHEMA_IDS.stateDelta, delta).valid).toBe(true);
+    // implementation fields are part of the contract (minor additive)
+    expect(validateAgainst(SCHEMA_IDS.stateDelta, { ...delta, status: 'accepted', applied_at: new Date().toISOString() }).valid).toBe(true);
+    // unknown minor field is rejected: strictness is a feature for audit records
+    expect(validateAgainst(SCHEMA_IDS.stateDelta, { ...delta, unknown_minor_field: 1 }).valid).toBe(false);
+    const entry = {
+      schema_version: '1.0', entry_id: 'e1', mission_id: 'm', entry_type: 'claim',
+      statement: 's', status: 'accepted', author_id: 'a', confidence: 0.5,
+      created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    };
+    expect(validateAgainst(SCHEMA_IDS.epistemicEntry, entry).valid).toBe(true);
+    expect(validateAgainst(SCHEMA_IDS.epistemicEntry, { ...entry, unknown_minor_field: 1 }).valid).toBe(false);
+  });
 });
 
 describe('mission state + state deltas', () => {

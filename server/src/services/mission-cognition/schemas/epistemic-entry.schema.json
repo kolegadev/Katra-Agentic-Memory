@@ -3,7 +3,7 @@
   "$id": "https://katra.dev/schemas/epistemic-entry.schema.json",
   "title": "Katra Epistemic Ledger Entry",
   "type": "object",
-  "additionalProperties": true,
+  "additionalProperties": false,
   "required": [
     "schema_version",
     "entry_id",

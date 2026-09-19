@@ -3,7 +3,7 @@
   "$id": "https://katra.dev/schemas/state-delta.schema.json",
   "title": "Katra Mission State Delta",
   "type": "object",
-  "additionalProperties": true,
+  "additionalProperties": false,
   "required": [
     "schema_version",
     "delta_id",
@@ -135,6 +135,20 @@
     },
     "audit_hash": {
       "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "proposed",
+        "accepted",
+        "rejected",
+        "conflict",
+        "duplicate"
+      ]
+    },
+    "applied_at": {
+      "type": "string",
+      "format": "date-time"
     }
   },
   "$defs": {
