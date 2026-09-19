@@ -355,12 +355,19 @@ describe('safety (criteria 22-24)', () => {
     delete process.env.COGNITIVE_SCHEDULER_MODE;
     delete process.env.COGNITIVE_CONTROL_ENABLED;
   });
-  it('scheduler mode gains no new mode (22)', async () => {
+  it('scheduler mode ladder: Phase 6 modes parse, unimplemented + kill switch fail closed (22)', async () => {
     const { schedulerMode } = await import('../../src/services/mission-cognition/index.js');
     process.env.COGNITIVE_SCHEDULER_MODE = 'recommend';
-    expect(schedulerMode()).toBe('off');
+    expect(schedulerMode()).toBe('recommend');
     process.env.COGNITIVE_SCHEDULER_MODE = 'allocate_internal';
+    expect(schedulerMode()).toBe('allocate_internal');
+    process.env.COGNITIVE_SCHEDULER_MODE = 'allocate_gated';
+    expect(schedulerMode()).toBe('off'); // not implemented (§4.6)
+    // Kill switch overrides every other flag (contract §4.10).
+    process.env.COGNITIVE_SCHEDULER_MODE = 'allocate_internal';
+    process.env.COGNITIVE_ACTIVATION_KILL_SWITCH = '1';
     expect(schedulerMode()).toBe('off');
+    delete process.env.COGNITIVE_ACTIVATION_KILL_SWITCH;
     delete process.env.COGNITIVE_SCHEDULER_MODE;
   });
   it('no new module imports the live allocator (23)', () => {

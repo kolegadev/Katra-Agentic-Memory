@@ -11,6 +11,9 @@ export const UNIQUE_INDEXES: Record<string, string[][]> = {
   state_deltas: [['delta_id'], ['idempotency_key']],
   cognitive_batons: [['baton_id']],
   mission_events: [['event_id']],
+  activation_ledger: [['ledger_id']],
+  mission_opt_ins: [['opt_in_id']],
+  allocation_counterfactuals: [['counterfactual_id'], ['decision_id']],
 };
 
 export class FakeCollection {
@@ -27,17 +30,27 @@ export class FakeCollection {
   }
   async insertOne(doc: Doc) { this.assertUnique(doc); this.docs.push(structuredClone(doc)); return { acknowledged: true, insertedId: doc._id ?? 'x' }; }
   private matches(doc: Doc, filter: Record<string, any>): boolean {
+    const at = (path: string): any => {
+      let cur: any = doc;
+      for (const part of path.split('.')) {
+        if (cur === null || cur === undefined || typeof cur !== 'object') return undefined;
+        cur = cur[part];
+      }
+      return cur;
+    };
     return Object.entries(filter).every(([k, v]) => {
+      const docVal = k.includes('.') ? at(k) : doc[k];
       if (v === undefined || v === null) return true; // mongo omits undefined keys
-      if (typeof v === 'object' && !Array.isArray(v) && ('$lte' in v || '$gte' in v || '$lt' in v || '$in' in v || '$ne' in v)) {
-        if ('$ne' in v) return doc[k] !== v.$ne;
-        if ('$in' in v) return Array.isArray(v.$in) && v.$in.includes(doc[k]);
-        if ('$lte' in v && !(doc[k] <= v.$lte)) return false;
-        if ('$gte' in v && !(doc[k] >= v.$gte)) return false;
-        if ('$lt' in v && !(doc[k] < v.$lt)) return false;
+      if (typeof v === 'object' && !Array.isArray(v) && ('$lte' in v || '$gte' in v || '$lt' in v || '$in' in v || '$ne' in v || '$exists' in v)) {
+        if ('$exists' in v) return v.$exists ? docVal !== undefined : docVal === undefined;
+        if ('$ne' in v) return docVal !== v.$ne;
+        if ('$in' in v) return Array.isArray(v.$in) && v.$in.includes(docVal);
+        if ('$lte' in v && !(docVal <= v.$lte)) return false;
+        if ('$gte' in v && !(docVal >= v.$gte)) return false;
+        if ('$lt' in v && !(docVal < v.$lt)) return false;
         return true;
       }
-      return doc[k] === v;
+      return docVal === v;
     });
   }
   private project(doc: Doc, projection?: Record<string, 0 | 1>): Doc {

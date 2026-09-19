@@ -148,6 +148,24 @@ const triggerOutcomeInput = z.object({
 });
 const blindWorkInput = z.object({ mission_id: z.string(), uncertainty_entry_id: z.string() });
 
+// Phase 6 (controlled activation) tool inputs.
+const setSchedulerModeInput = z.object({
+  mode: z.enum(['off', 'shadow', 'recommend', 'allocate_internal', 'allocate_gated']),
+  reason: z.string().min(1),
+});
+const optInMissionInput = z.object({ mission_id: z.string(), reason: z.string().min(1) });
+const acknowledgeEvidenceInput = z.object({ note: z.string().optional() });
+const ledgerInput = z.object({ limit: z.number().int().min(1).max(200).optional() });
+const counterfactualInput = z.object({
+  counterfactual_id: z.string().optional(),
+  mission_id: z.string().optional(),
+});
+const recordObservationInput = z.object({
+  decision_id: z.string(),
+  agent_id: z.string().optional(), // omitted/null = the allocator made no allocation
+  note: z.string().optional(),
+});
+
 export const COGNITIVE_TOOL_DEFS: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }> = [
   {
     name: 'create_mission_v2',
@@ -257,6 +275,56 @@ export const COGNITIVE_TOOL_DEFS: Array<{ name: string; description: string; inp
   {
     name: 'get_hypothesis_diversity',
     description: 'Hypothesis diversity over submitted hypotheses: distinct forms, falsifiable count, flagged not-falsifiable, authors, recorded alternatives. (Phase 5)',
+    inputSchema: zodToSchema(missionOnlyInput),
+  },
+  // ── Phase 6: controlled activation (contract §5.1) ─────────────────────
+  // These tools are registered when COGNITIVE_CONTROL_ENABLED != off and are NOT
+  // gated on COGNITIVE_SCHEDULER_MODE (set_scheduler_mode must be reachable from
+  // off). Every mode-affecting action is gate-checked and ledger-recorded in the
+  // activation service — the tool layer cannot bypass the gate.
+  {
+    name: 'set_scheduler_mode',
+    description: 'Move COGNITIVE_SCHEDULER_MODE one rung at a time (off→shadow→recommend→allocate_internal), or downward freely. recommend and above require the stored-evidence gate (>=50 evidenced decisions + human-read acknowledgement). allocate_gated is not implemented (§4.6) and is refused. Every transition/refusal is recorded in the activation ledger. Trusted callers only.',
+    inputSchema: zodToSchema(setSchedulerModeInput),
+  },
+  {
+    name: 'opt_in_mission',
+    description: 'Enable scheduler allocation-influence for ONE mission, with a stated reason (Phase 6, per-mission opt-in). Recorded in the opt-in register and activation ledger.',
+    inputSchema: zodToSchema(optInMissionInput),
+  },
+  {
+    name: 'revoke_mission_opt_in',
+    description: 'Revoke a mission opt-in. Takes effect immediately (runtime read — no rebuild). Recorded in the activation ledger.',
+    inputSchema: zodToSchema(optInMissionInput),
+  },
+  {
+    name: 'get_allocation_evidence',
+    description: 'The evidence gate state, computed from STORED records: evidenced decisions, agreement rate, human-read acknowledgement, threshold, open/closed.',
+    inputSchema: zodToSchema(z.object({})),
+  },
+  {
+    name: 'acknowledge_evidence',
+    description: 'Record that a human has read the scheduler evidence figures. The figures are COMPUTED from stored records at acknowledgement time — never taken from the caller. Trusted callers only.',
+    inputSchema: zodToSchema(acknowledgeEvidenceInput),
+  },
+  {
+    name: 'get_activation_ledger',
+    description: 'Who changed what mode/opt-in, when, on what evidence: the activation ledger (mode changes, refusals, opt-ins, revocations, cycle starts/halts, counterfactuals, acknowledgements).',
+    inputSchema: zodToSchema(ledgerInput),
+  },
+  {
+    name: 'get_allocation_counterfactual',
+    description: 'For an influenced allocation: what was chosen and what the existing allocator would have done instead, with the recorded reason.',
+    inputSchema: zodToSchema(counterfactualInput),
+  },
+  {
+    name: 'record_allocator_observation',
+    description: 'Record what the existing allocator actually did for a scheduler decision (manual evidence accumulation for the gate; the shadow pass also auto-observes). Omit agent_id when no allocation happened.',
+    inputSchema: zodToSchema(recordObservationInput),
+  },
+  {
+    name: 'get_scheduler_recommendation',
+    description: 'ADVISORY ONLY (recommend mode and above): the latest scheduler decision\'s recommended work item and agent, with rationale. No allocation path reads this.',
     inputSchema: zodToSchema(missionOnlyInput),
   },
 ];
@@ -704,4 +772,180 @@ export async function dispatchCognitiveTool(
     throw new Error(`Unknown tool: ${name}`);
   }
   return runWithUsageOrigin(usageOriginFromArgs(args), () => handleCognitiveTool(name, args, caller));
+}
+
+// ── Phase 6: controlled activation tools (contract §5.1) ───────────────────
+
+const ACTIVATION_TOOL_NAMES = [
+  'set_scheduler_mode',
+  'opt_in_mission',
+  'revoke_mission_opt_in',
+  'get_allocation_evidence',
+  'acknowledge_evidence',
+  'get_activation_ledger',
+  'get_allocation_counterfactual',
+  'record_allocator_observation',
+  'get_scheduler_recommendation',
+];
+
+export function isActivationTool(name: string): boolean {
+  return ACTIVATION_TOOL_NAMES.includes(name);
+}
+
+async function handleActivationTool(
+  name: string,
+  args: unknown,
+  caller: CallerIdentity,
+): Promise<TextContent[]> {
+  if (cognitiveControlMode() === 'off') return text('❌ Cognitive control plane disabled (COGNITIVE_CONTROL_ENABLED=off).');
+  const db = get_database();
+  if (!db) return text('⚠️ MongoDB disconnected.');
+  const {
+    setMode,
+    optInMission,
+    revokeMissionOptIn,
+    computeEvidenceGate,
+    acknowledgeEvidence,
+    recordAllocatorObservation,
+  } = await import('./activation-service.js');
+
+  const missionOfDecision = async (decisionId: string): Promise<string | null> => {
+    const row = (await db.collection('scheduler_decisions').findOne({ decision_id: decisionId }, { projection: { mission_id: 1 } })) as any;
+    return row?.mission_id ?? null;
+  };
+
+  switch (name) {
+    case 'set_scheduler_mode': {
+      const input = setSchedulerModeInput.parse(args);
+      if (!caller.trusted) return text('❌ set_scheduler_mode requires a trusted caller (operator).');
+      if (cognitiveControlMode() !== 'write') return text('❌ COGNITIVE_CONTROL_ENABLED=read — writes disabled.');
+      const result = await setMode(db, { mode: input.mode, actorId: caller.user_id, reason: input.reason });
+      if (!result.changed) {
+        return text(`❌ Mode NOT changed (still ${result.mode}). ${result.refused_reason ?? 'no-op'}${result.gate ? `\nGate: ${result.gate.reason}` : ''}`);
+      }
+      return text(`✅ Scheduler mode: ${result.mode}.${result.cycle_id ? ` Activation cycle ${result.cycle_id} opened (hard bound ${result.gate ? 'n/a' : 'see ledger'}).` : ''} Transition recorded in the activation ledger.`);
+    }
+    case 'opt_in_mission':
+    case 'revoke_mission_opt_in': {
+      const input = optInMissionInput.parse(args);
+      if (cognitiveControlMode() !== 'write') return text('❌ COGNITIVE_CONTROL_ENABLED=read — writes disabled.');
+      const state = (await db.collection('mission_states').findOne({ mission_id: input.mission_id }, { projection: { owner_id: 1 } })) as any;
+      if (!state) return text(`❌ Mission not found: ${input.mission_id}`);
+      if (!caller.trusted && state.owner_id !== caller.user_id) return text(`❌ Not authorized: only the mission owner may opt ${input.mission_id} in.`);
+      if (name === 'opt_in_mission') {
+        const optIn = await optInMission(db, {
+          missionId: input.mission_id,
+          ownerId: state.owner_id,
+          actorId: caller.user_id,
+          reason: input.reason,
+        });
+        return text(`✅ Mission ${input.mission_id} opted in (${optIn.opt_in_id}) by ${caller.user_id}: ${input.reason}. Influence applies only when COGNITIVE_SCHEDULER_MODE=allocate_internal.`);
+      }
+      const revoked = await revokeMissionOptIn(db, { missionId: input.mission_id, actorId: caller.user_id, reason: input.reason });
+      return text(`✅ Opt-in revoked for ${input.mission_id} (${revoked} active registration${revoked === 1 ? '' : 's'}). Effective immediately — no rebuild.`);
+    }
+    case 'get_allocation_evidence': {
+      const gate = await computeEvidenceGate(db);
+      return text(`\`\`\`json\n${JSON.stringify(gate, null, 2)}\n\`\`\``);
+    }
+    case 'acknowledge_evidence': {
+      const input = acknowledgeEvidenceInput.parse(args);
+      if (!caller.trusted) return text('❌ acknowledge_evidence requires a trusted caller (operator/human).');
+      const gate = await acknowledgeEvidence(db, { actorId: caller.user_id, note: input.note });
+      return text(`✅ Evidence acknowledged by ${caller.user_id} — figures computed from stored records: ${gate.qualifying_decisions} evidenced decisions, agreement ${gate.agreement_rate === null ? 'n/a' : (gate.agreement_rate * 100).toFixed(1)}%. Gate ${gate.gate_open ? 'OPEN' : 'closed'}.`);
+    }
+    case 'get_activation_ledger': {
+      const input = ledgerInput.parse(args);
+      const rows = (await db
+        .collection('activation_ledger')
+        .find({}, { projection: { _id: 0 } })
+        .sort({ created_at: -1 })
+        .limit(input.limit ?? 50)
+        .toArray()) as unknown as Array<Record<string, any>>;
+      const visible = [];
+      for (const row of rows) {
+        if (caller.trusted) { visible.push(row); continue; }
+        if (row.actor_id === caller.user_id) { visible.push(row); continue; }
+        if (row.mission_id && (await canViewMission(row.mission_id, caller))) visible.push(row);
+      }
+      if (visible.length === 0) return text('No ledger entries visible to you.');
+      return text(visible.map(r =>
+        `- ${r.created_at} [${r.kind}] ${r.actor_id}: ${r.reason}${r.mode_from && r.mode_to ? ` (${r.mode_from} → ${r.mode_to})` : ''}${r.cycle_id ? ` cycle=${r.cycle_id}` : ''}`,
+      ).join('\n'));
+    }
+    case 'get_allocation_counterfactual': {
+      const input = counterfactualInput.parse(args);
+      const filter = input.counterfactual_id
+        ? { counterfactual_id: input.counterfactual_id }
+        : { mission_id: input.mission_id };
+      const row = (await db
+        .collection('allocation_counterfactuals')
+        .find(filter, { projection: { _id: 0 } })
+        .sort({ recorded_at: -1 })
+        .limit(1)
+        .toArray())[0] as any;
+      if (!row) return text('No counterfactual record matches.');
+      if (!caller.trusted && !(await canViewMission(row.mission_id, caller))) return text(`❌ Not authorized for mission ${row.mission_id}.`);
+      return text(
+        `**Chosen:** ${row.chosen_agent_id} (${row.influenced ? "scheduler's choice taken" : "existing allocator's choice taken"})\n` +
+        `**Existing allocator would have chosen:** ${row.existing_allocator_agent_id}\n` +
+        `**Why:** ${row.reason}\n` +
+        `Mission ${row.mission_id} · decision ${row.decision_id} · cycle ${row.cycle_id} · recorded ${row.recorded_at}`,
+      );
+    }
+    case 'record_allocator_observation': {
+      const input = recordObservationInput.parse(args);
+      if (cognitiveControlMode() !== 'write') return text('❌ COGNITIVE_CONTROL_ENABLED=read — writes disabled.');
+      const missionId = await missionOfDecision(input.decision_id);
+      if (!missionId) return text(`❌ Decision not found: ${input.decision_id}`);
+      if (!(await canViewMission(missionId, caller))) return text(`❌ Not authorized for mission ${missionId}.`);
+      const updated = await recordAllocatorObservation(db, {
+        decisionId: input.decision_id,
+        agentId: input.agent_id ?? null,
+        source: 'manual',
+        note: input.note,
+      });
+      return text(updated
+        ? `✅ Observation recorded on ${input.decision_id}: allocator chose ${input.agent_id ?? 'no allocation'}.`
+        : `❌ Decision not found: ${input.decision_id}`);
+    }
+    case 'get_scheduler_recommendation': {
+      const input = missionOnlyInput.parse(args);
+      const mode = schedulerMode();
+      if (mode !== 'recommend' && mode !== 'allocate_internal') {
+        return text(`❌ Advisories are only surfaced in recommend mode and above (current: ${mode}). In shadow mode decisions are recorded but not surfaced.`);
+      }
+      if (!(await canViewMission(input.mission_id, caller))) return text(`❌ Not authorized for mission ${input.mission_id}.`);
+      const scheduler = new SchedulerService(db);
+      await scheduler.runShadowPass(input.mission_id);
+      const d = await scheduler.latestDecision(input.mission_id);
+      if (!d) return text('No scheduler decision recorded for this mission.');
+      return text(
+        `**ADVISORY ONLY** — no allocation path reads this.\n` +
+        `Decision ${d.decision_id} (${d.scheduler_mode}):\n` +
+        `- Recommended: ${d.recommended ? `${d.recommended.work_item_id} → ${d.recommended.agent_id}` : '(none)'}\n` +
+        `- Rationale: ${d.rationale}\n` +
+        `- Acted on: ${d.recommended_was_acted_on ? 'yes' : 'no'}`,
+      );
+    }
+    default:
+      return text(`❌ Unknown activation tool: ${name}`);
+  }
+}
+
+/**
+ * Phase 6 dispatch gate: activation tools are reachable whenever the cognitive
+ * control plane is enabled — set_scheduler_mode must work from mode `off`
+ * (that is how activation starts). Gate enforcement lives inside the activation
+ * service, which reads stored records only.
+ */
+export async function dispatchActivationTool(
+  name: string,
+  args: unknown,
+  caller: CallerIdentity,
+): Promise<TextContent[]> {
+  if (cognitiveControlMode() === 'off') {
+    throw new Error(`Unknown tool: ${name}`);
+  }
+  return runWithUsageOrigin(usageOriginFromArgs(args), () => handleActivationTool(name, args, caller));
 }

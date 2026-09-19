@@ -58,7 +58,7 @@ import { SleepConsolidationService } from './services/processing/sleep-consolida
 import { MemoryDecayService } from './services/processing/memory-decay-service.js';
 import { AnomalyDetectionService } from './services/processing/anomaly-detection-service.js';
 import { SalienceService } from './services/processing/salience-service.js';
-import { COGNITIVE_TOOL_DEFS, dispatchCognitiveTool, dispatchSchedulerTool, dispatchUncertaintyTool } from './services/mission-cognition/mcp-tools.js';
+import { COGNITIVE_TOOL_DEFS, dispatchCognitiveTool, dispatchSchedulerTool, dispatchUncertaintyTool, dispatchActivationTool } from './services/mission-cognition/mcp-tools.js';
 import { cognitiveControlMode, schedulerMode } from './services/mission-cognition/index.js';
 
 const SCHEDULER_TOOL_NAMES = ['create_cognitive_work_item', 'get_cognitive_queue', 'explain_scheduler_decision'];
@@ -1025,7 +1025,10 @@ const tools = [
 
 // ── Long-horizon cognitive control plane (local testing, no-publish branch) ──
 // Registered only when COGNITIVE_CONTROL_ENABLED != off (production default off).
-// The 3 Phase-4 scheduler tools additionally require COGNITIVE_SCHEDULER_MODE != off.
+// The Phase-4 scheduler + Phase-5 uncertainty tools additionally require
+// COGNITIVE_SCHEDULER_MODE != off; the Phase-6 activation tools stay registered
+// (set_scheduler_mode must be reachable from `off` — the evidence gate inside
+// the activation service does the real enforcement).
 if (cognitiveControlMode() !== 'off') {
   tools.push(...(COGNITIVE_TOOL_DEFS as Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>)
     .filter(t => schedulerMode() !== 'off' || ![...SCHEDULER_TOOL_NAMES, ...UNCERTAINTY_TOOL_NAMES].includes(t.name)));
@@ -3740,6 +3743,19 @@ function registerHandlers(server: Server, getIdentity?: () => CallerIdentity) {
         case 'get_hypothesis_diversity':
           // Phase-5 criterion 24: flag off → plain Unknown tool.
           result = await dispatchUncertaintyTool(name, args, caller); break;
+        case 'set_scheduler_mode':
+        case 'opt_in_mission':
+        case 'revoke_mission_opt_in':
+        case 'get_allocation_evidence':
+        case 'acknowledge_evidence':
+        case 'get_activation_ledger':
+        case 'get_allocation_counterfactual':
+        case 'record_allocator_observation':
+        case 'get_scheduler_recommendation':
+          // Phase 6: reachable whenever the cognitive plane is enabled (mode
+          // transitions start from `off`); gate checks live in the activation
+          // service and read stored records only. Plane off → Unknown tool.
+          result = await dispatchActivationTool(name, args, caller); break;
         default: throw new Error(`Unknown tool: ${name}`);
       }
       // ── Cerebellum: procedural pattern observation ──────────

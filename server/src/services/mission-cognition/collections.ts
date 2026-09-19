@@ -18,6 +18,10 @@ export const COLLECTIONS = {
   schedulerDecisions: 'scheduler_decisions',
   missionEvents: 'mission_events',
   triggerEvaluations: 'trigger_evaluations', // Phase 5: trigger precision + cost telemetry (§5.3)
+  // Phase 6: controlled activation (contract §5.3 — declared here, not silent):
+  activationLedger: 'activation_ledger',              // every mode transition, opt-in change, counterfactual, refusal, halt
+  missionOptIns: 'mission_opt_ins',                   // per-mission activation opt-in register
+  allocationCounterfactuals: 'allocation_counterfactuals', // what the existing allocator would have done, per influenced allocation
 } as const;
 
 export const EVENT_TTL_SECONDS = 90 * 24 * 3600; // 90 days
@@ -48,5 +52,17 @@ export async function ensureMissionCognitionIndexes(db: Db): Promise<void> {
     p(COLLECTIONS.missionEvents, { _expires_at: 1 }, { expireAfterSeconds: 0, name: 'me_ttl' }),
     p(COLLECTIONS.triggerEvaluations, { evaluation_id: 1 }, { unique: true, name: 'te_unique' }),
     p(COLLECTIONS.triggerEvaluations, { mission_id: 1, trigger: 1, fired_at: -1 }, { name: 'te_mission_trigger' }),
+    // Phase 6 (contract §5.3 — indexes exist, not just collections):
+    p(COLLECTIONS.activationLedger, { ledger_id: 1 }, { unique: true, name: 'al_unique' }),
+    p(COLLECTIONS.activationLedger, { created_at: -1 }, { name: 'al_created' }),
+    p(COLLECTIONS.activationLedger, { mission_id: 1, created_at: -1 }, { name: 'al_mission' }),
+    p(COLLECTIONS.missionOptIns, { opt_in_id: 1 }, { unique: true, name: 'moi_unique' }),
+    p(COLLECTIONS.missionOptIns, { mission_id: 1, created_at: -1 }, { name: 'moi_mission' }),
+    p(COLLECTIONS.allocationCounterfactuals, { counterfactual_id: 1 }, { unique: true, name: 'acf_unique' }),
+    p(COLLECTIONS.allocationCounterfactuals, { decision_id: 1 }, { unique: true, name: 'acf_decision_unique' }),
+    p(COLLECTIONS.allocationCounterfactuals, { mission_id: 1, recorded_at: -1 }, { name: 'acf_mission' }),
+    p(COLLECTIONS.allocationCounterfactuals, { cycle_id: 1, recorded_at: -1 }, { name: 'acf_cycle' }),
+    // Evidence gate reads decisions that carry an allocator observation.
+    p(COLLECTIONS.schedulerDecisions, { 'allocator_observation.observed_at': -1 }, { sparse: true, name: 'sched_observed' }),
   ]);
 }

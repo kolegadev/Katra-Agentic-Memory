@@ -212,13 +212,20 @@ describe('flag gating (criteria 10, 11, 13)', () => {
     ).rejects.toThrow('Unknown tool: explain_scheduler_decision');
     delete process.env.COGNITIVE_CONTROL_ENABLED;
   });
-  it('schedulerMode fails closed for unimplemented modes', () => {
+  it('schedulerMode parses the Phase-6 ladder and fails closed for unimplemented modes', () => {
+    // Phase 6 extends the ladder (contract §4.3): recommend + allocate_internal
+    // are now real modes; allocate_gated is NOT implemented (§4.6) and unknown
+    // values still fail closed to off.
     process.env.COGNITIVE_SCHEDULER_MODE = 'recommend';
-    expect(schedulerMode()).toBe('off');
+    expect(schedulerMode()).toBe('recommend');
     process.env.COGNITIVE_SCHEDULER_MODE = 'allocate_internal';
+    expect(schedulerMode()).toBe('allocate_internal');
+    process.env.COGNITIVE_SCHEDULER_MODE = 'allocate_gated';
     expect(schedulerMode()).toBe('off');
     process.env.COGNITIVE_SCHEDULER_MODE = 'shadow';
     expect(schedulerMode()).toBe('shadow');
+    process.env.COGNITIVE_SCHEDULER_MODE = 'garbage';
+    expect(schedulerMode()).toBe('off');
     delete process.env.COGNITIVE_SCHEDULER_MODE;
   });
   it('workload penalty applies: saturated agent cannot outrank an idle one on equal merit', async () => {

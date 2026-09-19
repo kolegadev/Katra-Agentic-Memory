@@ -20,16 +20,13 @@ export function cognitiveControlMode(): CognitiveControlMode {
 }
 
 /**
- * Phase 4 implements ONLY `off` and `shadow` (contract §5). Any other value
- * fails closed to `off` — recommend/allocate_* belong to Phase 6.
+ * Phase 4 implements ONLY `off` and `shadow`; Phase 6 extends the ladder to
+ * `recommend` and `allocate_internal` (contract §4.3, §4.6). The ladder,
+ * kill switch, and runtime override live in ./scheduler-mode.js. Unknown
+ * values and `allocate_gated` (unimplemented, §4.6) still fail closed to `off`.
  */
-export type SchedulerMode = 'off' | 'shadow';
-
-export function schedulerMode(): SchedulerMode {
-  const value = (process.env.COGNITIVE_SCHEDULER_MODE ?? 'off').toLowerCase();
-  if (value === 'shadow') return 'shadow';
-  return 'off';
-}
+export type { SchedulerMode } from '../../types/cognitive-control.js';
+export { schedulerMode } from './scheduler-mode.js';
 
 export interface MissionCognitionServices {
   missions: MissionStateService;

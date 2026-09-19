@@ -1,10 +1,12 @@
-// Phase 4 scheduler service — SHADOW MODE ONLY (contract §3, §5).
-// Generates work items from real triggers, scores priority (deterministic)
-// and suitability (observable outcomes), persists the FULL decision record
-// with per-feature explanations and exclusions, and recommends — without
-// ever touching real allocation. It imports nothing from the existing
-// allocator (autonomous-executive.ts is out of bounds and never referenced).
-// Part of the no-publish branch feat/cognitive-control-local.
+// Phase 4 scheduler service — ranking pass; SHADOW (recording) and Phase-6
+// RECOMMEND (advisories) modes (contract §3, §4.4). Generates work items from
+// real triggers, scores priority (deterministic) and suitability (observable
+// outcomes), persists the FULL decision record with per-feature explanations
+// and exclusions, and recommends — without ever touching real allocation.
+// It imports nothing from the existing allocator (autonomous-executive.ts is
+// out of bounds and never referenced; the Phase-6 observation path only READS
+// the allocator's stored output). Part of the no-publish branch
+// feat/cognitive-control-local.
 import { randomUUID } from 'node:crypto';
 import type { Db } from 'mongodb';
 import { COLLECTIONS } from './collections.js';
@@ -12,6 +14,7 @@ import { generateWorkItems } from './work-item-generator.js';
 import { scorePriority, type ScoredItem } from './priority-scorer.js';
 import { candidateAgents, scoreSuitability } from './suitability-scorer.js';
 import { schedulerMode } from './index.js';
+import { observeAllocatorOutcome } from './activation-service.js';
 import type { CognitiveWorkItem, SchedulerCandidate, SchedulerDecision } from '../../types/cognitive-control.js';
 
 export interface ShadowRunResult {
@@ -77,7 +80,11 @@ export class SchedulerService {
       .toArray() as unknown as CognitiveWorkItem[];
   }
 
-  /** One shadow decision pass: score, rank, explain, persist. Changes NO real allocation. */
+  /**
+   * One ranking pass: score, rank, explain, persist. Changes NO real allocation
+   * in any mode — in `recommend` the decision is additionally surfaced as an
+   * advisory (see the recommendation tool); the pass itself is identical.
+   */
   async runShadowPass(missionId: string): Promise<ShadowRunResult> {
     if (schedulerMode() === 'off') {
       throw new Error('COGNITIVE_SCHEDULER_MODE is off — shadow pass refused');
@@ -132,7 +139,7 @@ export class SchedulerService {
       schema_version: '1.0',
       decision_id: randomUUID(),
       mission_id: missionId,
-      scheduler_mode: 'shadow',
+      scheduler_mode: schedulerMode(), // 'shadow' | 'recommend' — the mode this pass ran under
       created_at: now,
       cost_basis: decisionCostBasis,
       candidates,
@@ -148,6 +155,20 @@ export class SchedulerService {
       recommended_was_acted_on: false,
     };
     await this.decisions().insertOne(decision);
+    // Phase 6: evidence accumulation — attach what the existing allocator ACTUALLY
+    // did (read from its stored output; the allocator itself is never invoked or
+    // modified). Observation-only; unobservable decisions stay unobserved.
+    const observation = await observeAllocatorOutcome(this.db, missionId, decision.decision_id);
+    if (observation) {
+      decision.allocator_observation = observation;
+      decision.existing_allocator_note =
+        `shadow mode: existing allocator untouched; observed at ${observation.observed_at} — ` +
+        `allocated to ${observation.agent_id ?? 'no allocation'} (${observation.source}${observation.evidence_ref ? `, ref ${observation.evidence_ref}` : ''}).`;
+      await this.decisions().updateOne(
+        { decision_id: decision.decision_id },
+        { $set: { allocator_observation: observation, existing_allocator_note: decision.existing_allocator_note } },
+      );
+    }
     return { decision, queue };
   }
 

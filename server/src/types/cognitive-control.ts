@@ -242,6 +242,101 @@ export interface SchedulerDecision {
   existing_allocator_note: string; // criterion 15: what real allocation did (shadow => untouched)
   recommended: { work_item_id: string; agent_id: string } | null;
   recommended_was_acted_on: boolean;
+  // Phase 6 (additive — Phase 1 schema widened, declared in the work-log):
+  // what the existing allocator actually did at decision time, when observable.
+  allocator_observation?: AllocatorObservation;
+}
+
+// ── Phase 6: controlled activation ────────────────────────────────────────
+
+export type SchedulerMode = 'off' | 'shadow' | 'recommend' | 'allocate_internal' | 'allocate_gated';
+
+/** What the existing allocator actually did, attached to a scheduler decision. */
+export interface AllocatorObservation {
+  /** The agent the existing allocator actually chose; null = no allocation happened. */
+  agent_id: string | null;
+  observed_at: string;
+  /** 'manual' = recorded via record_allocator_observation; 'auto-observer' = read from stored allocator output. */
+  source: 'manual' | 'auto-observer';
+  /** Reference to the stored record the observation was read from (episodic event id) or a free note. */
+  evidence_ref?: string;
+  note?: string;
+}
+
+export type ActivationLedgerKind =
+  | 'mode_change'
+  | 'mode_change_refused'
+  | 'opt_in'
+  | 'opt_in_revoke'
+  | 'cycle_start'
+  | 'cycle_halt'
+  | 'influence_applied'
+  | 'counterfactual_recorded'
+  | 'evidence_acknowledged'
+  | 'kill_switch_forced_off';
+
+export interface ActivationLedgerEntry {
+  ledger_id: string;
+  kind: ActivationLedgerKind;
+  actor_id: string;
+  created_at: string;
+  mission_id?: string;
+  mode_from?: SchedulerMode;
+  mode_to?: SchedulerMode;
+  reason: string;
+  evidence_ref?: string;
+  cycle_id?: string;
+  detail?: Record<string, unknown>;
+}
+
+export interface MissionOptIn {
+  opt_in_id: string;
+  mission_id: string;
+  owner_id: string;
+  opted_in_by: string;
+  reason: string;
+  created_at: string;
+  revoked_at?: string;
+  revoked_by?: string;
+  revoke_reason?: string;
+}
+
+export interface AllocationCounterfactual {
+  counterfactual_id: string;
+  mission_id: string;
+  decision_id: string;
+  cycle_id: string;
+  work_item_id: string;
+  mode: SchedulerMode;
+  /** true = the scheduler's choice was taken; false = the existing allocator's choice was taken. */
+  influenced: boolean;
+  chosen_agent_id: string;
+  /** What the existing allocator would have chosen (its own scoring, unmodified). */
+  existing_allocator_agent_id: string;
+  recorded_at: string;
+  reason: string;
+}
+
+export interface EvidenceAcknowledgement {
+  acknowledgement_id: string;
+  acknowledged_by: string;
+  created_at: string;
+  /** Counts computed from stored records at acknowledgement time (never caller-asserted). */
+  decision_count: number;
+  observed_decisions: number;
+  agreement_rate: number | null;
+  note?: string;
+}
+
+export interface EvidenceGateState {
+  gate_open: boolean;
+  threshold: number;
+  qualifying_decisions: number;
+  observed_decisions: number;
+  agreement_rate: number | null;
+  acknowledged: boolean;
+  latest_acknowledgement: EvidenceAcknowledgement | null;
+  reason: string;
 }
 
 // ── Phase 5: uncertainty engine (deterministic triggers, shadow) ─────────
