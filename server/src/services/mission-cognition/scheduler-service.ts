@@ -8,7 +8,6 @@
 import { randomUUID } from 'node:crypto';
 import type { Db } from 'mongodb';
 import { COLLECTIONS } from './collections.js';
-import { COST_BASIS } from './cost-model.js';
 import { generateWorkItems } from './work-item-generator.js';
 import { scorePriority, type ScoredItem } from './priority-scorer.js';
 import { candidateAgents, scoreSuitability } from './suitability-scorer.js';
@@ -42,7 +41,19 @@ export class SchedulerService {
         { projection: { _id: 0 } },
       );
       if (existing) {
-        stored.push(existing as unknown as CognitiveWorkItem);
+        // Refresh the measured cost feature on existing queued items so a
+        // stale pre-ledger (proxy-band) item can never masquerade as measured.
+        const e = existing as unknown as CognitiveWorkItem;
+        if (e.status === 'queued' && (e.features.cost_basis !== g.item.features.cost_basis || e.features.cognitive_cost !== g.item.features.cognitive_cost)) {
+          await this.items().updateOne(
+            { work_item_id: e.work_item_id },
+            { $set: { 'features.cognitive_cost': g.item.features.cognitive_cost, 'features.cost_basis': g.item.features.cost_basis, updated_at: now } },
+          );
+          e.features.cognitive_cost = g.item.features.cognitive_cost;
+          e.features.cost_basis = g.item.features.cost_basis;
+          e.updated_at = now;
+        }
+        stored.push(e);
         continue;
       }
       const item: CognitiveWorkItem = {
@@ -115,13 +126,15 @@ export class SchedulerService {
 
     const winner = candidates[0] ?? null;
     const now = new Date().toISOString();
+    const bases = new Set(scored.map(s => s.workItem.features.cost_basis));
+    const decisionCostBasis = bases.size === 1 ? [...bases][0] : 'mixed';
     const decision: SchedulerDecision = {
       schema_version: '1.0',
       decision_id: randomUUID(),
       mission_id: missionId,
       scheduler_mode: 'shadow',
       created_at: now,
-      cost_basis: COST_BASIS,
+      cost_basis: decisionCostBasis,
       candidates,
       exclusions,
       rationale: winner

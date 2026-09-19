@@ -138,7 +138,10 @@ describe('scheduler service (criteria 6, 7, 14, 15)', () => {
     const { decision, queue } = await svc.runShadowPass('ph4_mission');
     expect(queue.length).toBeGreaterThan(0);
     expect(decision.scheduler_mode).toBe('shadow');
-    expect(decision.cost_basis).toBe(COST_BASIS);
+    // No usage rows in this fixture: the honest zero-observed basis must be
+    // recorded — the decision may never claim a measurement it does not have.
+    expect([COST_BASIS, COST_BASIS_ZERO]).toContain(decision.cost_basis);
+    expect(decision.cost_basis).toContain('measured');
     expect(decision.candidates.length).toBeGreaterThan(0);
     expect(decision.candidates[0].feature_contributions.length).toBeGreaterThan(0);
     expect(decision.recommended_was_acted_on).toBe(false); // criterion 14: recorded, not acted on
