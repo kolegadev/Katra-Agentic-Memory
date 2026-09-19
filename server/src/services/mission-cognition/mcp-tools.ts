@@ -915,6 +915,12 @@ async function handleActivationTool(
       if (mode !== 'recommend' && mode !== 'allocate_internal') {
         return text(`❌ Advisories are only surfaced in recommend mode and above (current: ${mode}). In shadow mode decisions are recorded but not surfaced.`);
       }
+      // §4.1 at the acting path: advisories are not produced below the evidence
+      // gate, even if the process was booted straight into recommend via env.
+      const gate = await computeEvidenceGate(db);
+      if (!gate.gate_open) {
+        return text(`❌ Evidence gate closed — no advisories. ${gate.reason}`);
+      }
       if (!(await canViewMission(input.mission_id, caller))) return text(`❌ Not authorized for mission ${input.mission_id}.`);
       const scheduler = new SchedulerService(db);
       await scheduler.runShadowPass(input.mission_id);

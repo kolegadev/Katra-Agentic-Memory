@@ -401,6 +401,11 @@ export async function getSchedulerInfluence(
 ): Promise<SchedulerInfluence | null> {
   if (schedulerMode() !== 'allocate_internal') return null;
   if (killSwitchActive()) return null;
+  // §4.1 enforced at the acting path too: even a process booted straight into
+  // allocate_internal via env cannot influence anything while the evidence
+  // gate is closed (stored records decide, not the flag).
+  const gate = await computeEvidenceGate(db);
+  if (!gate.gate_open) return null;
   const optIns = await activeOptInsForOwner(db, opts.localUserId);
   if (optIns.length === 0) return null;
   const cycleId = await currentCycleId(db);
