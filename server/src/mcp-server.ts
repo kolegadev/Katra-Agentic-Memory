@@ -58,10 +58,16 @@ import { SleepConsolidationService } from './services/processing/sleep-consolida
 import { MemoryDecayService } from './services/processing/memory-decay-service.js';
 import { AnomalyDetectionService } from './services/processing/anomaly-detection-service.js';
 import { SalienceService } from './services/processing/salience-service.js';
-import { COGNITIVE_TOOL_DEFS, dispatchCognitiveTool, dispatchSchedulerTool } from './services/mission-cognition/mcp-tools.js';
+import { COGNITIVE_TOOL_DEFS, dispatchCognitiveTool, dispatchSchedulerTool, dispatchUncertaintyTool } from './services/mission-cognition/mcp-tools.js';
 import { cognitiveControlMode, schedulerMode } from './services/mission-cognition/index.js';
 
 const SCHEDULER_TOOL_NAMES = ['create_cognitive_work_item', 'get_cognitive_queue', 'explain_scheduler_decision'];
+const UNCERTAINTY_TOOL_NAMES = [
+  'list_uncertainties', 'evaluate_triggers', 'trace_assumption_dependencies',
+  'invalidate_decision', 'propose_experiment', 'record_experiment_result',
+  'get_trigger_report', 'create_blind_work_item', 'record_trigger_outcome',
+  'get_hypothesis_diversity',
+];
 import { MotivationalEngine } from './services/processing/motivational-engine.js';
 import { DecisionActionService } from './services/processing/decision-action-service.js';
 import { SelfModelService } from './services/processing/self-model-service.js';
@@ -1022,7 +1028,7 @@ const tools = [
 // The 3 Phase-4 scheduler tools additionally require COGNITIVE_SCHEDULER_MODE != off.
 if (cognitiveControlMode() !== 'off') {
   tools.push(...(COGNITIVE_TOOL_DEFS as Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>)
-    .filter(t => schedulerMode() !== 'off' || !SCHEDULER_TOOL_NAMES.includes(t.name)));
+    .filter(t => schedulerMode() !== 'off' || ![...SCHEDULER_TOOL_NAMES, ...UNCERTAINTY_TOOL_NAMES].includes(t.name)));
 }
 
 // ── Memory Decay handlers ────────────────────────────────────────
@@ -3722,6 +3728,18 @@ function registerHandlers(server: Server, getIdentity?: () => CallerIdentity) {
           // Phase-4 criterion 13: same indistinguishability standard for the
           // scheduler tools — flag off means plain Unknown tool.
           result = await dispatchSchedulerTool(name, args, caller); break;
+        case 'list_uncertainties':
+        case 'evaluate_triggers':
+        case 'trace_assumption_dependencies':
+        case 'invalidate_decision':
+        case 'propose_experiment':
+        case 'record_experiment_result':
+        case 'get_trigger_report':
+        case 'create_blind_work_item':
+        case 'record_trigger_outcome':
+        case 'get_hypothesis_diversity':
+          // Phase-5 criterion 24: flag off → plain Unknown tool.
+          result = await dispatchUncertaintyTool(name, args, caller); break;
         default: throw new Error(`Unknown tool: ${name}`);
       }
       // ── Cerebellum: procedural pattern observation ──────────

@@ -123,6 +123,31 @@ const createWorkItemInput = z.object({
 const queueInput = z.object({ mission_id: z.string().optional() });
 const explainInput = z.object({ mission_id: z.string() });
 
+// Phase 5 (uncertainty engine) tool inputs — same gating as Phase 4.
+const missionOnlyInput = z.object({ mission_id: z.string() });
+const traceInput = z.object({ mission_id: z.string(), entry_id: z.string(), depth_bound: z.number().int().min(1).max(32).optional() });
+const invalidateInput = z.object({ mission_id: z.string(), decision_entry_id: z.string(), reason: z.string().min(1) });
+const proposeExperimentInput = z.object({
+  mission_id: z.string(),
+  statement: z.string().min(1),
+  separates_hypotheses: z.array(z.string()).min(1),
+});
+const recordResultInput = z.object({
+  mission_id: z.string(),
+  experiment_entry_id: z.string(),
+  summary: z.string().min(1),
+  supports_entry_id: z.string().optional(),
+  contradicts_entry_id: z.string().optional(),
+});
+const triggerOutcomeInput = z.object({
+  mission_id: z.string(),
+  trigger: z.string().min(1),
+  entry_id: z.string().optional(),
+  outcome: z.enum(['useful_information', 'mere_variance', 'unnecessary_cost']),
+  note: z.string().optional(),
+});
+const blindWorkInput = z.object({ mission_id: z.string(), uncertainty_entry_id: z.string() });
+
 export const COGNITIVE_TOOL_DEFS: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }> = [
   {
     name: 'create_mission_v2',
@@ -183,6 +208,56 @@ export const COGNITIVE_TOOL_DEFS: Array<{ name: string; description: string; inp
     name: 'explain_scheduler_decision',
     description: 'Return the latest shadow scheduler decision: ranked candidates with per-feature score contributions, exclusions with reasons, and the rationale — why THIS next, and what would change its mind.',
     inputSchema: zodToSchema(explainInput),
+  },
+  {
+    name: 'list_uncertainties',
+    description: 'List open/active uncertainty entries for a mission (Phase 5).',
+    inputSchema: zodToSchema(missionOnlyInput),
+  },
+  {
+    name: 'evaluate_triggers',
+    description: 'Run the eight deterministic uncertainty trigger detectors over current state; return fired triggers with reasons. No model calls. (Phase 5)',
+    inputSchema: zodToSchema(missionOnlyInput),
+  },
+  {
+    name: 'trace_assumption_dependencies',
+    description: 'Transitive dependents of an epistemic entry through depends_on, with the depth bound applied. Cycle-safe. (Phase 5)',
+    inputSchema: zodToSchema(traceInput),
+  },
+  {
+    name: 'invalidate_decision',
+    description: 'Propagate DECISION_INVALIDATED via state deltas, suspend only the affected work items, and preserve the prior plan for audit. (Phase 5)',
+    inputSchema: zodToSchema(invalidateInput),
+  },
+  {
+    name: 'propose_experiment',
+    description: 'Register a discriminating experiment and the hypotheses it separates. (Phase 5)',
+    inputSchema: zodToSchema(proposeExperimentInput),
+  },
+  {
+    name: 'record_experiment_result',
+    description: 'Attach a result to an experiment; a result contradicting accepted state opens a contradiction entry. (Phase 5)',
+    inputSchema: zodToSchema(recordResultInput),
+  },
+  {
+    name: 'get_trigger_report',
+    description: 'Trigger precision + measured cost: fires, useful, performative, cost per useful trigger. (Phase 5)',
+    inputSchema: zodToSchema(missionOnlyInput),
+  },
+  {
+    name: 'create_blind_work_item',
+    description: 'Create a blind parallel work item for an uncertainty: the payload carries no incumbent conclusion or rationale. (Phase 5)',
+    inputSchema: zodToSchema(blindWorkInput),
+  },
+  {
+    name: 'record_trigger_outcome',
+    description: 'Classify a fired trigger as useful information / mere variance / unnecessary cost, with token cost measured from the usage ledger. (Phase 5)',
+    inputSchema: zodToSchema(triggerOutcomeInput),
+  },
+  {
+    name: 'get_hypothesis_diversity',
+    description: 'Hypothesis diversity over submitted hypotheses: distinct forms, falsifiable count, flagged not-falsifiable, authors, recorded alternatives. (Phase 5)',
+    inputSchema: zodToSchema(missionOnlyInput),
   },
 ];
 
@@ -483,6 +558,135 @@ export async function dispatchSchedulerTool(
     throw new Error(`Unknown tool: ${name}`);
   }
   return runWithUsageOrigin(usageOriginFromArgs(args), () => handleSchedulerTool(name, args, caller));
+}
+
+// ── Phase 5: uncertainty engine tool handlers ─────────────────────────────
+
+async function handleUncertaintyTool(name: string, args: unknown, caller: CallerIdentity): Promise<TextContent[]> {
+  if (cognitiveControlMode() === 'off') return text('❌ Cognitive control plane disabled (COGNITIVE_CONTROL_ENABLED=off).');
+  if (schedulerMode() === 'off') return text('❌ Cognitive scheduler disabled (COGNITIVE_SCHEDULER_MODE=off).');
+  const db = get_database();
+  if (!db) return text('⚠️ MongoDB disconnected.');
+
+  const canView = async (missionId: string) => {
+    if (caller.trusted) return true;
+    const state = await db.collection('mission_states').findOne({ mission_id: missionId }, { projection: { owner_id: 1, shared_id: 1 } });
+    if (!state) return false;
+    const s = state as any;
+    return s.owner_id === caller.user_id || Boolean(s.shared_id);
+  };
+
+  switch (name) {
+    case 'list_uncertainties': {
+      const input = missionOnlyInput.parse(args);
+      if (!(await canView(input.mission_id))) return text(`❌ Not authorized for mission ${input.mission_id}.`);
+      const rows = await db.collection('epistemic_entries')
+        .find({ mission_id: input.mission_id, entry_type: 'uncertainty', status: { $in: ['active', 'accepted', 'challenged'] } }, { projection: { _id: 0, entry_id: 1, statement: 1, status: 1, consequence_if_false: 1, independence_requirement: 1, information_needed: 1 } })
+        .toArray() as unknown as Array<Record<string, unknown>>;
+      if (rows.length === 0) return text('No open uncertainties for this mission.');
+      return text(rows.map(u => `- ${u.entry_id} [${u.status}] ${String(u.statement).slice(0, 140)}${u.consequence_if_false ? ` (if false: ${u.consequence_if_false})` : ''}${u.independence_requirement ? ` (independence: ${u.independence_requirement})` : ''}`).join('\n'));
+    }
+    case 'evaluate_triggers': {
+      const input = missionOnlyInput.parse(args);
+      if (!(await canView(input.mission_id))) return text(`❌ Not authorized for mission ${input.mission_id}.`);
+      const { evaluateTriggers } = await import('./uncertainty-triggers.js');
+      const { fired, byTrigger } = await evaluateTriggers(db, input.mission_id);
+      const lines = [`Fired ${fired.length} trigger(s) — deterministic, no model calls.`];
+      lines.push(...fired.map(f => `- [${f.trigger}] ${f.entry_id ?? ''}: ${f.reason}`));
+      lines.push('By detector: ' + Object.entries(byTrigger).map(([k, v]) => `${k}=${v}`).join(' · '));
+      return text(lines.join('\n'));
+    }
+    case 'trace_assumption_dependencies': {
+      const input = traceInput.parse(args);
+      if (!(await canView(input.mission_id))) return text(`❌ Not authorized for mission ${input.mission_id}.`);
+      const { traceAssumptionDependencies } = await import('./dependency-traversal.js');
+      const trace = await traceAssumptionDependencies(db, input.mission_id, input.entry_id, input.depth_bound);
+      return text(`Transitive dependents of ${trace.root_entry_id}: ${trace.dependents.join(', ') || 'none'} · depth bound ${trace.depth_bound_applied}${trace.cycle_detected ? ' · CYCLE DETECTED (bounded)' : ''}`);
+    }
+    case 'invalidate_decision': {
+      const input = invalidateInput.parse(args);
+      if (!(await canView(input.mission_id))) return text(`❌ Not authorized for mission ${input.mission_id}.`);
+      if (cognitiveControlMode() !== 'write') return text('❌ COGNITIVE_CONTROL_ENABLED=read — writes disabled.');
+      const { invalidateDecision } = await import('./invalidation.js');
+      const result = await invalidateDecision(db, input.mission_id, input.decision_entry_id, caller.user_id, input.reason);
+      return text(`Decision ${input.decision_entry_id} invalidated via delta ${result.delta_id}.\nDependents reopened: ${result.dependent_entry_ids.join(', ') || 'none'}.\nWork items suspended (scoped, not mission-wide): ${result.suspended_work_items}.\nPrior plan preserved: ${result.plan_preserved.entry_id}.`);
+    }
+    case 'propose_experiment': {
+      const input = proposeExperimentInput.parse(args);
+      if (!(await canView(input.mission_id))) return text(`❌ Not authorized for mission ${input.mission_id}.`);
+      if (cognitiveControlMode() !== 'write') return text('❌ COGNITIVE_CONTROL_ENABLED=read — writes disabled.');
+      const { proposeExperiment } = await import('./experiment-registry.js');
+      const exp = await proposeExperiment(db, input.mission_id, caller.user_id, input.statement, input.separates_hypotheses);
+      return text(`Experiment proposed: ${exp.entry_id} — separates hypotheses [${input.separates_hypotheses.join(', ')}].`);
+    }
+    case 'record_experiment_result': {
+      const input = recordResultInput.parse(args);
+      if (!(await canView(input.mission_id))) return text(`❌ Not authorized for mission ${input.mission_id}.`);
+      if (cognitiveControlMode() !== 'write') return text('❌ COGNITIVE_CONTROL_ENABLED=read — writes disabled.');
+      const { resolveExperiment } = await import('./experiment-registry.js');
+      const exp = await resolveExperiment(db, input.mission_id, input.experiment_entry_id, caller.user_id, {
+        summary: input.summary,
+        supports_entry_id: input.supports_entry_id,
+        contradicts_entry_id: input.contradicts_entry_id,
+      });
+      return text(`Result recorded on ${exp.entry_id} (status ${exp.status}).${input.contradicts_entry_id ? ` Contradiction opened against ${input.contradicts_entry_id}.` : ''}`);
+    }
+    case 'get_trigger_report': {
+      const input = missionOnlyInput.parse(args);
+      if (!(await canView(input.mission_id))) return text(`❌ Not authorized for mission ${input.mission_id}.`);
+      const { getTriggerReport } = await import('./trigger-telemetry.js');
+      const report = await getTriggerReport(db, input.mission_id);
+      return text(`Triggers: ${report.fires} fires · ${report.useful} useful · ${report.performative} performative · ${report.unnecessary} unnecessary cost · total ${report.total_tokens} measured tokens · ${report.cost_per_useful_trigger.toFixed(1)} tokens per useful trigger.`);
+    }
+    case 'create_blind_work_item': {
+      const input = blindWorkInput.parse(args);
+      if (!(await canView(input.mission_id))) return text(`❌ Not authorized for mission ${input.mission_id}.`);
+      if (cognitiveControlMode() !== 'write') return text('❌ COGNITIVE_CONTROL_ENABLED=read — writes disabled.');
+      const { buildBlindBrief, createBlindWorkItem } = await import('./blind-work.js');
+      const brief = await buildBlindBrief(db, input.mission_id, input.uncertainty_entry_id);
+      const item = await createBlindWorkItem(db, input.mission_id, input.uncertainty_entry_id, brief);
+      return text(`Blind work item ${item.work_item_id} queued (independence_requirement=blind_parallel). Brief: "${brief.question.slice(0, 160)}" — withheld classes [${brief.withheld_classes.join(', ')}].`);
+    }
+    case 'record_trigger_outcome': {
+      const input = triggerOutcomeInput.parse(args);
+      if (!(await canView(input.mission_id))) return text(`❌ Not authorized for mission ${input.mission_id}.`);
+      if (cognitiveControlMode() !== 'write') return text('❌ COGNITIVE_CONTROL_ENABLED=read — writes disabled.');
+      const { recordTriggerOutcome } = await import('./trigger-telemetry.js');
+      const rec = await recordTriggerOutcome(db, {
+        trigger: input.trigger as never,
+        mission_id: input.mission_id,
+        entry_id: input.entry_id,
+        reason: input.note ?? '',
+      }, input.outcome, input.note);
+      return text(`Outcome recorded: ${rec.evaluation_id} — ${rec.outcome} at ${rec.token_cost} measured tokens.`);
+    }
+    case 'get_hypothesis_diversity': {
+      const input = missionOnlyInput.parse(args);
+      if (!(await canView(input.mission_id))) return text(`❌ Not authorized for mission ${input.mission_id}.`);
+      const { measureHypothesisDiversity } = await import('./hypothesis-diversity.js');
+      const r = await measureHypothesisDiversity(db, input.mission_id);
+      return text(`Hypotheses: ${r.submitted_count} submitted · ${r.distinct_forms} distinct forms · ${r.falsifiable_count} falsifiable · ${r.flagged_not_falsifiable.length} flagged not-falsifiable [${r.flagged_not_falsifiable.join(', ') || 'none'}] · ${r.distinct_authors} authors · ${r.alternatives_recorded} recorded alternatives.`);
+    }
+    default:
+      return text(`❌ Unknown uncertainty tool: ${name}`);
+  }
+}
+
+/**
+ * Dispatch gate for the Phase 5 uncertainty tools (criterion 24 + §5.2):
+ * flag off (either flag) → plain Unknown tool, indistinguishable from absent.
+ * Mutating verbs additionally require COGNITIVE_CONTROL_ENABLED=write
+ * (enforced inside the handler).
+ */
+export async function dispatchUncertaintyTool(
+  name: string,
+  args: unknown,
+  caller: CallerIdentity,
+): Promise<TextContent[]> {
+  if (cognitiveControlMode() === 'off' || schedulerMode() === 'off') {
+    throw new Error(`Unknown tool: ${name}`);
+  }
+  return runWithUsageOrigin(usageOriginFromArgs(args), () => handleUncertaintyTool(name, args, caller));
 }
 
 /**
