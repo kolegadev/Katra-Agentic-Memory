@@ -1,0 +1,192 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://katra.dev/schemas/epistemic-entry.schema.json",
+  "title": "Katra Epistemic Ledger Entry",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "entry_id",
+    "mission_id",
+    "entry_type",
+    "statement",
+    "status",
+    "author_id",
+    "confidence",
+    "created_at"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "entry_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "mission_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "entry_type": {
+      "enum": [
+        "claim",
+        "evidence",
+        "assumption",
+        "hypothesis",
+        "uncertainty",
+        "contradiction",
+        "decision",
+        "experiment",
+        "result",
+        "unknown"
+      ]
+    },
+    "statement": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 12000
+    },
+    "status": {
+      "enum": [
+        "proposed",
+        "active",
+        "accepted",
+        "challenged",
+        "rejected",
+        "superseded",
+        "invalidated",
+        "resolved",
+        "deferred",
+        "accepted_risk"
+      ]
+    },
+    "author_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source": {
+      "type": "string",
+      "maxLength": 2000
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "consequence_if_false": {
+      "enum": [
+        "negligible",
+        "low",
+        "moderate",
+        "high",
+        "critical"
+      ]
+    },
+    "evidence_for": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "evidence_against": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "depends_on": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "alternative_hypotheses": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "information_needed": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 2000
+      }
+    },
+    "artifact_refs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "supersedes": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "independence_requirement": {
+      "enum": [
+        "none",
+        "independent_review",
+        "blind_parallel",
+        "adversarial"
+      ]
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "confidence_history": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "prior",
+          "next",
+          "reason",
+          "actor_id",
+          "at"
+        ],
+        "properties": {
+          "prior": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "next": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "actor_id": {
+            "type": "string"
+          },
+          "evidence_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    }
+  }
+}

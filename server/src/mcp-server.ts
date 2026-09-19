@@ -58,6 +58,8 @@ import { SleepConsolidationService } from './services/processing/sleep-consolida
 import { MemoryDecayService } from './services/processing/memory-decay-service.js';
 import { AnomalyDetectionService } from './services/processing/anomaly-detection-service.js';
 import { SalienceService } from './services/processing/salience-service.js';
+import { COGNITIVE_TOOL_DEFS, handleCognitiveTool } from './services/mission-cognition/mcp-tools.js';
+import { cognitiveControlMode } from './services/mission-cognition/index.js';
 import { MotivationalEngine } from './services/processing/motivational-engine.js';
 import { DecisionActionService } from './services/processing/decision-action-service.js';
 import { SelfModelService } from './services/processing/self-model-service.js';
@@ -1012,6 +1014,12 @@ const tools = [
     inputSchema: zodToJsonSchema(AuthSessionStatusInput) as Record<string, unknown>,
   },
 ];
+
+// ── Long-horizon cognitive control plane (local testing, no-publish branch) ──
+// Registered only when COGNITIVE_CONTROL_ENABLED != off (production default off).
+if (cognitiveControlMode() !== 'off') {
+  tools.push(...(COGNITIVE_TOOL_DEFS as Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>));
+}
 
 // ── Memory Decay handlers ────────────────────────────────────────
 
@@ -3692,6 +3700,16 @@ function registerHandlers(server: Server, getIdentity?: () => CallerIdentity) {
         case 'auth_issue_session': result = await handleAuthIssueSession(args); break;
         case 'auth_revoke_session': result = await handleAuthRevokeSession(args); break;
         case 'auth_session_status': result = await handleAuthSessionStatus(args); break;
+        case 'create_mission_v2':
+        case 'get_mission_state':
+        case 'submit_state_delta':
+        case 'list_state_deltas':
+        case 'query_epistemic_ledger':
+        case 'compile_cognitive_baton':
+        case 'get_cognitive_baton':
+        case 'checkpoint_mission':
+        case 'resume_mission':
+          result = await handleCognitiveTool(name, args, caller); break;
         default: throw new Error(`Unknown tool: ${name}`);
       }
       // ── Cerebellum: procedural pattern observation ──────────

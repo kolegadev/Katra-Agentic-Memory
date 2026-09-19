@@ -372,6 +372,7 @@ export interface KatraSkill {
   category: SkillCategory;
   description: string;
   status: SkillStatus;
+  version?: string;
   observation_count: number;
   success_count: number;
   failure_count: number;
@@ -391,6 +392,7 @@ export interface SkillFeedbackRecord {
   task_description?: string;
   confidence_before?: number;
   confidence_after?: number;
+  skill_version?: string;
   timestamp: Date;
 }
 
@@ -400,6 +402,7 @@ export interface SkillSearchResult {
   category: SkillCategory;
   description: string;
   status: SkillStatus;
+  version?: string;
   confidence: number;
   triggers: string[];
   score: number;
