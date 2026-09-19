@@ -62,6 +62,8 @@ three minutes; skipping it is how the same class of failure recurs.
 - RULE: OPERATING RULE — any long-running SQLite WAL stack must have a *guaranteed* periodic checkpoint (scheduled writer pause); verify the checkpoint actually completes, not just that it's attempted.
 - WHERE: semantic_facts "OPERATING RULE wal-checkpoint-maintenance" (shared).
 - METRIC: WAL size 1.9GB → 0 after window; 0 lock errors since; gaps 617 → 0.
+- RECURRENCE 2026-09-16 (same class): with the stack grown to 17 writers the WAL regrew ~420MB/h and the 'database is locked' storm returned ~2h after each 3h window (first block error 17:00 BST, 69 lock errors by 17:55). Root: window cadence was not sized to the WAL growth rate — the storm threshold (~0.8-1GB WAL) was crossed before the next window. Strengthened fix: maintenance window moved to HOURLY (:02, Persistent) so the WAL stays ~0.4GB, well under the threshold; verified 18:02 window drains to 0 and 0 lock errors after. RULE strengthened below.
+- RULE (strengthened): OPERATING RULE — any long-running SQLite WAL stack must have a *guaranteed* periodic checkpoint (scheduled writer pause) whose cadence is SIZED FROM MEASURED WAL GROWTH so the WAL never approaches the observed lock-storm threshold between windows; verify the checkpoint completes AND that lock errors stay 0 between windows (recurrence means the cadence, not the mechanism, was wrong).
 
 ### INCIDENT-CARD inbox-identity (2026-09-12)
 - WHAT: satori inbox loop silently ignored all "Attention: Satori" messages; John had to relay them.
