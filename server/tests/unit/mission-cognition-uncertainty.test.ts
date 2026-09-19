@@ -133,21 +133,37 @@ describe('trigger detectors — all eight, deterministic, no model calls (criter
     expect(fired).toHaveLength(0);
   });
 
-  it('detection is behaviourally LLM-free — client unavailable yields identical triggers (criterion 2)', async () => {
-    seedMission();
-    seedEntry({ entry_id: 'ev1', entry_type: 'evidence', status: 'accepted', statement: 'against', evidence_against: ['c1'] });
-    seedEntry({ entry_id: 'c1', entry_type: 'claim', status: 'accepted', statement: 'claim', confidence: 0.7 });
-    const baseline = await evaluateTriggers(db, 'ph5_mission');
+  it('detection path cannot reach the LLM — transitive import-graph walk (criterion 2, structural)', () => {
+    // Verifier's option (a): walk the detector's transitive static import
+    // graph and assert NO path reaches llm-service. Immune to module-cache
+    // semantics — it expresses the actual invariant, not a proxy for it.
+    // (The previous doMock variant passed trivially via module caching; this
+    // replaces it. Verified able-to-fail by mutation before landing.)
+    const { resolve } = require('node:path') as typeof import('node:path');
+    const { existsSync } = require('node:fs') as typeof import('node:fs');
 
-    // Make the LLM client unavailable: any touch of the llm-service module throws.
-    vi.doMock('../../src/services/infrastructure/llm-service.js', () => {
-      throw new Error('LLM client unavailable — detection must not call it');
-    });
-    const { evaluateTriggers: stubbed } = await import('../../src/services/mission-cognition/uncertainty-triggers.js');
-    const stubbedResult = await stubbed(db, 'ph5_mission');
-    expect(JSON.stringify(stubbedResult.fired)).toBe(JSON.stringify(baseline.fired));
-    expect(JSON.stringify(stubbedResult.byTrigger)).toBe(JSON.stringify(baseline.byTrigger));
-    vi.doUnmock('../../src/services/infrastructure/llm-service.js');
+    const ENTRY = 'src/services/mission-cognition/uncertainty-triggers.ts';
+    const FORBIDDEN = /infrastructure[\\/]llm-service(\.ts|\.js)?$/;
+    const visited = new Set<string>();
+    const queue: string[] = [ENTRY];
+    const reached: string[] = [];
+
+    while (queue.length > 0) {
+      const file = queue.shift()!;
+      if (visited.has(file)) continue;
+      visited.add(file);
+      if (!existsSync(file)) continue; // dynamic imports are out of scope for the walk
+      const src = readFileSync(file, 'utf-8');
+      for (const m of src.matchAll(/from\s+['"]([^'"]+)['"]/g)) {
+        const spec = m[1];
+        if (!spec.startsWith('.') && !spec.startsWith('/')) continue; // node built-ins / packages
+        const resolved = resolve(resolve(file, '..'), spec.replace(/\.js$/, ''));
+        if (FORBIDDEN.test(resolved)) reached.push(resolved);
+        queue.push(resolved);
+      }
+    }
+
+    expect(reached).toHaveLength(0); // no transitive path reaches llm-service
   });
 });
 
