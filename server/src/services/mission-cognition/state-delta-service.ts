@@ -33,6 +33,12 @@ export function applyDeltaToState(state: MissionState, delta: StateDelta, now?: 
   appendRefs(...entryIds);
 
   const op0 = delta.operations[0] as Record<string, any> | undefined;
+  // The operation contract allows only op/path/value/from — the objective id
+  // is carried in the path (e.g. /objectives/<id>/status).
+  const objectiveId = () =>
+    (typeof op0?.path === 'string' && op0.path.startsWith('/objectives/'))
+      ? (op0.path.split('/')[2] ?? undefined)
+      : undefined;
   switch (delta.delta_type) {
     case 'OBJECTIVE_CREATED': {
       const objective = op0?.objective;
@@ -44,16 +50,16 @@ export function applyDeltaToState(state: MissionState, delta: StateDelta, now?: 
     }
     case 'OBJECTIVE_UPDATED':
     case 'OBJECTIVE_COMPLETED': {
-      const id = op0?.objective_id;
+      const id = objectiveId();
       const obj = next.objectives?.find(o => o.id === id);
       if (obj) {
-        obj.description = op0?.description ?? obj.description;
-        obj.status = delta.delta_type === 'OBJECTIVE_COMPLETED' ? 'completed' : (op0?.status ?? obj.status);
+        obj.description = op0?.value?.description ?? op0?.description ?? obj.description;
+        obj.status = delta.delta_type === 'OBJECTIVE_COMPLETED' ? 'completed' : (op0?.value?.status ?? obj.status);
       }
       break;
     }
     case 'BLOCKED': {
-      const id = op0?.objective_id;
+      const id = objectiveId();
       const obj = next.objectives?.find(o => o.id === id);
       if (obj) obj.status = 'blocked';
       break;
@@ -179,11 +185,15 @@ export class StateDeltaService {
         entryIds.push(created.entry_id);
       }
       const applied: StateDelta = { ...delta, ledger_entries: normalizedEntries.map((e, i) => ({ ...e, entry_id: entryIds[i] ?? e.entry_id })) };
-      const next = applyDeltaToState(current, applied);
+      // Single timestamp for the state's updated_at AND the delta's applied_at:
+      // rebuild-from-checkpoint replays with applied_at, so the replayed state
+      // must carry the same value the materialized state got (criterion 13).
+      const appliedAt = new Date().toISOString();
+      const next = applyDeltaToState(current, applied, appliedAt);
       next.version = current.version + 1; // invariant #1: monotonic
       await this.missions.advanceState(draft.mission_id, next);
       applied.status = 'accepted';
-      applied.applied_at = new Date().toISOString();
+      applied.applied_at = appliedAt;
       await this.deltas().updateOne(
         { delta_id: deltaId },
         { $set: { status: 'accepted', applied_at: applied.applied_at, ledger_entries: applied.ledger_entries } },

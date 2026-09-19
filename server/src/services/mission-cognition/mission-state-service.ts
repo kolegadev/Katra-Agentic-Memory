@@ -58,12 +58,17 @@ export class MissionStateService {
     const current = await this.getMissionState(missionId);
     if (!current) return null;
     const checkpointId = randomUUID();
+    const now = new Date().toISOString();
+    // The snapshot and the materialized state must be the SAME object so that
+    // rebuild-from-checkpoint reproduces the materialized state byte-identically
+    // (contract criterion 13): build once, persist once, update once.
+    const checkpointed: MissionState = { ...current, checkpoint_id: checkpointId, updated_at: now };
     await this.versions().insertOne({
       mission_id: missionId,
-      version: current.version,
+      version: checkpointed.version,
       checkpoint_id: checkpointId,
-      state: current,
-      created_at: new Date().toISOString(),
+      state: checkpointed,
+      created_at: now,
     });
     // Compaction: keep the newest MISSION_STATE_VERSION_KEEP versions per mission.
     const stale = await this.versions()
@@ -77,7 +82,7 @@ export class MissionStateService {
     }
     await this.states().updateOne(
       { mission_id: missionId },
-      { $set: { checkpoint_id: checkpointId, updated_at: new Date().toISOString() } },
+      { $set: { checkpoint_id: checkpointId, updated_at: now } },
     );
     await emitMissionEvent(this.db, {
       mission_id: missionId,

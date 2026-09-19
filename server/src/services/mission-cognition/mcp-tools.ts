@@ -50,7 +50,7 @@ const getMissionStateInput = z.object({ mission_id: z.string(), version: z.numbe
 const ledgerEntrySchema = z.object({
   entry_type: z.enum(['claim', 'evidence', 'assumption', 'hypothesis', 'uncertainty', 'contradiction', 'decision', 'experiment', 'result', 'unknown']),
   statement: z.string().min(1),
-  status: z.enum(['proposed', 'accepted', 'superseded', 'invalidated', 'open']).default('accepted'),
+  status: z.enum(['proposed', 'active', 'accepted', 'challenged', 'rejected', 'superseded', 'invalidated', 'resolved', 'deferred', 'accepted_risk']).default('accepted'),
   source: z.string().optional(),
   confidence: z.number().min(0).max(1).default(0.5),
   depends_on: z.array(z.string()).optional(),
@@ -341,20 +341,37 @@ export async function handleCognitiveTool(
       const input = resumeInput.parse(args);
       const denied = await guard(input.mission_id);
       if (denied) return denied;
-      const state = await services.missions.getMissionState(input.mission_id);
-      if (!state) return text(`❌ Mission not found: ${input.mission_id}`);
-      const deltas = await services.deltas.listDeltas(input.mission_id, 10);
-      const sinceCheckpoint = deltas.filter(d => d.status === 'accepted' && (d.base_mission_version ?? 0) >= state.version - 10);
-      const summary = [
-        `**Mission:** ${state.title} [${state.status}] — v${state.version}`,
-        `**Owner:** ${state.owner_id} | **Authority:** ${state.authority_class}`,
-        `**Open objectives:** ${(state.objectives ?? []).filter(o => o.status !== 'completed').map(o => `${o.id} (${o.status})`).join(', ') || 'none'}`,
-        `**Recent accepted deltas:** ${sinceCheckpoint.length}`,
-        `**Next cognition:** ${state.next_cognition ?? '(not set — open a new baton)'}`,
-      ].join('\n');
-      return text(summary);
+      const { buildResumeReport } = await import('./resume.js');
+      const report = await buildResumeReport(db, input.mission_id);
+      const lines = [
+        `**Mission:** ${report.mission.title} [${report.mission.status}] — v${report.mission.version}`,
+        `**Owner:** ${report.mission.owner_id} | **Authority:** ${report.mission.authority_class}`,
+        `**Checkpoint:** ${report.checkpoint.checkpoint_id ?? '(none)'} at v${report.checkpoint.version ?? '?'} ${report.checkpoint.created_at ?? ''}`,
+        `**Changed since checkpoint:** ${report.changed_since_checkpoint.length} accepted delta(s) — ${report.changed_since_checkpoint.map(d => `${d.delta_type} by ${d.author_id}`).join(', ') || 'none'}`,
+        `**Active uncertainties:** ${report.active_uncertainties.map(u => `${u.entry_id}: ${u.statement.slice(0, 120)}`).join(' | ') || 'none'}`,
+        `**Next action:** [${report.next_action.kind}] ${report.next_action.objective_id ?? ''} ${report.next_action.description ?? ''} — ${report.next_action.rationale}`,
+        `**Reconstruction source:** ${report.reconstruction_source.join('; ')}`,
+      ];
+      return text(lines.join('\n'));
     }
     default:
       return text(`❌ Unknown cognitive tool: ${name}`);
   }
+}
+
+/**
+ * Dispatch gate for the mcp-server tool switch (contract #5 fix):
+ * with COGNITIVE_CONTROL_ENABLED=off the cognitive tools are NOT reachable —
+ * callers get the plain unknown-tool error, indistinguishable from the
+ * feature not existing. With read/write the normal handler runs.
+ */
+export async function dispatchCognitiveTool(
+  name: string,
+  args: unknown,
+  caller: CallerIdentity,
+): Promise<TextContent[]> {
+  if (cognitiveControlMode() === 'off') {
+    throw new Error(`Unknown tool: ${name}`);
+  }
+  return handleCognitiveTool(name, args, caller);
 }

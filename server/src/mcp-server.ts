@@ -58,7 +58,7 @@ import { SleepConsolidationService } from './services/processing/sleep-consolida
 import { MemoryDecayService } from './services/processing/memory-decay-service.js';
 import { AnomalyDetectionService } from './services/processing/anomaly-detection-service.js';
 import { SalienceService } from './services/processing/salience-service.js';
-import { COGNITIVE_TOOL_DEFS, handleCognitiveTool } from './services/mission-cognition/mcp-tools.js';
+import { COGNITIVE_TOOL_DEFS, dispatchCognitiveTool } from './services/mission-cognition/mcp-tools.js';
 import { cognitiveControlMode } from './services/mission-cognition/index.js';
 import { MotivationalEngine } from './services/processing/motivational-engine.js';
 import { DecisionActionService } from './services/processing/decision-action-service.js';
@@ -3709,7 +3709,9 @@ function registerHandlers(server: Server, getIdentity?: () => CallerIdentity) {
         case 'get_cognitive_baton':
         case 'checkpoint_mission':
         case 'resume_mission':
-          result = await handleCognitiveTool(name, args, caller); break;
+          // contract #5: with the flag off these tools must be indistinguishable
+          // from not existing — the dispatch itself throws Unknown tool.
+          result = await dispatchCognitiveTool(name, args, caller); break;
         default: throw new Error(`Unknown tool: ${name}`);
       }
       // ── Cerebellum: procedural pattern observation ──────────

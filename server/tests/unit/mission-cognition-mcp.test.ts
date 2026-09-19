@@ -15,7 +15,7 @@ vi.mock('../../src/database/connection.js', () => ({
 }));
 
 import { FakeDb } from '../helpers/fake-mongo.js';
-import { handleCognitiveTool, COGNITIVE_TOOL_DEFS } from '../../src/services/mission-cognition/mcp-tools.js';
+import { handleCognitiveTool, dispatchCognitiveTool, COGNITIVE_TOOL_DEFS } from '../../src/services/mission-cognition/mcp-tools.js';
 import type { CallerIdentity } from '../../src/utils/caller-identity.js';
 
 const FAKE_DB = new FakeDb();
@@ -107,6 +107,67 @@ describe('cognitive control MCP surface (COGNITIVE_CONTROL_ENABLED=write)', () =
     const missionId = (txt(created).match(/`(ms_[^`]+)`/) ?? [])[1];
     const denied = await handleCognitiveTool('get_mission_state', { mission_id: missionId }, { user_id: 'other-agent', trusted: false });
     expect(txt(denied)).toContain('Not authorized');
+  });
+
+  it('resume_mission reconstructs version/owner/changes/uncertainties/next-action from state only', async () => {
+    // create with two objectives, o2 depends on o1
+    const created = await handleCognitiveTool('create_mission_v2', {
+      title: 'Continuity proving ground',
+      success_criteria: ['continuity proven'],
+      objectives: [
+        { id: 'o1', description: 'Establish baseline facts', status: 'pending', owner_id: 'satori' },
+        { id: 'o2', description: 'Build on the baseline', status: 'pending', owner_id: 'satori', dependency_ids: ['o1'] },
+      ],
+    }, trusted);
+    const missionId = (txt(created).match(/`(ms_[^`]+)`/) ?? [])[1];
+    // delta 1 (claim) -> v2, then checkpoint
+    await handleCognitiveTool('submit_state_delta', {
+      mission_id: missionId, base_mission_version: 1, delta_type: 'CLAIM_ADDED',
+      operations: [{ op: 'add', path: '/ledger_refs/-', value: 'c1' }],
+      rationale: 'baseline claim', ledger_entries: [{ entry_type: 'claim', statement: 'Egress is throttled per-IP.', confidence: 0.9 }],
+    }, trusted);
+    await handleCognitiveTool('checkpoint_mission', { mission_id: missionId }, trusted);
+    // delta 2 after checkpoint: open an uncertainty -> v3
+    await handleCognitiveTool('submit_state_delta', {
+      mission_id: missionId, base_mission_version: 2, delta_type: 'UNCERTAINTY_OPENED',
+      operations: [{ op: 'add', path: '/ledger_refs/-', value: 'u1' }],
+      rationale: 'which egress is clean?', ledger_entries: [{ entry_type: 'uncertainty', status: 'active', statement: 'Whether audio downloads are throttled.', confidence: 0.5 }],
+    }, trusted);
+    const resume = await handleCognitiveTool('resume_mission', { mission_id: missionId }, trusted);
+    const r = txt(resume);
+    expect(r).toContain('v3');
+    expect(r).toContain('Owner:');
+    expect(r).toContain('satori');
+    expect(r).toContain('Checkpoint:');
+    expect(r).toContain('Changed since checkpoint:');
+    expect(r).toContain('1 accepted delta');
+    expect(r).toContain('UNCERTAINTY_OPENED');
+    expect(r).toContain('audio downloads are throttled');
+    expect(r).toContain('[objective] o1');
+    expect(r).toContain('NO conversation history');
+    // complete o1 -> next action must advance to o2 (dependency-aware)
+    await handleCognitiveTool('submit_state_delta', {
+      mission_id: missionId, base_mission_version: 3, delta_type: 'OBJECTIVE_COMPLETED',
+      operations: [{ op: 'replace', path: '/objectives/o1/status', value: 'completed' }],
+      rationale: 'baseline established',
+    }, trusted);
+    const resume2 = await handleCognitiveTool('resume_mission', { mission_id: missionId }, trusted);
+    expect(txt(resume2)).toContain('[objective] o2');
+  });
+});
+
+describe('dispatch gate (contract #5 fix)', () => {
+  it('flag off: dispatch throws the plain unknown-tool error', async () => {
+    const prev = process.env.COGNITIVE_CONTROL_ENABLED;
+    process.env.COGNITIVE_CONTROL_ENABLED = 'off';
+    await expect(
+      dispatchCognitiveTool('get_mission_state', { mission_id: 'any' }, trusted),
+    ).rejects.toThrow('Unknown tool: get_mission_state');
+    process.env.COGNITIVE_CONTROL_ENABLED = prev;
+  });
+  it('flag write: dispatch reaches the handler normally', async () => {
+    const res = await dispatchCognitiveTool('get_mission_state', { mission_id: 'nope' }, trusted);
+    expect(txt(res)).toContain('Mission state not found');
   });
 });
 
