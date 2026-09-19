@@ -29,12 +29,13 @@ function txt(result: { type: string; text: string }[]): string {
 afterEach(() => FAKE_DB.reset());
 
 describe('cognitive control MCP surface (COGNITIVE_CONTROL_ENABLED=write)', () => {
-  it('registers the nine Phase 1-2 tools', () => {
+  it('registers the twelve cognitive tools (9 Phase 1-2 + 3 Phase 4 scheduler)', () => {
     const names = COGNITIVE_TOOL_DEFS.map(t => t.name);
     expect(names).toEqual([
       'create_mission_v2', 'get_mission_state', 'submit_state_delta', 'list_state_deltas',
       'query_epistemic_ledger', 'compile_cognitive_baton', 'get_cognitive_baton',
       'checkpoint_mission', 'resume_mission',
+      'create_cognitive_work_item', 'get_cognitive_queue', 'explain_scheduler_decision',
     ]);
   });
 

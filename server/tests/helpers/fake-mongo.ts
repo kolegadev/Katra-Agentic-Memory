@@ -100,6 +100,9 @@ export class FakeCollection {
     this.docs = this.docs.filter(d => !this.matches(d, filter));
     return { acknowledged: true, deletedCount: before - this.docs.length };
   }
+  async countDocuments(filter: Record<string, any> = {}) {
+    return this.docs.filter(d => this.matches(d, filter)).length;
+  }
 }
 
 export class FakeDb {
