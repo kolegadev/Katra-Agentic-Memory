@@ -396,4 +396,60 @@ describe('Phase-6 MCP surface', () => {
     seedDecision('m_opt', 'envby');
     expect(await getSchedulerInfluence(FAKE_DB, { localUserId: 'owner1', candidates: ['agent-a'] })).toBeNull();
   });
+
+  it('decisive test A (isolation): influence is scoped to the opted-in mission\'s owner — nothing outside changes', async () => {
+    // Same machinery as a real activation, two owners side by side.
+    seedEvidence(EVIDENCE_THRESHOLD);
+    await acknowledgeEvidence(FAKE_DB, { actorId: 'operator' });
+    await setMode(FAKE_DB, { mode: 'shadow', actorId: 'operator', reason: 'up' });
+    await setMode(FAKE_DB, { mode: 'recommend', actorId: 'operator', reason: 'up' });
+    await setMode(FAKE_DB, { mode: 'allocate_internal', actorId: 'operator', reason: 'up' });
+    seedMission('m_in', 'owner-in');
+    seedMission('m_out', 'owner-out');
+    await optInMission(FAKE_DB, { missionId: 'm_in', ownerId: 'owner-in', actorId: 'operator', reason: 'why' });
+    seedDecision('m_in', 'iso-in');
+    seedDecision('m_out', 'iso-out');
+    // The opted-in owner is influenced.
+    const influence = await getSchedulerInfluence(FAKE_DB, { localUserId: 'owner-in', candidates: ['agent-a'] });
+    expect(influence?.mission_id).toBe('m_in');
+    // The non-opted-in owner is untouched — the scheduler decision for THEIR
+    // mission exists but there is no opt-in, so nothing is offered.
+    expect(await getSchedulerInfluence(FAKE_DB, { localUserId: 'owner-out', candidates: ['agent-a'] })).toBeNull();
+    // And nothing was recorded for the outside mission.
+    expect(FAKE_DB.collection('allocation_counterfactuals').docs.some((c: any) => c.mission_id === 'm_out')).toBe(false);
+  });
+});
+
+describe('criterion 4 — recommendation/advisory call-site discipline (static)', () => {
+  it('the allocator reads NO scheduler storage or tools directly; the only bridge is activation-bridge', () => {
+    const { readFileSync } = require('node:fs') as typeof import('node:fs');
+    const src = readFileSync('src/services/processing/autonomous-executive.ts', 'utf-8');
+    // No direct reads of any scheduler storage, recommendation surface, or ledger.
+    expect(src).not.toMatch(/scheduler_decisions/);
+    expect(src).not.toMatch(/get_scheduler_recommendation/);
+    expect(src).not.toMatch(/mission_opt_ins/);
+    expect(src).not.toMatch(/activation_ledger/);
+    expect(src).not.toMatch(/allocation_counterfactuals/);
+    // No field read of a recommendation record (prose mentions are irrelevant).
+    expect(src).not.toMatch(/\.recommended\b/);
+    expect(src).not.toMatch(/recommended_was_acted_on/);
+    // The only mission-cognition import is the deliberate Phase-6 bridge.
+    const missionCognitionImports = [...src.matchAll(/from\s+['"][^'"]*mission-cognition[^'"]*['"]/g)].map(m => m[0]);
+    expect(missionCognitionImports).toEqual(["from '../mission-cognition/activation-bridge.js'"]);
+  });
+
+  it('the bridge and activation modules never import the live allocator (criterion-12 boundary holds)', () => {
+    const { readFileSync } = require('node:fs') as typeof import('node:fs');
+    for (const f of [
+      'src/services/mission-cognition/activation-service.ts',
+      'src/services/mission-cognition/activation-bridge.ts',
+      'src/services/mission-cognition/scheduler-mode.ts',
+      'src/services/mission-cognition/scheduler-service.ts',
+      'src/services/mission-cognition/mcp-tools.ts',
+    ]) {
+      const src = readFileSync(f, 'utf-8');
+      expect(src).not.toMatch(/from\s+['"][^'"]*autonomous-executive/);
+      expect(src).not.toMatch(/require\([^)]*autonomous-executive/);
+    }
+  });
 });
