@@ -20,11 +20,19 @@ function getPublisher(): Promise<{ publish: (msg: string) => Promise<void> } | n
       try {
         const url = process.env.REDIS_URL ?? 'redis://localhost:6379';
         const { createClient } = await import('redis');
-        const client = createClient({ url, socket: { reconnectStrategy: 3000 } });
+        // Advisory rail: fail fast, never hang the durable path. No reconnect —
+        // if Redis is down at first use we return null and retry on a later event
+        // (harness defect #1: reconnectStrategy:3000 made connect() wait forever
+        // against a dead port, wedging every process that emits an event).
+        const client = createClient({
+          url,
+          socket: { connectTimeout: 3000, reconnectStrategy: false },
+        });
         client.on('error', () => { /* advisory rail: never crash the durable path */ });
         await client.connect();
         return { publish: (msg: string) => client.publish(REDIS_EVENT_CHANNEL, msg).then(() => undefined) };
       } catch {
+        _publisherPromise = null; // retry lazily on the next event
         return null; // Redis unavailable — the outbox record already persists the event
       }
     })();
