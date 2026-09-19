@@ -14,7 +14,7 @@ vi.mock('../../src/database/connection.js', () => ({
 }));
 
 import { FakeDb } from '../helpers/fake-mongo.js';
-import { estimateCognitiveCost, COST_BASIS, COST_FLOOR } from '../../src/services/mission-cognition/cost-model.js';
+import { measureCognitiveCost, COST_BASIS, COST_BASIS_ZERO, COST_FLOOR } from '../../src/services/mission-cognition/cost-model.js';
 import { generateWorkItems } from '../../src/services/mission-cognition/work-item-generator.js';
 import { scorePriority } from '../../src/services/mission-cognition/priority-scorer.js';
 import { SchedulerService } from '../../src/services/mission-cognition/scheduler-service.js';
@@ -51,11 +51,19 @@ function seedMission(overrides: Partial<MissionState> = {}): MissionState {
 afterEach(() => FAKE_DB.reset());
 
 describe('cost model (§2 prerequisite, criterion 1)', () => {
-  it('is deterministic, floored, and labelled', () => {
-    expect(estimateCognitiveCost('execute')).toBeGreaterThanOrEqual(COST_FLOOR);
-    expect(estimateCognitiveCost('execute')).toBe(estimateCognitiveCost('execute'));
-    expect(estimateCognitiveCost('synthesize', { max_hours: 10 })).toBeGreaterThan(estimateCognitiveCost('synthesize'));
-    expect(COST_BASIS).toContain('proxy');
+  it('is measured, floored, and labelled', async () => {
+    // with usage rows: measured tokens
+    FAKE_DB.collection('llm_usage').docs.push(
+      { mission_id: 'costtest', input_tokens: 300, output_tokens: 50 },
+    );
+    const measured = await measureCognitiveCost(db, 'costtest');
+    expect(measured.cost).toBe(350);
+    expect(measured.basis).toBe(COST_BASIS);
+    // with zero usage: floor + visible zero basis — never an invented band
+    const zero = await measureCognitiveCost(db, 'never-seen');
+    expect(zero.cost).toBe(COST_FLOOR);
+    expect(zero.basis).toBe(COST_BASIS_ZERO);
+    expect(COST_BASIS).toContain('measured');
   });
 });
 
@@ -65,6 +73,10 @@ describe('work item generation (criteria 2-3)', () => {
     FAKE_DB.collection('epistemic_entries').docs.push(
       { entry_id: 'u1', mission_id: 'ph4_mission', entry_type: 'uncertainty', status: 'active', statement: 'u' },
       { entry_id: 'd1', mission_id: 'ph4_mission', entry_type: 'decision', status: 'invalidated', statement: 'd' },
+    );
+    // measured cost: seed usage rows so the basis is real measurement
+    FAKE_DB.collection('llm_usage').docs.push(
+      { mission_id: 'ph4_mission', work_item_id: null, input_tokens: 120, output_tokens: 30 },
     );
     const items = await generateWorkItems(db, 'ph4_mission');
     const triggers = new Set(items.map(i => i.trigger));
@@ -78,6 +90,7 @@ describe('work item generation (criteria 2-3)', () => {
         expect(typeof (f as any)[key]).toBe('number');
       }
       expect(f.cost_basis).toBe(COST_BASIS);
+      expect(f.cognitive_cost).toBe(150); // measured tokens, not a band
     }
   });
   it('generates nothing for a completed mission', async () => {

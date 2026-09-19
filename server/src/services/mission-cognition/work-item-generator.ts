@@ -6,7 +6,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Db } from 'mongodb';
 import { COLLECTIONS } from './collections.js';
-import { estimateCognitiveCost, COST_BASIS } from './cost-model.js';
+import { measureCognitiveCost } from './cost-model.js';
 import type { BatonMode, CognitiveWorkItem, MissionState } from '../../types/cognitive-control.js';
 
 const STALE_CHECKPOINT_HOURS = 24;
@@ -95,14 +95,20 @@ export async function generateWorkItems(db: Db, missionId: string): Promise<Gene
   const centrality = dependencyCentrality(objectives);
   const urg = urgency(staleCheckpoint, blocked.length, invalidatedDecisions);
 
+  // Real measurement (§2 option a): cognitive_cost = measured tokens for the
+  // mission scope. One measurement serves all items generated in this pass.
+  const measured = await measureCognitiveCost(db, missionId);
+  const cost = measured.cost;
+  const costBasis = measured.basis;
+
   const features = (mode: BatonMode) => ({
     mission_impact: impact,
     uncertainty,
     information_value: infoValue,
     dependency_centrality: centrality,
     urgency: urg,
-    cognitive_cost: estimateCognitiveCost(mode),
-    cost_basis: COST_BASIS,
+    cognitive_cost: cost,
+    cost_basis: costBasis,
   });
 
   const items: GeneratedItem[] = [];

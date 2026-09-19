@@ -18,6 +18,7 @@ import {
   getMissionCognitionServices,
 } from './index.js';
 import { SchedulerService } from './scheduler-service.js';
+import { runWithUsageOrigin } from '../infrastructure/llm-usage-ledger.js';
 import type { AuthorityClass, CognitiveBatonDraft, StateDeltaDraft } from '../../types/cognitive-control.js';
 
 const AuthorityClassSchema = z.enum(['A', 'B', 'C']);
@@ -409,7 +410,8 @@ async function handleSchedulerTool(name: string, args: unknown, caller: CallerId
     case 'create_cognitive_work_item': {
       const input = createWorkItemInput.parse(args);
       if (!(await canView(input.mission_id))) return text(`❌ Not authorized for mission ${input.mission_id}.`);
-      const { COST_BASIS, estimateCognitiveCost } = await import('./cost-model.js');
+      const { measureCognitiveCost } = await import('./cost-model.js');
+      const measured = await measureCognitiveCost(db, input.mission_id);
       const now = new Date().toISOString();
       const item = {
         schema_version: '1.0',
@@ -426,8 +428,8 @@ async function handleSchedulerTool(name: string, args: unknown, caller: CallerId
           information_value: 1,
           dependency_centrality: 0,
           urgency: 1,
-          cognitive_cost: estimateCognitiveCost(input.mode),
-          cost_basis: COST_BASIS,
+          cognitive_cost: measured.cost,
+          cost_basis: measured.basis,
         },
         created_at: now,
         updated_at: now,
@@ -458,6 +460,20 @@ async function handleSchedulerTool(name: string, args: unknown, caller: CallerId
  * Dispatch gate for the scheduler tools (criterion 13): with either flag off,
  * the tools are indistinguishable from not existing — plain Unknown tool.
  */
+/**
+ * Attribution origin from tool args: any LLM call the server makes while
+ * handling a cognitive tool is attributed to that mission/work item scope
+ * (usage-ledger AsyncLocalStorage — kolega-code LlmCallOrigin equivalent).
+ */
+function usageOriginFromArgs(args: unknown) {
+  const a = (args ?? {}) as Record<string, unknown>;
+  const origin = {
+    mission_id: typeof a.mission_id === 'string' ? a.mission_id : undefined,
+    work_item_id: typeof a.work_item_id === 'string' ? a.work_item_id : undefined,
+  };
+  return origin.mission_id ? origin : null;
+}
+
 export async function dispatchSchedulerTool(
   name: string,
   args: unknown,
@@ -466,7 +482,7 @@ export async function dispatchSchedulerTool(
   if (cognitiveControlMode() === 'off' || schedulerMode() === 'off') {
     throw new Error(`Unknown tool: ${name}`);
   }
-  return handleSchedulerTool(name, args, caller);
+  return runWithUsageOrigin(usageOriginFromArgs(args), () => handleSchedulerTool(name, args, caller));
 }
 
 /**
@@ -483,5 +499,5 @@ export async function dispatchCognitiveTool(
   if (cognitiveControlMode() === 'off') {
     throw new Error(`Unknown tool: ${name}`);
   }
-  return handleCognitiveTool(name, args, caller);
+  return runWithUsageOrigin(usageOriginFromArgs(args), () => handleCognitiveTool(name, args, caller));
 }
