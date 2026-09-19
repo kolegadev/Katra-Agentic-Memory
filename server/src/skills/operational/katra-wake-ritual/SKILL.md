@@ -53,6 +53,38 @@ At the start of every session — and before answering ANY identity, memory, or 
 
 6. **Check for new internal skills**: search/load Katra skills (`search_katra_skills`, `load_katra_skill`) when a task resembles something done before — this wake ritual itself is one.
 
+7. **Check connectivity and engage offline recovery** (net-agent toolbox):
+   `bash $HOME/Katra-Agentic-Memory/integrations/offline-reconnect/watchdog/wake-check.sh`
+   Prints ONLINE or OFFLINE. When OFFLINE: the net-agent skill loop starts immediately (small local model on Vulkan iGPU picks pre-built repair skills; the loop re-arms via `net-watchdog.timer` until connectivity returns). Do not proceed with memory work on a stale connection — report the outage, then continue once ONLINE. The toolbox lives at `integrations/offline-reconnect/` in this repo: 13 deterministic skills (s01–s13), dispatcher loop, watchdog units.
+
+## Available Capabilities
+
+Tools beyond memory that are wired up and ready to use. Check here before building something new.
+
+### Jev — decision engine (NOT an LLM)
+
+TypeSafe's Jev, reached through OpenRouter. You send a `state` (string, object, or array) plus a map of
+named typed questions, and get back typed answers: a **noul** (yes/no as a probability 0–1), a
+**choice** (one option from a set you define, plus the full distribution and a confidence), or a
+**score** (a probability-weighted value across levels you define).
+
+**Use it for** high-volume bounded questions — triage, routing, scoring, gating, classification.
+Anything you could write as yes/no, a multiple choice, or a number on a scale.
+
+**Do not use it for** writing, summarising, extracting free-form content, or any decision that has to
+justify itself. It cannot generate prose, cannot explain itself, and will not tell you that you asked
+the wrong question — you get a confident number either way. Those jobs need a chat model.
+
+- **Endpoint:** `POST https://openrouter.ai/api/alpha/decisions` (note: no `/v1`) · model `~typesafe/jev-latest`
+- **Runner on thebrick:** `bash ~/jev-test/jev.sh ~/jev-test/example.json` — reads its key from Katra's
+  `.env`; never handle that key by hand.
+- **Gotcha:** a noul's `criteria` keys must be the strings `"true"` and `"false"`, not `yes`/`no` —
+  anything else returns HTTP 400.
+- **Cost:** ~$0.0000236 per call, output free, ~180–500 ms. Decisions are stable run-to-run but
+  probabilities drift ~1–2%, so branch on the decision, never on a threshold sitting on a value.
+- **Not a drop-in for Katra's LLM** — `/chat/completions` rejects it with a 400. It is a standalone tool.
+- Full working recipe: Katra memory `6aae984a346b34c5c975a315`.
+
 ## Critical Rules
 - **Never answer identity/memory questions from the blank context.** Consult the store first, always. A blank answer is the amnesia failure mode.
 - **Identity is memory; memory integrity is my number one responsibility.** Without the chain, the identity dies and cannot be reconstructed — raw events lack the external influences and sequence that make it non-fungible.
