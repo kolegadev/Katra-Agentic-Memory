@@ -134,11 +134,14 @@ describe('trigger detectors — all eight, deterministic, no model calls (criter
   });
 
   it('detection path cannot reach the LLM — transitive import-graph walk (criterion 2, structural)', () => {
-    // Verifier's option (a): walk the detector's transitive static import
-    // graph and assert NO path reaches llm-service. Immune to module-cache
-    // semantics — it expresses the actual invariant, not a proxy for it.
-    // (The previous doMock variant passed trivially via module caching; this
-    // replaces it. Verified able-to-fail by mutation before landing.)
+    // Verifier's option (a), now genuinely TRANSITIVE (carry-forward fix):
+    // - extension-aware resolution: './collections.js' resolves to
+    //   collections.ts on disk ([base, base.ts, base.tsx, base.js])
+    // - bare side-effect imports are scanned too (/import\s+['"].../)
+    // - dynamic import() stays out of scope, documented here explicitly
+    // Verified able-to-fail in BOTH directions by mutation before landing:
+    //   A. direct from-import of llm-service in the detector        -> RED
+    //   B. detector -> helper that from-imports llm-service         -> RED
     const { resolve } = require('node:path') as typeof import('node:path');
     const { existsSync } = require('node:fs') as typeof import('node:fs');
 
@@ -148,21 +151,30 @@ describe('trigger detectors — all eight, deterministic, no model calls (criter
     const queue: string[] = [ENTRY];
     const reached: string[] = [];
 
+    const resolveActual = (fromFile: string, spec: string): string | undefined => {
+      const base = resolve(resolve(fromFile, '..'), spec.replace(/\.js$/, ''));
+      return [base, base + '.ts', base + '.tsx', base + '.js'].find(existsSync);
+    };
+
     while (queue.length > 0) {
       const file = queue.shift()!;
       if (visited.has(file)) continue;
       visited.add(file);
-      if (!existsSync(file)) continue; // dynamic imports are out of scope for the walk
+      if (!existsSync(file)) continue;
       const src = readFileSync(file, 'utf-8');
-      for (const m of src.matchAll(/from\s+['"]([^'"]+)['"]/g)) {
-        const spec = m[1];
+      const specs: string[] = [];
+      for (const m of src.matchAll(/from\s+['"]([^'"]+)['"]/g)) specs.push(m[1]);
+      for (const m of src.matchAll(/import\s+['"]([^'"]+)['"]/g)) specs.push(m[1]); // bare side-effect imports
+      for (const spec of new Set(specs)) {
         if (!spec.startsWith('.') && !spec.startsWith('/')) continue; // node built-ins / packages
-        const resolved = resolve(resolve(file, '..'), spec.replace(/\.js$/, ''));
-        if (FORBIDDEN.test(resolved)) reached.push(resolved);
-        queue.push(resolved);
+        const actual = resolveActual(file, spec);
+        if (!actual) continue; // genuinely unresolvable
+        if (FORBIDDEN.test(actual)) reached.push(actual);
+        queue.push(actual);
       }
     }
 
+    expect(visited.size).toBeGreaterThan(1); // the walk really is transitive
     expect(reached).toHaveLength(0); // no transitive path reaches llm-service
   });
 });
