@@ -8,13 +8,16 @@
 // Part of the no-publish branch feat/cognitive-control-local.
 import { z } from 'zod';
 import { zodToJsonSchema } from 'zod-to-json-schema';
+import { randomUUID } from 'node:crypto';
 import type { TextContent } from '@modelcontextprotocol/sdk/types.js';
 import type { CallerIdentity } from '../../utils/caller-identity.js';
 import { get_database } from '../../database/connection.js';
 import {
   cognitiveControlMode,
+  schedulerMode,
   getMissionCognitionServices,
 } from './index.js';
+import { SchedulerService } from './scheduler-service.js';
 import type { AuthorityClass, CognitiveBatonDraft, StateDeltaDraft } from '../../types/cognitive-control.js';
 
 const AuthorityClassSchema = z.enum(['A', 'B', 'C']);
@@ -108,6 +111,17 @@ const checkpointInput = z.object({ mission_id: z.string() });
 const resumeInput = z.object({ mission_id: z.string() });
 const listDeltasInput = z.object({ mission_id: z.string(), limit: z.number().int().min(1).max(200).default(50) });
 
+// Phase 4 (shadow scheduler) tool inputs — registered only when
+// COGNITIVE_SCHEDULER_MODE != off AND COGNITIVE_CONTROL_ENABLED != off.
+const createWorkItemInput = z.object({
+  mission_id: z.string(),
+  description: z.string().min(1),
+  mode: z.enum(['execute', 'explore', 'challenge', 'synthesize', 'verify', 'monitor']).default('execute'),
+  authority_class: AuthorityClassSchema.default('B'),
+});
+const queueInput = z.object({ mission_id: z.string().optional() });
+const explainInput = z.object({ mission_id: z.string() });
+
 export const COGNITIVE_TOOL_DEFS: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }> = [
   {
     name: 'create_mission_v2',
@@ -153,6 +167,21 @@ export const COGNITIVE_TOOL_DEFS: Array<{ name: string; description: string; inp
     name: 'resume_mission',
     description: 'Resume a mission after context loss: current state, version, deltas since checkpoint, and next recommended cognition — no chat replay needed.',
     inputSchema: zodToSchema(resumeInput),
+  },
+  {
+    name: 'create_cognitive_work_item',
+    description: 'Add bounded cognition to the shadow scheduler queue for a mission (Phase 4). Requires COGNITIVE_SCHEDULER_MODE != off. Changes no real allocation.',
+    inputSchema: zodToSchema(createWorkItemInput),
+  },
+  {
+    name: 'get_cognitive_queue',
+    description: 'Inspect the shadow work queue: prioritised cognitive work items and their feature vectors, for a mission or globally. Changes no real allocation.',
+    inputSchema: zodToSchema(queueInput),
+  },
+  {
+    name: 'explain_scheduler_decision',
+    description: 'Return the latest shadow scheduler decision: ranked candidates with per-feature score contributions, exclusions with reasons, and the rationale — why THIS next, and what would change its mind.',
+    inputSchema: zodToSchema(explainInput),
   },
 ];
 
@@ -357,6 +386,87 @@ export async function handleCognitiveTool(
     default:
       return text(`❌ Unknown cognitive tool: ${name}`);
   }
+}
+
+// ── Phase 4: shadow scheduler tool handlers ──────────────────────────────
+
+async function handleSchedulerTool(name: string, args: unknown, caller: CallerIdentity): Promise<TextContent[]> {
+  if (cognitiveControlMode() === 'off') return text('❌ Cognitive control plane disabled (COGNITIVE_CONTROL_ENABLED=off).');
+  if (schedulerMode() === 'off') return text('❌ Cognitive scheduler disabled (COGNITIVE_SCHEDULER_MODE=off).');
+  const db = get_database();
+  if (!db) return text('⚠️ MongoDB disconnected.');
+  const scheduler = new SchedulerService(db);
+
+  const canView = async (missionId: string) => {
+    if (caller.trusted) return true;
+    const state = await db.collection('mission_states').findOne({ mission_id: missionId }, { projection: { owner_id: 1, shared_id: 1 } });
+    if (!state) return false;
+    const s = state as any;
+    return s.owner_id === caller.user_id || Boolean(s.shared_id);
+  };
+
+  switch (name) {
+    case 'create_cognitive_work_item': {
+      const input = createWorkItemInput.parse(args);
+      if (!(await canView(input.mission_id))) return text(`❌ Not authorized for mission ${input.mission_id}.`);
+      const { COST_BASIS, estimateCognitiveCost } = await import('./cost-model.js');
+      const now = new Date().toISOString();
+      const item = {
+        schema_version: '1.0',
+        work_item_id: randomUUID(),
+        mission_id: input.mission_id,
+        description: input.description,
+        mode: input.mode,
+        status: 'queued' as const,
+        authority_class: input.authority_class,
+        trigger: 'manual' as const,
+        features: {
+          mission_impact: 1,
+          uncertainty: 0,
+          information_value: 1,
+          dependency_centrality: 0,
+          urgency: 1,
+          cognitive_cost: estimateCognitiveCost(input.mode),
+          cost_basis: COST_BASIS,
+        },
+        created_at: now,
+        updated_at: now,
+      };
+      await db.collection('cognitive_work_items').insertOne(item);
+      return text(`✅ Work item queued \`${item.work_item_id}\` for ${input.mission_id} (${input.mode}, manual trigger). Shadow only — no real allocation changed.`);
+    }
+    case 'get_cognitive_queue': {
+      const input = queueInput.parse(args);
+      if (input.mission_id && !(await canView(input.mission_id))) return text(`❌ Not authorized for mission ${input.mission_id}.`);
+      const queue = await scheduler.listQueue(input.mission_id);
+      if (queue.length === 0) return text('Queue empty — no shadow work items.');
+      return text(queue.map(w => `- [${w.status}/${w.trigger}] ${w.work_item_id} ${w.mode}: ${w.description.slice(0, 120)} · cost=${w.features.cognitive_cost} (${w.features.cost_basis})`).join('\n'));
+    }
+    case 'explain_scheduler_decision': {
+      const input = explainInput.parse(args);
+      if (!(await canView(input.mission_id))) return text(`❌ Not authorized for mission ${input.mission_id}.`);
+      // Run a shadow pass so the explanation reflects current state, then explain.
+      await scheduler.runShadowPass(input.mission_id);
+      return text(await scheduler.explainLatest(input.mission_id));
+    }
+    default:
+      return text(`❌ Unknown scheduler tool: ${name}`);
+  }
+}
+
+/**
+ * Dispatch gate for the scheduler tools (criterion 13): with either flag off,
+ * the tools are indistinguishable from not existing — plain Unknown tool.
+ */
+export async function dispatchSchedulerTool(
+  name: string,
+  args: unknown,
+  caller: CallerIdentity,
+): Promise<TextContent[]> {
+  if (cognitiveControlMode() === 'off' || schedulerMode() === 'off') {
+    throw new Error(`Unknown tool: ${name}`);
+  }
+  return handleSchedulerTool(name, args, caller);
 }
 
 /**

@@ -189,3 +189,55 @@ export interface MissionEvent {
   summary: string;
   created_at: string;
 }
+
+// ── Phase 4: cognitive scheduler (shadow mode) ─────────────────────
+
+export type WorkItemStatus = 'queued' | 'allocated' | 'in_progress' | 'blocked' | 'completed' | 'cancelled';
+
+export interface CognitiveWorkItem {
+  schema_version: string;
+  work_item_id: string;
+  mission_id: string;
+  description: string;
+  mode: BatonMode;
+  status: WorkItemStatus;
+  authority_class: AuthorityClass;
+  trigger: 'open_objective' | 'invalidated_decision' | 'active_uncertainty' | 'stale_checkpoint' | 'blocked_dependency' | 'manual';
+  // Priority feature vector (criterion 3).
+  features: {
+    mission_impact: number;
+    uncertainty: number;
+    information_value: number;
+    dependency_centrality: number;
+    urgency: number;
+    cognitive_cost: number;
+    cost_basis: string; // §2: which basis produced cognitive_cost (proxy | measured)
+  };
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SchedulerCandidate {
+  work_item_id: string;
+  agent_id: string;
+  priority: number;
+  suitability: number;
+  combined: number;
+  feature_contributions: Array<{ feature: string; value: number; weight: number }>;
+  exclusion_reason?: string;
+}
+
+export interface SchedulerDecision {
+  schema_version: string;
+  decision_id: string;
+  mission_id: string;
+  scheduler_mode: string;
+  created_at: string;
+  cost_basis: string;
+  candidates: SchedulerCandidate[];
+  exclusions: Array<{ work_item_id: string; agent_id: string; reason: string }>;
+  rationale: string;
+  existing_allocator_note: string; // criterion 15: what real allocation did (shadow => untouched)
+  recommended: { work_item_id: string; agent_id: string } | null;
+  recommended_was_acted_on: boolean;
+}

@@ -58,8 +58,10 @@ import { SleepConsolidationService } from './services/processing/sleep-consolida
 import { MemoryDecayService } from './services/processing/memory-decay-service.js';
 import { AnomalyDetectionService } from './services/processing/anomaly-detection-service.js';
 import { SalienceService } from './services/processing/salience-service.js';
-import { COGNITIVE_TOOL_DEFS, dispatchCognitiveTool } from './services/mission-cognition/mcp-tools.js';
-import { cognitiveControlMode } from './services/mission-cognition/index.js';
+import { COGNITIVE_TOOL_DEFS, dispatchCognitiveTool, dispatchSchedulerTool } from './services/mission-cognition/mcp-tools.js';
+import { cognitiveControlMode, schedulerMode } from './services/mission-cognition/index.js';
+
+const SCHEDULER_TOOL_NAMES = ['create_cognitive_work_item', 'get_cognitive_queue', 'explain_scheduler_decision'];
 import { MotivationalEngine } from './services/processing/motivational-engine.js';
 import { DecisionActionService } from './services/processing/decision-action-service.js';
 import { SelfModelService } from './services/processing/self-model-service.js';
@@ -1017,8 +1019,10 @@ const tools = [
 
 // ── Long-horizon cognitive control plane (local testing, no-publish branch) ──
 // Registered only when COGNITIVE_CONTROL_ENABLED != off (production default off).
+// The 3 Phase-4 scheduler tools additionally require COGNITIVE_SCHEDULER_MODE != off.
 if (cognitiveControlMode() !== 'off') {
-  tools.push(...(COGNITIVE_TOOL_DEFS as Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>));
+  tools.push(...(COGNITIVE_TOOL_DEFS as Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>)
+    .filter(t => schedulerMode() !== 'off' || !SCHEDULER_TOOL_NAMES.includes(t.name)));
 }
 
 // ── Memory Decay handlers ────────────────────────────────────────
@@ -3712,6 +3716,12 @@ function registerHandlers(server: Server, getIdentity?: () => CallerIdentity) {
           // contract #5: with the flag off these tools must be indistinguishable
           // from not existing — the dispatch itself throws Unknown tool.
           result = await dispatchCognitiveTool(name, args, caller); break;
+        case 'create_cognitive_work_item':
+        case 'get_cognitive_queue':
+        case 'explain_scheduler_decision':
+          // Phase-4 criterion 13: same indistinguishability standard for the
+          // scheduler tools — flag off means plain Unknown tool.
+          result = await dispatchSchedulerTool(name, args, caller); break;
         default: throw new Error(`Unknown tool: ${name}`);
       }
       // ── Cerebellum: procedural pattern observation ──────────

@@ -19,6 +19,18 @@ export function cognitiveControlMode(): CognitiveControlMode {
   return 'off';
 }
 
+/**
+ * Phase 4 implements ONLY `off` and `shadow` (contract §5). Any other value
+ * fails closed to `off` — recommend/allocate_* belong to Phase 6.
+ */
+export type SchedulerMode = 'off' | 'shadow';
+
+export function schedulerMode(): SchedulerMode {
+  const value = (process.env.COGNITIVE_SCHEDULER_MODE ?? 'off').toLowerCase();
+  if (value === 'shadow') return 'shadow';
+  return 'off';
+}
+
 export interface MissionCognitionServices {
   missions: MissionStateService;
   deltas: StateDeltaService;
