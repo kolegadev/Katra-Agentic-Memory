@@ -1,0 +1,16 @@
+# net-watchdog — detects internet loss and engages the net-agent skill loop.
+# Installed to /etc/systemd/system by install.sh (root required).
+
+[Unit]
+Description=net-agent connectivity watchdog
+After=NetworkManager.service
+Wants=NetworkManager.service
+
+[Service]
+Type=oneshot
+Environment=NET_AGENT_DIR=/etc/net-agent
+Environment=NET_AGENT_FAILS=2
+ExecStart=/bin/bash /etc/net-agent/watchdog/net-watchdog.sh
+# exit 2 (still offline) must NOT be treated as a service failure that
+# disables retries — SuccessExitStatus whitelists it so the timer keeps firing.
+SuccessExitStatus=0 2

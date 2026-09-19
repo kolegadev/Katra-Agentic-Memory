@@ -1,0 +1,14 @@
+# net-watchdog (user mode) — same watchdog, runs under systemd --user.
+# Installed to ~/.config/systemd/user by install.sh --user.
+# Privileged fixes work via the NOPASSWD sudoers allowlist (install.sh --grant-user).
+
+[Unit]
+Description=net-agent connectivity watchdog (user)
+After=network-online.target
+
+[Service]
+Type=oneshot
+Environment=NET_AGENT_DIR=%h/.config/net-agent
+Environment=NET_AGENT_FAILS=2
+ExecStart=/bin/bash %h/.config/net-agent/watchdog/net-watchdog.sh
+SuccessExitStatus=0 2

@@ -1,0 +1,14 @@
+# net-watchdog (user mode) — the persistent re-arm: keeps the repair loop
+# running until the connection is solved.
+
+[Unit]
+Description=net-agent watchdog trigger (user, 30s)
+
+[Timer]
+OnBootSec=60
+OnUnitActiveSec=30s
+AccuracySec=5s
+Persistent=true
+
+[Install]
+WantedBy=timers.target

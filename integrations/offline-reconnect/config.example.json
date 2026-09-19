@@ -1,0 +1,27 @@
+{
+  "_comment": "net-agent config. Secrets are provisioned from the Katra vault at install time (install.sh) or via a pre-approved capability token — never committed to git.",
+  "iface": "wlp3s0",
+  "gateway": null,
+  "max_cycles": 8,
+  "mutation_budget": 5,
+  "cycle_sleep_s": 20,
+  "model": "qwen2.5-coder:7b",
+  "fallback_model": "llama3.1:8b",
+  "routers": [
+    {
+      "ssid": "REPLACE-home-ssid-1",
+      "psk": "REPLACE-wifi-psk-1",
+      "nm_profile": "",
+      "admin_url": "http://192.168.1.1/",
+      "admin_user": "admin",
+      "admin_pass": "REPLACE-router-admin-pass"
+    }
+  ],
+  "marauder": {
+    "port": "",
+    "note": "optional ESP32 Marauder USB serial port, e.g. /dev/ttyUSB0"
+  },
+  "katra_url": "http://localhost:9012",
+  "katra_api_key_path": "/etc/net-agent/katra.key",
+  "state_dir": "/var/lib/net-agent"
+}

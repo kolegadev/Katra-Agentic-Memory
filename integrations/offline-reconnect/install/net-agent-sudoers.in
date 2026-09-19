@@ -1,0 +1,23 @@
+# net-agent NOPASSWD allowlist — installed by `install.sh --grant-user <user>`.
+# Grants ONLY the exact commands the offline-reconnect skills call with
+# elevated=True. The skills are static code (the local LLM never constructs
+# commands), so these wildcards cannot be reached with arbitrary input.
+#
+# /usr/bin/true is required by the can_elevate() probe (`sudo -n true`).
+__USER__ ALL=(root) NOPASSWD: /usr/bin/true, \
+    /usr/sbin/rfkill unblock wifi, \
+    /usr/bin/systemctl restart wpa_supplicant, \
+    /usr/bin/systemctl restart NetworkManager, \
+    /usr/bin/nmcli device reapply *, \
+    /usr/bin/nmcli device disconnect *, \
+    /usr/bin/nmcli device set *, \
+    /usr/bin/nmcli connection delete *, \
+    /usr/bin/nmcli connection add *, \
+    /usr/bin/nmcli connection up *, \
+    /usr/bin/resolvectl flush-caches, \
+    /usr/bin/resolvectl dns *, \
+    /usr/sbin/dhclient *, \
+    /usr/sbin/modprobe *, \
+    /usr/local/sbin/net-agent-wifi-reload.sh, \
+    /usr/local/sbin/net-agent-fw-restore.sh, \
+    /usr/local/sbin/net-agent-boot-previous.sh

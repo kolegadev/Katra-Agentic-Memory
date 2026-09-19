@@ -1,0 +1,14 @@
+# net-watchdog.timer — the persistent re-arm: this is what makes the repair
+# loop "continue until the connection is solved".
+
+[Unit]
+Description=net-agent watchdog trigger (30s)
+
+[Timer]
+OnBootSec=60
+OnUnitActiveSec=30s
+AccuracySec=5s
+Persistent=true
+
+[Install]
+WantedBy=timers.target
