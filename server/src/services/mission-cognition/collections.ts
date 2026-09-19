@@ -17,6 +17,7 @@ export const COLLECTIONS = {
   agentCognitiveProfiles: 'agent_cognitive_profiles',
   schedulerDecisions: 'scheduler_decisions',
   missionEvents: 'mission_events',
+  triggerEvaluations: 'trigger_evaluations', // Phase 5: trigger precision + cost telemetry (§5.3)
 } as const;
 
 export const EVENT_TTL_SECONDS = 90 * 24 * 3600; // 90 days
@@ -45,5 +46,7 @@ export async function ensureMissionCognitionIndexes(db: Db): Promise<void> {
     p(COLLECTIONS.schedulerDecisions, { mission_id: 1, created_at: -1 }, { name: 'sched_mission' }),
     p(COLLECTIONS.missionEvents, { mission_id: 1, created_at: -1 }, { name: 'me_mission' }),
     p(COLLECTIONS.missionEvents, { _expires_at: 1 }, { expireAfterSeconds: 0, name: 'me_ttl' }),
+    p(COLLECTIONS.triggerEvaluations, { evaluation_id: 1 }, { unique: true, name: 'te_unique' }),
+    p(COLLECTIONS.triggerEvaluations, { mission_id: 1, trigger: 1, fired_at: -1 }, { name: 'te_mission_trigger' }),
   ]);
 }

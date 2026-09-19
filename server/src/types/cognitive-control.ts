@@ -18,7 +18,9 @@ export type DeltaStatus = 'proposed' | 'accepted' | 'rejected' | 'conflict' | 'd
 export type EntryType =
   | 'claim' | 'evidence' | 'assumption' | 'hypothesis' | 'uncertainty'
   | 'contradiction' | 'decision' | 'experiment' | 'result' | 'unknown';
-export type EntryStatus = 'proposed' | 'accepted' | 'superseded' | 'invalidated' | 'open';
+export type EntryStatus =
+  | 'proposed' | 'active' | 'accepted' | 'challenged' | 'rejected'
+  | 'superseded' | 'invalidated' | 'resolved' | 'deferred' | 'accepted_risk';
 export type BatonMode = 'execute' | 'explore' | 'challenge' | 'synthesize' | 'verify' | 'monitor';
 
 export interface ConfidenceChange {
@@ -240,4 +242,59 @@ export interface SchedulerDecision {
   existing_allocator_note: string; // criterion 15: what real allocation did (shadow => untouched)
   recommended: { work_item_id: string; agent_id: string } | null;
   recommended_was_acted_on: boolean;
+}
+
+// ── Phase 5: uncertainty engine (deterministic triggers, shadow) ─────────
+
+export type TriggerType =
+  | 'repeated_failure_stable_confidence'
+  | 'high_confidence_unsupported'
+  | 'single_hypothesis_high_impact'
+  | 'material_contradictory_evidence'
+  | 'unexpected_experiment_result'
+  | 'plan_unchanged_despite_evidence'
+  | 'critic_disagreement'
+  | 'convergent_agents';
+
+export interface FiredTrigger {
+  trigger: TriggerType;
+  mission_id: string;
+  entry_id?: string;        // the entry/decision/assumption the trigger concerns
+  reason: string;           // human-readable, deterministic
+  consequence_if_false?: string;
+  independence_requirement?: boolean | 'blind_parallel';
+}
+
+export type TriggerOutcome = 'useful_information' | 'mere_variance' | 'unnecessary_cost';
+
+export interface TriggerEvaluationRecord {
+  evaluation_id: string;
+  mission_id: string;
+  trigger: TriggerType;
+  entry_id?: string;
+  fired_at: string;
+  outcome: TriggerOutcome;
+  token_cost: number;       // measured from the usage ledger (never estimated)
+  note?: string;
+}
+
+export interface DependencyTrace {
+  root_entry_id: string;
+  dependents: string[];     // transitive dependents via depends_on
+  depth_bound_applied: number;
+  cycle_detected: boolean;
+}
+
+export interface ExperimentRecord {
+  schema_version: string;
+  entry_id: string;
+  mission_id: string;
+  entry_type: 'experiment';
+  statement: string;
+  status: string;
+  author_id: string;
+  confidence: number;
+  depends_on: string[];     // hypothesis entry ids this experiment separates
+  information_needed?: string[];
+  result?: { outcome: string; supports_entry_id?: string; contradicts_entry_id?: string; created_at: string };
 }
