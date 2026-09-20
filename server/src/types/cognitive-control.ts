@@ -67,7 +67,8 @@ export interface MissionState {
   shared_id?: string;
   success_criteria: SuccessCriterion[];
   stop_conditions?: string[];
-  constraints?: Record<string, string[]>;
+  /** Must match mission-state.schema.json ($defs/constraint). */
+  constraints?: Array<{ id: string; kind: 'time' | 'cost' | 'privacy' | 'safety' | 'legal' | 'technical' | 'authority' | 'other'; description: string }>;
   authority_class: AuthorityClass;
   objectives?: MissionObjective[];
   ledger_refs?: string[];

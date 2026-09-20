@@ -43,7 +43,14 @@ const createMissionV2Input = z.object({
   owner_id: z.string().optional(),
   success_criteria: z.array(z.union([z.string(), criterionSchema])).default([]),
   stop_conditions: z.array(z.string()).optional(),
-  constraints: z.record(z.string(), z.array(z.string())).optional(),
+  // Must match mission-state.schema.json ($defs/constraint): an ARRAY of
+  // {id, kind, description}. This previously declared a record, which the
+  // stored schema could never accept, so the parameter was unusable.
+  constraints: z.array(z.object({
+    id: z.string().min(1),
+    kind: z.enum(['time', 'cost', 'privacy', 'safety', 'legal', 'technical', 'authority', 'other']),
+    description: z.string().min(1).max(2000),
+  })).optional(),
   authority_class: AuthorityClassSchema.optional(),
   objectives: z.array(objectiveSchema).optional(),
   shared_id: z.string().optional(),
