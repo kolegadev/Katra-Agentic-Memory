@@ -12,6 +12,9 @@ REPO="$(cd "$(dirname "$0")/../../.." && pwd)"
 SCRIPT="$REPO/integrations/kolega-code/health/machine_health.py"
 LOG_DIR="$HOME/.katra/inbox"
 LOG_FILE="$LOG_DIR/health-cron.log"
+# On non-thebrick machines the collector must know where Katra lives:
+#   INSTALL_KATRA_HOST=100.101.206.13 ./install-health-cron.sh
+HOST_PREFIX="${INSTALL_KATRA_HOST:+KATRA_HOST=$INSTALL_KATRA_HOST }"
 
 mkdir -p "$LOG_DIR"
 
@@ -20,7 +23,7 @@ crontab -l 2>/dev/null | grep -v "machine_health.py" > /tmp/health-cron.base || 
   cat /tmp/health-cron.base
   cat <<CRON
 # machine health collector — hardened: mkdir -p before the redirect (2026-09-17)
-*/15 * * * * mkdir -p $LOG_DIR && /usr/bin/python3 $SCRIPT >> $LOG_FILE 2>&1
+*/15 * * * * ${HOST_PREFIX}mkdir -p $LOG_DIR && /usr/bin/python3 $SCRIPT >> $LOG_FILE 2>&1
 CRON
 } | crontab -
 
