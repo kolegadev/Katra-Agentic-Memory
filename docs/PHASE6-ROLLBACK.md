@@ -15,7 +15,7 @@ docker compose up -d --force-recreate --wait server
 `COGNITIVE_ACTIVATION_KILL_SWITCH=1` forces `COGNITIVE_SCHEDULER_MODE` to `off`
 regardless of every other flag — verified in unit tests (`cognitive-activation.test.ts`,
 "kill switch forces off regardless of every other flag") and in the running container
-against `/app/build` (Phase 6 deployment acceptance, see below).
+against `/app/build` (Phase 6 deployment acceptance, the §4.18 section below).
 
 **Runtime toggle (no rebuild, no restart):**
 
@@ -68,3 +68,40 @@ allocation decision for a fixed input fixture to the pre-Phase-6 byte baseline
 allocator output is byte-identical to that baseline; the same test exercises
 the Phase-6 influence hook in off state and confirms it returns the allocation
 unchanged, byte for byte.
+
+## Deployment acceptance — contract §4.18 (through the image, not the mount)
+
+Phase 6 was accepted against the image's own code path, not the read-only
+`/repos/katra-server` source mount (the discipline forced by the 2026-09-19
+rebuild incident, where the running container once served a baked pre-branch
+image). Container `katra-server`, rebuilt from
+`feat/cognitive-control-local` @ `217a33a`, flags at deployment default `off`:
+
+```bash
+# Phase-6 modules present in /app/build (Phase-5 baseline was 24):
+$ docker exec katra-server sh -c 'ls /app/build/services/mission-cognition | wc -l'
+27                     # + scheduler-mode.js, activation-service.js, activation-bridge.js
+
+# The additive hook is present in the image's own allocator build:
+$ docker exec katra-server grep -c 'maybeInfluenceAllocation' \
+    /app/build/services/processing/autonomous-executive.js
+2                      # method + call site
+
+# Criterion 10 (kill switch) confirmed inside the running container against
+# /app/build — NOT the mount:
+$ docker exec katra-server node --input-type=module -e "…import scheduler-mode.js…"
+default/off -> off
+shadow -> shadow
+recommend -> recommend
+allocate_internal -> allocate_internal
+allocate_gated (unimplemented) -> off
+unknown value -> off
+kill switch beats allocate_internal -> off
+```
+
+Independently verified by the Phase-6 verifier (2026-09-20): tool surface
+through the real MCP entrypoint **81 tools off → 112 on** with the cognitive
+plane enabled, and **7/7 Phase-6 modules byte-identical** in the image.
+Nothing above `off` is active on the running instance — activation requires
+the evidence gate, per-mission opt-in, and an explicit mode transition, each
+of which is recorded in the activation ledger and reversible per this runbook.
