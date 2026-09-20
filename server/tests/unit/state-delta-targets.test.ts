@@ -361,6 +361,39 @@ describe('state-delta target resolution fails closed', () => {
     expect(s!.objectives!.find(o => o.id === 'o1')!.status).toBe('in_progress');
   });
 
+  it('accepts a RAW-STRING status on a /status path, in parity with SUCCESS_CRITERION_UPDATED', async () => {
+    // Regression: the criterion path accepted the raw string and the objective path
+    // did not, so the two siblings disagreed. A `replace` on a /status path carrying
+    // the raw string is the natural caller form.
+    await fresh();
+    const d = await deltas.submitDelta(
+      targetDelta(1, 'objupd-raw-1', 'OBJECTIVE_UPDATED', '/objectives/o1/status', 'in_progress'),
+      { actorId: 'satori' },
+    );
+    expect(d.status).toBe('accepted');
+    const s = await missions.getMissionState('test_mission_targets');
+    expect(s!.version).toBe(2);
+    expect(s!.objectives!.find(o => o.id === 'o1')!.status).toBe('in_progress');
+  });
+
+  it('the two /status siblings accept the SAME forms — parity check', async () => {
+    await fresh();
+    // same raw-string shape, one on each type; both must be accepted
+    const a = await deltas.submitDelta(
+      targetDelta(1, 'parity-obj-1', 'OBJECTIVE_UPDATED', '/objectives/o2/status', 'ready'),
+      { actorId: 'satori' },
+    );
+    const b = await deltas.submitDelta(
+      targetDelta(2, 'parity-crit-1', 'SUCCESS_CRITERION_UPDATED', '/success_criteria/c1/status', 'met'),
+      { actorId: 'satori' },
+    );
+    expect(a.status).toBe('accepted');
+    expect(b.status).toBe('accepted');
+    const s = await missions.getMissionState('test_mission_targets');
+    expect(s!.objectives!.find(o => o.id === 'o2')!.status).toBe('ready');
+    expect(s!.success_criteria.find(c => c.id === 'c1')!.status).toBe('met');
+  });
+
   it('still accepts a real OBJECTIVE_UPDATED value', async () => {
     await fresh();
     const d = await deltas.submitDelta(

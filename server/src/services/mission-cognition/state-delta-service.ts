@@ -65,8 +65,25 @@ export function applyDeltaToState(state: MissionState, delta: StateDelta, now?: 
       const id = objectiveId();
       const obj = next.objectives?.find(o => o.id === id);
       if (obj) {
-        obj.description = op0?.value?.description ?? op0?.description ?? obj.description;
-        obj.status = delta.delta_type === 'OBJECTIVE_COMPLETED' ? 'completed' : (op0?.value?.status ?? obj.status);
+        // Both value forms, matching the guard and the criterion path. A `replace`
+        // on a /status path carries the RAW STRING; reading only value.status made
+        // this branch accept-and-ignore, which is the same defect as finding #2.
+        const rawValue = op0?.value;
+        const asObject = (rawValue && typeof rawValue === 'object' ? rawValue : undefined) as
+          | { description?: string; status?: string }
+          | undefined;
+        if (asObject?.description !== undefined) obj.description = asObject.description;
+        else if (typeof op0?.description === 'string') obj.description = op0.description;
+
+        // assertTargetsResolve already validated the value against the objective
+        // status enum, so narrowing here is safe; the assertion keeps the WRITE
+        // path honest without widening the stored type.
+        const nextStatus = (typeof rawValue === 'string' ? rawValue : asObject?.status) as
+          | typeof obj.status
+          | undefined;
+        obj.status = delta.delta_type === 'OBJECTIVE_COMPLETED'
+          ? 'completed'
+          : (nextStatus ?? obj.status);
       }
       break;
     }
@@ -172,6 +189,11 @@ export function assertTargetsResolve(state: MissionState, draft: StateDeltaDraft
     // effect, so only OBJECTIVE_UPDATED needs an applicable value.
     if (draft.delta_type === 'OBJECTIVE_UPDATED') {
       const value = (draft.operations[0] as { value?: unknown } | undefined)?.value;
+      // A `replace` on a /status path carries the status as the RAW STRING - that is
+      // the natural form, and the lesson that produced the criterion-path fix. The
+      // object form is also accepted. Both sibling types must agree; they did not,
+      // which is how this was found (the plane refused a legitimate write).
+      const isStatusString = typeof value === 'string' && OBJECTIVE_STATUSES.includes(value);
       const v = (value && typeof value === 'object' ? value : {}) as {
         description?: unknown;
         status?: unknown;
@@ -181,10 +203,11 @@ export function assertTargetsResolve(state: MissionState, draft: StateDeltaDraft
       if (v.description !== undefined && !hasDescription) {
         throw new Error('OBJECTIVE_UPDATED description must be a non-empty string when present');
       }
-      if (!hasDescription && !hasStatus) {
+      if (!isStatusString && !hasDescription && !hasStatus) {
         throw new Error(
-          'OBJECTIVE_UPDATED requires operations[0].value with a non-empty description or a valid status ' +
-            `(${OBJECTIVE_STATUSES.join('|')}); a valueless update changes no state`,
+          'OBJECTIVE_UPDATED requires operations[0].value to be a status string, or an object with a ' +
+            `non-empty description or a valid status (${OBJECTIVE_STATUSES.join('|')}); ` +
+            'a valueless update changes no state',
         );
       }
     }
