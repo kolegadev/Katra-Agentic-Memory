@@ -154,6 +154,42 @@ describe('state-delta target resolution fails closed', () => {
     expect(s!.success_criteria.find(c => c.id === 'c2')!.status).toBe('unmet');
   });
 
+  it('accepts a RAW-STRING value on a /status path \u2014 the form a caller naturally sends', async () => {
+    // Regression: the applier originally read op0.value.status, which is
+    // undefined when value is the raw string 'met'. The delta was ACCEPTED,
+    // the version advanced, and the criterion did not change: the same
+    // accepted-but-ineffective class this file exists to catch. Every other
+    // test here passed while this was broken, because they all used the
+    // {status: ...} object form and real callers use the string form.
+    await fresh();
+    const d = await deltas.submitDelta(
+      targetDelta(1, 'crit-raw-1', 'SUCCESS_CRITERION_UPDATED', '/success_criteria/c1/status', 'met'),
+      { actorId: 'satori' },
+    );
+    expect(d.status).toBe('accepted');
+    const s = await missions.getMissionState('test_mission_targets');
+    expect(s!.success_criteria.find(c => c.id === 'c1')!.status).toBe('met');
+    expect(s!.success_criteria.find(c => c.id === 'c2')!.status).toBe('unmet');
+  });
+
+  it('accepts the {status} object form too, and does not blank a status when the value is absent', async () => {
+    await fresh();
+    await deltas.submitDelta(
+      targetDelta(1, 'crit-obj-1', 'SUCCESS_CRITERION_UPDATED', '/success_criteria/c1/status', { status: 'partial' }),
+      { actorId: 'satori' },
+    );
+    let s = await missions.getMissionState('test_mission_targets');
+    expect(s!.success_criteria.find(c => c.id === 'c1')!.status).toBe('partial');
+
+    // A value-less update must NOT overwrite the real status with undefined.
+    await deltas.submitDelta(
+      targetDelta(2, 'crit-noop-1', 'SUCCESS_CRITERION_UPDATED', '/success_criteria/c1/status'),
+      { actorId: 'satori' },
+    );
+    s = await missions.getMissionState('test_mission_targets');
+    expect(s!.success_criteria.find(c => c.id === 'c1')!.status).toBe('partial');
+  });
+
   it('rejects a SUCCESS_CRITERION_UPDATED path naming an unknown criterion', async () => {
     await fresh();
     await expect(

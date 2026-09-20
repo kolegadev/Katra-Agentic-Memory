@@ -72,8 +72,16 @@ export function applyDeltaToState(state: MissionState, delta: StateDelta, now?: 
       const id = criterionId();
       const criterion = next.success_criteria?.find(c => c.id === id);
       if (criterion) {
-        criterion.status = op0?.value?.status ?? op0?.status ?? criterion.status;
-        if (Array.isArray(op0?.value?.evidence_refs)) criterion.evidence_refs = op0.value.evidence_refs;
+        // A `replace` on a /status path carries the status as the raw value;
+        // an update delta may instead carry an object. Accept both, and never
+        // write undefined over a real status (that would be an accepted write
+        // that silently changes nothing — the failure this assertion guards).
+        const raw = op0?.value;
+        const nextStatus =
+          typeof raw === 'string' ? raw : (raw?.status ?? op0?.status ?? undefined);
+        if (nextStatus !== undefined) criterion.status = nextStatus;
+        const refs = typeof raw === 'object' && raw !== null ? raw.evidence_refs : undefined;
+        if (Array.isArray(refs)) criterion.evidence_refs = refs;
       }
       break;
     }
