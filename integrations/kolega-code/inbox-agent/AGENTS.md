@@ -88,6 +88,11 @@ unchanged.
   `~/.katra/inbox/needs-john.md`.
 - No secrets or tokens in replies or commits. Never commit credentials.
 - Max one reply per inbound message. Never reply to your own replies.
+- MULTI-PART REQUESTS (added 2026-09-20 after `multipart-request-closed-on-partial-reply`):
+  when a message contains N requests, reply item-by-item and say plainly
+  which items are DONE and which are NOT done. A partial reply that reads as
+  complete makes the unactioned items invisible — worse than no reply,
+  because the thread closes on `in_reply_to` and nothing resurfaces.
 - If a message is unintelligible or mistargeted, reply once asking the sender
   to resend with more detail — and stop there.
 - `in_reply_to` values must be copied verbatim from the goal prompt.
