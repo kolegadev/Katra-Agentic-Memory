@@ -278,7 +278,12 @@ describe('seeded failure modes — doc 04, controlled missions only (criteria 5-
       await services.deltas.submitDelta({
         schema_version: '1.0', idempotency_key: 'p8ctl_d1_key', mission_id: 'p8ctl_d', base_mission_version: 1,
         author_id: 'operator', delta_type: 'CLAIM_ADDED',
-        operations: [{ op: 'add', path: '/ledger_refs/-', value: 'entry-x' }], rationale: 'advance',
+        operations: [{ op: 'add', path: '/ledger_refs/-', value: null }], rationale: 'advance',
+        ledger_entries: [{
+          schema_version: '1.0', mission_id: 'p8ctl_d', entry_type: 'claim',
+          statement: 'advance the mission version so the baton goes stale',
+          status: 'accepted', author_id: 'operator', confidence: 0.5,
+        }],
         confidence: 0.5,
       }, { actorId: 'operator' });
       const fetched = await services.batons.getBaton(baton.baton_id, 'agent-a');

@@ -45,10 +45,18 @@ export function applyDeltaToState(state: MissionState, delta: StateDelta, now?: 
       : undefined;
   switch (delta.delta_type) {
     case 'OBJECTIVE_CREATED': {
-      const objective = op0?.objective;
+      // The operation contract allows only op/path/value/from, so the objective
+      // arrives in `value` (`objective` is kept as a fallback for rows written
+      // directly to the collection). Reading `op0.objective` alone made this
+      // branch a guaranteed no-op: every OBJECTIVE_CREATED was accepted, advanced
+      // the version, and created nothing.
+      const rawObjective = op0?.value ?? op0?.objective;
+      const objective = (rawObjective && typeof rawObjective === 'object')
+        ? rawObjective as Record<string, any>
+        : undefined;
       if (objective?.id && objective?.description) {
         next.objectives ??= [];
-        if (!next.objectives.some(o => o.id === objective.id)) next.objectives.push(objective);
+        if (!next.objectives.some(o => o.id === objective.id)) next.objectives.push(objective as never);
       }
       break;
     }
@@ -98,15 +106,35 @@ export function applyDeltaToState(state: MissionState, delta: StateDelta, now?: 
 }
 
 /**
- * Fail closed on targeted deltas whose path names a target that does not exist.
+ * Fail closed on deltas that could not take effect.
  *
- * `applyDeltaToState` is a pure merge and every targeted branch is written as
- * `if (obj)` / `if (criterion)` — an unmatched id is therefore a *silent no-op*.
- * Without this check the caller is told `accepted`, the version still advances,
- * and nothing actually changed: an accepted-but-ineffective write, which is the
- * exact failure mode the outbox + monotonic-version protocol exists to prevent.
- * Rejected before any write, consistent with Rule 1.
+ * `applyDeltaToState` is a pure merge and every branch is written defensively
+ * (`if (obj)`, `if (criterion)`, `if (op0?.status)`) — so a delta that names a
+ * target that does not exist, or omits the value its branch needs, is a *silent
+ * no-op*. The caller is told `accepted`, the version still advances, and nothing
+ * actually changed. That is the exact failure mode the outbox + monotonic-version
+ * protocol exists to prevent, and it has been observed three times in practice:
+ *
+ *   1. OBJECTIVE_COMPLETED with an array-index path (/objectives/0/status)
+ *   2. SUCCESS_CRITERION_UPDATED carrying an object where the branch read a string
+ *   3. ledger-reference deltas (the `default:` branch) submitted with content in
+ *      operations[].value and NO ledger_entries — the content was discarded while
+ *      the version advanced; the research mission's findings landed only in the
+ *      delta record and the epistemic ledger stayed empty.
+ *
+ * This function covers every branch of the applier. Rejected before any write,
+ * consistent with Rule 1.
  */
+
+/** Delta types whose only state effect is appending ledger_refs (applier default). */
+const LEDGER_REFERENCE: ReadonlySet<DeltaType> = new Set<DeltaType>([
+  'CLAIM_ADDED', 'EVIDENCE_ADDED', 'ASSUMPTION_CHALLENGED',
+  'UNCERTAINTY_OPENED', 'UNCERTAINTY_UPDATED', 'UNCERTAINTY_RESOLVED',
+  'HYPOTHESIS_ADDED', 'HYPOTHESIS_REJECTED',
+  'EXPERIMENT_PROPOSED', 'EXPERIMENT_RESULT',
+  'DECISION_PROPOSED', 'DECISION_ACCEPTED', 'DECISION_INVALIDATED',
+  'CAPABILITY_REQUESTED', 'PLAN_CHANGE_PROPOSED',
+]);
 const OBJECTIVE_TARGETED: ReadonlySet<DeltaType> = new Set<DeltaType>([
   'OBJECTIVE_UPDATED', 'OBJECTIVE_COMPLETED', 'BLOCKED',
 ]);
@@ -144,6 +172,53 @@ export function assertTargetsResolve(state: MissionState, draft: StateDeltaDraft
           (state.success_criteria ?? []).map(c => c.id).join(', ') || '(none)'
         }`,
       );
+    }
+    return;
+  }
+
+  // OBJECTIVE_CREATED: the applier only pushes when the op carries a complete
+  // objective (`if (objective?.id && objective?.description)`), so a partial op
+  // creates nothing while still being recorded accepted.
+  if (draft.delta_type === 'OBJECTIVE_CREATED') {
+    const op = draft.operations[0] as { value?: unknown; objective?: unknown } | undefined;
+    const raw = op?.value ?? op?.objective;
+    const objective = (raw && typeof raw === 'object' ? raw : undefined) as
+      | { id?: unknown; description?: unknown }
+      | undefined;
+    if (!objective || typeof objective.id !== 'string' || !objective.id || !objective.description) {
+      throw new Error(
+        'OBJECTIVE_CREATED requires operations[0].value with a string id and a non-empty description',
+      );
+    }
+    return;
+  }
+
+  // MISSION_STATUS_CHANGED: `if (op0?.status) next.status = op0.status` — no
+  // status means no effect.
+  if (draft.delta_type === 'MISSION_STATUS_CHANGED') {
+    const status = (draft.operations[0] as { status?: unknown } | undefined)?.status;
+    if (typeof status !== 'string' || !status) {
+      throw new Error('MISSION_STATUS_CHANGED requires operations[0].status (a non-empty string)');
+    }
+    return;
+  }
+
+  // Ledger-reference deltas: state holds only the refs, so without at least one
+  // complete ledger entry the delta changes nothing at all. This is the branch
+  // that quietly discarded the research findings.
+  if (LEDGER_REFERENCE.has(draft.delta_type)) {
+    const entries = draft.ledger_entries ?? [];
+    if (entries.length === 0) {
+      throw new Error(
+        `${draft.delta_type} carries no ledger_entries, so it would change no state; ` +
+          'the statement belongs in ledger_entries, not in operations[].value',
+      );
+    }
+    const incomplete = entries.find(
+      e => !(e as { statement?: unknown })?.statement || !(e as { entry_type?: unknown })?.entry_type,
+    );
+    if (incomplete) {
+      throw new Error(`${draft.delta_type} has a ledger entry missing statement or entry_type`);
     }
   }
 }

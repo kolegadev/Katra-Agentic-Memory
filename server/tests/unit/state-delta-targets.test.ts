@@ -203,7 +203,11 @@ describe('state-delta target resolution fails closed', () => {
     expect(s!.version).toBe(1);
   });
 
-  it('leaves non-targeted deltas unaffected (no false rejections)', async () => {
+  it('leaves well-formed non-targeted deltas unaffected (no false rejections)', async () => {
+    // NB: this test previously submitted EVIDENCE_ADDED with the statement in
+    // operations[].value and NO ledger_entries, and asserted it was accepted —
+    // i.e. it pinned the very no-op that later ate the research findings. It now
+    // submits a complete delta.
     await fresh();
     const d = await deltas.submitDelta(
       {
@@ -213,14 +217,111 @@ describe('state-delta target resolution fails closed', () => {
         base_mission_version: 1,
         author_id: 'satori',
         delta_type: 'EVIDENCE_ADDED',
-        operations: [{ op: 'add', path: '/ledger_refs/-', value: { entry_type: 'evidence', statement: 'x' } }],
+        operations: [{ op: 'add', path: '/ledger_refs/-', value: null }],
+        ledger_entries: [{
+          schema_version: '1.0', mission_id: 'test_mission_targets', entry_type: 'evidence',
+          statement: 'a complete finding', status: 'accepted', author_id: 'satori', confidence: 0.7,
+        }],
         rationale: 'unit test',
         confidence: 0.5,
-      },
+      } as StateDeltaDraft,
       { actorId: 'satori' },
     );
     expect(d.status).toBe('accepted');
-    expect((await missions.getMissionState('test_mission_targets'))!.version).toBe(2);
+    const s = await missions.getMissionState('test_mission_targets');
+    expect(s!.version).toBe(2);
+    expect((s!.ledger_refs ?? []).length).toBe(1);
+  });
+
+  it('OBJECTIVE_CREATED in operations[].value ACTUALLY creates the objective', async () => {
+    // Regression: the applier read op0.objective, which the operation schema
+    // (additionalProperties:false, only op/path/value/from) can never produce,
+    // so every OBJECTIVE_CREATED was a silent no-op.
+    await fresh();
+    const d = await deltas.submitDelta(
+      {
+        ...targetDelta(1, 'obj-create-1', 'OBJECTIVE_CREATED', '/objectives/o3', {
+          id: 'o3', description: 'third objective', status: 'pending', owner_id: 'satori',
+        }),
+      } as StateDeltaDraft,
+      { actorId: 'satori' },
+    );
+    expect(d.status).toBe('accepted');
+    const s = await missions.getMissionState('test_mission_targets');
+    expect(s!.version).toBe(2);
+    expect(s!.objectives!.map(o => o.id)).toEqual(['o1', 'o2', 'o3']);
+  });
+
+  it('rejects MISSION_STATUS_CHANGED with no status — the applier would no-op', async () => {
+    await fresh();
+    await expect(
+      deltas.submitDelta(
+        targetDelta(1, 'status-bad-1', 'MISSION_STATUS_CHANGED', '/status'),
+        { actorId: 'satori' },
+      ),
+    ).rejects.toThrow(/requires operations\[0\]\.status/);
+    expect((await missions.getMissionState('test_mission_targets'))!.version).toBe(1);
+  });
+
+  it('rejects OBJECTIVE_CREATED with an incomplete objective — the applier would no-op', async () => {
+    await fresh();
+    await expect(
+      deltas.submitDelta(
+        {
+          ...targetDelta(1, 'obj-bad-1', 'OBJECTIVE_CREATED', '/objectives/o3'),
+          // id present but no description: the applier guard would skip it, so the
+          // delta must be refused rather than accepted as a no-op.
+          operations: [{ op: 'add', path: '/objectives/o3', value: { id: 'o3' } }],
+        } as StateDeltaDraft,
+        { actorId: 'satori' },
+      ),
+    ).rejects.toThrow(/requires operations\[0\]\.value with a string id/);
+    expect((await missions.getMissionState('test_mission_targets'))!.objectives!.length).toBe(2);
+  });
+
+  it('rejects a ledger-reference delta with NO ledger_entries — content would be discarded', async () => {
+    // The failure that silently ate the research mission findings: the statement
+    // sat in operations[].value, the ledger stayed empty, and the version advanced.
+    await fresh();
+    await expect(
+      deltas.submitDelta(
+        {
+          ...targetDelta(1, 'noledger-1', 'EVIDENCE_ADDED', '/ledger_refs/-', {
+            entry_type: 'evidence',
+            statement: 'content that would have been thrown away',
+          }),
+        },
+        { actorId: 'satori' },
+      ),
+    ).rejects.toThrow(/carries no ledger_entries/);
+    const s = await missions.getMissionState('test_mission_targets');
+    expect(s!.version).toBe(1);
+    expect(s!.ledger_refs ?? []).toEqual([]);
+  });
+
+  it('accepts a ledger-reference delta WITH a ledger entry, and the ref actually lands', async () => {
+    await fresh();
+    const d = await deltas.submitDelta(
+      {
+        ...targetDelta(1, 'ledger-ok-1', 'EVIDENCE_ADDED', '/ledger_refs/-'),
+        ledger_entries: [
+          {
+            schema_version: '1.0',
+            mission_id: 'test_mission_targets',
+            entry_type: 'evidence',
+            statement: 'a real finding',
+            status: 'accepted',
+            author_id: 'satori',
+            confidence: 0.9,
+          },
+        ],
+      } as StateDeltaDraft,
+      { actorId: 'satori' },
+    );
+    expect(d.status).toBe('accepted');
+    const s = await missions.getMissionState('test_mission_targets');
+    expect(s!.version).toBe(2);
+    expect((s!.ledger_refs ?? []).length).toBe(1);
   });
 
   it('assertTargetsResolve is a pure predicate — it throws without touching state', () => {
