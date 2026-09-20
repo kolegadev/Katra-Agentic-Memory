@@ -418,7 +418,7 @@ describe('custodian controls (criterion 14)', () => {
       delta_id: 'delta1',
       idempotency_key: 'idem1',
       mission_id: 'm_flap',
-      base_mission_version: 3,
+      base_mission_version: 2, // already applied: replay skips (snapshot state is v3)
       author_id: 'operator',
       delta_type: 'CLAIM_ADDED',
       operations: [{ op: 'add', path: '/ledger_refs/-', value: 'claim-1' }],
