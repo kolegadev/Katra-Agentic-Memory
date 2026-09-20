@@ -39,6 +39,10 @@ export function applyDeltaToState(state: MissionState, delta: StateDelta, now?: 
     (typeof op0?.path === 'string' && op0.path.startsWith('/objectives/'))
       ? (op0.path.split('/')[2] ?? undefined)
       : undefined;
+  const criterionId = () =>
+    (typeof op0?.path === 'string' && op0.path.startsWith('/success_criteria/'))
+      ? (op0.path.split('/')[2] ?? undefined)
+      : undefined;
   switch (delta.delta_type) {
     case 'OBJECTIVE_CREATED': {
       const objective = op0?.objective;
@@ -64,6 +68,15 @@ export function applyDeltaToState(state: MissionState, delta: StateDelta, now?: 
       if (obj) obj.status = 'blocked';
       break;
     }
+    case 'SUCCESS_CRITERION_UPDATED': {
+      const id = criterionId();
+      const criterion = next.success_criteria?.find(c => c.id === id);
+      if (criterion) {
+        criterion.status = op0?.value?.status ?? op0?.status ?? criterion.status;
+        if (Array.isArray(op0?.value?.evidence_refs)) criterion.evidence_refs = op0.value.evidence_refs;
+      }
+      break;
+    }
     case 'MISSION_STATUS_CHANGED': {
       if (op0?.status) next.status = op0.status;
       break;
@@ -74,6 +87,57 @@ export function applyDeltaToState(state: MissionState, delta: StateDelta, now?: 
   }
   next.updated_at = effectiveNow;
   return next;
+}
+
+/**
+ * Fail closed on targeted deltas whose path names a target that does not exist.
+ *
+ * `applyDeltaToState` is a pure merge and every targeted branch is written as
+ * `if (obj)` / `if (criterion)` — an unmatched id is therefore a *silent no-op*.
+ * Without this check the caller is told `accepted`, the version still advances,
+ * and nothing actually changed: an accepted-but-ineffective write, which is the
+ * exact failure mode the outbox + monotonic-version protocol exists to prevent.
+ * Rejected before any write, consistent with Rule 1.
+ */
+const OBJECTIVE_TARGETED: ReadonlySet<DeltaType> = new Set<DeltaType>([
+  'OBJECTIVE_UPDATED', 'OBJECTIVE_COMPLETED', 'BLOCKED',
+]);
+
+export function assertTargetsResolve(state: MissionState, draft: StateDeltaDraft): void {
+  const raw = (draft.operations[0] as { path?: unknown } | undefined)?.path;
+  const path: string | undefined = typeof raw === 'string' ? raw : undefined;
+  const segment = path?.startsWith('/') ? path.split('/')[2] : undefined;
+
+  if (OBJECTIVE_TARGETED.has(draft.delta_type)) {
+    if (!segment || !path?.startsWith('/objectives/')) {
+      throw new Error(
+        `${draft.delta_type} requires an objective path /objectives/<objective_id>/status (got ${JSON.stringify(path)})`,
+      );
+    }
+    if (!(state.objectives ?? []).some(o => o.id === segment)) {
+      throw new Error(
+        `${draft.delta_type} targets unknown objective id "${segment}"; known: ${
+          (state.objectives ?? []).map(o => o.id).join(', ') || '(none)'
+        }`,
+      );
+    }
+    return;
+  }
+
+  if (draft.delta_type === 'SUCCESS_CRITERION_UPDATED') {
+    if (!segment || !path?.startsWith('/success_criteria/')) {
+      throw new Error(
+        `${draft.delta_type} requires a criterion path /success_criteria/<criterion_id> (got ${JSON.stringify(path)})`,
+      );
+    }
+    if (!(state.success_criteria ?? []).some(c => c.id === segment)) {
+      throw new Error(
+        `${draft.delta_type} targets unknown success criterion id "${segment}"; known: ${
+          (state.success_criteria ?? []).map(c => c.id).join(', ') || '(none)'
+        }`,
+      );
+    }
+  }
 }
 
 export interface SubmitOptions {
@@ -131,6 +195,9 @@ export class StateDeltaService {
 
     const current = await this.missions.getMissionState(draft.mission_id);
     if (!current) throw new Error(`mission not found: ${draft.mission_id}`);
+    // Rule 1 (semantic): a targeted delta that names a non-existent target would
+    // otherwise be accepted as a no-op. Reject while still making no writes.
+    assertTargetsResolve(current, draft);
 
     // Rule 4: compare base version with current mission version.
     const competing = await this.deltas().findOne({
