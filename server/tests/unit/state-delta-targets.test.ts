@@ -181,13 +181,18 @@ describe('state-delta target resolution fails closed', () => {
     let s = await missions.getMissionState('test_mission_targets');
     expect(s!.success_criteria.find(c => c.id === 'c1')!.status).toBe('partial');
 
-    // A value-less update must NOT overwrite the real status with undefined.
-    await deltas.submitDelta(
-      targetDelta(2, 'crit-noop-1', 'SUCCESS_CRITERION_UPDATED', '/success_criteria/c1/status'),
-      { actorId: 'satori' },
-    );
+    // A value-less update is now REFUSED rather than accepted as a no-op
+    // (Verifier break-attempt: it used to pass the assertion, change nothing,
+    // and still advance the version).
+    await expect(
+      deltas.submitDelta(
+        targetDelta(2, 'crit-noop-1', 'SUCCESS_CRITERION_UPDATED', '/success_criteria/c1/status'),
+        { actorId: 'satori' },
+      ),
+    ).rejects.toThrow(/requires operations\[0\]\.value/);
     s = await missions.getMissionState('test_mission_targets');
     expect(s!.success_criteria.find(c => c.id === 'c1')!.status).toBe('partial');
+    expect(s!.version).toBe(2); // the refusal wrote nothing
   });
 
   it('rejects a SUCCESS_CRITERION_UPDATED path naming an unknown criterion', async () => {
@@ -322,6 +327,65 @@ describe('state-delta target resolution fails closed', () => {
     const s = await missions.getMissionState('test_mission_targets');
     expect(s!.version).toBe(2);
     expect((s!.ledger_refs ?? []).length).toBe(1);
+  });
+
+  it('refuses OBJECTIVE_UPDATED with no value and with value={} (Verifier break-attempt)', async () => {
+    await fresh();
+    await expect(
+      deltas.submitDelta(
+        targetDelta(1, 'objupd-noval-1', 'OBJECTIVE_UPDATED', '/objectives/o1/status'),
+        { actorId: 'satori' },
+      ),
+    ).rejects.toThrow(/requires operations\[0\]\.value/);
+    await expect(
+      deltas.submitDelta(
+        targetDelta(1, 'objupd-empty-1', 'OBJECTIVE_UPDATED', '/objectives/o1/status', {}),
+        { actorId: 'satori' },
+      ),
+    ).rejects.toThrow(/requires operations\[0\]\.value/);
+    await expect(
+      deltas.submitDelta(
+        targetDelta(1, 'objupd-blank-1', 'OBJECTIVE_UPDATED', '/objectives/o1/status', { description: '   ' }),
+        { actorId: 'satori' },
+      ),
+    ).rejects.toThrow(/non-empty string/);
+    await expect(
+      deltas.submitDelta(
+        targetDelta(1, 'objupd-badstatus-1', 'OBJECTIVE_UPDATED', '/objectives/o1/status', { status: 'banana' }),
+        { actorId: 'satori' },
+      ),
+    ).rejects.toThrow(/valid status/);
+
+    const s = await missions.getMissionState('test_mission_targets');
+    expect(s!.version).toBe(1); // nothing accepted
+    expect(s!.objectives!.find(o => o.id === 'o1')!.status).toBe('in_progress');
+  });
+
+  it('still accepts a real OBJECTIVE_UPDATED value', async () => {
+    await fresh();
+    const d = await deltas.submitDelta(
+      targetDelta(1, 'objupd-ok-1', 'OBJECTIVE_UPDATED', '/objectives/o1/status', { status: 'ready' }),
+      { actorId: 'satori' },
+    );
+    expect(d.status).toBe('accepted');
+    expect((await missions.getMissionState('test_mission_targets'))!.objectives!.find(o => o.id === 'o1')!.status).toBe('ready');
+  });
+
+  it('refuses SUCCESS_CRITERION_UPDATED with value={} and with a junk status', async () => {
+    await fresh();
+    await expect(
+      deltas.submitDelta(
+        targetDelta(1, 'crit-empty-1', 'SUCCESS_CRITERION_UPDATED', '/success_criteria/c1/status', {}),
+        { actorId: 'satori' },
+      ),
+    ).rejects.toThrow(/requires operations\[0\]\.value/);
+    await expect(
+      deltas.submitDelta(
+        targetDelta(1, 'crit-junk-1', 'SUCCESS_CRITERION_UPDATED', '/success_criteria/c1/status', 'done'),
+        { actorId: 'satori' },
+      ),
+    ).rejects.toThrow(/requires operations\[0\]\.value/);
+    expect((await missions.getMissionState('test_mission_targets'))!.version).toBe(1);
   });
 
   it('assertTargetsResolve is a pure predicate — it throws without touching state', () => {

@@ -144,6 +144,17 @@ export function assertTargetsResolve(state: MissionState, draft: StateDeltaDraft
   const path: string | undefined = typeof raw === 'string' ? raw : undefined;
   const segment = path?.startsWith('/') ? path.split('/')[2] : undefined;
 
+  const OBJECTIVE_STATUSES = ['pending', 'ready', 'in_progress', 'blocked', 'completed', 'cancelled'];
+  const CRITERION_STATUSES = ['unmet', 'partial', 'met', 'waived'];
+
+  // Value APPLICABILITY. Resolving the target is not enough: a delta can name a
+  // real objective or criterion and still change nothing, because the schema's
+  // `value` is optional and unconstrained. OBJECTIVE_UPDATED with no value, or
+  // value={}, and SUCCESS_CRITERION_UPDATED likewise, were accepted and advanced
+  // the version without writing anything. (Raised by the Verifier's break-attempt
+  // against the deployed build — the checks must live INSIDE these blocks, before
+  // their returns, or the narrowed type makes them unreachable.)
+
   if (OBJECTIVE_TARGETED.has(draft.delta_type)) {
     if (!segment || !path?.startsWith('/objectives/')) {
       throw new Error(
@@ -156,6 +167,26 @@ export function assertTargetsResolve(state: MissionState, draft: StateDeltaDraft
           (state.objectives ?? []).map(o => o.id).join(', ') || '(none)'
         }`,
       );
+    }
+    // OBJECTIVE_COMPLETED ("completed") and BLOCKED ("blocked") carry their own
+    // effect, so only OBJECTIVE_UPDATED needs an applicable value.
+    if (draft.delta_type === 'OBJECTIVE_UPDATED') {
+      const value = (draft.operations[0] as { value?: unknown } | undefined)?.value;
+      const v = (value && typeof value === 'object' ? value : {}) as {
+        description?: unknown;
+        status?: unknown;
+      };
+      const hasDescription = typeof v.description === 'string' && v.description.trim().length > 0;
+      const hasStatus = typeof v.status === 'string' && OBJECTIVE_STATUSES.includes(v.status);
+      if (v.description !== undefined && !hasDescription) {
+        throw new Error('OBJECTIVE_UPDATED description must be a non-empty string when present');
+      }
+      if (!hasDescription && !hasStatus) {
+        throw new Error(
+          'OBJECTIVE_UPDATED requires operations[0].value with a non-empty description or a valid status ' +
+            `(${OBJECTIVE_STATUSES.join('|')}); a valueless update changes no state`,
+        );
+      }
     }
     return;
   }
@@ -171,6 +202,21 @@ export function assertTargetsResolve(state: MissionState, draft: StateDeltaDraft
         `${draft.delta_type} targets unknown success criterion id "${segment}"; known: ${
           (state.success_criteria ?? []).map(c => c.id).join(', ') || '(none)'
         }`,
+      );
+    }
+    const value = (draft.operations[0] as { value?: unknown } | undefined)?.value;
+    const isStatusString = typeof value === 'string' && CRITERION_STATUSES.includes(value);
+    const v = (value && typeof value === 'object' ? value : {}) as {
+      status?: unknown;
+      evidence_refs?: unknown;
+    };
+    const hasStatus = typeof v.status === 'string' && CRITERION_STATUSES.includes(v.status);
+    const hasRefs = Array.isArray(v.evidence_refs) && v.evidence_refs.length > 0;
+    if (!isStatusString && !hasStatus && !hasRefs) {
+      throw new Error(
+        'SUCCESS_CRITERION_UPDATED requires operations[0].value to be a status string or an object with ' +
+          `a valid status (${CRITERION_STATUSES.join('|')}) or non-empty evidence_refs; ` +
+          'a valueless update changes no state',
       );
     }
     return;
