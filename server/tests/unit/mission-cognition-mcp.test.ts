@@ -100,6 +100,43 @@ describe('cognitive control MCP surface (COGNITIVE_CONTROL_ENABLED=write)', () =
     expect(txt(resume)).toContain('Egress throttling');
   });
 
+  it('a ledger entry declaring `supersedes` moves the target out of accepted', async () => {
+    const created = await handleCognitiveTool('create_mission_v2', {
+      title: 'Supersession regression', success_criteria: ['correction applied'],
+    }, trusted);
+    const missionId = (txt(created).match(/`(ms_[^`]+)`/) ?? [])[1];
+
+    await handleCognitiveTool('submit_state_delta', {
+      mission_id: missionId, base_mission_version: 1, delta_type: 'CLAIM_ADDED',
+      operations: [{ op: 'add', path: '/ledger_refs/-', value: 'c1' }],
+      rationale: 'first claim',
+      ledger_entries: [{ entry_type: 'claim', statement: 'The gate is closed.', confidence: 0.8 }],
+    }, trusted);
+
+    const first = await handleCognitiveTool('query_epistemic_ledger', { mission_id: missionId, entry_type: 'claim' }, trusted);
+    const staleId = (txt(first).match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/) ?? [])[1];
+    expect(staleId).toBeTruthy();
+
+    await handleCognitiveTool('submit_state_delta', {
+      mission_id: missionId, base_mission_version: 2, delta_type: 'CLAIM_ADDED',
+      operations: [{ op: 'add', path: '/ledger_refs/-', value: 'c2' }],
+      rationale: 'corrected claim',
+      ledger_entries: [{
+        entry_type: 'claim', status: 'accepted', statement: 'The gate is open.',
+        confidence: 0.9, supersedes: staleId,
+      }],
+    }, trusted);
+
+    // The target must no longer be readable as current...
+    const stillAccepted = await handleCognitiveTool('query_epistemic_ledger', { mission_id: missionId, status: 'accepted' }, trusted);
+    expect(txt(stillAccepted)).toContain('The gate is open.');
+    expect(txt(stillAccepted)).not.toContain('The gate is closed.');
+
+    // ...and must be readable as superseded, with its content intact.
+    const superseded = await handleCognitiveTool('query_epistemic_ledger', { mission_id: missionId, status: 'superseded' }, trusted);
+    expect(txt(superseded)).toContain('The gate is closed.');
+  });
+
   it('query_epistemic_ledger matches on any subset of filters, and still reports a true miss', async () => {
     const created = await handleCognitiveTool('create_mission_v2', {
       title: 'Ledger read-path regression', success_criteria: ['entries readable'],

@@ -36,11 +36,33 @@ export class EpistemicLedgerService {
       updated_at: draft.updated_at ?? now,
       confidence_history: [],
     };
+    // Fail closed on an unresolvable `supersedes` link. Recording the link while
+    // leaving the target in its old status would make both the superseded entry
+    // and its correction read as current. Validated BEFORE any write so a bad
+    // link cannot leave a partially-applied correction behind.
+    if (draft.supersedes) {
+      const target = await this.collection().findOne(
+        { entry_id: draft.supersedes },
+        { projection: { entry_id: 1 } },
+      );
+      if (!target) throw new Error(`supersedes target not found: ${draft.supersedes}`);
+    }
+
     const check = validateAgainst(SCHEMA_IDS.epistemicEntry, entry);
     if (!check.valid) {
       throw new Error(`ledger entry invalid: ${check.errors.join('; ')}`);
     }
     await this.collection().insertOne(entry);
+
+    // Honour the link: the superseded entry keeps its content, only its status
+    // moves. Without this, `supersedes` was recorded but never applied.
+    if (draft.supersedes) {
+      await this.collection().updateOne(
+        { entry_id: draft.supersedes },
+        { $set: { status: 'superseded' as EntryStatus, updated_at: new Date().toISOString() } },
+      );
+    }
+
     await emitMissionEvent(this.db, {
       mission_id: entry.mission_id,
       event_type: 'ledger.entry.created',
