@@ -563,12 +563,28 @@ export const createCognitionDashboardRoutes = (): Hono => {
       .sort({ timestamp: -1 })
       .limit(25)
       .toArray()) as any[];
+    // The allocator's rationale string can carry a malformed comparison in a
+    // single-candidate deployment: it interpolates `${other} ${otherScore}` where
+    // `other = ranked[1]` is undefined, producing a literal "undefined 0.00"
+    // (autonomous-executive.ts, the rationale template). That file is frozen by
+    // contract — reconciled at 51 insertions / 0 deletions and independently
+    // verified — so the artefact is normalised for DISPLAY here and the fact is
+    // stated, rather than rewritten at source or quietly hidden.
+    const SINGLE_CANDIDATE = /\((\d+(?:\.\d+)?) vs undefined 0\.00\)/;
+
     const parsed = rows.map((r: any) => {
       const message = String(r.content?.message ?? '');
       const goal = message.match(/Goal: (.+)/)?.[1] ?? null;
       const action = message.match(/Action: (.+)/)?.[1] ?? null;
       const allocated = message.match(/Allocated to: (\S+)/)?.[1] ?? null;
-      const why = message.match(/Why: (.+)/)?.[1] ?? null;
+      const rawWhy = message.match(/Why: (.+)/)?.[1] ?? null;
+      const why = rawWhy
+        ? rawWhy.replace(SINGLE_CANDIDATE, '($1 — single allocation candidate, no comparison available)')
+        : rawWhy;
+      const why_note =
+        rawWhy && SINGLE_CANDIDATE.test(rawWhy)
+          ? 'stored rationale contained a single-candidate artefact ("vs undefined 0.00"); the scores shown are otherwise verbatim'
+          : null;
       const result = message.match(/Result: (success|failed) — (.+)/)?.slice(1) ?? null;
       return {
         event_id: r.id,
@@ -577,8 +593,18 @@ export const createCognitionDashboardRoutes = (): Hono => {
         action,
         allocated_to: allocated,
         allocation_rationale: why,
+        ...(why_note ? { allocation_rationale_note: why_note } : {}),
         result: result ? { success: result[0] === 'success', summary: result[1] } : null,
-        basis: 'episodic_events executive_action records — the executive\'s own factual action log (emotional_tags excluded by design)',
+        // Corrected: the previous text claimed emotional tags were excluded, but
+        // `allocation_rationale` is the allocator's verbatim prose and does
+        // describe emotional-proximity scoring. Only the structured
+        // emotional_tags field is excluded; the prose is not, and saying
+        // otherwise was inaccurate.
+        basis:
+          'episodic_events executive_action records — the executive\'s own factual action log. ' +
+          'structured emotional_tags are excluded; allocation_rationale is the allocator\'s verbatim ' +
+          'prose and may describe emotional-proximity scoring, which is pre-existing and independent ' +
+          'of the cognitive-control plane',
       };
     });
     return c.json({

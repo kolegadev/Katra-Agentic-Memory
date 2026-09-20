@@ -32,7 +32,7 @@ export interface ResumeReport {
 
 interface ObjectiveLike { id: string; description: string; status: string; dependency_ids?: string[] }
 
-function computeNextAction(state: MissionState): ResumeReport['next_action'] {
+export function computeNextAction(state: MissionState): ResumeReport['next_action'] {
   const objectives: ObjectiveLike[] = (state.objectives ?? []).map(o => ({
     id: o.id,
     description: o.description,
@@ -71,9 +71,31 @@ function computeNextAction(state: MissionState): ResumeReport['next_action'] {
       rationale: `no unblocked pending objective; next open objective is ${firstOpen.status} (dependencies or owner needed)`,
     };
   }
+  // Objectives being done is not the same as the mission being done. Previously
+  // this branch emitted the same "verify success criteria" line whether the
+  // criteria were all met or none had been looked at, which is misleading in
+  // exactly the case a reader most wants clarity: a finished mission.
+  const criteria = state.success_criteria ?? [];
+  const openCriteria = criteria.filter(c => c.status !== 'met' && c.status !== 'waived');
+  if (criteria.length > 0 && openCriteria.length === 0) {
+    return {
+      kind: 'complete',
+      rationale:
+        `all ${objectives.length} objective(s) completed and all ${criteria.length} success criteria ` +
+        'satisfied — the mission is ready to close',
+    };
+  }
+  if (criteria.length === 0) {
+    return {
+      kind: 'complete',
+      rationale: 'all objectives completed — no success criteria are declared on this mission',
+    };
+  }
   return {
     kind: 'complete',
-    rationale: 'all objectives completed — verify success criteria before closing the mission',
+    rationale:
+      `all objectives completed — ${openCriteria.length} of ${criteria.length} success criteria still open ` +
+      `(${openCriteria.map(c => c.id).join(', ')}); verify them before closing the mission`,
   };
 }
 
