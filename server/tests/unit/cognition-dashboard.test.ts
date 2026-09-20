@@ -348,4 +348,51 @@ describe('custodian controls (criterion 14)', () => {
     expect(again.body.changed).toBe(false);
     expect(FAKE_DB.collection('custodian_audit').docs.length).toBe(2);
   });
+
+  it('§4.14 idempotency proof: two consecutive rebuilds on a consistent mission both report changed:false with nothing written', async () => {
+    // A CONSISTENT mission: the accepted delta (base v3) is ALREADY applied —
+    // the materialized state sits at v4, so the replay skips it and the
+    // rebuilt state matches the stored state field-for-field.
+    seedDemoMission('m_consistent');
+    const state = FAKE_DB.collection('mission_states').docs.find((m: any) => m.mission_id === 'm_consistent');
+    state.version = 4;
+    state.ledger_refs = ['claim-1'];
+    FAKE_DB.collection('state_deltas').docs.push({
+      delta_id: 'delta1',
+      idempotency_key: 'idem1',
+      mission_id: 'm_consistent',
+      base_mission_version: 3,
+      author_id: 'operator',
+      delta_type: 'CLAIM_ADDED',
+      operations: [{ op: 'add', path: '/ledger_refs/-', value: 'claim-1' }],
+      rationale: 'idempotency test',
+      confidence: 0.9,
+      status: 'accepted',
+      created_at: '2026-09-20T00:10:00.000Z',
+      applied_at: '2026-09-20T00:10:00.000Z',
+    });
+    const snapshot = JSON.stringify(FAKE_DB.collection('mission_states').docs);
+
+    const call1 = await post('/operations/rebuild', { mission_id: 'm_consistent' });
+    expect(call1.status).toBe(200);
+    expect(call1.body).toEqual(expect.objectContaining({ rebuilt: true, changed: false, changed_fields: [], version: 4 }));
+
+    const call2 = await post('/operations/rebuild', { mission_id: 'm_consistent' });
+    expect(call2.status).toBe(200);
+    expect(call2.body).toEqual(expect.objectContaining({ rebuilt: true, changed: false, changed_fields: [], version: 4 }));
+
+    // The mission version and the collection are unchanged between the calls.
+    expect(JSON.stringify(FAKE_DB.collection('mission_states').docs)).toBe(snapshot);
+    const audits = FAKE_DB.collection('custodian_audit').docs;
+    expect(audits.length).toBe(2);
+    expect(audits.every(a => a.detail.outcome.includes('already consistent'))).toBe(true);
+  });
+
+  it('custodian controls are disabled with the plane off (no back door)', async () => {
+    seedForRebuild();
+    process.env.COGNITIVE_CONTROL_ENABLED = 'off';
+    const res = await post('/operations/rebuild', { mission_id: 'm_rebuild' });
+    expect(res.status).toBe(403);
+    expect(res.body.error).toContain('no back door');
+  });
 });

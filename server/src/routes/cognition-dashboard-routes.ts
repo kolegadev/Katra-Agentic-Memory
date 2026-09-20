@@ -591,6 +591,9 @@ export const createCognitionDashboardRoutes = (): Hono => {
   // ── Custodian control: rebuild from checkpoint (trusted only, audited) ──
   router.post('/operations/rebuild', async (c) => {
     const d = db();
+    if (cognitiveControlMode() === 'off') {
+      return c.json({ error: 'custodian controls disabled: COGNITIVE_CONTROL_ENABLED=off (no back door)' }, 403);
+    }
     const caller = getCaller();
     if (!caller.trusted) {
       return c.json({ error: 'custodian controls require a trusted caller (operator)' }, 403);
@@ -607,13 +610,21 @@ export const createCognitionDashboardRoutes = (): Hono => {
       await recordAudit(d, caller.user_id, 'rebuild', body.mission_id, { outcome: 'no checkpoint basis — rebuild refused' });
       return c.json({ rebuilt: false, reason: 'no checkpoint or delta basis exists for this mission — nothing to rebuild (honest refusal, §4.14)' });
     }
-    const beforeJson = JSON.stringify(before, Object.keys(before).sort());
-    const afterJson = JSON.stringify(rebuilt, Object.keys(rebuilt).sort());
-    if (beforeJson === afterJson) {
-      await recordAudit(d, caller.user_id, 'rebuild', body.mission_id, { outcome: 'already consistent — nothing changed' });
-      return c.json({ rebuilt: true, changed: false, reason: 'materialized state already consistent with checkpoint + accepted deltas — idempotent, nothing changed', version: rebuilt.version });
+    // §4.14: stable comparison over the UNION key set (never each object
+    // against its own keys); _id and updated_at excluded — a rebuild that
+    // bumps a timestamp can never be idempotent. `changed` is DERIVED, never
+    // hardcoded, and the mutating write happens only when something changed.
+    const changedFields = changedFieldNames(before, rebuilt as unknown as Record<string, unknown>);
+    if (changedFields.length === 0) {
+      await recordAudit(d, caller.user_id, 'rebuild', body.mission_id, { outcome: 'already consistent — nothing changed, nothing written' });
+      return c.json({
+        rebuilt: true,
+        changed: false,
+        changed_fields: [],
+        version: rebuilt.version,
+        reason: 'materialized state already consistent with checkpoint + accepted deltas — idempotent, nothing written',
+      });
     }
-    const changedFields = Object.keys(rebuilt).filter(k => JSON.stringify(before[k]) !== JSON.stringify((rebuilt as any)[k]));
     await svc.advanceState(body.mission_id, rebuilt);
     await recordAudit(d, caller.user_id, 'rebuild', body.mission_id, { outcome: 'rebuilt', changed_fields: changedFields, version: rebuilt.version });
     return c.json({ rebuilt: true, changed: true, changed_fields: changedFields, version: rebuilt.version, basis: 'mission_state_versions checkpoint + accepted state_deltas replay (MissionStateService.rebuildFromCheckpoint)' });
@@ -621,6 +632,23 @@ export const createCognitionDashboardRoutes = (): Hono => {
 
   return router;
 };
+
+/**
+ * §4.14 idempotency comparison: same key set, same order, for BOTH objects.
+ * `_id` and `updated_at` are excluded from the comparison entirely.
+ */
+function changedFieldNames(a: Record<string, unknown>, b: Record<string, unknown>): string[] {
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  keys.delete('_id');
+  keys.delete('updated_at');
+  const changed: string[] = [];
+  for (const k of [...keys].sort()) {
+    const av = JSON.stringify((a as any)[k] ?? null);
+    const bv = JSON.stringify((b as any)[k] ?? null);
+    if (av !== bv) changed.push(k);
+  }
+  return changed;
+}
 
 async function recordAudit(d: Db, actorId: string, action: string, missionId: string, detail: Record<string, unknown>): Promise<void> {
   await d.collection(COLLECTIONS.custodianAudit).insertOne({
