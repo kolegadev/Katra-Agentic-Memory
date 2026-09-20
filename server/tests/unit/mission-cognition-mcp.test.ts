@@ -100,6 +100,36 @@ describe('cognitive control MCP surface (COGNITIVE_CONTROL_ENABLED=write)', () =
     expect(txt(resume)).toContain('Egress throttling');
   });
 
+  it('query_epistemic_ledger matches on any subset of filters, and still reports a true miss', async () => {
+    const created = await handleCognitiveTool('create_mission_v2', {
+      title: 'Ledger read-path regression', success_criteria: ['entries readable'],
+    }, trusted);
+    const missionId = (txt(created).match(/`(ms_[^`]+)`/) ?? [])[1];
+    await handleCognitiveTool('submit_state_delta', {
+      mission_id: missionId, base_mission_version: 1, delta_type: 'CLAIM_ADDED',
+      operations: [{ op: 'add', path: '/ledger_refs/-', value: 'c1' }],
+      rationale: 'regression fixture',
+      ledger_entries: [{ entry_type: 'claim', statement: 'Regression fixture claim.', confidence: 0.7 }],
+    }, trusted);
+
+    // No optional filter at all: the natural call, and the one that used to
+    // return "No ledger entries match." against a populated ledger.
+    const none = await handleCognitiveTool('query_epistemic_ledger', { mission_id: missionId }, trusted);
+    expect(txt(none)).toContain('Regression fixture claim.');
+
+    // Each optional filter supplied alone must also work.
+    const byType = await handleCognitiveTool('query_epistemic_ledger', { mission_id: missionId, entry_type: 'claim' }, trusted);
+    expect(txt(byType)).toContain('Regression fixture claim.');
+
+    const byStatus = await handleCognitiveTool('query_epistemic_ledger', { mission_id: missionId, status: 'accepted' }, trusted);
+    expect(txt(byStatus)).toContain('Regression fixture claim.');
+
+    // And a filter that genuinely matches nothing must still say so. Without
+    // this, a fix that simply ignored every filter would pass the checks above.
+    const miss = await handleCognitiveTool('query_epistemic_ledger', { mission_id: missionId, entry_type: 'decision' }, trusted);
+    expect(txt(miss)).toContain('No ledger entries match.');
+  });
+
   it('caps untrusted callers at authority class B and pins ownership to the caller', async () => {
     const created = await handleCognitiveTool('create_mission_v2', {
       title: 'Agent-owned mission',

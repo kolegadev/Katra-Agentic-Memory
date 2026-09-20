@@ -59,7 +59,17 @@ export class EpistemicLedgerService {
     filter: { entry_type?: EntryType; status?: EntryStatus } = {},
     limit = 50,
   ): Promise<LedgerEntry[]> {
-    const query: Record<string, unknown> = { mission_id: missionId, ...filter };
+    // Drop keys whose value is undefined before building the query. The driver
+    // here is constructed without `ignoreUndefined`, so it defaults to false and
+    // serializes `undefined` to BSON null rather than omitting it. A filter of
+    // `{ entry_type: undefined }` therefore becomes `{ entry_type: null }`, which
+    // matches only documents whose entry_type is null or absent -- i.e. nothing.
+    // Callers pass the optional fields straight through, so leaving this
+    // unguarded makes listEntries(id) return [] against a populated collection.
+    const present = Object.fromEntries(
+      Object.entries(filter).filter(([, v]) => v !== undefined),
+    );
+    const query: Record<string, unknown> = { mission_id: missionId, ...present };
     return this.collection()
       .find(query, { projection: { _id: 0 } })
       .sort({ created_at: -1 })

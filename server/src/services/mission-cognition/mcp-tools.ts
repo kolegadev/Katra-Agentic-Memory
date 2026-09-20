@@ -509,9 +509,11 @@ export async function handleCognitiveTool(
         if (!entry) return text(`❌ Ledger entry not found: ${input.entry_id}`);
         return text(`\`\`\`json\n${JSON.stringify(entry, null, 2)}\n\`\`\``);
       }
+      // Only pass filter keys the caller actually supplied: sending them
+      // unconditionally passes `undefined`, which the driver serializes as null.
       const entries = await services.ledger.listEntries(input.mission_id, {
-        entry_type: input.entry_type as never,
-        status: input.status as never,
+        ...(input.entry_type ? { entry_type: input.entry_type as never } : {}),
+        ...(input.status ? { status: input.status as never } : {}),
       }, input.limit);
       if (entries.length === 0) return text('No ledger entries match.');
       return text(entries.map(e => `- [${e.entry_type}/${e.status}] ${e.confidence.toFixed(2)} ${e.entry_id}: ${e.statement.slice(0, 140)}`).join('\n'));

@@ -41,17 +41,29 @@ export class FakeCollection {
     };
     return Object.entries(filter).every(([k, v]) => {
       const docVal = k.includes('.') ? at(k) : doc[k];
-      if (v === undefined || v === null) return true; // mongo omits undefined keys
-      if (typeof v === 'object' && !Array.isArray(v) && ('$lte' in v || '$gte' in v || '$lt' in v || '$in' in v || '$ne' in v || '$exists' in v)) {
-        if ('$exists' in v) return v.$exists ? docVal !== undefined : docVal === undefined;
-        if ('$ne' in v) return docVal !== v.$ne;
-        if ('$in' in v) return Array.isArray(v.$in) && v.$in.includes(docVal);
-        if ('$lte' in v && !(docVal <= v.$lte)) return false;
-        if ('$gte' in v && !(docVal >= v.$gte)) return false;
-        if ('$lt' in v && !(docVal < v.$lt)) return false;
+      // `undefined` does NOT mean "no constraint". The real driver is built
+      // without `ignoreUndefined`, so it defaults to false and serializes
+      // `undefined` to BSON null; `{ field: undefined }` therefore queries for
+      // null-or-missing and matches nothing when the field is populated.
+      //
+      // This helper used to `return true` for undefined/null, with the comment
+      // "mongo omits undefined keys". That was wrong, and it made the suite
+      // blind to exactly the bug it should have caught: query_epistemic_ledger
+      // passed `{ entry_type: undefined, status: undefined }` on every
+      // unfiltered call, so the live tool returned "No ledger entries match."
+      // against a populated ledger while this fake kept the test green.
+      const needle = v === undefined ? null : v;
+      if (needle === null) return docVal === null || docVal === undefined;
+      if (typeof needle === 'object' && !Array.isArray(needle) && ('$lte' in needle || '$gte' in needle || '$lt' in needle || '$in' in needle || '$ne' in needle || '$exists' in needle)) {
+        if ('$exists' in needle) return needle.$exists ? docVal !== undefined : docVal === undefined;
+        if ('$ne' in needle) return docVal !== needle.$ne;
+        if ('$in' in needle) return Array.isArray(needle.$in) && needle.$in.includes(docVal);
+        if ('$lte' in needle && !(docVal <= needle.$lte)) return false;
+        if ('$gte' in needle && !(docVal >= needle.$gte)) return false;
+        if ('$lt' in needle && !(docVal < needle.$lt)) return false;
         return true;
       }
-      return docVal === v;
+      return docVal === needle;
     });
   }
   private project(doc: Doc, projection?: Record<string, 0 | 1>): Doc {
