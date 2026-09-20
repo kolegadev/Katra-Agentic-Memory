@@ -166,6 +166,13 @@ const recordObservationInput = z.object({
   note: z.string().optional(),
 });
 
+// Phase 8 (skill evolution gates) tool inputs.
+const skillCandidateInput = z.object({ skill: z.string().min(1), version: z.string().min(1), note: z.string().min(1) });
+const skillCandidateIdInput = z.object({ candidate_id: z.string().min(1) });
+const skillCanaryInput = z.object({ candidate_id: z.string().min(1), mission_id: z.string().min(1) });
+const skillCanaryOutcomeInput = z.object({ candidate_id: z.string().min(1), outcome: z.enum(['ok', 'regressed']) });
+const skillPinInput = z.object({ mission_id: z.string().min(1), skill: z.string().min(1), version: z.string().min(1) });
+
 export const COGNITIVE_TOOL_DEFS: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }> = [
   {
     name: 'create_mission_v2',
@@ -326,6 +333,42 @@ export const COGNITIVE_TOOL_DEFS: Array<{ name: string; description: string; inp
     name: 'get_scheduler_recommendation',
     description: 'ADVISORY ONLY (recommend mode and above): the latest scheduler decision\'s recommended work item and agent, with rationale. No allocation path reads this.',
     inputSchema: zodToSchema(missionOnlyInput),
+  },
+  // ── Phase 8: skill evolution gates (contract §5.2) ─────────────────────
+  {
+    name: 'propose_skill_candidate',
+    description: 'Register a skill-version candidate against an existing skill (Phase 8 gate chain step 1 of 4: candidate). Trusted callers only; recorded in skill_evolution.',
+    inputSchema: zodToSchema(skillCandidateInput),
+  },
+  {
+    name: 'run_skill_replay',
+    description: 'Replay a candidate against historical missions read from stored records; report the regression verdict (pass / fail / insufficient). A single good run is insufficient by construction (Phase 8, §4.13/§4.16).',
+    inputSchema: zodToSchema(skillCandidateIdInput),
+  },
+  {
+    name: 'start_skill_canary',
+    description: 'Start a scoped canary for a candidate on ONE mission. Requires a passing replay; refused (and recorded) otherwise. Reversible via outcome recording (Phase 8, §4.14).',
+    inputSchema: zodToSchema(skillCanaryInput),
+  },
+  {
+    name: 'complete_skill_canary',
+    description: 'Record the canary outcome (ok / regressed) — the evidence promotion will require (Phase 8, §4.14).',
+    inputSchema: zodToSchema(skillCanaryOutcomeInput),
+  },
+  {
+    name: 'promote_skill_version',
+    description: 'Promote a candidate to the current skill version. Refused UNLESS both replay evidence (pass) and a completed ok-canary exist; every refusal is recorded (Phase 8, §4.12).',
+    inputSchema: zodToSchema(skillCandidateIdInput),
+  },
+  {
+    name: 'pin_skill_version',
+    description: 'Pin a skill version to an active mission — the explicit migration approval of §4.15. Trusted callers only; recorded.',
+    inputSchema: zodToSchema(skillPinInput),
+  },
+  {
+    name: 'get_skill_candidate_state',
+    description: 'The full gate-chain state of a candidate: proposal, replay verdict, canary status, promotion. Read-only.',
+    inputSchema: zodToSchema(skillCandidateIdInput),
   },
 ];
 
@@ -786,6 +829,14 @@ const ACTIVATION_TOOL_NAMES = [
   'get_allocation_counterfactual',
   'record_allocator_observation',
   'get_scheduler_recommendation',
+  // Phase 8 skill evolution gates (plane-gated like the activation tools).
+  'propose_skill_candidate',
+  'run_skill_replay',
+  'start_skill_canary',
+  'complete_skill_canary',
+  'promote_skill_version',
+  'pin_skill_version',
+  'get_skill_candidate_state',
 ];
 
 export function isActivationTool(name: string): boolean {
@@ -933,6 +984,77 @@ async function handleActivationTool(
         `- Rationale: ${d.rationale}\n` +
         `- Acted on: ${d.recommended_was_acted_on ? 'yes' : 'no'}`,
       );
+    }
+    // ── Phase 8: skill evolution gates ────────────────────────────────────
+    case 'propose_skill_candidate': {
+      const input = skillCandidateInput.parse(args);
+      if (!caller.trusted) return text('❌ propose_skill_candidate requires a trusted caller.');
+      if (cognitiveControlMode() !== 'write') return text('❌ COGNITIVE_CONTROL_ENABLED=read — writes disabled.');
+      const { proposeSkillCandidate } = await import('./skill-evolution-service.js');
+      const rec = await proposeSkillCandidate(db, { skill: input.skill, version: input.version, note: input.note, actorId: caller.user_id });
+      return text(`✅ Candidate ${rec.candidate_id} proposed: ${input.skill}@${input.version}. Chain: candidate → replay → canary → promotion.`);
+    }
+    case 'run_skill_replay': {
+      const input = skillCandidateIdInput.parse(args);
+      if (!caller.trusted) return text('❌ run_skill_replay requires a trusted caller.');
+      const { runSkillReplay } = await import('./skill-evolution-service.js');
+      try {
+        const { verdict, detail } = await runSkillReplay(db, { candidateId: input.candidate_id, actorId: caller.user_id });
+        return text(`Replay verdict: **${verdict}**\n\`\`\`json\n${JSON.stringify(detail, null, 2)}\n\`\`\``);
+      } catch (err: any) {
+        return text(`❌ ${err.message}`);
+      }
+    }
+    case 'start_skill_canary': {
+      const input = skillCanaryInput.parse(args);
+      if (!caller.trusted) return text('❌ start_skill_canary requires a trusted caller.');
+      if (cognitiveControlMode() !== 'write') return text('❌ COGNITIVE_CONTROL_ENABLED=read — writes disabled.');
+      const { startSkillCanary } = await import('./skill-evolution-service.js');
+      try {
+        const rec = await startSkillCanary(db, { candidateId: input.candidate_id, missionId: input.mission_id, actorId: caller.user_id });
+        return text(`✅ Canary started for ${rec.candidate_id} on mission ${input.mission_id} (replay passed). Record the outcome with complete_skill_canary.`);
+      } catch (err: any) {
+        return text(`❌ ${err.message}`);
+      }
+    }
+    case 'complete_skill_canary': {
+      const input = skillCanaryOutcomeInput.parse(args);
+      if (!caller.trusted) return text('❌ complete_skill_canary requires a trusted caller.');
+      if (cognitiveControlMode() !== 'write') return text('❌ COGNITIVE_CONTROL_ENABLED=read — writes disabled.');
+      const { completeSkillCanary } = await import('./skill-evolution-service.js');
+      try {
+        const rec = await completeSkillCanary(db, { candidateId: input.candidate_id, outcome: input.outcome, actorId: caller.user_id });
+        return text(`✅ Canary outcome recorded for ${rec.candidate_id}: ${input.outcome}.`);
+      } catch (err: any) {
+        return text(`❌ ${err.message}`);
+      }
+    }
+    case 'promote_skill_version': {
+      const input = skillCandidateIdInput.parse(args);
+      if (!caller.trusted) return text('❌ promote_skill_version requires a trusted caller.');
+      if (cognitiveControlMode() !== 'write') return text('❌ COGNITIVE_CONTROL_ENABLED=read — writes disabled.');
+      const { promoteSkillVersion } = await import('./skill-evolution-service.js');
+      try {
+        const rec = await promoteSkillVersion(db, { candidateId: input.candidate_id, actorId: caller.user_id });
+        return text(`✅ Promoted ${rec.skill} to version ${rec.version} (${rec.candidate_id}). Registry updated; recorded in skill_evolution.`);
+      } catch (err: any) {
+        return text(`❌ ${err.message}`);
+      }
+    }
+    case 'pin_skill_version': {
+      const input = skillPinInput.parse(args);
+      if (!caller.trusted) return text('❌ pin_skill_version requires a trusted caller.');
+      if (cognitiveControlMode() !== 'write') return text('❌ COGNITIVE_CONTROL_ENABLED=read — writes disabled.');
+      const { pinSkillVersion } = await import('./skill-evolution-service.js');
+      const rec = await pinSkillVersion(db, { missionId: input.mission_id, skill: input.skill, version: input.version, actorId: caller.user_id });
+      return text(`✅ Pinned ${input.skill}@${input.version} to mission ${input.mission_id} (${rec.entry_id}) — explicit migration approval, §4.15.`);
+    }
+    case 'get_skill_candidate_state': {
+      const input = skillCandidateIdInput.parse(args);
+      const { candidateState } = await import('./skill-evolution-service.js');
+      const state = await candidateState(db, input.candidate_id);
+      if (!state) return text(`❌ Candidate not found: ${input.candidate_id}`);
+      return text(`\`\`\`json\n${JSON.stringify(state, null, 2)}\n\`\`\``);
     }
     default:
       return text(`❌ Unknown activation tool: ${name}`);

@@ -29,7 +29,7 @@ function txt(result: { type: string; text: string }[]): string {
 afterEach(() => FAKE_DB.reset());
 
 describe('cognitive control MCP surface (COGNITIVE_CONTROL_ENABLED=write)', () => {
-  it('registers the thirty-one cognitive tools (9 P1-2 + 3 P4 scheduler + 10 P5 uncertainty + 9 P6 activation)', () => {
+  it('registers the thirty-eight cognitive tools (9 P1-2 + 3 P4 + 10 P5 + 9 P6 activation + 7 P8 skill gates)', () => {
     const names = COGNITIVE_TOOL_DEFS.map(t => t.name);
     expect(names).toEqual([
       'create_mission_v2', 'get_mission_state', 'submit_state_delta', 'list_state_deltas',
@@ -44,6 +44,9 @@ describe('cognitive control MCP surface (COGNITIVE_CONTROL_ENABLED=write)', () =
       'get_allocation_evidence', 'acknowledge_evidence', 'get_activation_ledger',
       'get_allocation_counterfactual', 'record_allocator_observation',
       'get_scheduler_recommendation',
+      'propose_skill_candidate', 'run_skill_replay', 'start_skill_canary',
+      'complete_skill_canary', 'promote_skill_version', 'pin_skill_version',
+      'get_skill_candidate_state',
     ]);
   });
 

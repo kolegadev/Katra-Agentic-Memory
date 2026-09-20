@@ -24,6 +24,9 @@ export const COLLECTIONS = {
   allocationCounterfactuals: 'allocation_counterfactuals', // what the existing allocator would have done, per influenced allocation
   // Phase 7: custodian actions audit (contract §4.14 — declared here, not silent):
   custodianAudit: 'custodian_audit',
+  // Phase 8: skill evolution gate chain (contract §5.3/§4.11 — declared here, not silent):
+  skillEvolution: 'skill_evolution',                  // candidate/replay/canary/promotion/refusal/pin records
+  skillRegistry: 'skill_registry',                    // skill -> current promoted version
 } as const;
 
 export const EVENT_TTL_SECONDS = 90 * 24 * 3600; // 90 days
@@ -70,5 +73,10 @@ export async function ensureMissionCognitionIndexes(db: Db): Promise<void> {
     p(COLLECTIONS.custodianAudit, { audit_id: 1 }, { unique: true, name: 'ca_unique' }),
     p(COLLECTIONS.custodianAudit, { created_at: -1 }, { name: 'ca_created' }),
     p(COLLECTIONS.custodianAudit, { mission_id: 1, created_at: -1 }, { name: 'ca_mission' }),
+    // Phase 8: skill evolution (contract §4.11).
+    p(COLLECTIONS.skillEvolution, { entry_id: 1 }, { unique: true, name: 'se_unique' }),
+    p(COLLECTIONS.skillEvolution, { skill: 1, created_at: -1 }, { name: 'se_skill' }),
+    p(COLLECTIONS.skillEvolution, { candidate_id: 1, created_at: -1 }, { name: 'se_candidate' }),
+    p(COLLECTIONS.skillRegistry, { skill: 1 }, { unique: true, name: 'sr_skill_unique' }),
   ]);
 }

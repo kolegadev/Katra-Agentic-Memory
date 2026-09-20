@@ -339,6 +339,45 @@ export interface EvidenceGateState {
   reason: string;
 }
 
+// ── Phase 8: skill evolution gates (contract §4.11-4.16) ─────────────────
+
+export type SkillEvolutionKind =
+  | 'candidate'
+  | 'replay'
+  | 'canary'
+  | 'promotion'
+  | 'refusal'
+  | 'pin';
+
+export interface SkillEvolutionRecord {
+  entry_id: string;
+  kind: SkillEvolutionKind;
+  skill: string;
+  actor_id: string;
+  created_at: string;
+  candidate_id?: string;
+  version?: string;
+  note?: string;
+  mission_id?: string;
+  detail?: Record<string, unknown>;
+}
+
+/** The chain a candidate must pass, in order: candidate -> replay -> canary -> promotion. */
+export interface SkillCandidateState {
+  candidate_id: string;
+  skill: string;
+  version: string;
+  note: string;
+  proposed_by: string;
+  proposed_at: string;
+  replay_verdict: 'pass' | 'fail' | 'insufficient' | null;
+  replay_detail?: Record<string, unknown>;
+  canary_started: boolean;
+  canary_outcome?: 'ok' | 'regressed' | null;
+  promoted: boolean;
+  promoted_at?: string;
+}
+
 // ── Phase 5: uncertainty engine (deterministic triggers, shadow) ─────────
 
 export type TriggerType =

@@ -3752,7 +3752,14 @@ function registerHandlers(server: Server, getIdentity?: () => CallerIdentity) {
         case 'get_allocation_counterfactual':
         case 'record_allocator_observation':
         case 'get_scheduler_recommendation':
-          // Phase 6: reachable whenever the cognitive plane is enabled (mode
+        case 'propose_skill_candidate':
+        case 'run_skill_replay':
+        case 'start_skill_canary':
+        case 'complete_skill_canary':
+        case 'promote_skill_version':
+        case 'pin_skill_version':
+        case 'get_skill_candidate_state':
+          // Phase 6/8: reachable whenever the cognitive plane is enabled (mode
           // transitions start from `off`); gate checks live in the activation
           // service and read stored records only. Plane off → Unknown tool.
           result = await dispatchActivationTool(name, args, caller); break;

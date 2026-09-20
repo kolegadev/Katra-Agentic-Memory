@@ -69,7 +69,13 @@ export class FakeCollection {
     let candidates = this.docs.filter(d => this.matches(d, filter));
     if (opts?.sort) {
       for (const [k, dir] of Object.entries(opts.sort as Record<string, 1 | -1>)) {
-        candidates = [...candidates].sort((a, b) => (dir === 1 ? (a[k] ?? 0) - (b[k] ?? 0) : (b[k] ?? 0) - (a[k] ?? 0)));
+        candidates = [...candidates].sort((a, b) => {
+          const av = a[k] ?? 0, bv = b[k] ?? 0;
+          const cmp = typeof av === 'string' || typeof bv === 'string'
+            ? String(av).localeCompare(String(bv))
+            : av - bv;
+          return dir === 1 ? cmp : -cmp;
+        });
       }
     }
     if (opts?.skip) candidates = candidates.slice(opts.skip);
@@ -78,13 +84,20 @@ export class FakeCollection {
   }
   find(filter: Record<string, any>, opts?: any): any {
     let candidates = this.docs.filter(d => this.matches(d, filter));
+    const sortDocs = (s: Record<string, 1 | -1>) => {
+      for (const [k, dir] of Object.entries(s)) {
+        candidates = [...candidates].sort((a, b) => {
+          const av = a[k] ?? 0, bv = b[k] ?? 0;
+          const cmp = typeof av === 'string' || typeof bv === 'string'
+            ? String(av).localeCompare(String(bv))
+            : av - bv;
+          return dir === 1 ? cmp : -cmp;
+        });
+      }
+      return cursor;
+    };
     const cursor: any = {
-      sort: (s: Record<string, 1 | -1>) => {
-        for (const [k, dir] of Object.entries(s)) {
-          candidates = [...candidates].sort((a, b) => (dir === 1 ? (a[k] ?? 0) - (b[k] ?? 0) : (b[k] ?? 0) - (a[k] ?? 0)));
-        }
-        return cursor;
-      },
+      sort: sortDocs,
       limit: (n: number) => { candidates = candidates.slice(0, n); return cursor; },
       skip: (n: number) => { candidates = candidates.slice(n); return cursor; },
       toArray: async () => structuredClone(candidates.map(d => this.project(d, opts?.projection))),
@@ -94,8 +107,19 @@ export class FakeCollection {
     if (opts?.limit) cursor.limit(opts.limit);
     return cursor;
   }
-  async updateOne(filter: Record<string, any>, update: Record<string, any>) {
-    const doc = this.docs.find(d => this.matches(d, filter));
+  async updateOne(filter: Record<string, any>, update: Record<string, any>, opts?: any) {
+    let doc = this.docs.find(d => this.matches(d, filter));
+    if (!doc && opts?.upsert) {
+      doc = {};
+      for (const [k, v] of Object.entries(filter)) {
+        if (typeof v === 'object' && v !== null && !Array.isArray(v)) continue; // operators do not become fields
+        doc[k] = structuredClone(v);
+      }
+      Object.assign(doc, structuredClone(update.$set ?? {}));
+      this.assertUnique(doc);
+      this.docs.push(doc);
+      return { acknowledged: true, matchedCount: 0, upsertedId: doc._id ?? 'x' };
+    }
     if (!doc) return { acknowledged: true, matchedCount: 0 };
     for (const [k, v] of Object.entries(update.$set ?? {})) doc[k] = structuredClone(v);
     for (const [k, v] of Object.entries(update.$push ?? {})) (doc[k] ??= []).push(structuredClone(v));
