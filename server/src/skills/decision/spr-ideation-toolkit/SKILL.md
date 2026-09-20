@@ -261,6 +261,36 @@ from a speculative one at a glance.
 > source uses them, since back-propagation is defined as operating over "the 7 tool
 > processes".
 
+## Where the yield actually comes from
+
+Observed on a first real run of this toolkit (an open estimating problem, 18 candidate
+approaches produced). Recorded because it should change how you budget effort across
+the tools — treat it as guidance, not law:
+
+- **The wild cards and Tool 4 produce nearly all the new material.** On that run, every
+  genuinely new approach traced to a wild card, to Tool 4's boundary expansion, or to
+  the point where the two met. The expansions that paid were the ones that attacked a
+  boundary the original framing had *silently accepted* — "we may only use these three
+  sources", "we only care about one year". Boundaries are often unchosen, and therefore
+  unchallenged.
+- **Tool 1's steps 1–3 mostly index what is already in the frame.** Core concepts,
+  tangentials, and cross-domain links produced volume and little novelty; most
+  cross-domain links generated no candidate approach. They are scaffolding for the later
+  steps, not output.
+- **Tool 1's step-5 iteration is where Tool 1 earns its place.** The first pass was
+  close to a restatement; new material appeared when the prior outputs were swept
+  against the wild cards. Skipping the iteration skips the only part that worked.
+- **Step 7 (SPR formatting) and Tool 9 (the graph) added no ideas.** They are
+  presentation. Pay for them when a reader needs the structure, not when you need the
+  funnel.
+- **The epistemic-discipline section below is load-bearing on a no-guessing engagement.**
+  Without it the toolkit's own outputs drift toward the forbidden moves — extrapolating
+  a ratio across a censored band, or imputing a gap. On a published-sources-only job,
+  the guard is what makes the rest usable.
+
+Practical consequence: if you have limited budget, run **Tool 4 first**, then the wild
+cards, then Tool 1's iteration. That ordering front-loads the productive part.
+
 ## Epistemic discipline — read before use
 
 **Every output of this toolkit is a hypothesis. None of it is evidence.**
@@ -309,5 +339,9 @@ allowed to be wild precisely because nothing from it is trusted until verified.
 Adapted from *SPR Tools for Ideation* (John Pellew, `~/Downloads/`). All nine tools,
 their inputs, outputs, and instruction steps — including the completeness loops, the
 multi-modal skip condition, the Pareto-line stopping rule, and the edge-class
-colour scheme — are preserved from the source. The epistemic-discipline section is
-added, to bind this generative toolkit to the existing verification discipline.
+colour scheme — are preserved from the source.
+
+Two sections are additions, not source material: the **epistemic-discipline** section,
+which binds this generative toolkit to the existing verification discipline, and the
+**where the yield actually comes from** section, which records what a first real run
+produced. Both are marked here so they can be revised or removed on further evidence.
