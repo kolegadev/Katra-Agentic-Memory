@@ -395,4 +395,50 @@ describe('custodian controls (criterion 14)', () => {
     expect(res.status).toBe(403);
     expect(res.body.error).toContain('no back door');
   });
+
+  it('regression: pre-stamping snapshot without checkpoint_id cannot make rebuild flap', async () => {
+    // Real-world shape that blocked grading: the materialized doc carries a
+    // checkpoint_id the version snapshot's embedded state lacks. $set drops
+    // undefined keys, so an unstamped rebuild could never clear the diff —
+    // every call reported changed:true ["checkpoint_id"] forever.
+    seedDemoMission('m_flap');
+    const state = FAKE_DB.collection('mission_states').docs.find((m: any) => m.mission_id === 'm_flap');
+    state.version = 3;
+    state.checkpoint_id = 'ckpt-1';
+    state.ledger_refs = ['claim-1'];
+    FAKE_DB.collection('mission_state_versions').docs.push({
+      mission_id: 'm_flap',
+      version: 3,
+      checkpoint_id: 'ckpt-1',
+      created_at: '2026-09-20T00:05:00.000Z',
+      // NOTE: embedded state has NO checkpoint_id — pre-stamping snapshot.
+      state: { ...state, checkpoint_id: undefined },
+    });
+    FAKE_DB.collection('state_deltas').docs.push({
+      delta_id: 'delta1',
+      idempotency_key: 'idem1',
+      mission_id: 'm_flap',
+      base_mission_version: 3,
+      author_id: 'operator',
+      delta_type: 'CLAIM_ADDED',
+      operations: [{ op: 'add', path: '/ledger_refs/-', value: 'claim-1' }],
+      rationale: 'flap test',
+      confidence: 0.9,
+      status: 'accepted',
+      created_at: '2026-09-20T00:10:00.000Z',
+      applied_at: '2026-09-20T00:10:00.000Z',
+    });
+    const snapshot = JSON.stringify(FAKE_DB.collection('mission_states').docs);
+
+    const call1 = await post('/operations/rebuild', { mission_id: 'm_flap' });
+    expect(call1.body).toEqual(expect.objectContaining({ rebuilt: true, changed: false, changed_fields: [], version: 3 }));
+
+    const call2 = await post('/operations/rebuild', { mission_id: 'm_flap' });
+    expect(call2.body).toEqual(expect.objectContaining({ rebuilt: true, changed: false, changed_fields: [], version: 3 }));
+
+    // Nothing written, checkpoint marker preserved.
+    expect(JSON.stringify(FAKE_DB.collection('mission_states').docs)).toBe(snapshot);
+    const after = FAKE_DB.collection('mission_states').docs.find((m: any) => m.mission_id === 'm_flap');
+    expect(after.checkpoint_id).toBe('ckpt-1');
+  });
 });

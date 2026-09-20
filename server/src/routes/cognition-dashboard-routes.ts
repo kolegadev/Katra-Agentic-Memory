@@ -605,11 +605,16 @@ export const createCognitionDashboardRoutes = (): Hono => {
       .collection(COLLECTIONS.missionStates)
       .findOne({ mission_id: body.mission_id }, { projection: { _id: 0 } })) as any;
     if (!before) return c.json({ error: 'mission not found' }, 404);
-    const rebuilt = await svc.rebuildFromCheckpoint(body.mission_id);
-    if (!rebuilt) {
+    const rebuiltRaw = await svc.rebuildFromCheckpoint(body.mission_id);
+    if (!rebuiltRaw) {
       await recordAudit(d, caller.user_id, 'rebuild', body.mission_id, { outcome: 'no checkpoint basis — rebuild refused' });
       return c.json({ rebuilt: false, reason: 'no checkpoint or delta basis exists for this mission — nothing to rebuild (honest refusal, §4.14)' });
     }
+    // checkpoint_id is bookkeeping of the MATERIALIZED doc, not mission
+    // content: the rebuild reconstructs content, and the stored checkpoint
+    // marker is preserved. (The v3 snapshots predate the stamping, and $set
+    // drops undefined keys — without this, the marker can never converge.)
+    const rebuilt: MissionState = { ...rebuiltRaw, checkpoint_id: before.checkpoint_id ?? rebuiltRaw.checkpoint_id ?? null };
     // §4.14: stable comparison over the UNION key set (never each object
     // against its own keys); _id and updated_at excluded — a rebuild that
     // bumps a timestamp can never be idempotent. `changed` is DERIVED, never
