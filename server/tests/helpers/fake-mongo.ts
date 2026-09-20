@@ -14,6 +14,7 @@ export const UNIQUE_INDEXES: Record<string, string[][]> = {
   activation_ledger: [['ledger_id']],
   mission_opt_ins: [['opt_in_id']],
   allocation_counterfactuals: [['counterfactual_id'], ['decision_id']],
+  custodian_audit: [['audit_id']],
 };
 
 export class FakeCollection {

@@ -22,6 +22,8 @@ export const COLLECTIONS = {
   activationLedger: 'activation_ledger',              // every mode transition, opt-in change, counterfactual, refusal, halt
   missionOptIns: 'mission_opt_ins',                   // per-mission activation opt-in register
   allocationCounterfactuals: 'allocation_counterfactuals', // what the existing allocator would have done, per influenced allocation
+  // Phase 7: custodian actions audit (contract §4.14 — declared here, not silent):
+  custodianAudit: 'custodian_audit',
 } as const;
 
 export const EVENT_TTL_SECONDS = 90 * 24 * 3600; // 90 days
@@ -64,5 +66,9 @@ export async function ensureMissionCognitionIndexes(db: Db): Promise<void> {
     p(COLLECTIONS.allocationCounterfactuals, { cycle_id: 1, recorded_at: -1 }, { name: 'acf_cycle' }),
     // Evidence gate reads decisions that carry an allocator observation.
     p(COLLECTIONS.schedulerDecisions, { 'allocator_observation.observed_at': -1 }, { sparse: true, name: 'sched_observed' }),
+    // Phase 7: custodian audit (contract §4.14).
+    p(COLLECTIONS.custodianAudit, { audit_id: 1 }, { unique: true, name: 'ca_unique' }),
+    p(COLLECTIONS.custodianAudit, { created_at: -1 }, { name: 'ca_created' }),
+    p(COLLECTIONS.custodianAudit, { mission_id: 1, created_at: -1 }, { name: 'ca_mission' }),
   ]);
 }

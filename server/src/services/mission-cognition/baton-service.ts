@@ -31,6 +31,36 @@ export function assertNoSecretMaterial(serialized: string): void {
   }
 }
 
+/**
+ * Phase 7: read-side redaction (dashboard baton inspector, contract §4.8).
+ * Same patterns the write path rejects; matching substrings are replaced with
+ * [REDACTED] rather than dropping the record. Returns the value and whether
+ * anything was redacted.
+ */
+export function redactSecretMaterial(value: unknown): { value: unknown; redacted: boolean } {
+  let redacted = false;
+  const walk = (node: unknown): unknown => {
+    if (typeof node === 'string') {
+      let out = node;
+      for (const pattern of SECRET_PATTERNS) {
+        if (pattern.test(out)) {
+          out = out.replace(pattern, '[REDACTED]');
+          redacted = true;
+        }
+      }
+      return out;
+    }
+    if (Array.isArray(node)) return node.map(walk);
+    if (node && typeof node === 'object') {
+      const out: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(node as Record<string, unknown>)) out[k] = walk(v);
+      return out;
+    }
+    return node;
+  };
+  return { value: walk(value), redacted };
+}
+
 const WITHHELD_ON_BLIND: EntryType[] = ['decision', 'claim', 'assumption', 'hypothesis'];
 
 export class BatonService {
