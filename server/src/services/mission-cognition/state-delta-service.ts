@@ -19,7 +19,13 @@ const COMMUTATIVE_ADDITIVE: ReadonlySet<DeltaType> = new Set([
   'CLAIM_ADDED', 'EVIDENCE_ADDED', 'HYPOTHESIS_ADDED', 'UNCERTAINTY_OPENED',
   'EXPERIMENT_PROPOSED', 'EXPERIMENT_RESULT', 'OBJECTIVE_CREATED',
   'CHECKPOINT_CREATED', 'CAPABILITY_REQUESTED', 'BLOCKED', 'PLAN_CHANGE_PROPOSED',
+  'CONSTRAINT_ADDED',
 ]);
+
+/** Must match mission-state.schema.json $defs/constraint.kind. */
+const CONSTRAINT_KINDS = [
+  'time', 'cost', 'privacy', 'safety', 'legal', 'technical', 'authority', 'other',
+] as const;
 
 /** Pure merge of one delta into a mission state (no IO). Exported for rebuild. */
 export function applyDeltaToState(state: MissionState, delta: StateDelta, now?: string): MissionState {
@@ -114,6 +120,23 @@ export function applyDeltaToState(state: MissionState, delta: StateDelta, now?: 
       if (op0?.status) next.status = op0.status;
       break;
     }
+    case 'CONSTRAINT_ADDED': {
+      // Constraint additions were previously UNREPRESENTABLE: no branch of this
+      // switch wrote to `next.constraints`, so an `add /constraints/-` operation
+      // was accepted, advanced the version, and was then discarded by the
+      // `default:` branch below. Reproduced seven times by the P vs NP
+      // long-horizon loop, whose mission `constraints` never moved off C1–C4.
+      // The operation was never wrong — there was simply nothing to receive it.
+      const raw = op0?.value;
+      const constraint = (raw && typeof raw === 'object') ? raw as Record<string, any> : undefined;
+      if (constraint?.id && constraint?.description) {
+        next.constraints ??= [];
+        if (!next.constraints.some(c => c.id === constraint.id)) {
+          next.constraints.push(constraint as never);
+        }
+      }
+      break;
+    }
     default:
       // Ledger-reference deltas: content lives in the ledger; state holds the ref.
       break;
@@ -138,6 +161,16 @@ export function applyDeltaToState(state: MissionState, delta: StateDelta, now?: 
  *      operations[].value and NO ledger_entries — the content was discarded while
  *      the version advanced; the research mission's findings landed only in the
  *      delta record and the epistemic ledger stayed empty.
+ *   4. **operations on a path the applier has no branch for at all.** The three
+ *      cases above are defective *branches*; this one is a missing branch. An
+ *      `add /constraints/-` operation carrying a perfect constraint was accepted,
+ *      bumped the version, appended its ledger entries — and had nowhere to land,
+ *      because no case in the applier writes `constraints`. Reproduced SEVEN times
+ *      by the P vs NP long-horizon loop (2026-09-20/21), which reported the mission
+ *      constraint as unamendable; the truth was that constraint addition had never
+ *      been implemented. Cases 1–3 were fixed one branch at a time; case 4 is the
+ *      reason this file now ends with a check that does not depend on remembering
+ *      to add one — see the CLASS GUARD at the foot of this function.
  *
  * This function covers every branch of the applier. Rejected before any write,
  * consistent with Rule 1.
@@ -272,6 +305,39 @@ export function assertTargetsResolve(state: MissionState, draft: StateDeltaDraft
     return;
   }
 
+  // CONSTRAINT_ADDED: the applier pushes only when the op carries a complete
+  // constraint, so a partial one would be accepted and create nothing. The kind
+  // is validated here as well as by the mission-state schema, because the delta
+  // schema constrains `value` only to be "anything".
+  if (draft.delta_type === 'CONSTRAINT_ADDED') {
+    if (typeof path !== 'string' || !/^\/constraints(\/-)?$/.test(path)) {
+      throw new Error(
+        `CONSTRAINT_ADDED requires path /constraints/- or /constraints (got ${JSON.stringify(path)})`,
+      );
+    }
+    const value = (draft.operations[0] as { value?: unknown } | undefined)?.value;
+    const c = (value && typeof value === 'object' ? value : {}) as {
+      id?: unknown;
+      kind?: unknown;
+      description?: unknown;
+    };
+    if (typeof c.id !== 'string' || !c.id.trim()) {
+      throw new Error('CONSTRAINT_ADDED requires operations[0].value.id (a non-empty string)');
+    }
+    if (typeof c.kind !== 'string' || !(CONSTRAINT_KINDS as readonly string[]).includes(c.kind)) {
+      throw new Error(
+        'CONSTRAINT_ADDED requires operations[0].value.kind to be one of ' +
+          `${CONSTRAINT_KINDS.join('|')} (got ${JSON.stringify(c.kind)})`,
+      );
+    }
+    if (typeof c.description !== 'string' || !c.description.trim()) {
+      throw new Error(
+        'CONSTRAINT_ADDED requires operations[0].value.description (a non-empty string)',
+      );
+    }
+    return;
+  }
+
   // Ledger-reference deltas: state holds only the refs, so without at least one
   // complete ledger entry the delta changes nothing at all. This is the branch
   // that quietly discarded the research findings.
@@ -289,6 +355,40 @@ export function assertTargetsResolve(state: MissionState, draft: StateDeltaDraft
     if (incomplete) {
       throw new Error(`${draft.delta_type} has a ledger entry missing statement or entry_type`);
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // CLASS GUARD — no operation may ride along unapplied.
+  //
+  // Every branch above covers a delta type whose effect IS its operation, and
+  // each returns. What reaches this point is a delta type that takes its effect
+  // from ledger_entries instead — so an operation riding on it is *structurally*
+  // inert: the applier's `default:` branch ignores it. Until now that was silent.
+  // The delta was recorded `accepted`, the version advanced, the ledger entries
+  // landed, and the operation vanished. Seven reproductions, no error, no log.
+  //
+  // Cases 1–3 in the header were each fixed by repairing one branch, which is why
+  // a fourth appeared. This check is deliberately not a branch: it does not need
+  // to know which paths exist, only that a path reaching here has no applier at
+  // all. A future delta type that forgets to declare its paths fails closed here
+  // instead of failing silently in production.
+  //
+  // AUDIT_ONLY: `/ledger_refs/...` operations are recognised as inert markers.
+  // `invalidation.ts` emits one because the delta schema requires >= 1 operation,
+  // and the invalidation's real effect is carried by its ledger entry
+  // (contradiction + depends_on), not by the marker. They are NOT applied to
+  // state — `ledger_refs` is rebuilt from the ledger entries themselves.
+  const AUDIT_ONLY = /^\/ledger_refs\//;
+  for (const op of draft.operations ?? []) {
+    const opPath = (op as { path?: unknown })?.path;
+    if (typeof opPath !== 'string') continue; // operation shape is the JSON schema's job
+    if (AUDIT_ONLY.test(opPath)) continue;
+    throw new Error(
+      `${draft.delta_type} carries an operation on ${JSON.stringify(opPath)}, but no applier ` +
+        'branch can apply that path, so it would be recorded accepted and silently discarded. ' +
+        'Use the delta_type that owns the path (e.g. CONSTRAINT_ADDED for /constraints/-), or ' +
+        'drop the operation and keep the content in ledger_entries.',
+    );
   }
 }
 

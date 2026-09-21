@@ -77,12 +77,13 @@
         "CAPABILITY_REQUESTED",
         "PLAN_CHANGE_PROPOSED",
         "CHECKPOINT_CREATED",
-        "MISSION_STATUS_CHANGED"
+        "MISSION_STATUS_CHANGED",
+        "CONSTRAINT_ADDED"
       ]
     },
     "operations": {
       "type": "array",
-      "minItems": 1,
+      "minItems": 0,
       "items": {
         "$ref": "#/$defs/operation"
       }

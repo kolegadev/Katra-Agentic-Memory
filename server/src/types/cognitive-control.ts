@@ -14,7 +14,11 @@ export type DeltaType =
   | 'OBJECTIVE_CREATED' | 'OBJECTIVE_UPDATED' | 'OBJECTIVE_COMPLETED'
   | 'SUCCESS_CRITERION_UPDATED'
   | 'BLOCKED' | 'CAPABILITY_REQUESTED' | 'PLAN_CHANGE_PROPOSED'
-  | 'CHECKPOINT_CREATED' | 'MISSION_STATUS_CHANGED';
+  | 'CHECKPOINT_CREATED' | 'MISSION_STATUS_CHANGED'
+  // Appends one constraint to mission-state `constraints`. Added 2026-09-21:
+  // constraint ADDITION had no delta_type and no applier branch, so
+  // `add /constraints/-` was accepted-and-discarded. See state-delta-service.ts.
+  | 'CONSTRAINT_ADDED';
 export type DeltaStatus = 'proposed' | 'accepted' | 'rejected' | 'conflict' | 'duplicate';
 export type EntryType =
   | 'claim' | 'evidence' | 'assumption' | 'hypothesis' | 'uncertainty'
