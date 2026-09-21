@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Machine-health reviewer — Satori's daily custody loop over team machines.
+"""Machine-health reviewer — the host agent's daily custody loop over team machines.
 
 Reads machine_health events from Katra (Mongo), assesses every known machine,
 flags problems, and drives the incident-improvement loop (docs/
@@ -9,10 +9,10 @@ CARD DUE marker so the reviewing session closes the incident with a card.
 Output:
 - human report on stdout
 - history appended to ~/.katra/inbox/health-reports.md
-- when anything needs action: an "Attention: Satori" agent message posted to
-  the shared scope (tagged machine-health-report) so the inbox loop/session
-  picks it up, plus a needs-owner entry for anything that is John's call
-  (hardware, tailnet-level, machines with no collector).
+- when anything needs action: an "Attention: <local identity>" agent message
+  posted to the shared scope (tagged machine-health-report) so the inbox
+  loop/session picks it up, plus a needs-owner entry for anything that is
+  the owner's call (hardware, tailnet-level, machines with no collector).
 
 Usage:
     python3 health_review.py --hours 26 [--write-report] [--post-alert]
@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 import urllib.request
@@ -33,11 +34,34 @@ REPORT_FILE = Path.home() / ".katra" / "inbox" / "health-reports.md"
 NEEDS_OWNER = Path.home() / ".katra" / "inbox" / "needs-owner.md"
 API = "http://localhost:9012/api/v1"
 
+# Identity is deployment data: the alert is posted by and addressed to the
+# local identity (KATRA_USER_ID), never a hardcoded name.
+LOCAL_ID = (os.environ.get("KATRA_USER_ID", "katra") or "katra").strip() or "katra"
+LOCAL_NAME = LOCAL_ID.title()
+
+
+def _mongo_password() -> str:
+    """MONGO_PASS env → repo .env → legacy default (no hardcoded secrets)."""
+    env_pass = os.environ.get("MONGO_PASS", "").strip()
+    if env_pass:
+        return env_pass
+    for cand in (Path.home() / "Katra-Agentic-Memory" / ".env", Path(".env")):
+        try:
+            for raw in cand.open(encoding="utf-8"):
+                line = raw.strip()
+                if line.startswith("MONGO_PASS="):
+                    val = line.split("=", 1)[1].split("#", 1)[0].strip().strip('"').strip("'")
+                    if val:
+                        return val
+        except OSError:
+            continue
+    return "change-me"
+
 
 def mongo_query(js: str) -> list:
     out = subprocess.run(
         ["docker", "exec", "katra-mongo", "mongosh", "--quiet",
-         "-u", "admin", "-p", "change-me", "--authenticationDatabase", "admin",
+         "-u", "admin", "-p", _mongo_password(), "--authenticationDatabase", "admin",
          "katra", "--eval", js],
         capture_output=True, text=True, timeout=120)
     if out.returncode != 0:
@@ -78,7 +102,7 @@ def post_agent_message(message: str) -> bool:
     if not key:
         return False
     payload = {
-        "user_id": "satori",
+        "user_id": LOCAL_ID,
         "event_type": "agent_message",
         "content": {"message": message},
         "metadata": {"tags": ["inter-agent", "agent-message", "machine-health-report"]},
@@ -211,7 +235,7 @@ def main() -> int:
     if card_due:
         alert_parts.append(f"incident cards due: {', '.join(card_due)}")
     if args.post_alert and alert_parts:
-        msg = ("Attention: Satori — FROM: Satori — machine health review "
+        msg = (f"Attention: {LOCAL_NAME} — FROM: {LOCAL_NAME} — machine health review "
                f"{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')}Z: "
                + " | ".join(alert_parts)
                + " — review, resolve, then close each incident with a card "

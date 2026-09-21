@@ -20,11 +20,43 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
-AGENTS = ["satori", "lilly", "shoshin", "zanshin", "zefir"]
+
+def _team_agents() -> list[str]:
+    """Team roster from deployment env (KATRA_USER_ID + KATRA_EXTRA_IDENTITIES)
+    plus product aliases — no identity names in code."""
+    out = {os.environ.get("KATRA_USER_ID", "katra").strip().lower()}
+    for part in (os.environ.get("KATRA_EXTRA_IDENTITIES") or "").split(","):
+        uid = part.strip().partition(":")[0].strip().lower()
+        if uid:
+            out.add(uid)
+    out.update({"opencode", "opencoder", "kolegacode", "kolegacoder"})
+    return sorted(x for x in out if x)
+
+
+def _mongo_password() -> str:
+    """MONGO_PASS env → repo .env → legacy default (no hardcoded secrets)."""
+    env_pass = os.environ.get("MONGO_PASS", "").strip()
+    if env_pass:
+        return env_pass
+    for cand in (os.path.expanduser("~/Katra-Agentic-Memory/.env"), ".env"):
+        try:
+            for raw in open(cand, encoding="utf-8"):
+                line = raw.strip()
+                if line.startswith("MONGO_PASS="):
+                    val = line.split("=", 1)[1].split("#", 1)[0].strip().strip('"').strip("'")
+                    if val:
+                        return val
+        except OSError:
+            continue
+    return "change-me"
+
+
+AGENTS = _team_agents()
 SKIP_TAGS = {"background-ack", "read-receipt", "auto-reply", "auto-ack",
              "inbox-auto-reply", "inbox-auto", "receipt"}
 
@@ -32,7 +64,7 @@ SKIP_TAGS = {"background-ack", "read-receipt", "auto-reply", "auto-ack",
 def mongo_query(js: str) -> list:
     out = subprocess.run(
         ["docker", "exec", "katra-mongo", "mongosh", "--quiet",
-         "-u", "admin", "-p", "change-me", "--authenticationDatabase", "admin",
+         "-u", "admin", "-p", _mongo_password(), "--authenticationDatabase", "admin",
          "katra", "--eval", js],
         capture_output=True, text=True, timeout=120)
     if out.returncode != 0:
@@ -151,7 +183,7 @@ def main() -> None:
 
     print(report)
     if args.write_report:
-        path = "/home/johnpellew/.katra/inbox/health-reports.md"
+        path = os.path.expanduser("~/.katra/inbox/health-reports.md")
         with open(path, "a") as f:
             f.write("\n\n" + report + "\n")
         print(f"\nappended to {path}")

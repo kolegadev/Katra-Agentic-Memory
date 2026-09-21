@@ -64,9 +64,18 @@ MY_NAMES = {n.strip().lower() for n in
             if n.strip()}
 
 
+def _norm(name: str) -> str:
+    """Alnum-only lowercase form so 'Example Agent', 'example-agent' and
+    'exampleagent' compare equal."""
+    return re.sub(r"[^a-z0-9]", "", (name or "").lower())
+
+
 def _configured_agents() -> set[str]:
     """All known agent names: local + KATRA_EXTRA_IDENTITIES + product aliases."""
     out = {os.environ.get("KATRA_USER_ID", "katra").lower()}
+    agent_id = os.environ.get("KATRA_AGENT_ID", "").strip().lower()
+    if agent_id:
+        out.add(agent_id)
     for part in (os.environ.get("KATRA_EXTRA_IDENTITIES") or "").split(","):
         uid = part.strip().partition(":")[0].strip().lower()
         if uid:
@@ -77,9 +86,12 @@ def _configured_agents() -> set[str]:
 
 KNOWN_AGENTS = _configured_agents()
 
+# Match headers written with spaces ('Example Agent'), hyphens
+# ('Example-Agent') or raw ids — all case-insensitive.
 ATTN_RE = re.compile(
     r"Attention:\s*(" +
-    "|".join(sorted((n.title() for n in KNOWN_AGENTS), key=len, reverse=True)) +
+    "|".join(sorted((n.title().replace("-", "[ -]") for n in KNOWN_AGENTS),
+                    key=len, reverse=True)) +
     ")",
     re.IGNORECASE)
 
@@ -111,10 +123,30 @@ KOLEGA_BIN = os.path.expanduser(
 
 
 # ── Mongo access ──────────────────────────────────────────────────────────
+def _mongo_password() -> str:
+    """Resolve the mongo admin password: MONGO_PASS env → repo .env → legacy default."""
+    env_pass = os.environ.get("MONGO_PASS", "").strip()
+    if env_pass:
+        return env_pass
+    env_file = os.path.join(REPO, ".env")
+    if os.path.isfile(env_file):
+        try:
+            for raw in open(env_file, encoding="utf-8").read().splitlines():
+                line = raw.strip()
+                if line.startswith("MONGO_PASS="):
+                    # Strip inline comments + quotes, then whitespace.
+                    val = line.split("=", 1)[1].split("#", 1)[0].strip().strip('"').strip("'")
+                    if val:
+                        return val
+        except OSError:
+            pass
+    return "change-me"
+
+
 def mongo_query(js: str) -> str:
     out = subprocess.run(
         ["docker", "exec", "katra-mongo", "mongosh", "--quiet",
-         "-u", "admin", "-p", "change-me", "--authenticationDatabase", "admin",
+         "-u", "admin", "-p", _mongo_password(), "--authenticationDatabase", "admin",
          "katra", "--eval", js],
         capture_output=True, text=True, timeout=60)
     if out.returncode != 0:
@@ -128,7 +160,8 @@ def _js_literal(obj) -> str:
 
 def fetch_candidates() -> list[dict]:
     """All Attention-addressed shared-scope events not authored by me."""
-    names_re = "|".join(sorted((n.title() for n in KNOWN_AGENTS), key=len, reverse=True))
+    names_re = "|".join(sorted((n.title().replace("-", "[ -]") for n in KNOWN_AGENTS),
+                               key=len, reverse=True))
     js = f"""
 var rows = db.episodic_events.find({{
   shared_id: {_js_literal(SHARED_ID)},
@@ -236,7 +269,7 @@ def target_is_me(text: str) -> bool:
         if not line:
             continue
         m = ATTN_RE.match(line)
-        return bool(m) and m.group(1).lower() in MY_NAMES
+        return bool(m) and _norm(m.group(1)) in {_norm(n) for n in MY_NAMES}
     return False
 
 

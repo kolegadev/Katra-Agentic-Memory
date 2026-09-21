@@ -14,7 +14,8 @@ LOCAL_DIR="${KATRA_INBOX_DIR:-$REPO/private/integrations/kolega-code/inbox-agent
 # extra identity in KATRA_EXTRA_IDENTITIES ('id:Display Name' pairs).
 EXTRA_LOOPS="${KATRA_INBOX_EXTRA_LOOPS:-}"
 if [ -z "$EXTRA_LOOPS" ]; then
-  for part in ${KATRA_EXTRA_IDENTITIES:-}; do
+  IFS=, read -ra _parts <<< "${KATRA_EXTRA_IDENTITIES:-}"
+  for part in "${_parts[@]}"; do
     id="${part%%:*}"
     [ -n "$id" ] && EXTRA_LOOPS="${EXTRA_LOOPS:+$EXTRA_LOOPS,}$id"
   done
