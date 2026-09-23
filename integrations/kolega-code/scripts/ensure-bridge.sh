@@ -131,6 +131,8 @@ fi
 
 # 3b. Register the command hooks with the CLI (update-proof path). Merge,
 #     never clobber: other hooks (e.g. action_card_hook) must survive.
+#     2026-09-23 wake-ritual re-implementation: PostCompact joins the
+#     registration so /compress re-runs the full bootstrap (directive item b).
 HOOKS_JSON="$STATE_DIR/hooks.json"
 CMD_RUNNER="$HERE/.venv/bin/python $HERE/scripts/hook_runner.py"
 python3 - "$HOOKS_JSON" "$CMD_RUNNER" <<'PYEOF'
@@ -156,14 +158,33 @@ def ensure(event, timeout):
         entry["hooks"].insert(0, {"type": "command", "command": runner, "timeout": timeout})
 ensure("SessionStart", 20)
 ensure("UserPromptSubmit", 15)
+ensure("PostCompact", 20)
 os.makedirs(os.path.dirname(path), exist_ok=True)
 with open(path, "w") as f:
     json.dump(cfg, f, indent=2)
 PYEOF
 if [ -f "$HOOKS_JSON" ]; then
-  ok "command hooks registered in $HOOKS_JSON"
+  ok "command hooks registered in $HOOKS_JSON (SessionStart + UserPromptSubmit + PostCompact)"
 else
   bad "hooks.json registration failed"
+fi
+
+# 3c. 2026-09-23 migration (directive item e): retire the pre-f9b5031
+#     config filename. A machine with ONLY satori-hook.json silently falls
+#     through to defaulted config (the dead-MacBook incident) — never allow
+#     that state to persist.
+LEGACY_CFG="$STATE_DIR/satori-hook.json"
+if [ -f "$LEGACY_CFG" ]; then
+  if [ ! -f "$HOOK_CFG" ]; then
+    cp "$LEGACY_CFG" "$HOOK_CFG" && chmod 600 "$HOOK_CFG" \
+      && ok "migrated satori-hook.json -> katra-hook.json (chmod 600)" \
+      || bad "migration copy failed"
+  fi
+  if [ -f "$HOOK_CFG" ]; then
+    mv "$LEGACY_CFG" "$LEGACY_CFG.migrated-$(date +%Y%m%d-%H%M%S)" \
+      && ok "retired stale satori-hook.json (renamed)" \
+      || bad "could not retire satori-hook.json"
+  fi
 fi
 
 if [ "$HOST" = "localhost" ] && [ "$USER_ID" != "katra" ]; then

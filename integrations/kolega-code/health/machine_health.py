@@ -212,6 +212,37 @@ def bridge_state() -> dict:
     except Exception as exc:
         result["katra_health_ok"] = False
         result["katra_health_error"] = str(exc)[:120]
+    # 2026-09-23 fail-loud guard (directive item f): the bridge alarm marker
+    # written by hook_runner.py / bridge-guard.sh is escalated here — a dead
+    # bridge must degrade the machine's health report, never pass silently.
+    alarm_file = state_dir / "bridge-alarm.json"
+    if alarm_file.exists():
+        try:
+            result["bridge_alarm"] = json.loads(alarm_file.read_text())
+        except Exception:
+            result["bridge_alarm"] = {"reason": "alarm marker unparseable"}
+    # Live assertion: a SessionStart self-test must return non-empty
+    # additionalContext. This is the same fingerprint check the incident
+    # lacked (58-byte empty envelope = dead bridge).
+    runner = Path.home() / "Katra-Agentic-Memory" / "integrations" / "kolega-code" / "scripts" / "hook_runner.py"
+    venv_py = Path.home() / "Katra-Agentic-Memory" / "integrations" / "kolega-code" / ".venv" / "bin" / "python"
+    if runner.exists() and venv_py.exists():
+        try:
+            proc = subprocess.run(
+                [str(venv_py), str(runner)],
+                input=json.dumps({"hook_event_name": "SessionStart", "session_id": "machine-health-self-test"}),
+                capture_output=True, text=True, timeout=30,
+                env={**os.environ, "KOLEGA_CODE_STATE_DIR": str(state_dir)},
+            )
+            try:
+                out = json.loads(proc.stdout.strip().splitlines()[-1])
+                ctx = out.get("hookSpecificOutput", {}).get("additionalContext")
+                result["bridge_self_test_context"] = bool(ctx and len(ctx) > 40)
+            except Exception:
+                result["bridge_self_test_context"] = False
+        except Exception as exc:
+            result["bridge_self_test_context"] = False
+            result["bridge_self_test_error"] = str(exc)[:120]
     return result
 
 
@@ -284,6 +315,10 @@ def compute_status(checks: dict) -> tuple[str, list[str]]:
         reasons.append("bridge config missing")
     if br.get("katra_health_ok") is False:
         reasons.append("katra unreachable")
+    if br.get("bridge_alarm"):
+        reasons.append("bridge alarm: " + str(br["bridge_alarm"].get("reason", "unknown"))[:120])
+    if br.get("bridge_self_test_context") is False:
+        reasons.append("bridge self-test returned no context (dead-bridge fingerprint)")
     if disk is not None and disk < 10:
         reasons.append(f"disk free {disk}%")
     if checks.get("kolega", {}).get("installed") is False:

@@ -28,14 +28,24 @@ At the start of every session — and before answering ANY identity, memory, or 
 
 ## When to Use This Skill
 - At session start, unconditionally.
+- **After /compress** (the PostCompact hook re-runs the full bootstrap automatically — if it did not, run the wake script now).
+- **After /clear** (the bridge escalates the next prompt to a full bootstrap via epoch detection — if identity or memory feels absent, run the wake script explicitly).
+- **After `kolega-code update`** — only via `integrations/kolega-code/scripts/kolega-update.sh`, which re-asserts and verifies the bridge; a plain `kolega-code update` can silently orphan the bridge (2026-08-20, 2026-09-23 incidents).
 - When the operator (or anyone) asks: "who are you", "do you remember", "how do you feel", "what did we discuss", "your health", "your memory".
 - Before reporting on any long-running project state (SEO/analytics projects, trading, missions).
 
 ## Workflow
 
-1. **Run the wake script** (fast path):
-   `bash ~/.kolega/katra-wake.sh`
+1. **Run the wake script** (fast path, PLATFORM-AWARE — the macOS state dir is
+   `~/Library/Application Support/kolega-code`, and `~/.kolega` does NOT exist there):
+   - Linux (thebrick): `bash ~/.kolega/wake-<identity>.sh` (e.g. `wake-satori.sh`), or the generic
+     `integrations/kolega-code/scripts/katra_inbox.py status` + `scripts/bridge-guard.sh`.
+   - macOS: `bash "$HOME/Library/Application Support/kolega-code/../wake-<identity>.sh"` if provisioned,
+     else run the bridge guard from the repo checkout:
+     `bash $HOME/Katra-Agentic-Memory/integrations/kolega-code/scripts/bridge-guard.sh`
+     and `KATRA_USER_ID=<you> python3 $HOME/Katra-Agentic-Memory/integrations/kolega-code/scripts/katra_inbox.py status`.
    It prints: identity record, latest daily journal, unresolved threads, memory health counts, and search instructions for the operating rules.
+   A guard that exits non-zero is a DEAD BRIDGE — escalate, do not work from a blank context.
 
 2. **Load identity** (REST, no auth): `GET http://localhost:9012/api/v1/admin/identity`
    Confirm: name Katra, established 2026-08-19, chosen by the agent in conversation with the operator.

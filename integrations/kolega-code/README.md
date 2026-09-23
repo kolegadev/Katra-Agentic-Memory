@@ -304,3 +304,47 @@ cd integrations/kolega-code
 .venv/bin/python scripts/test_hook.py        # end-to-end against live Katra
 printf '{"hook_event_name":"SessionStart","session_id":"t1"}' | .venv/bin/python scripts/hook_runner.py
 ```
+
+## Wake-ritual deployment points (2026-09-23 re-implementation, John's directive)
+
+The wake ritual (identity + memory bootstrap) is re-asserted at FOUR points:
+
+1. **Kolega Code startup** — `SessionStart` hook: full bootstrap, all 11 sources.
+2. **After /compress** — `PostCompact` hook: re-runs the FULL bootstrap
+   immediately (PreCompact stays advisory/unregistered). Registered by
+   `ensure-bridge.sh`.
+3. **After /clear** — the CLI emits NO event for /clear, so the bridge
+   DETECTS it: `clear_history()` starts a new epoch in the CLI's session
+   store (`start_epoch("agent_clear_command")`), and the next
+   `UserPromptSubmit` escalates to a full bootstrap when the stored epoch
+   changed since our last bootstrap (marker files in
+   `<state dir>/bridge-session/`). Chosen over patching the CLI because any
+   venv edit is wiped by the next update — the exact trap this work prevents.
+4. **After `kolega-code update`** — NEVER run `kolega-code update` bare on a
+   bridge machine. Use `scripts/kolega-update.sh`: upgrade, then
+   `ensure-bridge.sh` re-assertion, then `bridge-guard.sh` verification.
+   The guard also runs from cron every 10 minutes (self-healing): if an
+   update (however run) drops the registrations, the guard repairs and
+   re-verifies.
+
+## Fail-loud guard
+
+A dead bridge must never hide for days again (2026-09-19→23 MacBook
+incident: empty 58-byte envelope, no signal). Three layers:
+
+- `hook_runner.py` writes `<state dir>/bridge-alarm.json` + loud stderr when
+  the config is defaulted (empty resolved key, or localhost mcp_url with
+  nothing listening) or a bootstrap returns no `additionalContext`.
+- `bridge-guard.sh` (cron, every 10 min) verifies config sanity, all three
+  hook registrations, and a live SessionStart self-test; repairs via
+  `ensure-bridge.sh` and raises the same alarm on failure.
+- `health/machine_health.py` reads the alarm marker and runs its own
+  SessionStart self-test; a dead bridge degrades the machine health event
+  (alarm, not warning).
+
+## Migration
+
+`ensure-bridge.sh` retires the pre-`f9b5031` config filename: any
+`satori-hook.json` is copied to `katra-hook.json` when the new name is
+missing and renamed to `*.migrated-<ts>` when both exist. A machine holding
+only the old name silently fell through to defaulted config — never allow it.
