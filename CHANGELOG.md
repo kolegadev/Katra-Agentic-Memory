@@ -14,8 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Per-agent wake rituals** — identity, latest journal, unresolved threads, memory health, rules recall, messages from the team; identity retry ×3 with a fix checklist; per-machine `~/.katra/wake-env.sh`
 - **Katra Graph code tools** — `sync_code_graph`, `scan_codebase`, `code_graph_status` (replaces the Graphify toolchain in the bug-fix and loop-director skills)
 - **Client key provisioning** — `ensureClientKeys()` generates per-identity client keys at boot, printed once, stored as sha256 hashes only; `resolveCallerIdentity` pins every write to the caller
+- **Personality registry parity tests** — `server/tests/unit/personality-registry-parity.test.ts` (artifact freshness, the agent-message invariant, and a zero-drift proof computed from `git show 48ba7e6:`) and `integrations/kolega-code/scripts/test_personality_registry.py` (bridge-vs-registry parity, stdlib only, run in CI)
 
 ### Changed
+- **Personality profiles now come from one registry** — `shared/personality/registry.json` is the single source of truth for the ten memory personality profiles; `server/src/services/integration/personality-profiles.ts` and `integrations/kolega-code/kolega_katra_bridge/personality.py` keep their public APIs and behaviour unchanged and now consume generated artifacts (`personality-profiles.generated.ts`, `personality_registry.generated.py`) rendered by `scripts/generate-personality-registry.mjs` (`--check` runs in CI, so a hand edit fails the build). Every profile's names, weights, floors and scoring are byte-for-byte what they were — verified against `48ba7e6`
 - **README + documentation overhaul** — identity separation, message bus, wake rituals, 66-tool reference, retired legacy keys, license section cleanup
 - Legacy `MCP_API_KEY` / `BACKUP_MCP_KEYS` environment keys retired — they no longer authenticate
 - `kolega-agent` / `opencode-agent` user ids rekeyed to the named identities; ~1.3M documents migrated
