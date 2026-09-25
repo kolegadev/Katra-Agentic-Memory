@@ -28,7 +28,11 @@ This script drives the real bridge code with a request-capturing fake client
   6. the default transport is still `httpx.Client(timeout=3.0)` (proved with a
      stub `httpx` module, because httpx is optional and may not be installed);
   7. the two new BridgeConfig fields default to None and were APPENDED, so
-     positional construction keeps its meaning.
+     positional construction keeps its meaning;
+  8. ITER-4: a hostile identity (`bob&user_id=agent-b`) is URL-encoded in the
+     request line, so it stays ONE `user_id` parameter and cannot name another
+     identity, and a newline-bearing identity is escaped in the 401/403 warning,
+     so it cannot forge a log record.
 """
 
 from __future__ import annotations
@@ -555,6 +559,91 @@ def case_new_fields_are_appended_and_optional() -> None:
     check("sources are still expanded", positional.sources == ["daily_reflection", "philosophical_insights", "unresolved_threads"], str(positional.sources))
 
 
+def case_hostile_identity_is_encoded_and_escaped() -> None:
+    """ITER-4: a crafted identity can neither add query parameters nor forge a
+    log record. `user_id` is configuration input, so it is untrusted for the
+    purposes of the request line and of the log."""
+    print("\n10. a hostile identity is URL-encoded in the request and escaped in the warning")
+
+    # ── (a) query-parameter injection: the identity must stay ONE value ──────
+    reset_state()
+    param_attacker = "bob&user_id=agent-b"
+    client = FakeClient(FakeResponse(200, body({"personality": "balanced"})))
+    payload = fetch(config_for(param_attacker), client)
+
+    check("the fetch still succeeds for a hostile-but-valid identity", isinstance(payload, dict), repr(payload))
+    request_url = client.requests[0]["url"] if client.requests else ""
+    query = query_of(request_url)
+    check("user_id is still the only query parameter", list(query) == ["user_id"], request_url)
+    check("the identity round-trips as one parameter value", query.get("user_id") == [param_attacker], request_url)
+    check(
+        "a second user_id cannot be smuggled in",
+        query.get("user_id") != ["bob", "agent-b"],
+        request_url,
+    )
+    check(
+        "the identity appears URL-encoded in the request line",
+        request_url.endswith("user_id=bob%26user_id%3Dagent-b"),
+        request_url,
+    )
+    check("no raw '&' survives in the query string", "&user_id=" not in request_url, request_url)
+    check("the path is unchanged by the hostile identity", urlsplit(request_url).path == PERSONALITY_PATH, request_url)
+
+    # …and the cache entry is still this identity's own (keyed by the raw id).
+    check("the hostile identity got its own cache entry", cache_key(param_attacker) in bridge_config._SERVER_PERSONALITY_CACHE)
+
+    # ── (b) log injection: the warning must be a single, escaped line ────────
+    reset_state()
+    log_attacker = "agent-a\nFORGED personality sync accepted for agent-b"
+    rejecting = FakeClient(FakeResponse(403, {"success": False, "error": "Forbidden"}))
+    logs = capture_logs()
+    try:
+        rejected = fetch(config_for(log_attacker, key="stale"), rejecting)
+    finally:
+        release_logs(logs)
+
+    check("a rejected hostile identity still fails open", rejected is None, repr(rejected))
+    emitted = logs.warnings()
+    check("exactly one log record is emitted", len(emitted) == 1, str(len(emitted)))
+    message = emitted[0] if emitted else ""
+    check("the warning cannot be forged: no raw newline", "\n" not in message, repr(message))
+    check("the warning cannot be forged: no raw carriage return", "\r" not in message, repr(message))
+    check("the identity is rendered escaped", "\\nFORGED" in message, repr(message))
+    check(
+        "the forged text never starts a line of its own",
+        not any(line.startswith("FORGED") for line in message.splitlines()),
+        repr(message),
+    )
+    check("the warning still names the cause", "rejected the bridge key" in message, repr(message))
+    check("the warning still quotes the HTTP status", "403" in message, repr(message))
+
+    # The escaped form is what a single-line log handler writes.
+    formatted = logging.Formatter().format(
+        logging.LogRecord(
+            name=bridge_config.__name__,
+            level=logging.WARNING,
+            pathname=__file__,
+            lineno=0,
+            msg=message,
+            args=(),
+            exc_info=None,
+        )
+    )
+    check("the formatted record is one line", formatted.count("\n") == 0, repr(formatted))
+
+    # ── (c) the hostile identity is still URL-encoded on the default transport ──
+    reset_state()
+    stub = StubHttpx(lambda url, headers: FakeResponse(200, body({"personality": "balanced"})))
+    with stub:
+        fetch(config_for(param_attacker))
+    default_url = stub.clients[0].requests[0]["url"] if stub.clients and stub.clients[0].requests else ""
+    check(
+        "the httpx transport encodes the identity too",
+        default_url.endswith("user_id=bob%26user_id%3Dagent-b"),
+        default_url,
+    )
+
+
 def main() -> int:
     if not REST_BASE:
         print("FAILED: could not derive a REST base from the test mcp_url")
@@ -568,6 +657,7 @@ def main() -> int:
     case_garbage_is_rejected_safely()
     case_default_transport_is_still_httpx()
     case_new_fields_are_appended_and_optional()
+    case_hostile_identity_is_encoded_and_escaped()
     reset_state()
 
     print()

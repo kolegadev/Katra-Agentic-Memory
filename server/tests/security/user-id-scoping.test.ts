@@ -4,7 +4,17 @@
  * Verifies that ALL data access paths enforce user isolation.
  * These tests should run on every build — if any fail, a security fix was regressed.
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+
+const securityStore = vi.hoisted(() => ({ db: null as any }));
+
+vi.mock('../../src/database/connection.js', () => ({
+  get_database: () => securityStore.db,
+  is_database_connected: () => securityStore.db !== null,
+  connect_to_mongodb: async () => {},
+  close_connection: async () => {},
+}));
 
 import { FakeDb } from '../helpers/fake-mongo.js';
 import {
@@ -250,5 +260,91 @@ describe('Security: per-identity personality scoping', () => {
     expect(perIdentityPersonalityEnabled()).toBe(false);
     process.env.PER_IDENTITY_PERSONALITY = 'TRUE-ish';
     expect(perIdentityPersonalityEnabled()).toBe(false);
+  });
+});
+
+/**
+ * ITER-4 — the self-model is identity-scoped too: beliefs and procedural
+ * patterns belong to the identity that wrote them, so an untrusted caller can
+ * neither read nor write another identity's rows. The service is the real one
+ * (bound to an in-memory store), and the MCP handlers are pinned in source.
+ */
+describe('Security: self-model scoping (beliefs + procedural patterns)', () => {
+  /** A fresh service bound to a fresh store — no state survives a test. */
+  async function loadSelfModel(db: FakeDb) {
+    securityStore.db = db;
+    vi.resetModules();
+    const module = await import('../../src/services/processing/self-model-service.js');
+    return module.SelfModelService.get_instance();
+  }
+
+  it("an untrusted caller cannot read another identity's beliefs", async () => {
+    const db = new FakeDb();
+    const service = await loadSelfModel(db);
+    await service.trackBelief('agent-b', 'alice', 'is the reviewer', 0.8, 'observation');
+
+    expect(await service.getAgentBeliefs('agent-a', 'alice')).toEqual([]);
+    // The row is untouched by the failed read and still belongs to agent-b.
+    expect(db.collection('agent_beliefs').docs).toEqual([
+      expect.objectContaining({ user_id: 'agent-b', proposition: 'is the reviewer' }),
+    ]);
+  });
+
+  it("an untrusted caller cannot write into another identity's beliefs", async () => {
+    const db = new FakeDb();
+    const service = await loadSelfModel(db);
+    await service.trackBelief('agent-b', 'alice', 'is the reviewer', 0.8, 'observation');
+    const before = structuredClone(db.collection('agent_beliefs').docs);
+
+    // Writing the same proposition as another identity creates that identity's
+    // OWN row; it cannot match, overwrite or re-attribute agent-b's row.
+    await service.trackBelief('agent-a', 'alice', 'is the reviewer', 0.1, 'untrusted');
+    await service.trackBelief('agent-a', 'alice', 'is the reviewer', 0.2, 'untrusted');
+
+    const rows = db.collection('agent_beliefs').docs;
+    expect(rows).toHaveLength(2);
+    expect(rows.find((doc: any) => doc.user_id === 'agent-b')).toEqual(before[0]);
+    expect(rows.find((doc: any) => doc.user_id === 'agent-a')).toMatchObject({ confidence: 0.2 });
+  });
+
+  it("procedural patterns are per identity: A's never reach B", async () => {
+    const db = new FakeDb();
+    const service = await loadSelfModel(db);
+    for (let i = 0; i < 5; i++) service.recordToolPattern('agent-a', 'search_memories', { query: 'x' }, true);
+    await service.flushProceduralPatterns();
+
+    expect(await service.getProceduralTemplates('agent-b')).toEqual([]);
+    expect(await service.getProceduralPatternCount('agent-b')).toBe(0);
+    expect(await service.getProceduralTemplates('agent-a')).toHaveLength(1);
+
+    // …and the stored rows lead with the identity that produced them.
+    const rows = db.collection('procedural_patterns').docs;
+    expect(rows).toHaveLength(1);
+    expect(rows[0].user_id).toBe('agent-a');
+
+    // B's own observations create B's own row, never a second A row.
+    for (let i = 0; i < 5; i++) service.recordToolPattern('agent-b', 'search_memories', { query: 'x' }, true);
+    await service.flushProceduralPatterns();
+    expect(db.collection('procedural_patterns').docs).toHaveLength(2);
+    expect(await service.getProceduralTemplates('agent-b')).toHaveLength(1);
+  });
+
+  it('the MCP handlers pin the caller and hand the service the resolved identity', () => {
+    const src = readFileSync(new URL('../../src/mcp-server.ts', import.meta.url), 'utf8');
+
+    const beliefsStart = src.indexOf('handleGetAgentBeliefs');
+    const beliefsBody = src.slice(beliefsStart, beliefsStart + 800);
+    expect(beliefsBody).toContain('resolveUserId(input.user_id)');
+    expect(beliefsBody).toContain('getAgentBeliefs(userId,');
+
+    const templatesStart = src.indexOf('handleGetProceduralTemplates');
+    const templatesBody = src.slice(templatesStart, templatesStart + 700);
+    expect(templatesBody).toContain('resolveUserId(input.user_id)');
+    expect(templatesBody).toContain('getProceduralTemplates(userId)');
+
+    // No path writes a belief or a pattern under a caller-supplied identity.
+    expect(src).not.toMatch(/trackBelief\(input\.user_id/);
+    expect(src).not.toMatch(/recordToolPattern\([^)]*input\.user_id/);
+    expect(src).toMatch(/const patternIdentity = resolveUserId\(/);
   });
 });

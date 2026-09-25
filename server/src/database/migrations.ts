@@ -12,6 +12,21 @@ export async function runDatabaseMigrations(db: Db): Promise<void> {
   console.log('🗄️ Running database migrations...');
 
   try {
+    // ITER-4: beliefs are identity-scoped, so `agent_beliefs` carries the unique
+    // key {user_id, entity_name, proposition}. A unique index cannot be built
+    // over pre-existing duplicate keys, so the duplicate rows are collapsed —
+    // deterministically, with the counts logged and returned — BEFORE index
+    // initialisation, which drops and recreates every declared index and would
+    // otherwise fail on that unique key. Running it again is a no-op.
+    // Imported here (not at module load) to keep the connection→migrations
+    // import graph acyclic, as the service imports the connection module.
+    try {
+      const { dedupeAgentBeliefs } = await import('../services/processing/self-model-service.js');
+      await dedupeAgentBeliefs(db);
+    } catch (error) {
+      console.error('  ⚠️ agent_beliefs dedupe migration failed:', error);
+    }
+
     await initializeMemorySystemIndexes(db);
     await migrateMemoryScopeDefaults(db);
     console.log('✅ Database migrations completed successfully');

@@ -780,7 +780,7 @@ const tools = [
   },
   {
     name: 'get_agent_beliefs',
-    description: 'Retrieve the agent\'s Theory of Mind beliefs about a specific entity — what propositions the agent believes about that entity, along with confidence and source.',
+    description: 'Retrieve the caller\'s Theory of Mind beliefs about a specific entity — what propositions the agent believes about that entity, along with confidence and source. Pinned to the caller\'s identity: untrusted callers cannot read another identity\'s beliefs.',
     inputSchema: zodToJsonSchema(z.object({
       entity_name: z.string().describe('The entity name to retrieve beliefs for'),
       user_id: z.string().optional(),
@@ -788,8 +788,10 @@ const tools = [
   },
   {
     name: 'get_procedural_templates',
-    description: 'Get cached procedural memory templates — tool-call patterns that have been observed frequently enough (>= 5 occurrences) to be considered habitual. Shows tool name, input shape, frequency, and average success rate.',
-    inputSchema: zodToJsonSchema(z.object({})) as Record<string, unknown>,
+    description: 'Get the caller\'s procedural memory templates — tool-call patterns that have been observed frequently enough (>= 5 occurrences) to be considered habitual and that survive a restart. Shows tool name, input shape, frequency, and average success rate. Pinned to the caller\'s identity: untrusted callers cannot read another identity\'s patterns.',
+    inputSchema: zodToJsonSchema(z.object({
+      user_id: z.string().optional(),
+    })) as Record<string, unknown>,
   },
   {
     name: 'get_memory_decay_stats',
@@ -1283,14 +1285,18 @@ async function handleGetMindWander(args: unknown): Promise<TextContent[]> {
   return [{ type: 'text', text: lines.join('\n') }];
 }
 
-async function handleGetAgentBeliefs(args: unknown): Promise<TextContent[]> {
+export async function handleGetAgentBeliefs(args: unknown): Promise<TextContent[]> {
   const input = z.object({
     entity_name: z.string(),
     user_id: z.string().optional(),
   }).parse(args);
 
+  // ITER-4: beliefs are identity-scoped, so the reader is caller-pinned — an
+  // untrusted caller reads its OWN beliefs about the entity even when it passes
+  // another identity's user_id (trusted callers may name another identity).
+  const userId = resolveUserId(input.user_id);
   const service = SelfModelService.get_instance();
-  const beliefs = await service.getAgentBeliefs(input.entity_name);
+  const beliefs = await service.getAgentBeliefs(userId, input.entity_name);
 
   const lines: string[] = [
     `## Agent Beliefs — ${input.entity_name}`,
@@ -1310,9 +1316,16 @@ async function handleGetAgentBeliefs(args: unknown): Promise<TextContent[]> {
   return [{ type: 'text', text: lines.join('\n') }];
 }
 
-async function handleGetProceduralTemplates(_args: unknown): Promise<TextContent[]> {
+export async function handleGetProceduralTemplates(args: unknown): Promise<TextContent[]> {
+  const input = z.object({
+    user_id: z.string().optional(),
+  }).parse(args);
+
+  // ITER-4: procedural patterns are persisted per identity, so the reader is
+  // caller-pinned exactly like every other identity-scoped read.
+  const userId = resolveUserId(input.user_id);
   const service = SelfModelService.get_instance();
-  const templates = service.getProceduralTemplates();
+  const templates = await service.getProceduralTemplates(userId);
 
   const lines: string[] = [
     '## Procedural Templates',
@@ -1503,9 +1516,13 @@ async function handleRunOperationalDistillation(args: unknown): Promise<TextCont
   const input = z.object({
     min_observations: z.number().int().min(2).max(20).optional().default(3),
     auto_synthesize: z.boolean().optional().default(true),
+    user_id: z.string().optional(),
   }).parse(args);
-  
+
+  // ITER-4: the procedural patterns it distils are per identity, so the run is
+  // caller-pinned like every other identity-scoped read.
   const result = await operationalDistillationService.runDistillation({
+    userId: resolveUserId(input.user_id),
     minObservations: input.min_observations,
     autoSynthesize: input.auto_synthesize,
   });
@@ -3758,6 +3775,10 @@ function registerHandlers(server: Server, getIdentity?: () => CallerIdentity) {
       // Untrusted callers' supplied user_id is ignored (IDOR boundary);
       // trusted callers (loopback / admin key) may act for a named user.
       const args = rawArgs ? { ...rawArgs, user_id: resolveUserId((rawArgs as any).user_id) } : rawArgs;
+      // ITER-4: a procedural pattern belongs to the identity that produced it,
+      // so the identity observed below is the resolved caller (never a
+      // caller-supplied id for an untrusted caller).
+      const patternIdentity = resolveUserId((rawArgs as any)?.user_id);
       try {
       let result: TextContent[];
       switch (name) {
@@ -3898,9 +3919,11 @@ function registerHandlers(server: Server, getIdentity?: () => CallerIdentity) {
       // ── Cerebellum: procedural pattern observation ──────────
       // Record every tool call so Katra learns which patterns
       // are frequent and reliable. After 5+ identical patterns,
-      // they become "habits" (procedural templates).
+      // they become "habits" (procedural templates) — persisted per
+      // identity, so one identity never reads another's habits.
       try {
         SelfModelService.get_instance().recordToolPattern(
+          patternIdentity,
           name,
           (args || {}) as Record<string, unknown>,
           true
@@ -3912,6 +3935,7 @@ function registerHandlers(server: Server, getIdentity?: () => CallerIdentity) {
       // Record failed tool calls too — the Cerebellum learns from failures
       try {
         SelfModelService.get_instance().recordToolPattern(
+          patternIdentity,
           name,
           (args || {}) as Record<string, unknown>,
           false

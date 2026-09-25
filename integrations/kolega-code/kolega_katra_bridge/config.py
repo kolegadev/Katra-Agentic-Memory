@@ -10,6 +10,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 logger = logging.getLogger(__name__)
 
@@ -199,13 +200,17 @@ def _warn_personality_rejected(cache_key: str, status: int, now: float) -> None:
     to the identity it asked for. That used to be invisible (the hook quietly
     kept the local personality); it must reach an operator, but a bridge on a
     rejected key would otherwise write a warning on every single prompt.
+
+    The key embeds the identity, which is configuration input: it is rendered
+    with `%r`, so a crafted `user_id` (a newline, a fake log record) is escaped
+    into a single line and cannot forge a log entry.
     """
     last = _SERVER_PERSONALITY_WARNED_AT.get(cache_key)
     if last is not None and (now - last) < _SERVER_PERSONALITY_TTL_SECONDS:
         return
     _SERVER_PERSONALITY_WARNED_AT[cache_key] = now
     logger.warning(
-        "Personality sync rejected the bridge key (HTTP %s for %s) — the server "
+        "Personality sync rejected the bridge key (HTTP %s for %r) — the server "
         "did not serve this identity's record, so the hook is continuing with "
         "the locally-configured personality; check that the bridge api_key is "
         "mapped to this user_id",
@@ -233,11 +238,17 @@ def _fetch_server_personality(cfg: BridgeConfig, client: Any = None) -> dict | N
     payload is the server's `config` object plus the server-reported `origin`
     and `version` when it supplies them.
 
+    In this iteration the identity in the request line is URL-encoded
+    (`urllib.parse.quote(identity, safe='')`), so a `user_id` containing `&`,
+    `=`, `#` or a space stays ONE parameter value and cannot inject extra query
+    parameters (e.g. a second `user_id` naming another identity).
+
     Fail-open, always: any failure (unreachable server, 5xx, garbage body, a
     rejected key) returns None and never raises, so the caller keeps the
     locally-configured personality. A 401/403 is logged as a warning (rate-
-    limited to one per TTL window per cache key); everything else stays at
-    debug — the hook runs on every prompt and must not be noisy.
+    limited to one per TTL window per cache key, with the identity escaped);
+    everything else stays at debug — the hook runs on every prompt and must not
+    be noisy.
     """
     rest_base = _rest_base_from_mcp(cfg.mcp_url)
     if not rest_base:
@@ -249,7 +260,7 @@ def _fetch_server_personality(cfg: BridgeConfig, client: Any = None) -> dict | N
     if cached and (now - cached[1]) < _SERVER_PERSONALITY_TTL_SECONDS:
         return cached[0]
 
-    url = f"{rest_base}/admin/personality?user_id={cfg.user_id}"
+    url = f"{rest_base}/admin/personality?user_id={quote(cfg.user_id, safe='')}"
     headers = {"Authorization": f"Bearer {cfg.api_key}"} if cfg.api_key else {}
     try:
         if client is None:

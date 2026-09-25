@@ -20,6 +20,7 @@ import { embeddingService } from './services/infrastructure/embedding-service.js
 import { BackgroundProcessor } from './services/processing/background-processor.js';
 import { SleepConsolidationService } from './services/processing/sleep-consolidation-service.js';
 import { AutonomousExecutive } from './services/processing/autonomous-executive.js';
+import { SelfModelService } from './services/processing/self-model-service.js';
 
 // Routes
 import { create_memory_routes } from './routes/memory-routes.js';
@@ -219,6 +220,26 @@ async function main() {
     bgProcessor.stop();
     sleepService.stop();
     executive.stop();
+    // ITER-4: procedural observations are batched before they reach the store,
+    // so land the pending ones before the process goes away. The flush never
+    // rejects and reports what did not make it, so a failed shutdown flush is
+    // surfaced instead of looking like a clean exit. (A failed flush re-arms
+    // the debounce, but the process is about to exit — reporting is what is
+    // left to do.)
+    try {
+      const flushed = await SelfModelService.get_instance().flushProceduralPatterns();
+      if (flushed.patterns_written > 0) {
+        console.log(`  Persisted ${flushed.patterns_written} pending procedural pattern(s)`);
+      }
+      if (flushed.errors.length > 0) {
+        console.warn(
+          `  ⚠️ ${flushed.errors.length} procedural pattern(s) could not be persisted before shutdown:`,
+          flushed.errors,
+        );
+      }
+    } catch (error) {
+      console.error('  ⚠️ Could not flush procedural patterns on shutdown:', error);
+    }
     await close_redis_connection();
     process.exit(0);
   };

@@ -6,7 +6,7 @@
 **Katra** is a standalone cognitive memory server for agentic LLMs.  This
 SDK provides a clean, type-annotated Python interface to the core MCP memory
 tools over the streamable-http MCP endpoint. The current Katra server
-registers 66 MCP tools; the SDK wraps the core memory subset listed below,
+registers 81 MCP tools; the SDK wraps the core memory subset listed below,
 and every registered tool is reachable through `list_tools()` /
 `call_tool()` on the low-level client.
 

@@ -32,6 +32,45 @@ vi.mock('../../src/database/redis-connection.js', () => ({
 const README = readFileSync(new URL('../../../README.md', import.meta.url), 'utf8');
 const MCP_TOOLS = readFileSync(new URL('../../../docs/MCP-TOOLS.md', import.meta.url), 'utf8');
 
+/**
+ * ITER-4: the same drift showed up in four more files, so they are policed
+ * here too — every tool-count mention must equal the measured default surface,
+ * and the mention must still be present (deleting one fails the count check).
+ * `expected` is how many mentions that shape has today.
+ */
+const SWEPT_TOOL_COUNTS: Array<{
+  file: string;
+  label: string;
+  pattern: RegExp;
+  expected: number;
+}> = [
+  { file: 'docs/ARCHITECTURE.md', label: '**N registered tools**', pattern: /\*\*(\d+) registered tools\*\*/g, expected: 2 },
+  { file: 'docs/ARCHITECTURE.md', label: '### MCP Tools (N,', pattern: /MCP Tools \((\d+),/g, expected: 1 },
+  { file: 'docs/ARCHITECTURE.md', label: '(N tools,', pattern: /\((\d+) tools,/g, expected: 1 },
+  { file: 'docs/ARCHITECTURE.md', label: '(N tools)', pattern: /\((\d+) tools\)/g, expected: 1 },
+  { file: 'docs/Data-Processing-Pipelines.md', label: 'N MCP tools', pattern: /(\d+) MCP tools/g, expected: 1 },
+  { file: 'sdks/python/README.md', label: 'registers N MCP tools', pattern: /registers (\d+) MCP tools/g, expected: 1 },
+  { file: 'sdks/typescript/README.md', label: 'registers N MCP tools', pattern: /registers (\d+) MCP tools/g, expected: 1 },
+];
+
+/** The pre-fix totals, in every shape the swept documents used to state them. */
+const STALE_TOOL_COUNTS = [
+  '66 registered tools',
+  '67 registered tools',
+  '66 tools',
+  '67 tools',
+  '66 MCP tools',
+  '67 MCP tools',
+  'MCP Tools (66',
+  'MCP Tools (67',
+  '(66 tools)',
+  '(67 tools)',
+];
+
+function sweptDocument(file: string): string {
+  return readFileSync(new URL(`../../../${file}`, import.meta.url), 'utf8');
+}
+
 /** Every environment flag that shapes the registered surface. */
 const SURFACE_FLAGS = [
   'PER_IDENTITY_PERSONALITY',
@@ -234,5 +273,49 @@ describe('MCP surface — the docs state the measured flag-gated additions', () 
       COGNITIVE_ACTIVATION_KILL_SWITCH: '1',
     });
     expect(killed.length).toBe(read.length);
+  });
+});
+
+describe('MCP surface — the swept documents state the measured default count', () => {
+  it('every tool-count mention in the swept files equals the measured surface', async () => {
+    const defaultSurface = await registeredSurface();
+
+    for (const entry of SWEPT_TOOL_COUNTS) {
+      const text = sweptDocument(entry.file);
+      const stated = [...text.matchAll(entry.pattern)].map((match) => Number(match[1]));
+
+      // The mention must still be there (deleting it is drift too) …
+      expect(stated, `${entry.file} — ${entry.label} mentions`).toHaveLength(entry.expected);
+      // … and it must state what the code actually registers.
+      for (const value of stated) {
+        expect(value, `${entry.file} — ${entry.label}`).toBe(defaultSurface.length);
+      }
+    }
+  });
+
+  it('no swept document still states a pre-fix total', () => {
+    for (const entry of SWEPT_TOOL_COUNTS) {
+      const text = sweptDocument(entry.file);
+      for (const stale of STALE_TOOL_COUNTS) {
+        expect(text, `${entry.file} still claims "${stale}"`).not.toContain(stale);
+      }
+    }
+  });
+
+  it('the two identity-scoped tools are documented as caller-pinned, not entity-keyed', () => {
+    // ITER-4 made `user_id` meaningful for both readers; the catalogue used to
+    // say beliefs were entity-keyed and that the templates tool took no
+    // arguments. Either line coming back is drift.
+    expect(MCP_TOOLS).not.toContain('currently unused');
+    expect(MCP_TOOLS).not.toContain('beliefs are entity-keyed');
+
+    for (const tool of ['get_agent_beliefs', 'get_procedural_templates']) {
+      const start = MCP_TOOLS.indexOf(`### ${tool}`);
+      expect(start, `${tool} should be catalogued`).toBeGreaterThan(-1);
+      const entry = MCP_TOOLS.slice(start, MCP_TOOLS.indexOf('###', start + 4));
+      expect(entry, `${tool} must document its user_id parameter`).toContain(
+        '| user_id | string | No (caller-bound for untrusted callers) |',
+      );
+    }
   });
 });

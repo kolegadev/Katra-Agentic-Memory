@@ -21,12 +21,77 @@ export const UNIQUE_INDEXES: Record<string, string[][]> = {
   mission_opt_ins: [['opt_in_id']],
   allocation_counterfactuals: [['counterfactual_id'], ['decision_id']],
   custodian_audit: [['audit_id']],
+  // ITER-4: belief + procedural rows are identity-scoped, so the unique keys
+  // lead with user_id. `createIndex` enforces the same key here (below), which
+  // is what makes "the multi-insert collapse path updates instead of
+  // duplicating" and "the unique index cannot be built over duplicates"
+  // observable in a unit test.
+  agent_beliefs: [['user_id', 'entity_name', 'proposition']],
+  procedural_patterns: [['user_id', 'tool_name', 'input_shape']],
 };
+
+export interface FakeIndex {
+  name: string;
+  key: Record<string, 1 | -1>;
+  unique?: boolean;
+  sparse?: boolean;
+}
 
 export class FakeCollection {
   docs: Doc[] = [];
+  /** Indexes created through `createIndex`; listed by `indexes()` below. */
+  createdIndexes: FakeIndex[] = [];
   constructor(private readonly name: string) {}
-  async createIndex(_keys: any, _opts?: any) { return `idx_${this.name}_${Math.random()}`; }
+
+  async createIndex(keys: any, opts?: any) {
+    const key: Record<string, 1 | -1> = typeof keys === 'object' && keys !== null ? { ...keys } : { [String(keys)]: 1 };
+    const name: string = opts?.name ?? `idx_${this.name}_${this.createdIndexes.length + 1}`;
+    // A unique index cannot be built over documents that already violate it:
+    // MongoDB fails the build (E11000) and leaves the collection unindexed.
+    if (opts?.unique) this.assertUniqueOn(Object.keys(key), name);
+    const record: FakeIndex = { name, key, unique: !!opts?.unique, sparse: !!opts?.sparse };
+    const existing = this.createdIndexes.findIndex((index) => index.name === name);
+    if (existing >= 0) this.createdIndexes[existing] = record;
+    else this.createdIndexes.push(record);
+    return name;
+  }
+
+  /** `collection.indexes()` — the listing the migration reads to stay idempotent. */
+  async indexes(): Promise<FakeIndex[]> {
+    return this.createdIndexes.map((index) => ({ ...index, key: { ...index.key } }));
+  }
+
+  /**
+   * `collection.dropIndex(name)` — how the migration replaces a same-named index
+   * that turned out not to enforce the unique key. Throws like the driver does
+   * (`IndexNotFound`) when the name is unknown.
+   */
+  async dropIndex(name: string) {
+    const before = this.createdIndexes.length;
+    this.createdIndexes = this.createdIndexes.filter((index) => index.name !== name);
+    if (this.createdIndexes.length === before) {
+      throw new Error(`index not found with name [${name}]`);
+    }
+    return { acknowledged: true };
+  }
+
+  /** Throws when two documents collide on `fields` (null/undefined opt out). */
+  private assertUniqueOn(fields: string[], indexName: string) {
+    const seen = new Map<string, Doc>();
+    for (const doc of this.docs) {
+      if (fields.some((f) => doc[f] === undefined || doc[f] === null)) continue;
+      const key = JSON.stringify(fields.map((f) => doc[f]));
+      const clash = seen.get(key);
+      if (clash) {
+        throw new Error(
+          `E11000 duplicate key on ${this.name} ${fields.join('+')}` +
+            (indexName ? ` (index ${indexName})` : ''),
+        );
+      }
+      seen.set(key, doc);
+    }
+  }
+
   private assertUnique(doc: Doc) {
     for (const fields of UNIQUE_INDEXES[this.name] ?? []) {
       if (fields.every(f => doc[f] === undefined || doc[f] === null)) continue;

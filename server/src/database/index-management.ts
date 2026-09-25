@@ -6,6 +6,17 @@
  */
 
 import { Db, Collection } from 'mongodb';
+import {
+  AGENT_BELIEFS_READ_INDEX,
+  AGENT_BELIEFS_READ_KEYS,
+  AGENT_BELIEFS_UNIQUE_INDEX,
+  AGENT_BELIEFS_UNIQUE_KEYS,
+  PROCEDURAL_PATTERNS_READ_INDEX,
+  PROCEDURAL_PATTERNS_READ_KEYS,
+  PROCEDURAL_PATTERNS_UNIQUE_INDEX,
+  PROCEDURAL_PATTERNS_UNIQUE_KEYS,
+  SELF_MODEL_COLLECTIONS,
+} from '../services/processing/self-model-collections.js';
 
 export interface IndexDefinition {
   keys: Record<string, any>;
@@ -303,8 +314,70 @@ export const MEMORY_SYSTEM_INDEXES: CollectionIndexes = {
         background: true
       }
     }
+  ],
+
+  // ── Self-model: beliefs + procedural patterns (ITER-4) ─────────
+  // Declared here so index initialisation keeps them: it drops and recreates
+  // every declared index. The agent_beliefs unique key may only be built over
+  // data whose duplicate keys have already been collapsed, which is why
+  // `runDatabaseMigrations()` runs the dedupe migration BEFORE index
+  // initialisation, and why the lazy guard in `self-model-collections.ts`
+  // creates every self-model index except this one.
+  [SELF_MODEL_COLLECTIONS.agentBeliefs]: [
+    {
+      keys: { ...AGENT_BELIEFS_UNIQUE_KEYS },
+      options: { name: AGENT_BELIEFS_UNIQUE_INDEX, unique: true, background: true }
+    },
+    {
+      keys: { ...AGENT_BELIEFS_READ_KEYS },
+      options: { name: AGENT_BELIEFS_READ_INDEX, background: true }
+    }
+  ],
+
+  [SELF_MODEL_COLLECTIONS.proceduralPatterns]: [
+    {
+      keys: { ...PROCEDURAL_PATTERNS_UNIQUE_KEYS },
+      options: { name: PROCEDURAL_PATTERNS_UNIQUE_INDEX, unique: true, background: true }
+    },
+    {
+      keys: { ...PROCEDURAL_PATTERNS_READ_KEYS },
+      options: { name: PROCEDURAL_PATTERNS_READ_INDEX, background: true }
+    }
   ]
 };
+
+/**
+ * Exact, order-sensitive comparison of a listed index key against a declared
+ * one (`{a: 1, b: -1}` vs `{b: -1, a: 1}` are different compound indexes).
+ */
+function sameIndexKey(actual: unknown, expected: Record<string, any>): boolean {
+  if (!actual || typeof actual !== 'object' || Array.isArray(actual)) return false;
+  const actualEntries = Object.entries(actual as Record<string, unknown>);
+  const expectedEntries = Object.entries(expected);
+  return (
+    actualEntries.length === expectedEntries.length &&
+    expectedEntries.every(
+      ([field, direction], position) =>
+        actualEntries[position]?.[0] === field && actualEntries[position]?.[1] === direction,
+    )
+  );
+}
+
+/**
+ * Whether a listed index actually satisfies a declared definition.
+ *
+ * The name alone is a label, not a constraint: a same-named index that is not
+ * unique (or is keyed on other fields) does not enforce a declared unique key,
+ * and reporting it as present would leave duplicate keys insertable. For
+ * definitions that declare `unique: true` the listing must therefore agree on
+ * the unique flag AND the key. Non-unique declarations keep the name-only check
+ * (their shape is a performance concern, not a correctness one).
+ */
+function indexSatisfiesDefinition(existing: any, definition: IndexDefinition): boolean {
+  if (existing?.name !== definition.options.name) return false;
+  if (definition.options.unique !== true) return true;
+  return existing.unique === true && sameIndexKey(existing.key, definition.keys);
+}
 
 export class IndexManager {
   private db: Db;
@@ -455,10 +528,13 @@ export class IndexManager {
         const existingIndexNames = existingIndexes.map(idx => idx.name).filter(name => name !== '_id_');
         const expectedIndexNames = expectedIndexes.map(idx => idx.options.name);
 
-        // Find missing indexes
-        for (const expectedName of expectedIndexNames) {
-          if (!existingIndexNames.includes(expectedName)) {
-            result.missing_indexes.push({ collection: collectionName, index: expectedName });
+        // Find missing indexes. A declared unique index counts as present only
+        // when the listing agrees on the unique flag and the key — see
+        // `indexSatisfiesDefinition`. Everything else keeps the name check.
+        for (const definition of expectedIndexes) {
+          const existing = existingIndexes.find(idx => idx.name === definition.options.name);
+          if (!existing || !indexSatisfiesDefinition(existing, definition)) {
+            result.missing_indexes.push({ collection: collectionName, index: definition.options.name });
             result.valid = false;
           }
         }

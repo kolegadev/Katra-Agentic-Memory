@@ -518,18 +518,20 @@ Performs a random walk on the knowledge graph (weighted by relationship strength
 
 ### get_agent_beliefs
 
-Returns Theory of Mind beliefs about a named entity: proposition, confidence, source, and last updated timestamp.
+Returns the caller's Theory of Mind beliefs about a named entity: proposition, confidence, source, and last updated timestamp. Identity-scoped: an untrusted caller reads its own beliefs about the entity even when it passes another identity's `user_id`.
 
 | Parameter | Type | Required |
 |---|---|---|
 | entity_name | string | Yes |
-| user_id | string | No (currently unused — beliefs are entity-keyed) |
+| user_id | string | No (caller-bound for untrusted callers) |
 
 ### get_procedural_templates
 
-Returns cached tool-call patterns that have been observed 5+ times: tool name, input shape, frequency, and average success rate.
+Returns the caller's procedural memory templates — tool-call patterns observed 5+ times (tool name, input shape, frequency, average success rate) that survive a server restart. Identity-scoped: an untrusted caller reads its own patterns.
 
-Takes no arguments.
+| Parameter | Type | Required |
+|---|---|---|
+| user_id | string | No (caller-bound for untrusted callers) |
 
 ---
 
