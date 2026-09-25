@@ -77,6 +77,8 @@ const SURFACE_FLAGS = [
   'COGNITIVE_CONTROL_ENABLED',
   'COGNITIVE_SCHEDULER_MODE',
   'COGNITIVE_ACTIVATION_KILL_SWITCH',
+  // ITER-5: focused consolidation + the private Salience Trace.
+  'FOCUSED_IMAGINATION',
 ];
 
 /** The registered tool names for one flag state (module re-loaded each time). */
@@ -192,16 +194,25 @@ describe('MCP surface — the docs state the measured default count', () => {
   });
 
   it('every registered tool is documented somewhere in docs/MCP-TOOLS.md', async () => {
-    const defaultSurface = await registeredSurface({ PER_IDENTITY_PERSONALITY: '1' });
+    // ITER-5: the surface now has two independent flag-gated families, so the
+    // coverage check runs over the UNION of the catalogued flag states rather
+    // than one of them — a tool that is reachable in ANY documented state must
+    // be documented, and nothing may be catalogued that no state registers.
+    const states = await Promise.all([
+      registeredSurface({ PER_IDENTITY_PERSONALITY: '1' }),
+      registeredSurface({ FOCUSED_IMAGINATION: '1' }),
+      registeredSurface({ PER_IDENTITY_PERSONALITY: '1', FOCUSED_IMAGINATION: '1' }),
+    ]);
+    const surface = [...new Set(states.flat())];
     const catalogued = cataloguedTools();
 
-    const invisible = defaultSurface.filter(
+    const invisible = surface.filter(
       (name) => !catalogued.includes(name) && !MCP_TOOLS.includes(`\`${name}\``),
     );
     expect(invisible, 'registered but undocumented').toEqual([]);
 
     // …and nothing is documented that is not registered in some flag state.
-    const registered = new Set(defaultSurface);
+    const registered = new Set(surface);
     for (const name of catalogued) {
       expect(registered, `${name} is catalogued but not registered`).toContain(name);
     }
@@ -265,7 +276,6 @@ describe('MCP surface — the docs state the measured flag-gated additions', () 
     expect(MCP_TOOLS).toContain(
       `**${personalityOnly} / ${combined.length} / ${combinedScheduled.length}**`,
     );
-
     // The kill switch removes the scheduler-only tools again.
     const killed = await registeredSurface({
       COGNITIVE_CONTROL_ENABLED: 'read',
@@ -273,6 +283,51 @@ describe('MCP surface — the docs state the measured flag-gated additions', () 
       COGNITIVE_ACTIVATION_KILL_SWITCH: '1',
     });
     expect(killed.length).toBe(read.length);
+  });
+
+  it('FOCUSED_IMAGINATION adds exactly the two catalogued focused-consolidation tools', async () => {
+    const withoutFlag = await registeredSurface();
+    const withFlag = await registeredSurface({ FOCUSED_IMAGINATION: '1' });
+    const added = withFlag.filter((name) => !withoutFlag.includes(name));
+
+    expect(withFlag.length - withoutFlag.length).toBe(2);
+    expect(added.sort()).toEqual(['get_salience_trace', 'run_focused_consolidation']);
+    expect(withoutFlag).not.toContain('run_focused_consolidation');
+    expect(withoutFlag).not.toContain('get_salience_trace');
+
+    expect(flagRow('`FOCUSED_IMAGINATION=1`').total).toBe(withFlag.length);
+    expect(flagRow('`FOCUSED_IMAGINATION=1`').added).toMatch(
+      new RegExp(`^\\+${withFlag.length - withoutFlag.length}\\b`),
+    );
+
+    // Independent of every other row: it adds the same 2 in combination, and
+    // every total the prose states is the measured one.
+    const combined = await registeredSurface({
+      PER_IDENTITY_PERSONALITY: '1',
+      FOCUSED_IMAGINATION: '1',
+    });
+    const withCognitive = await registeredSurface({
+      COGNITIVE_CONTROL_ENABLED: 'read',
+      FOCUSED_IMAGINATION: '1',
+    });
+    const withScheduler = await registeredSurface({
+      COGNITIVE_CONTROL_ENABLED: 'read',
+      COGNITIVE_SCHEDULER_MODE: 'shadow',
+      FOCUSED_IMAGINATION: '1',
+    });
+    const all = await registeredSurface({
+      COGNITIVE_CONTROL_ENABLED: 'read',
+      COGNITIVE_SCHEDULER_MODE: 'shadow',
+      PER_IDENTITY_PERSONALITY: '1',
+      FOCUSED_IMAGINATION: '1',
+    });
+    expect(combined.length).toBe(withoutFlag.length + 3);
+    expect(withCognitive.length).toBe(withFlag.length + 25);
+    expect(withScheduler.length).toBe(withFlag.length + 38);
+    expect(all.length).toBe(withScheduler.length + 1);
+    for (const total of [withFlag.length, combined.length, withCognitive.length, withScheduler.length, all.length]) {
+      expect(MCP_TOOLS).toContain(`**${total}**`);
+    }
   });
 });
 

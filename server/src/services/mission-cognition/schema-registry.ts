@@ -1,5 +1,6 @@
 // Schema registry for the long-horizon cognitive control contracts.
-// Loads the six draft-2020-12 schemas and validates persisted/tool payloads.
+// Loads the draft-2020-12 schemas (six control-plane contracts plus the
+// ITER-5 salience trace) and validates persisted/tool payloads.
 // Part of the no-publish branch feat/cognitive-control-local.
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -17,6 +18,11 @@ export const SCHEMA_IDS = {
   cognitiveBaton: 'https://katra.dev/schemas/cognitive-baton.schema.json',
   cognitiveWorkItem: 'https://katra.dev/schemas/cognitive-work-item.schema.json',
   agentCognitiveProfile: 'https://katra.dev/schemas/agent-cognitive-profile.schema.json',
+  // ITER-5: the private, mission-scoped salience trace. It is registered here
+  // rather than behind a second validator because it is the same class of
+  // mission-scoped artifact as the six above, and the shared Ajv2020 instance
+  // already carries the draft-2020-12 / formats configuration it needs.
+  salienceTrace: 'https://katra.dev/schemas/salience-trace.schema.json',
 } as const;
 
 let _ajv: Ajv2020 | null = null;

@@ -76,10 +76,15 @@ async function callTool(args: unknown, caller: CallerIdentity): Promise<any> {
 }
 
 /** Load mcp-server.ts under a given flag state (the flag is read at load). */
-async function registeredNamesWithFlag(value: string | undefined): Promise<string[]> {
+async function registeredNamesWithFlag(
+  value: string | undefined,
+  extraFlags: Record<string, string> = {},
+): Promise<string[]> {
   vi.resetModules();
   if (value === undefined) delete process.env.PER_IDENTITY_PERSONALITY;
   else process.env.PER_IDENTITY_PERSONALITY = value;
+  delete process.env.FOCUSED_IMAGINATION;
+  for (const [key, flagValue] of Object.entries(extraFlags)) process.env[key] = flagValue;
   const mod = await import('../../src/mcp-server.js');
   return mod.registeredToolNames();
 }
@@ -87,11 +92,15 @@ async function registeredNamesWithFlag(value: string | undefined): Promise<strin
 beforeEach(() => {
   FAKE_DB.reset();
   delete process.env.PER_IDENTITY_PERSONALITY;
+  // ITER-5: the focused-consolidation tools are a separate flag-gated family;
+  // keep it off unless a test asks for it.
+  delete process.env.FOCUSED_IMAGINATION;
 });
 
 afterEach(() => {
   FAKE_DB.reset();
   delete process.env.PER_IDENTITY_PERSONALITY;
+  delete process.env.FOCUSED_IMAGINATION;
 });
 
 describe('get_my_personality — registration is gated by the flag', () => {
@@ -118,11 +127,21 @@ describe('get_my_personality — registration is gated by the flag', () => {
   });
 
   it('the documented catalogue matches the registered surface', async () => {
-    const registered = await registeredNamesWithFlag('1');
+    // ITER-5 added a second flag-gated catalogue family (`FOCUSED_IMAGINATION`),
+    // so every catalogue entry must be registered in SOME documented flag state
+    // — this checks the two the docs name, together and apart.
+    const states = await Promise.all([
+      registeredNamesWithFlag('1'),
+      registeredNamesWithFlag(undefined, { FOCUSED_IMAGINATION: '1' }),
+      registeredNamesWithFlag('1', { FOCUSED_IMAGINATION: '1' }),
+    ]);
+    const registered = [...new Set(states.flat())];
     const catalogue = readFileSync(new URL('../../../docs/MCP-TOOLS.md', import.meta.url), 'utf8');
     const documented = (catalogue.match(/^### ([a-z0-9_]+)/gm) ?? []).map((line) => line.replace('### ', ''));
 
     expect(documented).toContain('get_my_personality');
+    expect(documented).toContain('run_focused_consolidation');
+    expect(documented).toContain('get_salience_trace');
     // Every documented tool really is registered…
     for (const name of documented) {
       expect(registered, `${name} is documented but not registered`).toContain(name);

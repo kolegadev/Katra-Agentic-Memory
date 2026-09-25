@@ -5,13 +5,14 @@ Katra (the self-hosted cognitive memory appliance) exposes **81 tools** via the 
 ## Registered surface (and what the flags add)
 
 `tools/list` reports **81 tools** on a default deployment: `COGNITIVE_CONTROL_ENABLED` off,
-`COGNITIVE_SCHEDULER_MODE` off, `PER_IDENTITY_PERSONALITY` off. That number is *measured, not
-hand-maintained* — `server/tests/unit/mcp-tool-surface-docs.test.ts` counts the registered tools in
-`server/src/mcp-server.ts` and fails if this page or the README states anything else.
+`COGNITIVE_SCHEDULER_MODE` off, `PER_IDENTITY_PERSONALITY` off, `FOCUSED_IMAGINATION` off. That
+number is *measured, not hand-maintained* — `server/tests/unit/mcp-tool-surface-docs.test.ts` counts
+the registered tools in `server/src/mcp-server.ts` and fails if this page or the README states
+anything else.
 
 Those 81 are **66 catalogued tools** (every `###` entry below except the flag-gated
-`get_my_personality`) plus **15 tools in two families that have their own reference** instead of a
-catalogue entry:
+`get_my_personality`, `run_focused_consolidation` and `get_salience_trace`) plus **15 tools in two
+families that have their own reference** instead of a catalogue entry:
 
 | Family | Tools | Names |
 | --- | --- | --- |
@@ -29,9 +30,14 @@ Feature flags grow the same surface. Totals are `tools/list` counts:
 | --- | --- | --- |
 | all off (**default**) | **81** | — |
 | `PER_IDENTITY_PERSONALITY=1` | **82** | +1 — `get_my_personality` (catalogued below) |
+| `FOCUSED_IMAGINATION=1` | **83** | +2 — `run_focused_consolidation`, `get_salience_trace` (catalogued below) |
 | `COGNITIVE_CONTROL_ENABLED=read` or `write` | **106** | +25 — mission state, state deltas, epistemic ledger, batons, allocator evidence/counterfactuals, skill-candidate lifecycle (`server/src/services/mission-cognition/`) |
 | `COGNITIVE_SCHEDULER_MODE=shadow` or `recommend` or `allocate_internal` (with the row above) | **119** | +13 more — scheduler queue/decision, uncertainty, trigger and experiment tools |
 | `PER_IDENTITY_PERSONALITY=1` with a cognitive-control row | **82 / 107 / 120** | both — the flags are independent |
+
+`FOCUSED_IMAGINATION` is independent of every row above: it adds its **2** wherever it is set —
+**83** alone, **84** with `PER_IDENTITY_PERSONALITY=1`, **108** with the cognitive-control row,
+**121** with a scheduler mode, and **122** with all of them on.
 
 `COGNITIVE_ACTIVATION_KILL_SWITCH=1` forces the scheduler mode back to `off` (those last 13 tools
 disappear again); the cognitive-control plane is off in production by default.
@@ -785,3 +791,74 @@ Returns learned Q-values and softmax selection probabilities for each available 
 | Parameter | Type | Required |
 |---|---|---|
 | state_key | string | Yes |
+
+---
+
+## Focused Consolidation — private Salience Trace (`FOCUSED_IMAGINATION`, default off)
+
+A mission-scoped analogue of sleep consolidation. Given a mission's **real operational state** it
+privately produces an **evidence-linked, calibrated Salience Trace** — what feels important about
+this mission right now and why — with its own run ledger (`salience_traces` +
+`focused_consolidation_runs`, both **personal kinds**: written without a `shared_id`, never exposed
+through a shared/team read path).
+
+Privacy is the point: the gather reads the identity's reflection state as **counts only** (journal
+and reflection rows are counted, never copied) and the stored trace is built field by field from
+the model output, so no journal or reflection text can reach the model or the store. The trace's
+own attestation says so (`privacy.raw_reflections_included: false`, `privacy.shared: false`).
+
+One bounded model call per run (retried at most once, token ceiling and hard timeout), one run per
+`{mission_id, cycle_id}` — a repeat **replays** the recorded run instead of calling the model again,
+and a failure is recorded as a failed run with **no trace**. Every `evidence_refs` entry must
+resolve against the mission's own collections (`mission_states`, `state_deltas`,
+`epistemic_entries`, `cognitive_work_items`, `cognitive_batons`); refs that do not resolve are kept,
+flagged (`unresolved_evidence`), counted on the trace and on the run, and more than half the signals
+carrying unresolved evidence records a **warning** rather than passing silently. Calibration values
+the model did not supply as plain in-range numbers are adjusted and counted — `clamped_values`
+counts every adjustment (an out-of-range number pulled into range, a value defaulted to 0, or a
+numeric **string** coerced with `Number()`), with `coerced_values` isolating the coercions — and
+signals below the 0.2 confidence floor are kept but marked `low_confidence`. Model text longer than
+its schema bound is **truncated to fit** it (the ellipsis is inside the limit) and counted as
+`truncated_fields` on the run ledger rather than failing the run. The trace/ledger window is
+compensated: if the run row cannot be completed after the trace is written, the trace is deleted
+(bounded retry); if that delete also fails, the failed run row names the surviving trace in
+`orphan_trace_id` and the mismatch is logged loudly.
+
+Both tools are registered only when `FOCUSED_IMAGINATION` is on (**default off**) — with the flag
+off they return `Unknown tool`, write nothing and call no model.
+
+### run_focused_consolidation
+
+Run one focused consolidation cycle for a mission. Gathers the mission state at its current version,
+the active Context Baton (if any), the epistemic ledger (hypotheses/uncertainties/decisions), open
+uncertainties via the existing deterministic detectors, the work-item queue, accepted state deltas
+since the last checkpoint, and the identity's reflection state **as counts only**; then makes ONE
+bounded model call under the mission's usage origin and stores the resulting trace plus its run row.
+Idempotent per `{mission_id, cycle_id}`: a repeat returns the existing trace with no model call and
+no duplicate documents, and a concurrent duplicate runs exactly once. **Write.** An untrusted caller
+may only run a mission it owns (the trace is always attributed to that caller); trusted callers may
+name another identity with `user_id`.
+
+| Parameter | Type | Required | Default |
+|---|---|---|---|
+| mission_id | string | Yes | — |
+| cycle_id | string | No | `cycle_v<mission_version>` — repeats without one replay instead of double-running |
+| trigger | string | No | `manual` (sanitised; Phase 5 adds the plateau trigger) |
+| user_id | string | No | caller's identity (trusted callers only may override) |
+
+### get_salience_trace
+
+Read the caller's **own** salience traces, newest first — by `trace_id` or for a `mission_id` — each
+with its full signal set (kind, statement, `why_operationally_relevant`, calibration, evidence refs
+and the unresolved/low-confidence flags), the calibration and evidence summaries, the privacy
+attestation, and the run-ledger line of the run that produced it (status, model, calls, tokens,
+duration, signal/unresolved/clamped counts). **Caller-pinned:** an untrusted caller only ever reads
+traces written under its own identity — never another identity's, even when it names that identity's
+`user_id`. A `mission_id` an untrusted caller cannot see is refused before any read.
+
+| Parameter | Type | Required | Default |
+|---|---|---|---|
+| trace_id | string | No | — (with neither id nor mission_id: the caller's newest traces) |
+| mission_id | string | No | — |
+| limit | number (1–50) | No | 10 |
+| user_id | string | No | caller's identity (trusted callers only may override) |

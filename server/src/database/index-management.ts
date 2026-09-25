@@ -344,6 +344,16 @@ export const MEMORY_SYSTEM_INDEXES: CollectionIndexes = {
       options: { name: PROCEDURAL_PATTERNS_READ_INDEX, background: true }
     }
   ]
+
+  // NOTE (ITER-5): the focused-consolidation collections
+  // (`salience_traces`, `focused_consolidation_runs`) are deliberately NOT
+  // declared here. They belong to a flag-gated feature, and declaring them
+  // would make boot-time index initialisation create the two collections on a
+  // deployment where `FOCUSED_IMAGINATION` is off — the flag-off contract is
+  // that nothing at all touches them. Like the mission-cognition collections,
+  // they are created lazily by the feature's own guard
+  // (`processing/focused-consolidation-collections.ts`,
+  // `ensureFocusedConsolidationIndexes`) on first use.
 };
 
 /**

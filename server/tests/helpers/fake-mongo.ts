@@ -28,6 +28,12 @@ export const UNIQUE_INDEXES: Record<string, string[][]> = {
   // observable in a unit test.
   agent_beliefs: [['user_id', 'entity_name', 'proposition']],
   procedural_patterns: [['user_id', 'tool_name', 'input_shape']],
+  // ITER-5: the private salience trace and its run ledger. `trace_id` is the
+  // trace's row identity; `idempotency_key` is what makes one run per
+  // {missionId, cycleId} enforceable — a duplicate claim has to fail here the
+  // way the real deployment's unique index fails it.
+  salience_traces: [['trace_id']],
+  focused_consolidation_runs: [['idempotency_key']],
 };
 
 export interface FakeIndex {
@@ -220,6 +226,12 @@ export class FakeCollection {
     const before = this.docs.length;
     this.docs = this.docs.filter(d => !this.matches(d, filter));
     return { acknowledged: true, deletedCount: before - this.docs.length };
+  }
+  async deleteOne(filter: Record<string, any>) {
+    const index = this.docs.findIndex(d => this.matches(d, filter));
+    if (index < 0) return { acknowledged: true, deletedCount: 0 };
+    this.docs.splice(index, 1);
+    return { acknowledged: true, deletedCount: 1 };
   }
   async countDocuments(filter: Record<string, any> = {}) {
     return this.docs.filter(d => this.matches(d, filter)).length;

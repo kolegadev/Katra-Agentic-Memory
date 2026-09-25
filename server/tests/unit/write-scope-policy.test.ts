@@ -38,7 +38,18 @@ const TRUSTED_KATRA: CallerIdentity = { user_id: 'katra', trusted: true };
 
 describe('resolveWriteScope — personal kinds are forced private', () => {
   it('exposes the contract personal kinds list', () => {
-    expect(PERSONAL_KINDS).toEqual(['journal', 'reflection', 'emotional', 'insight']);
+    // ITER-5 added the focused-consolidation pair: the mission-scoped Salience
+    // Trace and its run ledger are personal by construction
+    // (CONTRACT-iter5-focused-consolidation.md, boundaries) and are listed here
+    // by the collection each entry protects.
+    expect(PERSONAL_KINDS).toEqual([
+      'journal',
+      'reflection',
+      'emotional',
+      'insight',
+      'salience_traces',
+      'focused_consolidation_runs',
+    ]);
   });
 
   it.each(PERSONAL_KINDS)('%s → shared_id null even when shared is requested', (kind) => {

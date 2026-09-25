@@ -23,6 +23,13 @@ export const PERSONAL_KINDS: readonly string[] = [
   'reflection',
   'emotional',
   'insight',
+  // ITER-5 (focused consolidation): the mission-scoped Salience Trace and its
+  // run ledger are personal by construction — a trace is the private reading
+  // of a mission by one identity. Both are listed by the collection they
+  // protect, and the focused-consolidation service resolves every write with
+  // `resolveWriteScope({ kind })` before `stripSharedId`.
+  'salience_traces',
+  'focused_consolidation_runs',
 ];
 
 /** Default shared scope for every non-personal write. */

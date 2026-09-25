@@ -64,6 +64,11 @@ import { SalienceService } from './services/processing/salience-service.js';
 import { COGNITIVE_TOOL_DEFS, dispatchCognitiveTool, dispatchSchedulerTool, dispatchUncertaintyTool, dispatchActivationTool } from './services/mission-cognition/mcp-tools.js';
 import { cognitiveControlMode, schedulerMode } from './services/mission-cognition/index.js';
 import {
+  FOCUSED_TOOL_DEFS,
+  dispatchFocusedTool,
+  focusedImaginationEnabled,
+} from './services/processing/focused-consolidation-tools.js';
+import {
   effectivePersonalityConfig,
   perIdentityPersonalityEnabled,
   resolvePersonalityConfig,
@@ -1058,6 +1063,17 @@ if (perIdentityPersonalityEnabled()) {
     description: 'Returns the caller\'s resolved memory personality — profile, effective source weights, scoring, version, origin and the active thinking mode (null until Phase 6). Pinned to the caller\'s own identity: untrusted callers cannot read another identity\'s configuration.',
     inputSchema: zodToJsonSchema(GetMyPersonalityInput) as Record<string, unknown>,
   });
+}
+
+// ── Focused consolidation + private Salience Trace (ITER-5, Phase 3) ───────
+// Registered only when FOCUSED_IMAGINATION is on (default off). With the flag
+// off both tools are absent from ListTools and the dispatch-time re-check
+// throws `Unknown tool` — indistinguishable from not existing. This family is
+// gated on its own flag alone (the contract makes FOCUSED_IMAGINATION the
+// single switch); the service reads mission state directly, so the cognitive
+// control plane does not have to be enabled for it to work.
+if (focusedImaginationEnabled()) {
+  tools.push(...FOCUSED_TOOL_DEFS);
 }
 
 /** Names of the tools registered for the current flag/feature state. */
@@ -3914,6 +3930,12 @@ function registerHandlers(server: Server, getIdentity?: () => CallerIdentity) {
           // transitions start from `off`); gate checks live in the activation
           // service and read stored records only. Plane off → Unknown tool.
           result = await dispatchActivationTool(name, args, caller); break;
+        case 'run_focused_consolidation':
+        case 'get_salience_trace':
+          // ITER-5 (Phase 3): gated on FOCUSED_IMAGINATION alone — with the
+          // flag off the dispatch throws the plain unknown-tool error, so the
+          // surface is indistinguishable from not existing.
+          result = await dispatchFocusedTool(name, args, caller); break;
         default: throw new Error(`Unknown tool: ${name}`);
       }
       // ── Cerebellum: procedural pattern observation ──────────
