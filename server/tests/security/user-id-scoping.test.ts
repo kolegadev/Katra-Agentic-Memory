@@ -348,3 +348,138 @@ describe('Security: self-model scoping (beliefs + procedural patterns)', () => {
     expect(src).toMatch(/const patternIdentity = resolveUserId\(/);
   });
 });
+
+/**
+ * ITER-6 — the imagination engine's seeds, lineages and archive are
+ * identity-owned too: `idea_seeds`/`idea_lineages` are personal kinds and
+ * `idea_archive_cells` is identity-owned but mission-indexed, so an untrusted
+ * caller can neither read nor write another identity's rows, and no document in
+ * any of the four collections can carry a `shared_id`. The services here are
+ * the REAL ones, bound to an in-memory store.
+ */
+describe('Security: imagination engine scoping (seeds + archive)', () => {
+  const seed = (overrides: Record<string, unknown> = {}) => ({
+    seed_id: 'seed_security_1',
+    user_id: 'agent-a',
+    mission_id: 'mission_security',
+    cycle_id: 'cycle_security',
+    prng_seed: 1,
+    operator: 'tool_invention' as const,
+    hypothesis: 'A one-line drain counter settles the argument within a single cycle.',
+    mechanism: 'Instrumentation converts an unmeasurable quantity into a countable row.',
+    evidence_refs: ['sig_x'],
+    novelty_score: 0.5,
+    coherence_score: 0.5,
+    testability_score: 0.5,
+    cheapest_test: 'Add the counter and read it after one cycle.',
+    expected_information_gain: 0.5,
+    parent_seed_ids: [],
+    lineage_ref: 'lineage_security_1',
+    ...overrides,
+  });
+
+  it("an untrusted caller cannot read another identity's seeds or archive", async () => {
+    securityStore.db = new FakeDb();
+    const { IdeaArchiveService, PERSONAL_KINDS } = await import(
+      '../../src/services/processing/idea-archive-service.js'
+    ).then(async (archive) => ({
+      ...archive,
+      PERSONAL_KINDS: (await import('../../src/services/memory/write-scope-policy.js')).PERSONAL_KINDS,
+    }));
+    const { IMAGINATION_COLLECTIONS } = await import('../../src/services/processing/imagination-collections.js');
+
+    const archive = new IdeaArchiveService(securityStore.db.asDb());
+    const admitted = await archive.admitOrReplace(seed());
+    expect(admitted.decision).toBe('admitted');
+
+    // agent-b reads nothing of agent-a's, by id or by mission.
+    expect(await archive.getSeeds('agent-b', 'mission_security')).toEqual([]);
+    expect(await archive.getLineage('agent-b', 'lineage_security_1')).toBeNull();
+    expect(await archive.getLineageForSeed('agent-b', 'seed_security_1')).toBeNull();
+    expect(await archive.listIncumbents('mission_security', 'agent-b')).toEqual([]);
+    expect((await archive.coverage('mission_security', 'agent-b')).cells_total).toBe(0);
+    expect(await archive.recordOutcome('seed_security_1', { verdict: 'refuted' }, 'agent-b')).toBeNull();
+    // The identity is REQUIRED and is part of the lookup: a call that names no
+    // identity (or an empty one) is a caller error, never "match whichever
+    // identity owns this seed id" — that omission used to append to agent-a's
+    // lineage. (An unknown id is still an absent record, not an error.)
+    await expect(archive.recordOutcome('seed_security_1', { verdict: 'refuted' }, '')).rejects.toThrow(
+      /userId is required/,
+    );
+
+    // …and agent-a's rows are untouched by every one of those attempts.
+    const rows = securityStore.db.collection(IMAGINATION_COLLECTIONS.ideaSeeds).docs as Array<Record<string, unknown>>;
+    expect(rows).toHaveLength(1);
+    expect(rows[0].user_id).toBe('agent-a');
+    expect(await archive.getSeeds('agent-a', 'mission_security')).toHaveLength(1);
+    // agent-a's own lineage holds no outcome: none of the attempts above wrote.
+    const lineages = securityStore.db.collection(IMAGINATION_COLLECTIONS.ideaLineages)
+      .docs as Array<Record<string, unknown>>;
+    expect(lineages).toHaveLength(1);
+    expect(lineages[0].results).toEqual([]);
+
+    // Neither collection is a shared kind, and no row carries a shared scope.
+    for (const kind of [
+      IMAGINATION_COLLECTIONS.ideaSeeds,
+      IMAGINATION_COLLECTIONS.ideaLineages,
+      IMAGINATION_COLLECTIONS.imaginationRuns,
+    ]) {
+      expect(PERSONAL_KINDS).toContain(kind);
+    }
+    expect(PERSONAL_KINDS).not.toContain(IMAGINATION_COLLECTIONS.ideaArchiveCells);
+    for (const name of Object.values(IMAGINATION_COLLECTIONS)) {
+      for (const doc of securityStore.db.collection(name).docs as Array<Record<string, unknown>>) {
+        expect('shared_id' in doc).toBe(false);
+      }
+    }
+  });
+
+  it("one identity's cell never becomes another identity's cell, even for the same key", async () => {
+    securityStore.db = new FakeDb();
+    const { IdeaArchiveService } = await import('../../src/services/processing/idea-archive-service.js');
+    const { IMAGINATION_COLLECTIONS } = await import('../../src/services/processing/imagination-collections.js');
+    const archive = new IdeaArchiveService(securityStore.db.asDb());
+
+    await archive.admitOrReplace(seed());
+    const other = await archive.admitOrReplace(
+      seed({
+        seed_id: 'seed_security_2',
+        user_id: 'agent-b',
+        lineage_ref: 'lineage_security_2',
+        // The same descriptor tuple: the cell key is identical, the identity is not.
+      }),
+    );
+    expect(other.decision).toBe('admitted');
+
+    const cells = securityStore.db.collection(IMAGINATION_COLLECTIONS.ideaArchiveCells).docs as Array<
+      Record<string, unknown>
+    >;
+    expect(cells).toHaveLength(2);
+    expect(cells.map((cell) => cell.user_id).sort()).toEqual(['agent-a', 'agent-b']);
+    for (const cell of cells) expect(cell.cell_key).toBe(cells[0].cell_key);
+    // Each identity's own coverage sees exactly one cell.
+    expect((await archive.coverage('mission_security', 'agent-a')).cells_total).toBe(1);
+    expect((await archive.coverage('mission_security', 'agent-b')).cells_total).toBe(1);
+  });
+
+  it('the MCP handlers pin the caller and never hand a supplied user_id to the service', () => {
+    const src = readFileSync(new URL('../../src/services/processing/imagination-tools.ts', import.meta.url), 'utf8');
+    // The identity comes from the resolved caller, never from the arguments.
+    expect(src).toContain('resolveScopedUserId(caller, input.user_id)');
+    expect(src).toMatch(/const userId = resolveScopedUserId\(caller, input\.user_id\);/);
+    expect(src).toMatch(/const service = new ImaginationService\(db\)/);
+    expect(src).toMatch(/userId,\s*\n\s*missionId: input\.mission_id/);
+    expect(src).toMatch(/archive\.coverage\(input\.mission_id, userId\)/);
+    expect(src).toMatch(/archive\.listIncumbents\(input\.mission_id, userId/);
+    // …and an untrusted caller cannot reach a mission it does not own.
+    expect(src).toContain('belongs to another identity');
+    expect(src).toContain('Not authorized for mission');
+    // No promotion path, and no shared scope is ever WRITTEN by the surface:
+    // the only `shared_id` mentions are the read-only mission projection that
+    // decides visibility (the same rule ITER-5 uses), never an assignment.
+    expect(src).not.toMatch(/shared_id\s*:\s*['"`]/);
+    expect(src).not.toMatch(/\$set[^)]*shared_id/);
+    expect(src).not.toMatch(/shared_id:\s*['"`]my-team/);
+    expect(src).not.toMatch(/promote[A-Za-z]*\(/);
+  });
+});

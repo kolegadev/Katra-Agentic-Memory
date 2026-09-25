@@ -11,7 +11,8 @@ the registered tools in `server/src/mcp-server.ts` and fails if this page or the
 anything else.
 
 Those 81 are **66 catalogued tools** (every `###` entry below except the flag-gated
-`get_my_personality`, `run_focused_consolidation` and `get_salience_trace`) plus **15 tools in two
+`get_my_personality`, `run_focused_consolidation`, `get_salience_trace`,
+`generate_imagination_seeds` and `get_idea_archive`) plus **15 tools in two
 families that have their own reference** instead of a catalogue entry:
 
 | Family | Tools | Names |
@@ -30,14 +31,16 @@ Feature flags grow the same surface. Totals are `tools/list` counts:
 | --- | --- | --- |
 | all off (**default**) | **81** | — |
 | `PER_IDENTITY_PERSONALITY=1` | **82** | +1 — `get_my_personality` (catalogued below) |
-| `FOCUSED_IMAGINATION=1` | **83** | +2 — `run_focused_consolidation`, `get_salience_trace` (catalogued below) |
+| `FOCUSED_IMAGINATION=1` | **85** | +4 — `run_focused_consolidation`, `get_salience_trace`, `generate_imagination_seeds`, `get_idea_archive` (catalogued below) |
 | `COGNITIVE_CONTROL_ENABLED=read` or `write` | **106** | +25 — mission state, state deltas, epistemic ledger, batons, allocator evidence/counterfactuals, skill-candidate lifecycle (`server/src/services/mission-cognition/`) |
 | `COGNITIVE_SCHEDULER_MODE=shadow` or `recommend` or `allocate_internal` (with the row above) | **119** | +13 more — scheduler queue/decision, uncertainty, trigger and experiment tools |
 | `PER_IDENTITY_PERSONALITY=1` with a cognitive-control row | **82 / 107 / 120** | both — the flags are independent |
 
-`FOCUSED_IMAGINATION` is independent of every row above: it adds its **2** wherever it is set —
-**83** alone, **84** with `PER_IDENTITY_PERSONALITY=1`, **108** with the cognitive-control row,
-**121** with a scheduler mode, and **122** with all of them on.
+`FOCUSED_IMAGINATION` is independent of every row above: it adds its **4** wherever it is set —
+**85** alone, **86** with `PER_IDENTITY_PERSONALITY=1`, **110** with the cognitive-control row,
+**123** with a scheduler mode, and **124** with all of them on. (ITER-5 contributed the salience
+trace pair, ITER-6 the imagination pair; the default surface is unchanged because every one of the
+four is flag-gated.)
 
 `COGNITIVE_ACTIVATION_KILL_SWITCH=1` forces the scheduler mode back to `off` (those last 13 tools
 disappear again); the cognitive-control plane is off in production by default.
@@ -861,4 +864,107 @@ traces written under its own identity — never another identity's, even when it
 | trace_id | string | No | — (with neither id nor mission_id: the caller's newest traces) |
 | mission_id | string | No | — |
 | limit | number (1–50) | No | 10 |
+| user_id | string | No | caller's identity (trusted callers only may override) |
+
+---
+
+## Imagination Engine — idea seeds + quality-diversity archive (`FOCUSED_IMAGINATION`, default off)
+
+Phase 4 turns a Salience Trace into a **diverse, reproducible portfolio of testable hypothesis
+seeds** and admits it into a quality-diversity archive that rejects duplicates and paraphrases,
+preserves exclusions, and lets a ruled-out idea back only with an explicitly stated changed premise.
+
+The brief's **ten operator families** — `assumption_inversion`, `representation_shift`,
+`distant_analogy`, `constraint_mutation`, `boundary_extreme`, `causal_reversal`,
+`contradiction_preservation`, `tool_invention`, `random_semantic_bridge`, `counterfactual_world` —
+are selected **from the trace itself**: tensions and persistent pulls drive constraint mutation and
+contradiction preservation, absences invert assumptions, surprises reverse causes, attractions shift
+representations, and questions bridge distant associations. Intensity decides the score order and a
+**seeded** tie-break decides the rest, so the run's `operator_plan` records which operators ran, on
+which signal ids, and why. Operators that cannot run (no bridge path in the caller's knowledge graph)
+are recorded as *skipped* rather than run as a fabrication.
+
+**Determinism is not decoration.** Every random choice comes from a seeded PRNG (mulberry32 over a
+hash of the run's seed) and every id is **derived** — `sha256` over the seed's content plus the seed
+and the mission — never a random UUID. Two runs with the same seed over the same inputs produce a
+byte-identical portfolio (the run records a `portfolio_digest` over the payload with timing and
+bookkeeping fields stripped), and a different seed produces a different, still schema-valid one.
+Evidence is validated the same way: a seed may only cite the trace signal ids and the mission's
+ledger/delta/work-item/baton ids, an unresolvable ref is **dropped and counted**, and a seed left
+with no evidence is dropped with a counted reason. Novelty is measured against the **archive**
+(`min(model claim, 1 − max similarity)`), not taken on faith — through the archive's own
+containment-aware similarity, so padding a restatement with extra characters cannot turn it into a
+novel claim.
+
+The archive's cells are the tuple of five descriptor bins (`mechanism`, `representation`,
+`violated_assumption`, `evidence_family`, `test_strategy`); the incumbent of a cell is its
+highest-quality seed (`quality = f(novelty, coherence, testability, information_gain)`, documented
+fixed weights). Dedupe is deterministic and documented, and exact duplicates → `duplicate_of` while
+near-duplicates → `paraphrase_of` are decided by **content-token containment**
+(`|A ∩ B| / min(|A|, |B|)` over stopword-filtered tokens, `CONTAINMENT_THRESHOLD = 0.7`) as well as
+by **Jaccard over the normalised token sets** (`PARAPHRASE_THRESHOLD = 0.72`, with the length guard
+applied only where containment is genuinely low) — so a stored statement padded with hundreds of
+extra characters is still a restatement, not a new idea. Matches against the mission's exclusion
+list (rejected hypotheses and the trace's low-confidence regions) are `excluded_region`; rejections
+are **stored with their reason**, so an exclusion is durable and re-enterable. A changed-premise
+re-entry is admitted only with a **valid** premise — a complete sentence that is **not** a no-change
+assertion (`nothing has changed`, `no change`, `unchanged`, `as before`, …) and that introduces at
+least two content tokens the excluded text does not already contain — **and** a lineage link to the
+prior rejection, and the cell's history records it.
+
+**Privacy.** `idea_seeds` and `idea_lineages` are **personal kinds** and `imagination_runs` is the
+run ledger; `idea_archive_cells` is *identity-owned but mission-indexed* (it is written with the
+scope policy's explicit private opt-out), so **no document in any of the four can carry a
+`shared_id`**. The shareable surface is the sanitized coverage view: bins, counts, quality and ids —
+never a statement, a mechanism, an evidence text or reflection material. Nothing is promoted: there
+is no promotion path in this iteration.
+
+**Budgets** (env-overridable, safe defaults; a caller may ask for less and never for more):
+`FOCUSED_IMAGINATION_MAX_SEEDS` (8), `FOCUSED_IMAGINATION_MAX_OPERATORS` (6),
+`FOCUSED_IMAGINATION_MAX_LLM_CALLS` (3 — two operators share one call),
+`FOCUSED_IMAGINATION_MAX_TOKENS` (3000) and `FOCUSED_IMAGINATION_TIMEOUT_MS` (60000). One bounded
+model call per operator batch, all through `llmService.extractJson` under the mission's usage
+origin, retried at most once and never beyond the call budget; the run records the effective budget
+and the **planned vs actual** operator and call counts.
+
+Both tools are registered only when `FOCUSED_IMAGINATION` is on (**default off**) — with the flag
+off they return `Unknown tool`, write nothing and call no model.
+
+### generate_imagination_seeds
+
+Run one imagination cycle for a mission: read its newest private Salience Trace, plan the operator
+families from the trace's own signals, walk the caller's knowledge graph for **distant associations
+with their path**, make one bounded model call per operator batch, then admit the resulting seeds
+into the mission's idea archive. Returns the portfolio summary — seed ids, descriptor bins, scores,
+the operator plan, the per-reason drop counts and the **rejections with their reasons** — and does
+**not** promote anything. Idempotent per `{mission_id, cycle_id, seed}`: a repeat replays the
+recorded run with no model call and no new documents. **Write.** An untrusted caller may only run a
+mission it owns; trusted callers may name another identity with `user_id`.
+
+| Parameter | Type | Required | Default |
+|---|---|---|---|
+| mission_id | string | Yes | — |
+| cycle_id | string | No | `imagination_v<mission_version>` — a repeat replays instead of double-running |
+| seed | string \| number | No | derived from the trace's `problem_state_digest` (so the default is reproducible too) |
+| trigger | string | No | `manual` (sanitised) |
+| mode | `explore` \| `exploit` \| `balanced` | No | `balanced` (`explore` spreads the plan across families) |
+| disposition | string | No | — (recorded on the run as a hint; never a source of evidence) |
+| max_seeds | number ≥1 | No | the environment cap (`FOCUSED_IMAGINATION_MAX_SEEDS`, 8) — a larger request is clamped |
+| max_operators | number ≥1 | No | the environment cap (`FOCUSED_IMAGINATION_MAX_OPERATORS`, 6) |
+| max_llm_calls | number ≥1 | No | the environment cap (`FOCUSED_IMAGINATION_MAX_LLM_CALLS`, 3) |
+| user_id | string | No | caller's identity (trusted callers only may override) |
+
+### get_idea_archive
+
+Read the caller's **own** idea archive for a mission: the sanitized **coverage view** (`cells_total`,
+`cells_by_dimension`, `new_cells_this_cycle`, `occupancy` and `gaps`) plus the sanitized incumbent
+summaries — cell key, descriptor bins, quality, seed count and the incumbent's **seed id** only. It
+never returns a seed statement, a mechanism, an evidence ref or any reflection material, and it
+never crosses identities: an untrusted caller only ever sees its own archive, and a mission it
+cannot see is refused before any read. **Read.**
+
+| Parameter | Type | Required | Default |
+|---|---|---|---|
+| mission_id | string | Yes | — |
+| limit | number (1–200) | No | 50 |
 | user_id | string | No | caller's identity (trusted callers only may override) |

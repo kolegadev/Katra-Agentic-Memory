@@ -34,6 +34,16 @@ export const UNIQUE_INDEXES: Record<string, string[][]> = {
   // way the real deployment's unique index fails it.
   salience_traces: [['trace_id']],
   focused_consolidation_runs: [['idempotency_key']],
+  // ITER-6: the imagination engine's seeds, lineages, archive cells and run
+  // ledger. `seed_id`/`lineage_id` are DERIVED (content + PRNG seed + mission),
+  // so re-running the same cycle with the same seed is expected to collide
+  // here — which is what makes "an idempotent replay writes nothing new"
+  // observable. A cell is unique per identity + mission + descriptor tuple,
+  // so a second seed in one cell must UPDATE it (never insert a duplicate row).
+  idea_seeds: [['seed_id']],
+  idea_lineages: [['lineage_id']],
+  idea_archive_cells: [['user_id', 'mission_id', 'cell_key']],
+  imagination_runs: [['idempotency_key']],
 };
 
 export interface FakeIndex {

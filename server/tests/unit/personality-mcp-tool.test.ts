@@ -142,6 +142,10 @@ describe('get_my_personality — registration is gated by the flag', () => {
     expect(documented).toContain('get_my_personality');
     expect(documented).toContain('run_focused_consolidation');
     expect(documented).toContain('get_salience_trace');
+    // ITER-6 added the imagination pair behind the same flag; each has its own
+    // catalogue entry, so nothing on that surface is invisible either.
+    expect(documented).toContain('generate_imagination_seeds');
+    expect(documented).toContain('get_idea_archive');
     // Every documented tool really is registered…
     for (const name of documented) {
       expect(registered, `${name} is documented but not registered`).toContain(name);

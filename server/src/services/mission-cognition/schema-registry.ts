@@ -23,6 +23,11 @@ export const SCHEMA_IDS = {
   // mission-scoped artifact as the six above, and the shared Ajv2020 instance
   // already carries the draft-2020-12 / formats configuration it needs.
   salienceTrace: 'https://katra.dev/schemas/salience-trace.schema.json',
+  // ITER-6: the hypothesis seed the imagination engine produces and the
+  // quality-diversity archive stores. Validated before every store, so a seed
+  // that cannot answer "what, why, how would we know, and on what evidence"
+  // never reaches the collection.
+  ideaSeed: 'https://katra.dev/schemas/idea-seed.schema.json',
 } as const;
 
 let _ajv: Ajv2020 | null = null;

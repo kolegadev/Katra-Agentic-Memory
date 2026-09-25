@@ -203,6 +203,8 @@ describe('MCP surface — the docs state the measured default count', () => {
       registeredSurface({ FOCUSED_IMAGINATION: '1' }),
       registeredSurface({ PER_IDENTITY_PERSONALITY: '1', FOCUSED_IMAGINATION: '1' }),
     ]);
+    // …which, since ITER-6, is the surface of five flag-gated tools: one
+    // personality tool, the ITER-5 salience pair and the ITER-6 pair.
     const surface = [...new Set(states.flat())];
     const catalogued = cataloguedTools();
 
@@ -285,15 +287,22 @@ describe('MCP surface — the docs state the measured flag-gated additions', () 
     expect(killed.length).toBe(read.length);
   });
 
-  it('FOCUSED_IMAGINATION adds exactly the two catalogued focused-consolidation tools', async () => {
+  it('FOCUSED_IMAGINATION adds exactly the four catalogued tools it owns', async () => {
+    // ITER-6 added the imagination pair behind the SAME flag, so this row now
+    // measures all four: the flag-gated family is what the docs describe, and a
+    // fifth tool appearing behind this flag without a docs change fails here.
     const withoutFlag = await registeredSurface();
     const withFlag = await registeredSurface({ FOCUSED_IMAGINATION: '1' });
     const added = withFlag.filter((name) => !withoutFlag.includes(name));
 
-    expect(withFlag.length - withoutFlag.length).toBe(2);
-    expect(added.sort()).toEqual(['get_salience_trace', 'run_focused_consolidation']);
-    expect(withoutFlag).not.toContain('run_focused_consolidation');
-    expect(withoutFlag).not.toContain('get_salience_trace');
+    expect(withFlag.length - withoutFlag.length).toBe(4);
+    expect(added.sort()).toEqual([
+      'generate_imagination_seeds',
+      'get_idea_archive',
+      'get_salience_trace',
+      'run_focused_consolidation',
+    ]);
+    for (const name of added) expect(withoutFlag).not.toContain(name);
 
     expect(flagRow('`FOCUSED_IMAGINATION=1`').total).toBe(withFlag.length);
     expect(flagRow('`FOCUSED_IMAGINATION=1`').added).toMatch(
@@ -321,7 +330,7 @@ describe('MCP surface — the docs state the measured flag-gated additions', () 
       PER_IDENTITY_PERSONALITY: '1',
       FOCUSED_IMAGINATION: '1',
     });
-    expect(combined.length).toBe(withoutFlag.length + 3);
+    expect(combined.length).toBe(withoutFlag.length + 5);
     expect(withCognitive.length).toBe(withFlag.length + 25);
     expect(withScheduler.length).toBe(withFlag.length + 38);
     expect(all.length).toBe(withScheduler.length + 1);

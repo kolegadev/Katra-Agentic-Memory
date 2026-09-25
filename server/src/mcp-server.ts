@@ -69,6 +69,10 @@ import {
   focusedImaginationEnabled,
 } from './services/processing/focused-consolidation-tools.js';
 import {
+  IMAGINATION_TOOL_DEFS,
+  dispatchImaginationTool,
+} from './services/processing/imagination-tools.js';
+import {
   effectivePersonalityConfig,
   perIdentityPersonalityEnabled,
   resolvePersonalityConfig,
@@ -1074,6 +1078,10 @@ if (perIdentityPersonalityEnabled()) {
 // control plane does not have to be enabled for it to work.
 if (focusedImaginationEnabled()) {
   tools.push(...FOCUSED_TOOL_DEFS);
+  // ITER-6 (Phase 4): the imagination engine + its quality-diversity archive
+  // share the same flag and the same dispatch-time re-check — one switch, four
+  // tools, and with it off they are indistinguishable from not existing.
+  tools.push(...IMAGINATION_TOOL_DEFS);
 }
 
 /** Names of the tools registered for the current flag/feature state. */
@@ -3936,6 +3944,11 @@ function registerHandlers(server: Server, getIdentity?: () => CallerIdentity) {
           // flag off the dispatch throws the plain unknown-tool error, so the
           // surface is indistinguishable from not existing.
           result = await dispatchFocusedTool(name, args, caller); break;
+        case 'generate_imagination_seeds':
+        case 'get_idea_archive':
+          // ITER-6 (Phase 4): same flag, same gate, same guarantee — the
+          // imagination tools vanish with the flag rather than degrading.
+          result = await dispatchImaginationTool(name, args, caller); break;
         default: throw new Error(`Unknown tool: ${name}`);
       }
       // ── Cerebellum: procedural pattern observation ──────────

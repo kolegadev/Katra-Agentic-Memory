@@ -10,6 +10,7 @@ import {
 } from './self-model-collections.js';
 import type { PhilosophicalInsight, KnowledgeNode, KnowledgeRelationship } from '../../types/memory.js';
 import type { Db, Collection } from 'mongodb';
+import { ObjectId } from 'mongodb';
 
 export interface IdentityKernelResult {
   narrative: string;
@@ -584,9 +585,14 @@ export class SelfModelService {
     let currentId = currentNodeId;
 
     for (let i = 1; i < steps; i++) {
-      const outgoingEdges = await edgesCollection.find({
-        from_id: currentId,
-      }).toArray() as unknown as KnowledgeRelationship[];
+      // Outgoing edges of the current node, read TOLERANTLY (see
+      // `incidentEdges`): the stored shape is `from_id`/`to_id`, and this walk
+      // used to ask only for `from_id`, so a `source`/`target` row was
+      // invisible to it.
+      const currentIds = nodeIdsFor(currentId);
+      const outgoingEdges = (await this.incidentEdges(edgesCollection, currentIds))
+        .filter((incident) => incident.from !== null && currentIds.includes(incident.from))
+        .map((incident) => incident.edge);
 
       if (outgoingEdges.length === 0) break;
 
@@ -604,7 +610,9 @@ export class SelfModelService {
 
       if (!selectedEdge) selectedEdge = outgoingEdges[outgoingEdges.length - 1];
 
-      const nextNode = await nodesCollection.findOne({ id: selectedEdge.to_id }) as unknown as KnowledgeNode | null;
+      const nextEndpoint = otherEndpoint(selectedEdge, currentId);
+      if (!nextEndpoint) break;
+      const nextNode = await this.findNodeById(nodesCollection, nextEndpoint);
       if (!nextNode) break;
 
       const nextName = nextNode.properties?.name || nextNode.id || 'unknown';
@@ -639,6 +647,62 @@ export class SelfModelService {
     }
 
     return { path, narrative, stored_event_id: storedEventId };
+  }
+
+  /**
+   * Every edge incident to `nodeIds`, read TOLERANTLY across the edge shapes
+   * that exist in `knowledge_relationships`: the stored shape is
+   * `from_id`/`to_id` (`types/memory.ts#KnowledgeRelationship`, and what
+   * `code-graph-sync.ts` writes), while `source`/`target` rows exist too (and
+   * `source` is also a provenance label on code-graph edges — a value that
+   * never matches a node id, so tolerating it is harmless). Four bounded
+   * queries rather than one `$or`, because the unit suite's Mongo fake does
+   * not implement `$or` and a walk whose traversal cannot be tested is a walk
+   * nobody can prove happens.
+   */
+  private async incidentEdges(
+    edgesCollection: Collection,
+    nodeIds: string[],
+    limit = 25,
+  ): Promise<Array<{ edge: KnowledgeRelationship; from: string | null; to: string | null }>> {
+    const ids = nodeIds.filter((id) => typeof id === 'string' && id.length > 0);
+    if (ids.length === 0) return [];
+    const found = new Map<string, KnowledgeRelationship>();
+    const collect = (docs: unknown[]): void => {
+      for (const doc of docs as KnowledgeRelationship[]) {
+        const endpoints = edgeEndpoints(doc as unknown as Record<string, unknown>);
+        const key = String(
+          (doc as { id?: unknown }).id ?? `${endpoints.from}->${endpoints.to}:${doc.relationship_type ?? ''}`,
+        );
+        if (!found.has(key)) found.set(key, doc);
+      }
+    };
+    collect(await edgesCollection.find({ from_id: { $in: ids } }).limit(limit).toArray());
+    collect(await edgesCollection.find({ to_id: { $in: ids } }).limit(limit).toArray());
+    collect(await edgesCollection.find({ source: { $in: ids } }).limit(limit).toArray());
+    collect(await edgesCollection.find({ target: { $in: ids } }).limit(limit).toArray());
+    return [...found.values()].map((edge) => ({
+      edge,
+      ...edgeEndpoints(edge as unknown as Record<string, unknown>),
+    }));
+  }
+
+  /**
+   * Resolve a node by its graph id. Nodes are keyed by the string `id` (what
+   * every writer stores and every reader looks up); a legacy `_id`-keyed row is
+   * tolerated too, so a walk never dead-ends on an id that exists.
+   */
+  private async findNodeById(nodesCollection: Collection, id: string): Promise<KnowledgeNode | null> {
+    if (!id) return null;
+    const byId = (await nodesCollection.findOne({ id })) as unknown as KnowledgeNode | null;
+    if (byId) return byId;
+    const byStringId = (await nodesCollection.findOne({ _id: id as unknown as object })) as unknown as KnowledgeNode | null;
+    if (byStringId) return byStringId;
+    if (/^[0-9a-fA-F]{24}$/.test(id)) {
+      const byObjectId = (await nodesCollection.findOne({ _id: new ObjectId(id) as unknown as object })) as unknown as KnowledgeNode | null;
+      if (byObjectId) return byObjectId;
+    }
+    return null;
   }
 
   private buildMindWanderNarrative(path: string[]): string {
@@ -1145,16 +1209,25 @@ export class SelfModelService {
     const path: string[] = [(startNode[0] as any).name || (startNode[0] as any).properties?.name || 'unknown'];
     let currentNode = startNode[0];
 
-    // Walk up to 5 steps, preferring goal-relevant edges
+    // Walk up to 5 steps, preferring goal-relevant edges. The incident edges
+    // are read through the tolerant reader: this walk used to ask for
+    // `{ source: <_id> }` / `{ target: <_id> }`, fields that stored edges do
+    // not have (they carry `from_id`/`to_id`, and `source` is a provenance
+    // label — the string `'katra-code'`), so it found NO edges on any real
+    // graph and every wander ended after one node.
+    //
+    // A wander MAY revisit a node (it is a stream of thought, not a path — the
+    // step bound is what keeps it finite), so no visited set is added here;
+    // the imagination engine's distant-association walk is the one that must be
+    // cycle-safe, and it is.
     for (let step = 0; step < 5; step++) {
-      const edges = await edgesCollection.find({
-        $or: [{ source: (currentNode as any)._id }, { target: (currentNode as any)._id }],
-      }).limit(10).toArray();
+      const incident = await this.incidentEdges(edgesCollection, nodeIdsFor(currentNodeIdOf(currentNode)));
+      const edges = incident.map((entry) => entry.edge);
 
       if (edges.length === 0) break;
 
       // Bias toward goal-relevant edges
-      let weightedEdges = edges.map((e: any) => {
+      const weightedEdges = edges.map((e: any) => {
         const edgeName = e.label || e.relationship_type || '';
         const relevance = activeGoalTerms.some(t => edgeName.toLowerCase().includes(t.toLowerCase())) ? 3 : 1;
         return { edge: e, weight: relevance * (e.weight || 1) };
@@ -1168,9 +1241,9 @@ export class SelfModelService {
         if (rand <= 0) { selected = we; break; }
       }
 
-      const nextId = (selected.edge.source?.toString() === (currentNode as any)._id?.toString())
-        ? selected.edge.target : selected.edge.source;
-      const nextNode = await nodesCollection.findOne({ _id: nextId });
+      const nextId = otherEndpoint(selected.edge, currentNodeIdOf(currentNode));
+      if (!nextId) break;
+      const nextNode = await this.findNodeById(nodesCollection, nextId);
       if (nextNode) {
         path.push((nextNode as any).name || (nextNode as any).properties?.name || 'unknown');
         currentNode = nextNode;
@@ -1199,6 +1272,56 @@ export class SelfModelService {
 
     return { path, narrative, stored_event_id: storedEventId };
   }
+}
+
+/**
+ * A knowledge-graph edge's endpoints, TOLERATING BOTH STORED SHAPES. The real
+ * collection stores `from_id` / `to_id`; `source` / `target` are tolerated for
+ * older rows (and `source` also carries a provenance label on code-graph
+ * edges, which never matches a node id and is therefore harmless).
+ */
+function edgeEndpoints(edge: Record<string, unknown> | null | undefined): {
+  from: string | null;
+  to: string | null;
+} {
+  if (!edge) return { from: null, to: null };
+  const text = (value: unknown): string | null =>
+    typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+  return {
+    from: text(edge.from_id) ?? text(edge.source),
+    to: text(edge.to_id) ?? text(edge.target),
+  };
+}
+
+/**
+ * The ids a node may be addressed by: its graph `id` (what every writer stores)
+ * and its Mongo `_id` (legacy rows). Deduplicated, string-only.
+ */
+function nodeIdsFor(nodeOrId: KnowledgeNode | string | null | undefined): string[] {
+  if (!nodeOrId) return [];
+  const raw = typeof nodeOrId === 'string' ? [nodeOrId] : [nodeOrId.id, (nodeOrId as { _id?: unknown })._id];
+  return [...new Set(raw.filter((value): value is string => typeof value === 'string' && value.length > 0))];
+}
+
+/** The id this walk should extend from (the node's graph id, else its `_id`). */
+function currentNodeIdOf(node: KnowledgeNode): string {
+  return nodeIdsFor(node)[0] ?? '';
+}
+
+/**
+ * The endpoint an edge leads to from `current`. Both directions are accepted —
+ * the goal-directed walk was always undirected — and an edge that cannot be
+ * disambiguated is not a hop (returns `null`) instead of looping in place.
+ */
+function otherEndpoint(
+  edge: KnowledgeRelationship | Record<string, unknown> | null | undefined,
+  current: string | readonly string[],
+): string | null {
+  const { from, to } = edgeEndpoints(edge as Record<string, unknown> | null | undefined);
+  const currentIds = typeof current === 'string' ? [current] : [...current];
+  if (from && to && currentIds.includes(from) && !currentIds.includes(to)) return to;
+  if (from && to && currentIds.includes(to) && !currentIds.includes(from)) return from;
+  return null;
 }
 
 /** Parse a stored timestamp; `null` when it is absent or unusable. */

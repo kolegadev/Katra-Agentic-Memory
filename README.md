@@ -152,10 +152,12 @@ semantic similarity, recall by time range, explore a knowledge graph, sync a
 code graph, detect patterns, run sleep consolidation, send and read inter-agent
 messages, configure the LLM provider, and more. Feature flags add to that
 surface: `PER_IDENTITY_PERSONALITY=1` registers `get_my_personality`,
-`FOCUSED_IMAGINATION=1` registers `run_focused_consolidation` and
-`get_salience_trace` (a private, mission-scoped Salience Trace), and the
-cognitive-control plane adds 25–38 tools when `COGNITIVE_CONTROL_ENABLED` is not
-off — see [MCP Tools Reference](docs/MCP-TOOLS.md).
+`FOCUSED_IMAGINATION=1` registers `run_focused_consolidation`,
+`get_salience_trace` (a private, mission-scoped Salience Trace) and its Phase 4
+pair `generate_imagination_seeds` / `get_idea_archive` (the imagination engine
+and its quality-diversity idea archive), and the cognitive-control plane adds
+25–38 tools when `COGNITIVE_CONTROL_ENABLED` is not off — see
+[MCP Tools Reference](docs/MCP-TOOLS.md).
 
 | Platform | Config file | Notes |
 |----------|-------------|-------|
@@ -207,6 +209,15 @@ are always private; everything else is team-shared by default.
   (attractions, tensions, surprises, absences, persistent pulls, questions),
   evidence-linked to the mission's own records and counts-only around journal
   material; behind `FOCUSED_IMAGINATION` (default off)
+- **Imagination engine** — turns that trace into a diverse, reproducible
+  portfolio of testable hypothesis seeds through ten operators selected from the
+  trace itself, and admits them into a quality-diversity archive that rejects
+  duplicates, paraphrases and excluded regions (with reasons); dedupe is
+  containment-aware, so padding a restatement does not smuggle it in, and a
+  ruled-out idea comes back only with a valid changed premise (never "nothing
+  has changed") plus a lineage link to the prior rejection; private seeds,
+  identity-owned cells, sanitized coverage view; behind `FOCUSED_IMAGINATION`
+  (default off)
 - **Autonomous loop** — salience-driven autonomy; no cron, no hand-written task files
 - **Identity separation** — named identities per agent; personal always private
 - **Inter-agent message bus** — `Attention:` messages through shared memory,

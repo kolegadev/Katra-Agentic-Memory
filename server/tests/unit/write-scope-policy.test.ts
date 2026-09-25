@@ -41,7 +41,10 @@ describe('resolveWriteScope — personal kinds are forced private', () => {
     // ITER-5 added the focused-consolidation pair: the mission-scoped Salience
     // Trace and its run ledger are personal by construction
     // (CONTRACT-iter5-focused-consolidation.md, boundaries) and are listed here
-    // by the collection each entry protects.
+    // by the collection each entry protects. ITER-6 added the imagination
+    // engine's seeds, lineages and run ledger the same way — and deliberately
+    // NOT `idea_archive_cells`, which is identity-owned but mission-indexed and
+    // therefore written with the policy's explicit private opt-out instead.
     expect(PERSONAL_KINDS).toEqual([
       'journal',
       'reflection',
@@ -49,7 +52,11 @@ describe('resolveWriteScope — personal kinds are forced private', () => {
       'insight',
       'salience_traces',
       'focused_consolidation_runs',
+      'idea_seeds',
+      'idea_lineages',
+      'imagination_runs',
     ]);
+    expect(PERSONAL_KINDS).not.toContain('idea_archive_cells');
   });
 
   it.each(PERSONAL_KINDS)('%s → shared_id null even when shared is requested', (kind) => {

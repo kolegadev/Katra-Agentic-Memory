@@ -1,0 +1,257 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://katra.dev/schemas/idea-seed.schema.json",
+  "title": "Katra Idea Seed",
+  "description": "One hypothesis seed produced by the imagination engine and admitted (or rejected) by the quality-diversity archive (ITER-6, imagination engine). Privacy: the row is personal by construction — it carries no shared scope, no journal text and no reflection material. Determinism: `seed_id` and `lineage_ref` are DERIVED (sha256 over the seed's content, the mission and the run's PRNG seed) and never generated randomly, so two runs with the same seed over the same inputs produce the same ids. Strictness choice: what the seed must be able to answer is required and bounded — a hypothesis, a mechanism, a cheapest test, at least one evidence ref, the descriptor tuple, the three scores plus the information gain, a lineage ref and a state; `additionalProperties` stays true because the stored document is CONSTRUCTED field by field from the model output (unknown keys the model emits are dropped, never stored), so extra keys must not make an otherwise-sound seed unstorable. Registered in the mission-cognition schema registry (schema-registry.ts) next to the salience trace — the same Ajv2020 instance, rather than a second validator.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "seed_id",
+    "user_id",
+    "mission_id",
+    "mission_version",
+    "cycle_id",
+    "operator",
+    "hypothesis",
+    "mechanism",
+    "descriptor_bins",
+    "bins",
+    "cell_key",
+    "evidence_refs",
+    "novelty_score",
+    "coherence_score",
+    "testability_score",
+    "quality",
+    "cheapest_test",
+    "expected_information_gain",
+    "parent_seed_ids",
+    "lineage_ref",
+    "state",
+    "incumbent",
+    "created_at"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "seed_id": {
+      "description": "Derived: sha256 over the seed's content + the run's PRNG seed + the mission. Never a random UUID.",
+      "type": "string",
+      "minLength": 1
+    },
+    "user_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "mission_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "mission_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "cycle_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "prng_seed": {
+      "description": "The 32-bit seed the run's PRNG was started from; part of the reproducibility contract.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "seed_source": {
+      "description": "The seed string the caller (or the run's default derivation) supplied.",
+      "type": "string"
+    },
+    "operator": {
+      "description": "The operator family that produced the seed. The ten families are fixed by the contract.",
+      "enum": [
+        "assumption_inversion",
+        "representation_shift",
+        "distant_analogy",
+        "constraint_mutation",
+        "boundary_extreme",
+        "causal_reversal",
+        "contradiction_preservation",
+        "tool_invention",
+        "random_semantic_bridge",
+        "counterfactual_world"
+      ]
+    },
+    "hypothesis": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1000
+    },
+    "mechanism": {
+      "description": "Why the hypothesis would hold — and, for the bridge operators, the stated bridge (the path is in `bridge_path`).",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "descriptor_bins": {
+      "description": "The descriptor tuple, ordered by DESCRIPTOR_DIMENSIONS: mechanism, representation, violated_assumption, evidence_family, test_strategy.",
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "bins": {
+      "description": "The same tuple keyed by dimension — one normalisation feeds both, so they can never disagree.",
+      "type": "object",
+      "required": [
+        "mechanism",
+        "representation",
+        "violated_assumption",
+        "evidence_family",
+        "test_strategy"
+      ],
+      "properties": {
+        "mechanism": { "type": "string", "minLength": 1 },
+        "representation": { "type": "string", "minLength": 1 },
+        "violated_assumption": { "type": "string", "minLength": 1 },
+        "evidence_family": { "type": "string", "minLength": 1 },
+        "test_strategy": { "type": "string", "minLength": 1 }
+      }
+    },
+    "cell_key": {
+      "description": "The archive cell: the tuple of bins, in dimension order.",
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^mechanism=.*\\|representation=.*\\|violated_assumption=.*\\|evidence_family=.*\\|test_strategy=.*$"
+    },
+    "evidence_refs": {
+      "description": "Trace signal ids (derived from the trace id) and mission ledger/delta/work-item/baton ids. Each ref is validated before store: an unresolvable ref is dropped and counted, never kept and never invented.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 20,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "novelty_score": {
+      "description": "min(model self-report, 1 - max similarity against the archive): novelty is measured against the archive, not taken on faith.",
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "novelty_self_reported": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "coherence_score": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "testability_score": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "quality": {
+      "description": "f(novelty, coherence, testability, information_gain) — fixed weights, documented in idea-archive-service.ts.",
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "cheapest_test": {
+      "description": "The cheapest concrete test that would separate the seed from its negation.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+    },
+    "expected_information_gain": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "parent_seed_ids": {
+      "description": "Lineage: the seeds this one was mutated from, validated against the archive. For a changed-premise re-entry it must name the prior rejection.",
+      "type": "array",
+      "maxItems": 5,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "lineage_ref": {
+      "description": "The `idea_lineages.lineage_id` of this seed's lineage row. Every admitted seed has one.",
+      "type": "string",
+      "minLength": 1
+    },
+    "changed_premise": {
+      "description": "Present only on a changed-premise re-entry: what has changed since the idea was ruled out.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1000
+    },
+    "bridge_path": {
+      "description": "For random_semantic_bridge / distant_analogy: the walk's path, which the seed must state.",
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "bridge": {
+      "description": "The stated bridge: what the two ends of the path share and why that carries the mechanism here.",
+      "type": "string",
+      "minLength": 1
+    },
+    "rank": {
+      "description": "Deterministic ranking position within its cycle (quality, then testability, then seed_id).",
+      "type": "integer",
+      "minimum": 0
+    },
+    "state": {
+      "description": "Rejected seeds are STORED too: that is what makes an exclusion durable and re-enterable.",
+      "enum": ["admitted", "rejected"]
+    },
+    "incumbent": {
+      "description": "True when this seed is its cell's highest-quality seed.",
+      "type": "boolean"
+    },
+    "rejection": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["reason", "at"],
+      "properties": {
+        "reason": {
+          "enum": [
+            "duplicate_of",
+            "paraphrase_of",
+            "excluded_region",
+            "schema_invalid",
+            "missing_changed_premise",
+            "vacuous_changed_premise",
+            "premise_restates_exclusion",
+            "missing_lineage_link"
+          ]
+        },
+        "detail": {
+          "type": ["string", "null"]
+        },
+        "duplicate_of": {
+          "type": ["string", "null"]
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

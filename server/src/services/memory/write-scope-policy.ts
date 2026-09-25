@@ -30,6 +30,17 @@ export const PERSONAL_KINDS: readonly string[] = [
   // `resolveWriteScope({ kind })` before `stripSharedId`.
   'salience_traces',
   'focused_consolidation_runs',
+  // ITER-6 (imagination engine): the hypothesis seeds and their lineage rows
+  // are personal by construction — a seed is one identity's private, evidence-
+  // linked imagination about a mission, and a lineage row is the record of how
+  // it was produced. Both are listed by the collection they protect. NOTE the
+  // deliberate omission: `idea_archive_cells` is NOT here. The archive is
+  // identity-owned but mission-indexed, so it is written with the policy's
+  // explicit `private: true` opt-out instead of being declared a personal
+  // kind (see processing/imagination-collections.ts for the full reading).
+  'idea_seeds',
+  'idea_lineages',
+  'imagination_runs',
 ];
 
 /** Default shared scope for every non-personal write. */
