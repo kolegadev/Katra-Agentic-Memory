@@ -13,7 +13,7 @@ SCRIPT="$REPO/integrations/kolega-code/health/machine_health.py"
 LOG_DIR="$HOME/.katra/inbox"
 LOG_FILE="$LOG_DIR/health-cron.log"
 # On non-thebrick machines the collector must know where Katra lives:
-#   INSTALL_KATRA_HOST=100.101.206.13 ./install-health-cron.sh
+#   INSTALL_KATRA_HOST=<katra-host-ip> ./install-health-cron.sh
 HOST_PREFIX="${INSTALL_KATRA_HOST:+KATRA_HOST=$INSTALL_KATRA_HOST }"
 
 mkdir -p "$LOG_DIR"
