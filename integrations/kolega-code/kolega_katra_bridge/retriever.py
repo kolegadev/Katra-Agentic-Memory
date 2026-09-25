@@ -67,7 +67,9 @@ BULLETIN_RECENT_HOURS = 72        # preferred window: the team channel, last 3 d
 BULLETIN_FALLBACK_DAYS = 14       # if quiet, widen to the newest available
 BULLETIN_MAX_AGE_DAYS = 14        # hard drop — older is history, not news
 BULLETIN_LIMIT = 6                # messages shown, newest first
+BULLETIN_RECALL_LIMIT = 24        # rows fetched before the inbound filter
 REFLECTION_MAX_AGE_HOURS = 72     # beyond this the block is labelled stale
+REFLECTION_DROP_AGE_HOURS = 240   # beyond this the body is not replayed at all
 
 # One entry of a `## Temporal Recall` report: "- **[<iso>]** (type) text…".
 _RECALL_ENTRY = re.compile(r"^- \*\*\[([^\]]+)\]\*\*\s*(.*)$")
@@ -278,6 +280,37 @@ class MemoryRetriever:
             fetched.extend(result)
         return fetched
 
+    def _local_identity_names(self) -> set[str]:
+        """Identities THIS bridge speaks as — i.e. its own outgoing mail."""
+        names: set[str] = set()
+        for candidate in (
+            (self.config.user_id or "").strip(),
+            os.environ.get("KATRA_USER_ID", "").strip(),
+        ):
+            if candidate:
+                names.add(candidate.lower())
+        return names
+
+    @staticmethod
+    def _is_self_authored(text: str, local_names: set[str]) -> bool:
+        """True when an inter-agent message was sent BY this identity.
+
+        The bulletin is an inbox — the formatter introduces it as "Direct
+        messages from other agents" — but temporal_recall returns the whole
+        channel, sender included. On John's first live wake (2026-09-25) all
+        six bulletin items were Lilly's OWN closure receipts, re-delivered as
+        if they were incoming mail. Messages with no FROM header are kept:
+        unknown sender is not the same as self.
+        """
+        if not local_names:
+            return False
+        match = re.search(r"\bFROM:\s*([^\n—–\-,;|]+)", text or "", re.IGNORECASE)
+        if not match:
+            return False
+        sender = " ".join(match.group(1).split()).lower()
+        sender = sender.split("(")[0].strip()  # "Lilly (MacBook Pro)" → "lilly"
+        return bool(sender) and sender in local_names
+
     async def _recent_agent_messages(self, client: KatraMCPClient) -> list[MemoryItem]:
         """Inter-agent messages in TIME order, newest first (or []).
 
@@ -287,8 +320,15 @@ class MemoryRetriever:
         equally well, and settled threads kept arriving as if they were news.
         `temporal_recall` answers the question the bulletin actually asks —
         what has the team said lately — with a hard freshness bound.
+
+        Two further filters, both from the 2026-09-25 live run:
+          * self-authored messages are dropped (the inbox showed Lilly her
+            own sent receipts, six of six);
+          * the dedupe key is the message BODY, not body+timestamp, so a
+            burst of identical acknowledgements collapses to one.
         """
         now = datetime.now(timezone.utc)
+        local = self._local_identity_names()
         windows = (
             (BULLETIN_RECENT_HOURS, "recent"),
             (BULLETIN_FALLBACK_DAYS * 24, "window-widened"),
@@ -298,7 +338,7 @@ class MemoryRetriever:
                 items = await client.temporal_recall(
                     (now - timedelta(hours=hours)).isoformat(),
                     now.isoformat(),
-                    limit=12,
+                    limit=BULLETIN_RECALL_LIMIT,
                     event_type="agent_message",
                 )
             except Exception:
@@ -308,14 +348,16 @@ class MemoryRetriever:
             seen: set[str] = set()
             for item in items:
                 for ts, text in self._split_recall_events(item.content or ""):
-                    snippet = f"[{ts}] {text}"
-                    if snippet in seen:
+                    if self._is_self_authored(text, local):
                         continue
-                    seen.add(snippet)
+                    key = " ".join(text.split())
+                    if not key or key in seen:
+                        continue
+                    seen.add(key)
                     messages.append(
                         MemoryItem(
                             source="agent_message",
-                            content=snippet,
+                            content=f"[{ts}] {text}",
                             metadata={
                                 "is_agent_message": True,
                                 "created_at": ts,
@@ -395,12 +437,23 @@ class MemoryRetriever:
         return self._expand_agent_messages(messages, query)
 
     def _annotate_reflection(self, items: list[MemoryItem]) -> list[MemoryItem]:
-        """Label a stale consolidation instead of passing it off as current.
+        """Stop a stale consolidation from passing as current state.
 
         The server returns the NEWEST entry that exists — for this identity
         that is 2026-08-23, a month old. Re-rendering it unchanged on every
         wake is what made the ritual read as legacy: nothing in the block said
-        the cycle had stopped running. Undated entries are left untouched.
+        the cycle had stopped running. Two tiers:
+
+          * older than REFLECTION_MAX_AGE_HOURS — keep the body, but label it
+            with its age so it cannot be mistaken for today's state;
+          * older than REFLECTION_DROP_AGE_HOURS — do not replay the body at
+            all. Past a full cycle it is history, and John's live wake showed
+            exactly what replaying it costs: a 33-day-old "today felt like a
+            small step" narrative sitting in the middle of the bootstrap.
+            What remains is a one-line pointer plus the undated companions
+            (philosophical insights, unresolved threads), which stay useful.
+
+        Undated entries are left untouched.
         """
         now = datetime.now(timezone.utc)
         annotated: list[MemoryItem] = []
@@ -417,10 +470,26 @@ class MemoryRetriever:
                         when = None
                 if when is not None:
                     age_hours = (now - when).total_seconds() / 3600.0
-                    if age_hours > REFLECTION_MAX_AGE_HOURS:
+                    age_days = int(age_hours // 24)
+                    if age_hours > REFLECTION_DROP_AGE_HOURS:
+                        content = (
+                            f"⚠️ STALE — the newest consolidation entry for this identity is "
+                            f"{age_days} days old ({match.group(1)}) and is NOT replayed: past a "
+                            f"full cycle it is history, not current state. The daily cycle has "
+                            f"stopped running for this identity. Continuity comes from the "
+                            f"pre-reset recap and the bulletin; this block fills again when the "
+                            f"cycle next runs."
+                        )
+                        item = MemoryItem(
+                            source=item.source,
+                            content=content,
+                            metadata=item.metadata,
+                            score=item.score,
+                        )
+                    elif age_hours > REFLECTION_MAX_AGE_HOURS:
                         head = (
                             f"⚠️ STALE — the newest consolidation entry for this identity is "
-                            f"{int(age_hours // 24)} days old ({match.group(1)}); no newer cycle "
+                            f"{age_days} days old ({match.group(1)}); no newer cycle "
                             f"has run. Read it as disposition, NOT as current state or recent work."
                             f"\n\n"
                         )
@@ -508,7 +577,13 @@ class MemoryRetriever:
         return stripped
 
     def _expand_agent_messages(self, messages: list[MemoryItem], query: str) -> list[MemoryItem]:
-        """One MemoryItem per inter-agent message, not one per search call."""
+        """One MemoryItem per inter-agent message, not one per search call.
+
+        Self-authored messages are dropped here too: this is the path a quiet
+        channel falls back to, and letting Lilly's own outgoing mail back in
+        would undo the inbound filter in _recent_agent_messages.
+        """
+        local = self._local_identity_names()
         expanded: list[MemoryItem] = []
         seen: set[str] = set()
         for msg in messages:
@@ -516,7 +591,11 @@ class MemoryRetriever:
             if not entries:
                 # Not a report — keep the item as-is (vector-search items are
                 # already individual entries).
-                if msg.content and msg.content.strip() not in seen:
+                if (
+                    msg.content
+                    and msg.content.strip() not in seen
+                    and not self._is_self_authored(msg.content, local)
+                ):
                     seen.add(msg.content.strip())
                     expanded.append(
                         MemoryItem(
@@ -530,6 +609,8 @@ class MemoryRetriever:
             for source, text in entries:
                 if "Attention:" not in text and "TASK FOR" not in text:
                     continue  # not an inter-agent message
+                if self._is_self_authored(text, local):
+                    continue  # our own outgoing mail is not an inbound bulletin
                 stamp = _REPORT_TS.match(text.strip())
                 when = _parse_iso(stamp.group(1)) if stamp else None
                 if when is not None and (datetime.now(timezone.utc) - when).days > BULLETIN_MAX_AGE_DAYS:

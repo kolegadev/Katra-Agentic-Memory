@@ -266,7 +266,7 @@ compaction.
 ### Wake content freshness
 
 A ritual that re-injects stale content is worse than none: it answers "what
-was I doing?" with last week's news. Three rules keep the content current
+was I doing?" with last week's news. Five rules keep the content current
 (2026-09-25, after John reported the wake reading as "legacy, stale
 information"):
 
@@ -277,15 +277,27 @@ information"):
    own last turn is worse than no summary. The recap is attached only to a
    *delivered* bootstrap, so a dead Katra still raises the empty-context alarm
    instead of being masked by it.
-2. **The bulletin is time-ordered.** `temporal_recall` with
+2. **The bulletin is time-ordered, inbound only.** `temporal_recall` with
    `event_type=agent_message` (72 h, widening to 14 days only when quiet),
-   newest first, hard-dropped past 14 days. It used to be a relevance search
+   newest first, hard-dropped past 14 days, deduplicated by message body, and
+   with this identity's own outgoing mail removed — an inbox that shows you
+   your own sent receipts is not a bulletin. It used to be a relevance search
    on the identity names, and relevance cannot tell "new" from "old" — which
    is how three-week-old settled threads kept arriving as today's mail.
-3. **A stale reflection says so.** `get_daily_reflection` returns the newest
-   entry that EXISTS; when that is older than 72 h the block is prefixed with
-   a `⚠️ STALE` line naming its age, so an old consolidation cannot pass for
-   current state.
+3. **A stale reflection says so — or is not replayed.** `get_daily_reflection`
+   returns the newest entry that EXISTS. Older than 72 h the block is prefixed
+   with a `⚠️ STALE` line naming its age; older than 10 days the day's body is
+   not replayed at all, because past a full cycle it is history, not current
+   state, and the block becomes a one-line notice that the cycle has stopped.
+4. **Nothing arrives twice.** The reset path joins the bootstrap with the
+   query-retrieval context, and both fetch the query-independent sources
+   (bulletin, reflection, missions, temporal context), so the payload used to
+   carry each of them twice — 7 sections where 5 would do, and the repetition
+   itself read as noise. The bulletin and reflection are folded by header;
+   inside the "relevant memories" sections an item whose text was already
+   delivered is dropped and the survivors renumbered. Items that merely look
+   similar are kept: the two bundles ask different questions, and that
+   difference is real.
 
 ## Staying healthy across updates
 

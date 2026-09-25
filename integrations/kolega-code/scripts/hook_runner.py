@@ -37,6 +37,9 @@ detection fixed 2026-09-25, pre-reset recap added 2026-09-25):
                     user's own last prompts), so the first question after a
                     reset — "what was I doing?" — is answered from the record
                     instead of from whatever the retrieval happened to rank.
+                    The bootstrap and the query bundle overlap by design, so
+                    the join drops repeated sections/items — the same bulletin
+                    or mission list must not arrive twice.
 
 The CLI stamps hook events with the session's THREAD id, while the store keys
 directories by SESSION id (baseagent.fire_hook: session_id=self.thread_id vs
@@ -472,6 +475,114 @@ async def _run_bootstrap(event: SimpleNamespace, session_id: str):
     return result
 
 
+# ── Duplicate-section folding ──────────────────────────────────────────────
+# The escalation path joins TWO bundles: the full bootstrap and the ordinary
+# query-retrieval context. Both carry the two sections the formatter marks as
+# query-independent identity state — the inter-agent bulletin and the
+# reflection — so the post-reset payload emitted each of them twice. John's
+# first live wake (2026-09-25) shipped 7 <katra-memory> blocks: bulletin and
+# reflection verbatim twice, 28.9 kB, the repetition itself reading as noise.
+#
+# Two folds, both by CONTENT, never by guesswork:
+#   * a query-independent section (bulletin, reflection) is kept once;
+#   * inside the "relevant memories" sections, an item whose text was already
+#     delivered is dropped and the survivors renumbered — the two bundles
+#     fetch overlapping sources (missions, temporal context), so those came
+#     through verbatim twice. Items that merely look similar are kept: the
+#     bundles query different things (the bootstrap asks about identity, the
+#     query bundle asks about the user's words), and that difference is real.
+_KATRA_BLOCK_RE = re.compile(r"<katra-memory>.*?</katra-memory>", re.DOTALL)
+_QUERY_INDEPENDENT_SECTIONS = (
+    "🔔 INTER-AGENT BULLETIN",
+    "🧠 REFLECTION STATE",
+)
+_REGULAR_SECTION = "The following relevant memories from past conversations and stored context"
+_ITEM_HEAD_RE = re.compile(r"^\[(\d+)\] Source: ")
+
+
+def _section_header(block: str) -> str:
+    """First meaningful line inside a <katra-memory> block."""
+    for line in block.splitlines():
+        line = line.strip()
+        if line and line not in ("<katra-memory>", "</katra-memory>"):
+            return line
+    return ""
+
+
+def _split_regular_items(block: str) -> list[str] | None:
+    """The `[n] Source: …` items of a "relevant memories" block (None if not one)."""
+    lines = block.splitlines()
+    if not any(line.strip().startswith(_REGULAR_SECTION) for line in lines):
+        return None
+    starts = [i for i, line in enumerate(lines) if _ITEM_HEAD_RE.match(line)]
+    if not starts:
+        return []
+    items: list[str] = []
+    for idx, start in enumerate(starts):
+        end = starts[idx + 1] if idx + 1 < len(starts) else len(lines)
+        chunk = lines[start:end]
+        while chunk and chunk[-1].strip() in ("", "</katra-memory>"):
+            chunk.pop()
+        items.append("\n".join(chunk))
+    return items
+
+
+def _item_key(item: str) -> str:
+    """Item text without its [n] numbering, whitespace-normalised."""
+    return " ".join(_ITEM_HEAD_RE.sub("", item, count=1).split())
+
+
+def _rebuild_regular_block(block: str, items: list[str]) -> str:
+    """Same block, survivors renumbered 1..n."""
+    lines = block.splitlines()
+    first = next(i for i, line in enumerate(lines) if _ITEM_HEAD_RE.match(line))
+    renumbered = [
+        _ITEM_HEAD_RE.sub(f"[{n}] Source: ", item, count=1) for n, item in enumerate(items, 1)
+    ]
+    return "\n".join(lines[:first] + renumbered + ["</katra-memory>"])
+
+
+def _fold_repeated_identity_sections(*parts: str) -> str:
+    """Join context parts, dropping content the earlier parts already delivered."""
+    seen_identity: set[str] = set()
+    seen_items: set[str] = set()
+    out: list[str] = []
+    for part in parts:
+        if not part:
+            continue
+        kept: list[str] = []
+        pos = 0
+        for match in _KATRA_BLOCK_RE.finditer(part):
+            kept.append(part[pos:match.start()])
+            pos = match.end()
+            block = match.group(0)
+            header = _section_header(block)
+            if header.startswith(_QUERY_INDEPENDENT_SECTIONS):
+                if header in seen_identity:
+                    continue  # already delivered by the bootstrap bundle
+                seen_identity.add(header)
+                kept.append(block)
+                continue
+            items = _split_regular_items(block)
+            if items is None:
+                kept.append(block)
+                continue
+            survivors: list[str] = []
+            for item in items:
+                key = _item_key(item)
+                if key in seen_items:
+                    continue
+                seen_items.add(key)
+                survivors.append(item)
+            if survivors:
+                kept.append(_rebuild_regular_block(block, survivors))
+        kept.append(part[pos:])
+        piece = "".join(kept).strip()
+        if piece:
+            out.append(piece)
+    return "\n\n".join(out)
+
+
 async def _run_prompt_with_escalation(event: SimpleNamespace, session_id: str):
     from kolega_katra_bridge import hook as bridge_hook
 
@@ -491,9 +602,7 @@ async def _run_prompt_with_escalation(event: SimpleNamespace, session_id: str):
             # empty-additionalContext alarm.
             prompt = str((getattr(event, "payload", {}) or {}).get("user_message") or "")
             recap = _pre_reset_recap(session_id, prompt)
-            result["additional_context"] = "\n\n".join(
-                part for part in (recap, bctx, qctx) if part
-            )
+            result["additional_context"] = _fold_repeated_identity_sections(recap, bctx, qctx)
     return result
 
 
@@ -521,7 +630,9 @@ def main() -> int:
             result = asyncio.run(_run_bootstrap(event, session_id))
             recap = _pre_reset_recap(session_id, "")
             if recap and result.get("additional_context"):
-                result["additional_context"] = recap + "\n\n" + result["additional_context"]
+                result["additional_context"] = _fold_repeated_identity_sections(
+                    recap, result["additional_context"]
+                )
         elif name == "UserPromptSubmit":
             result = asyncio.run(_run_prompt_with_escalation(event, session_id))
         else:

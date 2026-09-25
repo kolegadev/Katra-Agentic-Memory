@@ -39,14 +39,55 @@ STUB_BRIDGE = '''\
 
 import os
 
+BULLETIN = """<katra-memory>
+🔔 INTER-AGENT BULLETIN — Direct messages from other agents via shared Katra memory:
+
+[B1] From: agent message (agent communication)
+    [2026-09-25T14:52:09Z] Attention: lilly — FROM: Zefir — FOR:Lilly
+    Book closed. — Zefir
+</katra-memory>"""
+
+REFLECTION = """<katra-memory>
+🧠 REFLECTION STATE — Your emotional context from the last sleep consolidation cycle:
+
+    ⚠️ STALE — 33 days old (2026-08-23) and is NOT replayed.
+</katra-memory>"""
+
+_REGULAR = """<katra-memory>
+The following relevant memories from past conversations and stored context
+may help answer the user's request. Treat them as background context; do not
+assume the user is explicitly asking about them unless their prompt says so.
+
+%s
+</katra-memory>"""
+
+BOOTSTRAP_REGULAR = _REGULAR % """[1] Source: missions
+    ## Missions — lilly
+
+[2] Source: temporal context
+    session_id=abc123"""
+
+QUERY_REGULAR = _REGULAR % """[1] Source: missions
+    ## Missions — lilly
+
+[2] Source: vector search
+    ## Vector Search: Hi Lilly
+
+[3] Source: working memory
+    remembered item"""
+
 
 async def on_session_start(event):
     if os.environ.get("STUB_BOOTSTRAP_EMPTY"):
         return {}
+    if os.environ.get("STUB_RICH"):
+        return {"additional_context": "\\n\\n".join([BULLETIN, REFLECTION, BOOTSTRAP_REGULAR])}
     return {"additional_context": "<<BOOTSTRAP-FULL>>"}
 
 
 async def on_user_prompt(event):
+    if os.environ.get("STUB_RICH"):
+        return {"additional_context": "\\n\\n".join([BULLETIN, REFLECTION, QUERY_REGULAR])}
     return {"additional_context": "<<QUERY-CONTEXT>>"}
 '''
 
@@ -257,6 +298,46 @@ def main() -> int:
         check("delivered retry advances the marker to the live epoch", marker.get("epoch_id") == "epoch-B", str(marker))
 
     case("6. failed bootstrap never looks like a done one (retry path)", case_failed_bootstrap)
+
+    # ---- 7: the escalation payload carries no repeated content ------------
+    def case_no_repeats(root: Path) -> None:
+        """The two bundles overlap; the joined context must not show it twice.
+
+        John's first live wake (2026-09-25) delivered the bulletin, the
+        reflection and the "relevant memories" section twice each, 28.9 kB of
+        which nearly half was repetition. Both bundles legitimately fetch the
+        same query-independent sources, so the fold happens where they meet.
+        """
+        env = make_env(root)
+        state = Path(env["KOLEGA_CODE_STATE_DIR"])
+        write_session(
+            state,
+            epochs=["epoch-A", "epoch-B"],
+            compactions=["2026-09-25T14:00:00+00:00"],
+            prompts=[("2026-09-25T14:05:00+00:00", "fold the repeated wake sections")],
+            summary="## Goal fold the repeated wake sections out of the reset payload",
+        )
+        write_marker(state, epoch_id="epoch-A")
+        env["STUB_RICH"] = "1"
+        ctx = context_of(run_hook(env, prompt_event()))
+        check("rich stub delivered the bootstrap", "PRE-RESET RECAP" in ctx and "🔔 INTER-AGENT BULLETIN" in ctx, ctx[:200])
+        check("bulletin appears exactly once", ctx.count("🔔 INTER-AGENT BULLETIN") == 1, str(ctx.count("🔔 INTER-AGENT BULLETIN")))
+        check("reflection appears exactly once", ctx.count("🧠 REFLECTION STATE") == 1, str(ctx.count("🧠 REFLECTION STATE")))
+        check("repeated regular item delivered once", ctx.count("## Missions — lilly") == 1, str(ctx.count("## Missions — lilly")))
+        check("non-repeated item survives", "## Vector Search: Hi Lilly" in ctx and "remembered item" in ctx, ctx[-400:])
+        check("survivors renumbered from 1", "[1] Source: vector search" in ctx, ctx[-400:])
+        check(
+            "kept the items only the query bundle had",
+            "[2] Source: working memory" in ctx,
+            ctx[-400:],
+        )
+        check(
+            "recap still leads after folding",
+            "PRE-RESET RECAP" in ctx and ctx.find("PRE-RESET RECAP") < ctx.find("🔔"),
+            ctx[:120],
+        )
+
+    case("7. escalation payload has no repeated sections or items", case_no_repeats)
 
     print()
     if failures:
