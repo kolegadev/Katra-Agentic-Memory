@@ -29,10 +29,15 @@ mkdir -p ~/Katra-Agentic-Memory/integrations/kolega-code/health
 # copy machine_health.py there (scp from the Katra host)
 crontab -l | grep -v health/machine_health > /tmp/cron.base
 { cat /tmp/cron.base
-  echo "# machine health collector -> Katra (custody loop)"
-  echo "*/15 * * * * KATRA_HOST=<katra-host-ip> /usr/bin/python3 $HOME/Katra-Agentic-Memory/integrations/kolega-code/health/machine_health.py >> $HOME/.katra/inbox/health-cron.log 2>&1"
+  echo "# machine health collector -> Katra (Satori custody loop)"
+  echo "*/15 * * * * KATRA_HOST=<katra-host-ip> mkdir -p $HOME/.katra/inbox && /usr/bin/python3 $HOME/Katra-Agentic-Memory/integrations/kolega-code/health/machine_health.py >> $HOME/.katra/inbox/health-cron.log 2>&1"
 } | crontab -
 ```
+
+The `mkdir -p` inside the cron line is mandatory, not cosmetic: a missing
+`~/.katra/inbox` makes `/bin/sh` fail the redirect, the job dies silently,
+and the only trace is cron error mail (natasha went 23h stale this way,
+2026-09-20). Every installed line must carry it.
 
 Notes:
 - `KATRA_HOST` must point at the Katra host on non-host machines.

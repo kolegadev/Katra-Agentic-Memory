@@ -232,10 +232,14 @@ export class SkillLoaderService {
       category: (metadata.category as SkillCategory) || 'operational',
       description: String(metadata.description || ''),
       status: (metadata.status as SkillStatus) || 'observed',
+      version: metadata.version ? String(metadata.version) : undefined,
       observation_count: Number(metadata.observation_count) || 0,
       success_count: Number(metadata.success_count) || 0,
       failure_count: Number(metadata.failure_count) || 0,
-      confidence: Number(metadata.confidence) ?? 0.5,
+      // Number(undefined) is NaN and NaN ?? x is NaN — guard with isFinite.
+      confidence: Number.isFinite(Number(metadata.confidence))
+        ? Number(metadata.confidence)
+        : 0.5,
       triggers: Array.isArray(metadata.triggers) ? metadata.triggers.map(String) : [],
       created_at: metadata.created_at ? new Date(metadata.created_at as string) : new Date(),
       last_used_at: metadata.last_used_at ? new Date(metadata.last_used_at as string) : undefined,
@@ -695,6 +699,7 @@ export class SkillLoaderService {
       category: skill.category,
       description: skill.description,
       status: skill.status,
+      version: skill.version,
       confidence: skill.confidence,
       triggers: skill.triggers,
       score,
@@ -767,6 +772,7 @@ export class SkillLoaderService {
       if (!db) return; // MongoDB not connected, skip persistence
 
       const collection = db.collection('skill_feedback');
+      const skill = this.skills.find(s => s.name === skillName);
       await collection.insertOne({
         skill_name: skillName,
         session_id: sessionId,
@@ -775,6 +781,7 @@ export class SkillLoaderService {
         task_description: taskDescription || null,
         confidence_before: confidenceBefore,
         confidence_after: confidenceAfter,
+        skill_version: skill?.version ?? null,
         timestamp: new Date(),
       });
     } catch (error) {

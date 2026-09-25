@@ -1,0 +1,162 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://katra.dev/schemas/cognitive-baton.schema.json",
+  "title": "Katra Cognitive Baton",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "baton_id",
+    "mission_id",
+    "mission_version",
+    "recipient_id",
+    "mode",
+    "objective",
+    "deliverable",
+    "issued_at",
+    "expires_at"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "baton_id": {
+      "type": "string"
+    },
+    "supersedes_baton_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "mission_id": {
+      "type": "string"
+    },
+    "mission_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "work_item_id": {
+      "type": "string"
+    },
+    "recipient_id": {
+      "type": "string"
+    },
+    "mode": {
+      "enum": [
+        "explore",
+        "challenge",
+        "synthesize",
+        "verify",
+        "execute",
+        "monitor"
+      ]
+    },
+    "objective": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 6000
+    },
+    "non_objectives": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 1000
+      }
+    },
+    "deliverable": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4000
+    },
+    "ledger_refs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "memory_refs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "artifact_refs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "parallel_work_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "$ref": "mission-state.schema.json#/$defs/capability"
+      }
+    },
+    "blindness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled",
+        "withheld_classes"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "withheld_classes": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "incumbent_conclusion",
+              "incumbent_rationale",
+              "peer_hypotheses",
+              "leading_labels"
+            ]
+          },
+          "uniqueItems": true
+        },
+        "policy_hash": {
+          "type": "string"
+        }
+      }
+    },
+    "skill_versions": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "token_budget": {
+      "type": "integer",
+      "minimum": 256
+    },
+    "stop_conditions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "issued_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "audit_hash": {
+      "type": "string"
+    }
+  }
+}

@@ -1,6 +1,52 @@
 import net from 'node:net';
 import OpenAI from 'openai';
 import { CAPABILITY_CARD } from '../integration/capability-card.js';
+import {
+  beginUsageCall,
+  recordUsageResponse,
+  recordUsageFailure,
+  extractUsage,
+  type NormalizedUsage,
+} from './llm-usage-ledger.js';
+
+/**
+ * Wrap an OpenAI client's chat.completions.create with exactly-once usage
+ * settlement (§2 option a, kolega-code ledger.py semantics): success records
+ * measured tokens, failure records the error, abandoned streams stay OPEN.
+ * Nothing raises into the request path.
+ */
+function instrumentClientForUsage(client: OpenAI, providerName: string, fallbackModel: string): void {
+  const completions = (client.chat.completions as any);
+  const originalCreate = completions.create.bind(completions);
+  completions.create = async (params: any) => {
+    const requestId = beginUsageCall(providerName, params?.model ?? fallbackModel);
+    try {
+      const result = await originalCreate(params);
+      if (params?.stream) {
+        const it = result as AsyncIterable<any>;
+        return (async function* () {
+          let usage: NormalizedUsage | undefined;
+          try {
+            for await (const chunk of it) {
+              const u = extractUsage(chunk);
+              if ((u.input_tokens ?? 0) > 0 || (u.output_tokens ?? 0) > 0) usage = u;
+              yield chunk;
+            }
+            recordUsageResponse(requestId, usage ?? {});
+          } catch (e) {
+            recordUsageFailure(requestId, e);
+            throw e;
+          }
+        })();
+      }
+      recordUsageResponse(requestId, result);
+      return result;
+    } catch (error) {
+      recordUsageFailure(requestId, error);
+      throw error;
+    }
+  };
+}
 
 interface LLMProvider {
   name: string;
@@ -227,6 +273,8 @@ export class LLMService {
     for (const cfg of providerConfigs) {
       try {
         const client = new OpenAI({ apiKey: cfg.key, baseURL: cfg.baseUrl, timeout: 300000, maxRetries: 2 });
+        // ── Real cost measurement (§2 option a): exactly-once usage ledger.
+        instrumentClientForUsage(client, cfg.name, cfg.model);
         this.providers.push({ name: cfg.name, model: cfg.model, available: false, client });
         console.log(`🔧 LLM Provider registered (env): ${cfg.name} (${cfg.model})`);
       } catch (error) {
@@ -283,6 +331,7 @@ export class LLMService {
         timeout: 300000,
         maxRetries: 2,
       });
+      instrumentClientForUsage(client, config.provider, model);
       this.providers.push({ name: config.provider, model, available: false, client });
       console.log(`🔧 LLM Provider registered (DB/API): ${config.provider} (${model}) at ${baseUrl}`);
 

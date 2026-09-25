@@ -1,0 +1,186 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://katra.dev/schemas/state-delta.schema.json",
+  "title": "Katra Mission State Delta",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "delta_id",
+    "idempotency_key",
+    "mission_id",
+    "base_mission_version",
+    "author_id",
+    "delta_type",
+    "operations",
+    "rationale",
+    "confidence",
+    "created_at"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "delta_id": {
+      "type": "string"
+    },
+    "idempotency_key": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 200
+    },
+    "mission_id": {
+      "type": "string"
+    },
+    "base_mission_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "author_id": {
+      "type": "string"
+    },
+    "execution_identity": {
+      "type": "string"
+    },
+    "baton_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "work_item_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "delta_type": {
+      "enum": [
+        "CLAIM_ADDED",
+        "EVIDENCE_ADDED",
+        "ASSUMPTION_CHALLENGED",
+        "UNCERTAINTY_OPENED",
+        "UNCERTAINTY_UPDATED",
+        "UNCERTAINTY_RESOLVED",
+        "HYPOTHESIS_ADDED",
+        "HYPOTHESIS_REJECTED",
+        "EXPERIMENT_PROPOSED",
+        "EXPERIMENT_RESULT",
+        "DECISION_PROPOSED",
+        "DECISION_ACCEPTED",
+        "DECISION_INVALIDATED",
+        "OBJECTIVE_CREATED",
+        "OBJECTIVE_UPDATED",
+        "OBJECTIVE_COMPLETED",
+        "SUCCESS_CRITERION_UPDATED",
+        "BLOCKED",
+        "CAPABILITY_REQUESTED",
+        "PLAN_CHANGE_PROPOSED",
+        "CHECKPOINT_CREATED",
+        "MISSION_STATUS_CHANGED",
+        "CONSTRAINT_ADDED"
+      ]
+    },
+    "operations": {
+      "type": "array",
+      "minItems": 0,
+      "items": {
+        "$ref": "#/$defs/operation"
+      }
+    },
+    "ledger_entries": {
+      "type": "array",
+      "items": {
+        "$ref": "epistemic-entry.schema.json"
+      }
+    },
+    "rationale": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 8000
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "expected_effects": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 2000
+      }
+    },
+    "human_gate": {
+      "enum": [
+        "none",
+        "required_before_merge",
+        "required_before_effect"
+      ]
+    },
+    "skills_used": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "audit_hash": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "proposed",
+        "accepted",
+        "rejected",
+        "conflict",
+        "duplicate"
+      ]
+    },
+    "applied_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "$defs": {
+    "operation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "op",
+        "path"
+      ],
+      "properties": {
+        "op": {
+          "enum": [
+            "add",
+            "replace",
+            "remove",
+            "link",
+            "unlink",
+            "supersede"
+          ]
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^/"
+        },
+        "value": {},
+        "from": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

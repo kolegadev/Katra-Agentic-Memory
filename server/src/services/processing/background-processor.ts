@@ -900,8 +900,9 @@ export class BackgroundProcessor {
     processing_active: boolean;
     last_run_time?: Date;
   }> {
-    const unprocessedCount = (await this.memoryManager.get_unprocessed_events(1)).length > 0 ? 
-      (await this.memoryManager.get_unprocessed_events(1000)).length : 0;
+    // A true count: the old version fetched up to 1,000 documents to read
+    // `.length`, so the metric saturated at 1,000 and hid the real backlog.
+    const unprocessedCount = await this.memoryManager.count_unprocessed_events();
 
     return {
       is_running: this.processingInterval !== null,
@@ -925,29 +926,66 @@ export class BackgroundProcessor {
       errors: [] as string[]
     };
 
-    try {
-      // Get all unprocessed events
-      const unprocessedEvents = await this.memoryManager.get_unprocessed_events(1000);
-      
-      console.log(`🔄 Force processing ${unprocessedEvents.length} events`);
+    // Drain in batches until dry. Previously this fetched a SINGLE batch of
+    // 1,000 and returned, so above 1,000 the method reported success while
+    // leaving the remainder unprocessed: "all" was silently false. The batch
+    // bound is a runaway guard, and hitting it is REPORTED rather than passed
+    // off as completion.
+    const BATCH = 1000;
+    const MAX_BATCHES = 100;
+    let batches = 0;
+    let drained = false;
 
-      for (const event of unprocessedEvents) {
-        try {
-          await this.processEvent(event);
-          results.processed++;
-        } catch (error) {
-          results.failed++;
-          const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-          results.errors.push(`Event ${event.id}: ${errorMsg}`);
-          
-          await this.memoryManager.mark_event_processing_failed(
-            event.id || (event as any)._id?.toString(),
-            errorMsg
+    try {
+      while (batches < MAX_BATCHES) {
+        const unprocessedEvents = await this.memoryManager.get_unprocessed_events(BATCH);
+        if (unprocessedEvents.length === 0) { drained = true; break; }
+        batches++;
+
+        console.log(`🔄 Force processing batch ${batches} (${unprocessedEvents.length} events)`);
+
+        let made_progress = 0;
+        for (const event of unprocessedEvents) {
+          try {
+            await this.processEvent(event);
+            results.processed++;
+            made_progress++;
+          } catch (error) {
+            results.failed++;
+            made_progress++;
+            const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+            results.errors.push(`Event ${event.id}: ${errorMsg}`);
+
+            await this.memoryManager.mark_event_processing_failed(
+              event.id || (event as any)._id?.toString(),
+              errorMsg
+            );
+          }
+        }
+
+        // No progress means the same batch would be fetched forever (an event
+        // that is neither marked processed nor terminally failed). Stop loudly
+        // rather than spin.
+        if (made_progress === 0) {
+          results.errors.push(
+            `Force processing stalled: batch ${batches} made no progress; ` +
+              'events are neither being marked processed nor terminally failed'
           );
+          break;
         }
       }
 
-      console.log(`✅ Force processing completed: ${results.processed} processed, ${results.failed} failed`);
+      if (!drained) {
+        results.errors.push(
+          `Force processing stopped after ${batches} batch(es) with events still unprocessed ` +
+            `(bound ${MAX_BATCHES}); the backlog was NOT fully drained`
+        );
+      }
+
+      console.log(
+        `✅ Force processing completed: ${results.processed} processed, ${results.failed} failed` +
+          `, ${batches} batch(es)${drained ? ' — drained' : ' — NOT DRAINED'}`
+      );
 
     } catch (error) {
       console.error('❌ Force processing failed:', error);

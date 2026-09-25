@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Katra — Cognitive Control Dashboard (Phase 7)</title>
+<style>
+:root{--bg:#0b0b0e;--bg2:#141419;--bg3:#1c1c23;--border:#2a2a33;--text:#e4e4e7;--text2:#a1a1aa;--text3:#71717a;
+--accent:#818cf8;--green:#22c55e;--red:#ef4444;--amber:#f59e0b;--mono:'SF Mono','Fira Code',monospace}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.5}
+a{color:var(--accent)}
+header{display:flex;align-items:center;gap:14px;padding:12px 20px;background:var(--bg2);border-bottom:1px solid var(--border);flex-wrap:wrap}
+header h1{font-size:1.1rem;font-weight:700;color:var(--accent);letter-spacing:-.02em}
+header .sub{font-size:.72rem;color:var(--text3)}
+.spacer{flex:1}
+.badge{font-size:.7rem;padding:2px 8px;border-radius:20px;background:var(--bg3);color:var(--text2)}
+.badge.off{background:#3f1717;color:var(--red)}
+.badge.on{background:#12351e;color:var(--green)}
+.banner{padding:10px 20px;font-size:.85rem;border-bottom:1px solid var(--border);background:#1f1508;color:var(--amber)}
+main{display:flex;min-height:calc(100vh - 57px)}
+nav{width:210px;flex-shrink:0;background:var(--bg2);border-right:1px solid var(--border);padding:12px 8px;overflow-y:auto}
+nav button{display:block;width:100%;text-align:left;background:none;border:none;color:var(--text2);padding:8px 12px;border-radius:6px;cursor:pointer;font-size:.85rem;font-family:inherit;margin-bottom:2px}
+nav button:hover{color:var(--text);background:var(--bg3)}
+nav button.active{color:var(--accent);background:rgba(129,140,248,.1);font-weight:600}
+section.view{flex:1;padding:20px;overflow-y:auto;display:none}
+section.view.active{display:block}
+h2{font-size:1rem;font-weight:650;margin-bottom:4px}
+h3{font-size:.9rem;font-weight:600;margin:14px 0 6px}
+p.hint{font-size:.78rem;color:var(--text3);margin-bottom:10px}
+table{width:100%;border-collapse:collapse;margin:8px 0 14px;font-size:.8rem}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);vertical-align:top}
+th{color:var(--text3);font-weight:600;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em}
+tr:hover td{background:var(--bg3)}
+.mono{font-family:var(--mono);font-size:.75rem}
+.basis{font-size:.7rem;color:var(--text3);margin:2px 0 12px}
+.basis::before{content:'basis: '}
+.note{font-size:.78rem;color:var(--amber);background:#1f1508;border:1px solid #3a2a08;border-radius:6px;padding:8px 10px;margin:8px 0}
+.empty{font-size:.8rem;color:var(--text3);padding:12px;border:1px dashed var(--border);border-radius:6px;margin:8px 0}
+input[type=password],input[type=text],select{padding:6px 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg3);color:var(--text);font-family:inherit;font-size:.85rem;min-width:280px}
+button.primary{padding:7px 14px;border:none;border-radius:6px;background:var(--accent);color:#0b0b0e;font-weight:600;cursor:pointer;font-family:inherit;font-size:.85rem}
+button.primary:hover{opacity:.9}
+button.ghost{padding:6px 12px;border:1px solid var(--border);border-radius:6px;background:var(--bg3);color:var(--text2);cursor:pointer;font-family:inherit;font-size:.8rem}
+button.ghost:hover{color:var(--text)}
+.kv{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;margin:10px 0}
+.kv .card{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:12px}
+.kv .card .k{font-size:.68rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)}
+.kv .card .v{font-size:1.05rem;font-weight:650;margin-top:2px;word-break:break-word}
+.tag{display:inline-block;font-size:.68rem;padding:1px 7px;border-radius:10px;background:var(--bg3);color:var(--text2);margin-right:4px}
+.tag.agree{background:#12351e;color:var(--green)}
+.tag.diverge{background:#3f1717;color:var(--red)}
+.authbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<header>
+  <h1>🧭 Cognitive Control Dashboard</h1>
+  <span class="sub">read-only operations surface · Phase 7 · every number traces to a stored record</span>
+  <span class="spacer"></span>
+  <span id="planeBadge" class="badge">plane: —</span>
+  <span id="modeBadge" class="badge">mode: —</span>
+  <span id="killBadge" class="badge">kill switch: —</span>
+  <div class="authbar">
+    <input type="password" id="keyInput" placeholder="API key (any valid key; admin not required)">
+    <button class="primary" id="setKeyBtn">Connect</button>
+    <a href="/dashboard/">← admin dashboard</a>
+  </div>
+</header>
+<div id="banner"></div>
+<main>
+  <nav id="nav"></nav>
+  <section class="view" id="view-status"></section>
+  <section class="view" id="view-missions"></section>
+  <section class="view" id="view-mission"></section>
+  <section class="view" id="view-activation"></section>
+  <section class="view" id="view-operations"></section>
+  <section class="view" id="view-executive"></section>
+</main>
+<script>
+'use strict';
+const API = '/api/v1/cognition';
+let KEY = sessionStorage.getItem('ckey') || localStorage.getItem('ckey') || '';
+document.getElementById('keyInput').value = KEY;
+
+function authHeaders(){ return { 'Authorization': 'Bearer ' + KEY }; }
+async function api(path, opts){
+  const r = await fetch(API + path, Object.assign({ headers: authHeaders() }, opts || {}));
+  if (r.status === 401) { showBanner('401 — the API key was rejected. Paste a valid key (a client key works; the admin key is not required) and press Connect.', true); }
+  if (r.status === 403) { showBanner('403 — this caller may not perform that action (custodian controls require a trusted caller).', true); }
+  const body = await r.json().catch(() => ({}));
+  return { status: r.status, body };
+}
+function showBanner(msg, isErr){
+  const b = document.getElementById('banner');
+  if (!msg) { b.innerHTML = ''; b.style.display = 'none'; return; }
+  b.style.display = 'block';
+  b.textContent = msg;
+}
+function basisLine(text){ return text ? '<div class="basis">' + esc(text) + '</div>' : ''; }
+function noteLine(text){ return text ? '<div class="note">' + esc(text) + '</div>' : ''; }
+function esc(s){ return String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function fmt(s){ return s ? String(s).replace('T',' ').replace('Z',' UTC').slice(0,19) : '—'; }
+
+const NAV = [
+  ['status','Status & flags'],
+  ['missions','Missions'],
+  ['activation','Activation'],
+  ['operations','Operations (custodian)'],
+  ['executive','Why is it doing this?'],
+];
+let currentMission = null;
+function buildNav(){
+  const nav = document.getElementById('nav');
+  nav.innerHTML = NAV.map(([id,label]) => '<button data-view="'+id+'">'+esc(label)+'</button>').join('')
+    + (currentMission ? '<button class="active" data-view="mission">Mission: '+esc(currentMission)+'</button>' : '');
+  nav.querySelectorAll('button').forEach(b => b.onclick = () => show(b.dataset.view));
+}
+function show(view){
+  document.querySelectorAll('section.view').forEach(s => s.classList.remove('active'));
+  document.getElementById('view-' + view).classList.add('active');
+  document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.view === view));
+  if (view === 'status') renderStatus();
+  if (view === 'missions') renderMissions();
+  if (view === 'mission') renderMission();
+  if (view === 'activation') renderActivation();
+  if (view === 'operations') renderOperations();
+  if (view === 'executive') renderExecutive();
+}
+
+async function connect(){
+  KEY = document.getElementById('keyInput').value.trim();
+  sessionStorage.setItem('ckey', KEY);
+  const { status, body } = await api('/status');
+  if (status === 200) { showBanner(''); buildNav(); show('status'); }
+  else { showBanner('Could not connect: HTTP ' + status, true); }
+}
+document.getElementById('setKeyBtn').onclick = connect;
+
+// ── Status ────────────────────────────────────────────────────────────────
+async function renderStatus(){
+  const { body } = await api('/status');
+  const gate = body.evidence_gate || {};
+  document.getElementById('planeBadge').textContent = 'plane: ' + body.plane;
+  document.getElementById('planeBadge').className = 'badge ' + (body.plane === 'off' ? 'off' : 'on');
+  document.getElementById('modeBadge').textContent = 'mode: ' + body.scheduler_mode;
+  document.getElementById('killBadge').textContent = 'kill switch: ' + (body.kill_switch ? 'ARMED' : 'clear');
+  document.getElementById('view-status').innerHTML = '<h2>Status &amp; flags</h2><p class="hint">Live flags and the evidence gate, read from the running process and stored records.</p>'
+    + '<div class="kv">'
+    + kv('Cognitive plane', body.plane === 'off' ? 'OFF — views disabled by flag (no back door)' : body.plane)
+    + kv('Scheduler mode', body.scheduler_mode)
+    + kv('Kill switch', body.kill_switch ? 'ARMED (COGNITIVE_ACTIVATION_KILL_SWITCH=1) — mode forced off' : 'clear')
+    + kv('Activation hard bound', String(body.hard_bound ?? '—'))
+    + kv('Evidence gate', gate.open ? 'OPEN' : 'closed')
+    + kv('Evidenced decisions', String(gate.qualifying_decisions ?? 0) + ' / ' + (gate.threshold ?? 50))
+    + kv('Agreement rate', gate.agreement_rate === null ? 'n/a (no observations)' : (gate.agreement_rate * 100).toFixed(1) + '%')
+    + kv('Human-read acknowledgement', gate.acknowledged ? 'recorded' : 'not recorded')
+    + '</div>'
+    + '<div class="note">' + esc(gate.reason || '') + '</div>'
+    + basisLine(gate.basis || 'evidence gate state computed from stored records (scheduler_decisions + activation_ledger)')
+    + (body.plane === 'off' ? '<div class="empty">COGNITIVE_CONTROL_ENABLED=off — cognitive views are disabled by flag. This is the designed pre-activation state, not a fault.</div>' : '');
+}
+function kv(k, v){ return '<div class="card"><div class="k">' + esc(k) + '</div><div class="v">' + esc(v) + '</div></div>'; }
+
+// ── Missions ──────────────────────────────────────────────────────────────
+async function renderMissions(){
+  const { body } = await api('/missions');
+  if (body.plane === 'off') { document.getElementById('view-missions').innerHTML = '<h2>Missions</h2><div class="empty">' + esc(body.reason) + '</div>'; return; }
+  const rows = body.missions || [];
+  document.getElementById('view-missions').innerHTML = '<h2>Missions</h2><p class="hint">Missions visible to this caller (trusted callers see all; client keys see their own and shared-scope missions).</p>'
+    + (rows.length === 0 ? '<div class="empty">No missions visible — empty with stated reason (§4.4).</div>' :
+      '<table><tr><th>Mission</th><th>Status</th><th>Version</th><th>Authority</th><th>Owner</th><th>Updated</th><th></th></tr>'
+      + rows.map(m => '<tr><td>' + esc(m.title) + ' <span class="mono">(' + esc(m.mission_id) + ')</span></td><td>' + esc(m.status) + '</td><td>' + m.version + '</td><td>' + esc(m.authority_class) + '</td><td>' + esc(m.owner_id) + '</td><td>' + fmt(m.updated_at) + '</td><td><button class="ghost" data-mid="' + esc(m.mission_id) + '">open</button></td></tr>').join('')
+      + '</table>')
+    + basisLine('mission_states, read from stored records');
+  document.querySelectorAll('#view-missions button[data-mid]').forEach(b => b.onclick = () => { currentMission = b.dataset.mid; buildNav(); show('mission'); });
+}
+
+// ── Mission detail (tabs) ─────────────────────────────────────────────────
+const MISSION_TABS = [
+  ['overview','Overview + timeline'], ['objectives','Objectives + graph'], ['epistemics','Claims & evidence'],
+  ['uncertainties','Uncertainties + triggers'], ['work','Work & leases'], ['scheduler','Scheduler'],
+  ['batons','Batons'], ['skills','Skills'],
+];
+let missionTab = 'overview';
+async function renderMission(){
+  const el = document.getElementById('view-mission');
+  if (!currentMission) { el.innerHTML = '<h2>Mission</h2><div class="empty">Select a mission from the Missions view.</div>'; return; }
+  const { status, body } = await api('/missions/' + encodeURIComponent(currentMission) + '/' + missionTab);
+  if (status === 404) { el.innerHTML = '<h2>Mission</h2><div class="empty">Mission not found or not visible to this caller.</div>'; return; }
+  const tabsHtml = MISSION_TABS.map(([id,label]) => '<button class="ghost' + (id === missionTab ? '" style="border-color:var(--accent);color:var(--accent)' : '"') + ' data-tab="' + id + '">' + label + '</button>').join(' ');
+  let html = '<h2>Mission <span class="mono">' + esc(currentMission) + '</span></h2><p class="hint">' + tabsHtml + '</p>' + renderMissionTab(missionTab, body);
+  el.innerHTML = html;
+  el.querySelectorAll('button[data-tab]').forEach(b => b.onclick = () => { missionTab = b.dataset.tab; renderMission(); });
+}
+function renderMissionTab(tab, b){
+  if (b.plane === 'off') return '<div class="empty">' + esc(b.reason) + '</div>';
+  switch (tab) {
+    case 'overview': {
+      const m = b.mission || {};
+      return '<div class="kv">' + kv('Title', m.title) + kv('Status', m.status) + kv('Version', m.version) + kv('Authority', m.authority_class)
+        + kv('Owner', m.owner_id) + kv('Checkpoint', m.checkpoint_id ?? 'none') + kv('Phase', m.phase ?? '—') + '</div>'
+        + '<h3>Version timeline (checkpoints)</h3>' + tableOrEmpty(b.version_timeline, ['Version','Checkpoint','Created'], v => ['v' + v.version, v.checkpoint_id, fmt(v.created_at)])
+        + '<h3>Recent state deltas</h3>' + tableOrEmpty(b.deltas?.recent, ['Delta','Type','Status','Base version','Created'], d => [d.delta_id, d.delta_type, d.status, d.base_mission_version, fmt(d.created_at)])
+        + '<h3>Recent mission events</h3>' + tableOrEmpty(b.events?.recent, ['Event','Type','Summary','At'], e => [e.event_id, e.event_type, e.summary, fmt(e.created_at)])
+        + basisLine(b.checkpoint_basis) + basisLine(b.deltas?.basis) + basisLine(b.events?.basis) + noteLine(b.note);
+    }
+    case 'objectives': {
+      const objs = b.objectives || [];
+      return '<h3>Objectives</h3>' + tableOrEmpty(objs, ['ID','Description','Status','Owner','Depends on'], o => [o.id, o.description, o.status, o.owner_id, (o.dependency_ids||[]).join(', ')])
+        + '<h3>Dependency edges</h3>' + tableOrEmpty(b.edges, ['From','To','Kind'], e => [e.from, e.to, e.kind])
+        + basisLine(b.basis) + noteLine(b.note);
+    }
+    case 'epistemics': {
+      const types = ['claim','evidence','assumption','decision','contradiction','hypothesis','uncertainty','experiment','result'];
+      let html = '';
+      for (const t of types) {
+        const rows = b.entries?.[t] || [];
+        html += '<h3>' + t + ' (' + rows.length + ')</h3>'
+          + tableOrEmpty(rows, ['Entry','Statement','Status','Confidence','Author','Depends on'], e => [e.entry_id, e.statement, e.status, e.confidence, e.author_id, (e.depends_on||[]).join(', ')]);
+      }
+      return html + basisLine(b.basis) + noteLine(b.note);
+    }
+    case 'uncertainties':
+      return '<h3>Uncertainty register</h3>' + tableOrEmpty(b.uncertainties, ['Entry','Statement','Status','Confidence','Consequence if false'], u => [u.entry_id, u.statement, u.status, u.confidence, u.consequence_if_false ?? '—'])
+        + '<h3>Trigger history</h3>' + tableOrEmpty(b.trigger_history, ['Trigger','Outcome','Token cost','Fired'], t => [t.trigger, t.outcome, t.token_cost + ' (' + t.cost_basis + ')', fmt(t.fired_at)])
+        + basisLine(b.basis) + noteLine(b.note);
+    case 'work':
+      return '<h3>Work queue</h3>' + tableOrEmpty(b.queue, ['Item','Description','Mode','Status','Trigger','Cost','Basis'], w => [w.work_item_id, w.description, w.mode, w.status, w.trigger, w.cost, w.cost_basis])
+        + '<h3>Leases (batons)</h3>' + tableOrEmpty(b.leases, ['Baton','Mode','Recipient','Expires','Revoked'], l => [l.baton_id, l.mode, l.recipient_id, fmt(l.expires_at), l.revoked ? 'yes' : 'no'])
+        + '<h3>Blockers</h3>' + (b.blockers?.length ? b.blockers.map(x => '<span class="tag">' + esc(x) + '</span>').join('') : '<div class="empty">No blocked items.</div>')
+        + basisLine(b.basis) + noteLine(b.note);
+    case 'scheduler': {
+      const decisions = b.decisions || [];
+      let html = '<h3>Decisions (newest first) — mode: ' + esc(b.mode) + '</h3>';
+      for (const d of decisions) {
+        html += '<div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin:10px 0">'
+          + '<strong>' + esc(d.decision_id) + '</strong> · ' + fmt(d.created_at) + ' · mode ' + esc(d.scheduler_mode) + ' · cost basis ' + esc(d.cost_basis) + '<br>'
+          + '<em>' + esc(d.rationale) + '</em>'
+          + '<h3 style="margin-top:8px">Ranked candidates</h3>'
+          + tableOrEmpty(d.ranked_candidates, ['#','Work item','Agent','Priority','Suitability','Combined','Top factors'], (c,i) => [i+1, c.work_item_id, c.agent_id, c.priority.toFixed(2), c.suitability.toFixed(2), c.combined.toFixed(2), (c.feature_contributions||[]).slice(0,3).map(f=>f.feature+'='+Number(f.value).toFixed(2)).join(' · ')])
+          + '<h3 style="margin-top:8px">Exclusions</h3>'
+          + tableOrEmpty(d.exclusions, ['Work item','Agent','Reason'], e => [e.work_item_id, e.agent_id, e.reason])
+          + '<div style="margin-top:8px">Recommended: ' + (d.recommended ? esc(d.recommended.agent_id) + ' for ' + esc(d.recommended.work_item_id) : 'none') + '</div>'
+          + '<div>Allocator observation: ' + (d.allocator_observation ? esc(d.allocator_observation.agent_id ?? 'no allocation') + ' (' + esc(d.allocator_observation.source) + ')' : 'not observed') + '</div>'
+          + '<div>Shadow comparison: <span class="tag ' + (d.shadow_comparison === 'agreed' ? 'agree' : d.shadow_comparison === 'diverged' ? 'diverge' : '') + '">' + esc(d.shadow_comparison) + '</span></div>'
+          + (d.counterfactual ? '<div style="margin-top:6px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:8px"><strong>Counterfactual:</strong> the existing allocator would have chosen <strong>' + esc(d.counterfactual.existing_allocator_agent_id) + '</strong>; the scheduler\'s choice <strong>' + esc(d.counterfactual.chosen_agent_id) + '</strong> was taken (' + (d.counterfactual.influenced ? 'influenced' : 'not influenced') + ').<br><em>' + esc(d.counterfactual.reason) + '</em></div>' : '')
+          + '</div>';
+      }
+      return html + basisLine(b.basis) + noteLine(b.note);
+    }
+    case 'batons': {
+      let html = '<h3>Batons (secret-shaped material redacted before display)</h3>';
+      for (const b of b.batons || []) {
+        html += '<div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin:10px 0">'
+          + '<strong>' + esc(b.baton.baton_id) + '</strong> · mode ' + esc(b.baton.mode) + ' · to ' + esc(b.baton.recipient_id) + ' · issued ' + fmt(b.baton.issued_at)
+          + (b.redactions ? ' <span class="tag diverge">' + 'redacted' + '</span>' : '')
+          + '<div>Blindness: ' + (b.blindness_summary.enabled ? 'enabled — withholds [' + b.blindness_summary.withheld_classes.join(', ') + ']' : 'not enabled') + '</div>'
+          + '<pre class="mono" style="background:var(--bg2);padding:8px;border-radius:6px;overflow:auto;max-height:260px">' + esc(JSON.stringify(b.baton, null, 2)) + '</pre>'
+          + '</div>';
+      }
+      return html + basisLine(b.basis) + noteLine(b.note);
+    }
+    case 'skills':
+      return '<h3>Skill versions (from batons)</h3>' + tableOrEmpty(Object.entries(b.skill_versions || {}).flatMap(([skill, uses]) => uses.map(u => ({skill, ...u}))), ['Skill','Version','Last used on','Used by baton'], s => [s.skill, s.version, fmt(s.last_used_on), s.used_by_baton])
+        + '<h3>Challenge-mode batons</h3>' + tableOrEmpty(b.challenge_state, ['Baton','Recipient','Issued'], c => [c.baton_id, c.recipient_id, fmt(c.issued_at)])
+        + '<h3>Skill feedback (latest)</h3>' + tableOrEmpty(b.feedback_outcomes, ['At','Outcome'], f => [fmt(f.created_at), f.outcome])
+        + '<h3>Canary</h3><div class="empty">' + esc(b.canary.reason) + '</div>'
+        + basisLine(b.basis) + noteLine(b.note);
+  }
+  return '';
+}
+function tableOrEmpty(rows, headers, cells){
+  if (!rows || rows.length === 0) return '<div class="empty">Nothing to show — empty with stated reason (§4.4).</div>';
+  return '<table><tr>' + headers.map(h => '<th>' + esc(h) + '</th>').join('') + '</tr>'
+    + rows.map((r, i) => '<tr>' + cells(r, i).map(c => '<td>' + esc(c) + '</td>').join('') + '</tr>').join('') + '</table>';
+}
+
+// ── Activation ────────────────────────────────────────────────────────────
+async function renderActivation(){
+  const { body } = await api('/activation');
+  document.getElementById('view-activation').innerHTML = '<h2>Activation</h2><p class="hint">Mode, evidence gate, opt-ins, ledger, and counterfactuals — read only.</p>'
+    + '<div class="kv">' + kv('Plane', body.plane) + kv('Scheduler mode', body.scheduler_mode) + kv('Kill switch', body.kill_switch ? 'ARMED' : 'clear')
+    + kv('Evidence gate', body.evidence_gate.open ? 'OPEN' : 'closed') + kv('Evidenced decisions', body.evidence_gate.qualifying_decisions + ' / ' + body.evidence_gate.threshold)
+    + kv('Agreement', body.evidence_gate.agreement_rate === null ? 'n/a' : (body.evidence_gate.agreement_rate*100).toFixed(1)+'%') + '</div>'
+    + '<div class="note">' + esc(body.evidence_gate.reason) + '</div>'
+    + '<h3>Mission opt-ins</h3>' + tableOrEmpty(body.opt_ins, ['Mission','Owner','Opted in by','Reason','Revoked'], o => [o.mission_id, o.owner_id, o.opted_in_by, o.reason, o.revoked_at ? 'yes (' + fmt(o.revoked_at) + ')' : 'no'])
+    + '<h3>Activation ledger (latest)</h3>' + tableOrEmpty(body.ledger, ['At','Kind','Actor','From → To','Reason'], l => [fmt(l.created_at), l.kind, l.actor_id, (l.mode_from||'—') + ' → ' + (l.mode_to||'—'), l.reason])
+    + '<h3>Counterfactuals</h3>' + tableOrEmpty(body.counterfactuals, ['At','Mission','Chosen','Existing allocator would have chosen','Influenced','Why'], c => [fmt(c.recorded_at), c.mission_id, c.chosen_agent_id, c.existing_allocator_agent_id, c.influenced ? 'yes' : 'no', c.reason])
+    + basisLine(body.basis);
+}
+
+// ── Operations (custodian) ────────────────────────────────────────────────
+async function renderOperations(){
+  const { body } = await api('/operations');
+  if (body.plane === 'off') { document.getElementById('view-operations').innerHTML = '<h2>Operations</h2><div class="empty">' + esc(body.reason) + '</div>'; return; }
+  const rows = (body.missions || []).map(m => '<tr><td>' + esc(m.title) + ' <span class="mono">(' + esc(m.mission_id) + ')</span></td><td>v' + m.current_version + '</td><td>' + (m.latest_checkpoint_version === null ? '—' : 'v' + m.latest_checkpoint_version) + '</td><td>' + m.checkpoint_count + '</td><td>' + m.accepted_deltas + '</td><td>' + m.proposed_deltas + '</td><td>' + m.replay_pending + '</td><td><span class="tag ' + (m.integrity === 'consistent' ? 'agree' : m.integrity === 'lagging' ? 'diverge' : '') + '">' + esc(m.integrity) + '</span></td><td>' + fmt(m.last_trigger_evaluation_at) + '</td><td><input type="text" id="rb-' + esc(m.mission_id) + '" style="display:none"><button class="ghost" data-rebuild="' + esc(m.mission_id) + '">rebuild</button></td></tr>').join('');
+  document.getElementById('view-operations').innerHTML = '<h2>Operations — integrity, projection lag, reconstruction</h2>'
+    + '<table><tr><th>Mission</th><th>Current</th><th>Latest checkpoint</th><th>Checkpoints</th><th>Accepted deltas</th><th>Proposed</th><th>Replay pending</th><th>Integrity</th><th>Last trigger eval</th><th>Custodian</th></tr>' + rows + '</table>'
+    + basisLine((body.missions || []).length ? body.missions[0].basis : 'mission_state_versions + state_deltas + trigger_evaluations, read from stored records')
+    + '<h3>Reconstruction &amp; backup</h3><div class="note">' + esc(body.reconstruction.mechanism) + '</div><p class="hint">' + esc(body.reconstruction.basis) + '</p>'
+    + '<p class="hint">' + esc(body.reconstruction.rebuild_control) + ' Rebuild is idempotent and every run is audited in custodian_audit.</p>'
+    + noteLine(body.note);
+  document.querySelectorAll('#view-operations button[data-rebuild]').forEach(b => b.onclick = async () => {
+    if (!confirm('Rebuild mission ' + b.dataset.rebuild + ' from checkpoint + accepted deltas? This is audited and idempotent.')) return;
+    const { status, body: r } = await api('/operations/rebuild', { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify({ mission_id: b.dataset.rebuild }) });
+    alert(status === 200 ? (r.changed ? 'Rebuilt: changed fields ' + (r.changed_fields || []).join(', ') + ' (version ' + r.version + ')' : 'Rebuild ran: ' + (r.reason || 'no change')) : (r.error || 'failed'));
+    renderOperations();
+  });
+}
+
+// ── Executive: why is it doing this ───────────────────────────────────────
+async function renderExecutive(){
+  const { body } = await api('/executive');
+  document.getElementById('view-executive').innerHTML = '<h2>Why is the system doing its current work?</h2>'
+    + '<p class="hint">The executive\'s own factual action log: what goal it set, who it allocated to, why, and what happened. No journal, reflection, or emotional content is reachable here.</p>'
+    + tableOrEmpty(body.actions, ['At','Goal','Action','Allocated to','Allocation rationale','Result'], a => [fmt(a.timestamp), a.goal ?? '—', a.action ?? '—', a.allocated_to ?? '—', a.allocation_rationale ?? '—', a.result ? (a.result.success ? '✅ ' : '❌ ') + a.result.summary : '—'])
+    + basisLine(body.basis) + noteLine(body.note);
+}
+
+// boot
+if (KEY) { connect(); } else { buildNav(); show('status'); showBanner('Paste any valid API key (a client key works — the admin key is not required) and press Connect. Reads obey the same visibility rules as the MCP tools.', false); }
+</script>
+</body>
+</html>

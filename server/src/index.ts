@@ -33,6 +33,7 @@ import { create_tenant_routes } from './routes/tenant-routes.js';
 import { create_reflection_routes } from './routes/reflection-routes.js';
 import { create_vault_routes } from './routes/vault-routes.js';
 import { create_auth_routes } from './routes/vault-routes.js';
+import { createCognitionDashboardRoutes } from './routes/cognition-dashboard-routes.js';
 
 // MCP server
 import { startMcpServer } from './mcp-server.js';
@@ -173,6 +174,7 @@ async function main() {
   app.route('/api/v1/admin', create_admin_routes());
   app.route('/api/v1/reflection', create_reflection_routes());
   app.route('/api/v1/vault', create_vault_routes());
+  app.route('/api/v1/cognition', createCognitionDashboardRoutes()); // Phase 7: read-only dashboard surface
   app.route('/api/v1/auth', create_auth_routes());
 
   // Tenant management (multi-tenant mode only)
