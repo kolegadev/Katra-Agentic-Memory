@@ -162,7 +162,11 @@ const REMEDIATIONS: Remediation[] = [
           if (emb) {
             // storeEmbedding writes the vector AND the has_embedding
             // marker, so the fact leaves the candidate queue for good.
-            await embeddingService.storeEmbedding('semantic_facts', facts[i]._id, emb);
+            // Passing the content lets long facts keep their window vectors.
+            await embeddingService.storeEmbedding('semantic_facts', facts[i]._id, emb, undefined, {
+              content: facts[i].content || '',
+              scope: { user_id: facts[i].user_id, shared_id: facts[i].shared_id },
+            });
             count++;
           }
         }

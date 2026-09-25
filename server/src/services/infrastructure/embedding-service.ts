@@ -13,6 +13,7 @@
 
 import { get_database } from '../../database/connection.js';
 import { assertVaultCollectionAllowed } from '../vault/denylist.js';
+import { bestCosine, blendedScore } from '../memory/vector-ranking.js';
 
 // Quality filter: skip low-value content that would pollute retrieval
 const SKIP_PATTERNS = [
@@ -40,6 +41,9 @@ const WINDOW_CHARS = 1000;
 const WINDOW_OVERLAP_CHARS = 100;
 const MAX_WINDOWS = 24; // bounds cost: ~22k chars per document
 const BATCH_CHUNK = 32; // windows per forward pass in encodeBatch
+
+/** Per-window vectors live beside the fact, not inside it (see storeWindows). */
+export const WINDOWS_COLLECTION = 'fact_windows';
 
 interface EmbeddingDocument {
   _id?: any;
@@ -221,8 +225,18 @@ export class EmbeddingService {
   /**
    * Encode text into a dense vector.
    * Returns null if model unavailable or content fails quality filter.
+  /**
+   * Encode a document AND keep its window vectors.
+   *
+   * Window vectors are what makes a long document findable by any part of it
+   * (see vector-ranking.ts: scoring takes the best window). Callers that store
+   * semantic facts pass `windows` to storeWindows() so the search can use
+   * them; everything else keeps calling encode().
    */
-  async encode(text: string, eventType?: string): Promise<number[] | null> {
+  async encodeDocument(
+    text: string,
+    eventType?: string,
+  ): Promise<{ vector: number[]; windows: number[][] } | null> {
     if (!this.shouldEmbed(text, eventType)) return null;
 
     const modelReady = await this.ensureModel();
@@ -241,7 +255,8 @@ export class EmbeddingService {
           });
           vectors.push(Array.from(out.data as Float32Array));
         }
-        return this.averageVectors(vectors);
+        const vector = this.averageVectors(vectors);
+        return vector ? { vector, windows: vectors } : null;
       }
 
       const output = await this.model(text, {
@@ -249,10 +264,85 @@ export class EmbeddingService {
         normalize: true,
       });
       // output.data is a Float32Array of length 384
-      return Array.from(output.data);
+      const single = Array.from(output.data as Float32Array);
+      return { vector: single, windows: [single] };
     } catch (error: any) {
       console.warn('⚠️ Embedding encoding failed:', error.message);
       return null;
+    }
+  }
+
+  /** Encode text into a dense vector (the pooled document vector). */
+  async encode(text: string, eventType?: string): Promise<number[] | null> {
+    const document = await this.encodeDocument(text, eventType);
+    return document ? document.vector : null;
+  }
+
+  /**
+   * Store per-window vectors for a document in `fact_windows`.
+   *
+   * Kept out of `semantic_facts` on purpose: candidate fetches there pull up
+   * to 2,000 full documents per query, and a 24-window array is ~74 KB. The
+   * fact only carries the cheap `has_windows` marker (a marker, not a copy of
+   * the data) so completeness checks (`has_embedding`) keep their meaning.
+   */
+  async storeWindows(
+    factId: string | any,
+    windows: number[][],
+    scope: { user_id?: string | null; shared_id?: string | null } = {},
+  ): Promise<void> {
+    try {
+      const db = get_database();
+      const collection = db.collection(WINDOWS_COLLECTION);
+
+      if (!Array.isArray(windows) || windows.length < 2) {
+        await collection.deleteOne({ fact_id: factId });
+        await db.collection('semantic_facts').updateOne(
+          { _id: factId },
+          { $unset: { has_windows: '', window_count: '' } },
+        );
+        return;
+      }
+
+      await collection.updateOne(
+        { fact_id: factId },
+        {
+          $set: {
+            fact_id: factId,
+            windows,
+            count: windows.length,
+            embedding_model: MODEL_NAME,
+            embedding_version: EMBEDDING_VERSION,
+            updated_at: new Date(),
+            ...(scope.user_id ? { user_id: scope.user_id } : {}),
+            ...(scope.shared_id ? { shared_id: scope.shared_id } : {}),
+          },
+        },
+        { upsert: true },
+      );
+      await db.collection('semantic_facts').updateOne(
+        { _id: factId },
+        { $set: { has_windows: true, window_count: windows.length } },
+      );
+    } catch (error: any) {
+      console.warn('⚠️ Failed to store window vectors:', error.message);
+    }
+  }
+
+  /** Window vectors for the given fact ids, keyed by fact id. */
+  async fetchWindows(factIds: Array<string | any>): Promise<Map<string, number[][]>> {
+    const ids = (factIds || []).filter(Boolean);
+    if (ids.length === 0) return new Map();
+    try {
+      const db = get_database();
+      const docs = await db
+        .collection(WINDOWS_COLLECTION)
+        .find({ fact_id: { $in: ids } }, { projection: { fact_id: 1, windows: 1 } })
+        .toArray();
+      return new Map(docs.map((doc: any) => [String(doc.fact_id), (doc.windows || []) as number[][]]));
+    } catch (error: any) {
+      console.warn('⚠️ Failed to load window vectors:', error.message);
+      return new Map();
     }
   }
 
@@ -366,7 +456,8 @@ export class EmbeddingService {
     collection: string,
     documentId: string | any,
     embedding: number[],
-    filter?: Record<string, any>
+    filter?: Record<string, any>,
+    options?: { content?: string; scope?: { user_id?: string | null; shared_id?: string | null } }
   ): Promise<void> {
     try {
       const db = get_database();
@@ -386,6 +477,19 @@ export class EmbeddingService {
           },
         }
       );
+
+      // Semantic facts also keep their window vectors, so a match anywhere in
+      // a long document stays reachable (see vector-ranking.ts). Only long
+      // content has more than one window; anything else clears stale windows.
+      if (options?.content && collection === 'semantic_facts') {
+        const windows = this.splitForEmbedding(options.content);
+        if (windows.length > 1) {
+          const document = await this.encodeDocument(options.content);
+          await this.storeWindows(documentId, document?.windows ?? [], options.scope);
+        } else {
+          await this.storeWindows(documentId, [], options.scope);
+        }
+      }
     } catch (error: any) {
       console.warn(`⚠️ Failed to store embedding on ${collection}:`, error.message);
     }
@@ -448,19 +552,28 @@ export class EmbeddingService {
       // At 3K-10K scale this is fast enough; add keyword pre-filter for larger datasets
       const candidates = await db.collection(collection)
         .find(baseFilter)
-        .project({ content: 1, embedding: 1, timestamp: 1, created_at: 1, name: 1, narrative: 1, fact: 1, user_id: 1 })
+        .project({ content: 1, embedding: 1, timestamp: 1, created_at: 1, name: 1, narrative: 1, fact: 1, user_id: 1, has_windows: 1 })
         .limit(500)
         .toArray();
 
-      // Score and rank
+      // Chunk-aware scoring: the best window of a long document competes with
+      // its pooled vector, and recency discounts rather than manufactures a
+      // match (shared with the MCP search paths — see vector-ranking.ts).
+      const windows =
+        collection === 'semantic_facts'
+          ? await this.fetchWindows(candidates.filter((doc: any) => doc.has_windows).map((doc: any) => doc._id))
+          : new Map<string, number[][]>();
+
       const scored = candidates
-        .filter((doc: any) => doc.embedding && doc.embedding.length === EMBEDDING_DIMENSION)
         .map((doc: any) => {
-          const cosine = this.cosineSimilarity(queryVec, doc.embedding);
-          const ts = doc.timestamp || doc.created_at || new Date();
-          const score = this.combinedScore(cosine, ts, semanticWeight);
+          const cosine = bestCosine(queryVec, doc.embedding, windows.get(String(doc._id)), EMBEDDING_DIMENSION);
+          // `semanticWeight` (0.6) maps onto the recency floor of the shared
+          // blend: similarity keeps at least that share, recency modulates the rest.
+          const floor = Math.min(1, Math.max(0, semanticWeight));
+          const score = blendedScore(cosine, doc.timestamp || doc.created_at, floor);
           return { ...doc, score, cosine };
         })
+        .filter((doc: any) => doc.cosine > 0)
         .sort((a: any, b: any) => b.score - a.score)
         .slice(0, limit);
 

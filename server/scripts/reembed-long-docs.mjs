@@ -8,7 +8,8 @@
  * script refreshes documents that were embedded BEFORE that change.
  *
  * Selection is resumable: a document is only processed while it lacks
- * `embedding_windows`, so re-running continues where the last run stopped.
+ * `has_windows` (the marker storeWindows writes), so re-running continues
+ * where the last run stopped.
  *
  * Usage (the runtime image keeps only the compiled build, so copy it in):
  *   docker cp server/scripts/reembed-long-docs.mjs katra-server:/tmp/
@@ -52,7 +53,8 @@ async function main() {
 
   const filter = {
     embedding: { $exists: true },
-    embedding_windows: { $exists: false },
+    // Resume marker: `has_windows` is set once a document has window vectors.
+    has_windows: { $exists: false },
     $expr: { $gt: [{ $strLenCP: '$content' }, flags['min-chars']] },
   };
 
@@ -74,23 +76,24 @@ async function main() {
   let done = 0;
   let skipped = 0;
   let firstDelta = null;
+  let windowsStored = 0;
 
   for await (const doc of cursor) {
     const content = doc.content || '';
     const windows = embeddingService.splitForEmbedding(content);
-    const vector = await embeddingService.encode(content);
-    if (!vector) {
+    const document = await embeddingService.encodeDocument(content);
+    if (!document) {
       skipped++;
       continue;
     }
-    if (firstDelta === null && Array.isArray(doc.embedding) && doc.embedding.length === vector.length) {
-      firstDelta = embeddingService.cosineSimilarity(doc.embedding, vector);
+    if (firstDelta === null && Array.isArray(doc.embedding) && doc.embedding.length === document.vector.length) {
+      firstDelta = embeddingService.cosineSimilarity(doc.embedding, document.vector);
     }
     await coll.updateOne(
       { _id: doc._id },
       {
         $set: {
-          embedding: vector,
+          embedding: document.vector,
           embedding_model: embeddingService.modelName,
           embedding_version: embeddingService.version,
           has_embedding: true,
@@ -99,13 +102,20 @@ async function main() {
         },
       },
     );
+    // Chunk-level retrieval: the window vectors let a match anywhere in the
+    // document (not just the pooled average) reach the ranking.
+    await embeddingService.storeWindows(doc._id, document.windows, {
+      user_id: doc.user_id,
+      shared_id: doc.shared_id,
+    });
+    if (document.windows.length > 1) windowsStored++;
     done++;
     if (flags.verbose || done % 25 === 0) {
       console.log(`  re-embedded ${done}/${limit} (${windows.length} windows, ${content.length} chars)`);
     }
   }
 
-  console.log(`done: ${done} re-embedded, ${skipped} skipped, ${limit - done - skipped} not reached`);
+  console.log(`done: ${done} re-embedded, ${windowsStored} with window vectors, ${skipped} skipped, ${limit - done - skipped} not reached`);
   if (firstDelta !== null) {
     console.log(`sanity: first document's old vs new vector cosine = ${firstDelta.toFixed(3)} (identical vectors would be 1.000)`);
   }

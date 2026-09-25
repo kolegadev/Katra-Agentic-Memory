@@ -47,6 +47,8 @@ import { embeddingService } from './services/infrastructure/embedding-service.js
 import { getMemoryScope, buildScopeFilter, resolveSharedId, invalidateScopeCache } from './services/memory/memory-scope-service.js';
 import { resolveWriteScope } from './services/memory/write-scope-policy.js';
 import { selectVectorCandidates } from './services/memory/vector-candidate-selector.js';
+import { bestCosine, blendedScore, MIN_VECTOR_COSINE } from './services/memory/vector-ranking.js';
+import { vectorIndexService } from './services/memory/vector-index-service.js';
 import { llmService, get_llm_config_from_db, save_llm_config_to_db } from './services/infrastructure/llm-service.js';
 import { getEpisodicEventManager } from './services/memory/episodic-event-manager.js';
 import { stableContentHash } from './services/infrastructure/content-hash-utils.js';
@@ -1690,18 +1692,24 @@ async function handleStoreMemory(args: unknown): Promise<TextContent[]> {
 
   // Fire-and-forget embedding
   try {
-    const vec = await embeddingService.encode(input.content);
-    if (vec) {
+    const document = await embeddingService.encodeDocument(input.content);
+    if (document) {
       await db.collection('semantic_facts').updateOne(
         { _id: insertedId },
         {
           $set: {
-            embedding: vec,
+            embedding: document.vector,
             embedding_model: embeddingService.modelName,
             embedding_version: embeddingService.version,
           },
         }
       );
+      // Long content also keeps its window vectors, so the whole document
+      // stays searchable (see vector-ranking.ts).
+      await embeddingService.storeWindows(insertedId, document.windows, {
+        user_id: userId,
+        shared_id: sharedId,
+      });
     }
   } catch {
     // Embedding failed — memory is still stored
@@ -1860,27 +1868,37 @@ async function handleSearchMemories(args: unknown): Promise<TextContent[]> {
         // users and leaked private memories across identities in hybrid
         // mode (verification report 2026-08-21).
         const factsFilter = buildSemanticVectorFilter(baseFilter, input.include_retracted);
-        const facts = await db.collection('semantic_facts')
-          .find(factsFilter)
-          .limit(100)
-          .toArray();
+        // Same three tiers as vector_search — this path used to score an
+        // unsorted find().limit(100), i.e. storage order again.
+        const facts = await gatherVectorCandidates(db, factsFilter, input.query, queryVec, {
+          recentLimit: Number(process.env.KATRA_SEARCH_POOL_RECENT || 400),
+          lexicalLimit: Number(process.env.KATRA_SEARCH_POOL_LEXICAL || 200),
+        });
         if (facts.length > 0) {
+          const windows = await embeddingService.fetchWindows(
+            facts.filter((f: any) => f.has_windows).map((f: any) => f._id),
+          );
           vectorResults = facts
             .map((f: any) => {
-              if (f.embedding?.length === embeddingService.embeddingDimension) {
-                const cosine = embeddingService.cosineSimilarity(queryVec, f.embedding);
-                const score = embeddingService.combinedScore(cosine, f.created_at, 0.6);
-                return {
-                  source: 'vector',
-                  snippet: f.content || f.title || '',
-                  timestamp: f.timestamp || f.created_at,
-                  confidence: f.confidence,
-                  score,
-                };
-              }
-              return { source: 'vector', snippet: '', timestamp: '', score: 0 };
+              const cosine = bestCosine(
+                queryVec,
+                f.embedding,
+                windows.get(String(f._id)),
+                embeddingService.embeddingDimension,
+              );
+              return {
+                source: 'vector',
+                snippet: f.content || f.title || '',
+                timestamp: f.timestamp || f.created_at,
+                confidence: f.confidence,
+                cosine,
+                score: blendedScore(cosine, f.timestamp || f.created_at),
+              };
             })
-            .filter(r => r.score > 0.3)
+            // The floor applies to RELEVANCE (raw cosine). On the blended
+            // score it meant "anything newer than a couple of days passes",
+            // which is how weak hits rode into results on recency alone.
+            .filter(r => r.cosine >= MIN_VECTOR_COSINE)
             .sort((a, b) => b.score! - a.score!)
             .slice(0, limit);
         }
@@ -2030,6 +2048,47 @@ async function handleSearchMemories(args: unknown): Promise<TextContent[]> {
   return [{ type: 'text', text: lines.join('\n') }];
 }
 
+/**
+ * Candidate set for a vector query: newest-in-scope ∪ keyword-matched ∪ the
+ * semantically closest documents in scope (in-process quantised index).
+ *
+ * The third tier is what makes an old-but-relevant memory reachable at all —
+ * measured 2026-09-25: a document whose own tail sentence was the query could
+ * not be retrieved through recency or keywords, so it was never scored.
+ */
+async function gatherVectorCandidates(
+  db: any,
+  factsFilter: Record<string, unknown>,
+  query: string,
+  queryVec: number[],
+  pool: { recentLimit?: number; lexicalLimit?: number; semanticLimit?: number } = {},
+): Promise<any[]> {
+  const base = await selectVectorCandidates(db.collection('semantic_facts'), factsFilter, query, {
+    recentLimit: pool.recentLimit,
+    lexicalLimit: pool.lexicalLimit,
+  });
+
+  const semanticLimit = pool.semanticLimit ?? 200;
+  if (semanticLimit <= 0) return base;
+
+  const semantic = await vectorIndexService.search(db, factsFilter, queryVec, semanticLimit);
+  if (semantic.length === 0) return base;
+
+  const have = new Set(base.map((doc: any) => String(doc._id)));
+  const missing = semantic.map(hit => hit.id).filter((id: any) => !have.has(String(id)));
+  if (missing.length === 0) return base;
+
+  const extra = await db
+    .collection('semantic_facts')
+    .find({ ...factsFilter, embedding: { $exists: true }, _id: { $in: missing } })
+    .toArray();
+  if (extra.length > 0) {
+    // Visible signal: these are documents no other tier could reach.
+    console.log(`🧭 semantic tier added ${extra.length} candidates (recency+keyword had ${base.length})`);
+  }
+  return base.concat(extra);
+}
+
 async function handleVectorSearch(args: unknown): Promise<TextContent[]> {
   const input = VectorSearchInput.parse(args);
   if (!is_database_connected()) {
@@ -2050,26 +2109,25 @@ async function handleVectorSearch(args: unknown): Promise<TextContent[]> {
       // Candidate pool: newest-in-scope ∪ query-matched documents. See
       // services/memory/vector-candidate-selector.ts — the previous unsorted
       // find().limit(50) made every query score the same old slice.
-      const facts = await selectVectorCandidates(
-        db.collection('semantic_facts'),
-        factsFilter,
-        input.query,
-      );
+      const facts = await gatherVectorCandidates(db, factsFilter, input.query, queryVec);
       if (facts.length > 0) {
+        // Chunk-aware: the best window of a long document competes with the
+        // pooled vector, so a match anywhere in it can win.
+        const windows = await embeddingService.fetchWindows(
+          facts.filter((f: any) => f.has_windows).map((f: any) => f._id),
+        );
         results = facts
           .map((f: any) => {
-            if (f.embedding?.length === embeddingService.embeddingDimension) {
-              const cosine = embeddingService.cosineSimilarity(queryVec, f.embedding);
-              const timestamp = f.created_at ?? f.updated_at ?? f.timestamp ?? null;
-              // An undated document scores on similarity alone: unknown age
-              // must not read as brand new (it would otherwise win the
-              // recency term outright).
-              const score = timestamp
-                ? embeddingService.combinedScore(cosine, timestamp, 0.6)
-                : cosine * 0.6;
-              return { ...f, _score: score };
-            }
-            return { ...f, _score: 0 };
+            const cosine = bestCosine(
+              queryVec,
+              f.embedding,
+              windows.get(String(f._id)),
+              embeddingService.embeddingDimension,
+            );
+            return {
+              ...f,
+              _score: blendedScore(cosine, f.created_at ?? f.updated_at ?? f.timestamp),
+            };
           })
           .sort((a: any, b: any) => b._score - a._score)
           .slice(0, input.limit);

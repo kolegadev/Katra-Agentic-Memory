@@ -97,6 +97,12 @@ export class MemoryManager {
       created_at: 1,
     });
 
+    // Per-window vectors for long documents (chunk-level retrieval). Kept in
+    // their own collection so candidate fetches over semantic_facts stay light
+    // (a 24-window array is ~74 KB) and `has_embedding` keeps its meaning.
+    await createIndexSafely('fact_windows', { fact_id: 1 }, { unique: true });
+    await createIndexSafely('fact_windows', { updated_at: -1 });
+
     // Setup knowledge collections
     await createIndexSafely('knowledge_nodes', { user_id: 1 });
     await createIndexSafely('knowledge_nodes', { node_type: 1 });

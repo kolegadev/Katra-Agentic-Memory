@@ -717,7 +717,12 @@ export class BackgroundProcessor {
         for (let i = 0; i < allFacts.length; i++) {
           const vec = embeddings[i];
           if (vec) {
-            await embeddingService.storeEmbedding('semantic_facts', allFacts[i]._id, vec);
+            // Content travels with the vector so long facts also get their
+            // window vectors (see embedding-service.storeWindows).
+            await embeddingService.storeEmbedding('semantic_facts', allFacts[i]._id, vec, undefined, {
+              content: allFacts[i].content || '',
+              scope: { user_id: allFacts[i].user_id, shared_id: allFacts[i].shared_id },
+            });
           }
         }
         const embeddedCount = embeddings.filter(Boolean).length;
