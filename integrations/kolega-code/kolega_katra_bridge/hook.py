@@ -51,6 +51,10 @@ async def on_user_prompt(event: Any) -> dict[str, Any]:
         return {}
 
     # Check cache.
+    # NOTE (ITER-3): the key built below carries the personality NAME only, so
+    # a re-enabled cache must add config.personality_version (and the identity)
+    # to it — the same profile name can resolve from a different server record
+    # or version, and a stale entry must not outlive a dashboard change.
     if False:  # cache disabled (cache_ttl_seconds) — always fetch fresh to prevent stale facts
         key = _cache_key(session_id, user_message, config.personality)
         cached = _cache.get(key)

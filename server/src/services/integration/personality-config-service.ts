@@ -336,7 +336,12 @@ export function sanitizePersonalityPatch(body: unknown): SanitizeResult {
  *   is a bounded compare-and-set on the observed version, so concurrent
  *   updates land as sequential increments instead of a lost update (see the
  *   loop below); exhausted retries raise `PersonalityWriteConflictError`
- *   rather than reporting a version that was never stored.
+ *   rather than reporting a version that was never stored. The create is
+ *   guarded too — `{ key, version: { $exists: false } }` — so a record that
+ *   another writer created in the meantime is never silently overwritten: the
+ *   loop re-reads and bumps it instead, which keeps `version` equal to the
+ *   number of successful writes and guarantees that no payload is discarded
+ *   without an increment.
  * - Flag OFF: upsert the legacy global record exactly as the pre-iteration
  *   route did — no identity document is created, and no `origin`/`version`
  *   field is written.
@@ -355,10 +360,10 @@ export async function updatePersonalityConfig(
     );
   }
 
-  const now = new Date();
   const collection = db.collection(SETTINGS_COLLECTION);
 
   if (!perIdentityPersonalityEnabled()) {
+    const now = new Date();
     const update: Record<string, unknown> = {
       key: LEGACY_PERSONALITY_CONFIG_KEY,
       personality: patch.personality,
@@ -397,21 +402,46 @@ export async function updatePersonalityConfig(
       scoring: patch.scoring,
       origin: 'identity',
       version: observedVersion + 1,
-      updated_at: now,
+      // Stamped per attempt, inside the loop: a retried write must record when
+      // it landed, not when the request started (a lost race costs a round
+      // trip, and under contention several).
+      updated_at: new Date(),
     };
     if (patch.max_context_tokens !== undefined) update.max_context_tokens = patch.max_context_tokens;
 
-    const result = existing !== null
-      // Guarded update: only the exact observed version may be incremented.
-      ? await collection.updateOne(versionGuard(key, existing), { $set: update }, { upsert: false })
-      // Create: `upsert` on the key alone. Success means the insert actually
-      // happened (`upsertedId`); if a concurrent writer created the record
-      // first this matches instead, so the loop retries on the version guard.
-      : await collection.updateOne({ key }, { $set: update }, { upsert: true });
+    let result: {
+      matchedCount?: number;
+      modifiedCount?: number;
+      upsertedId?: unknown;
+      upsertedCount?: number;
+    };
+    try {
+      result = existing !== null
+        // Guarded update: only the exact observed version may be incremented.
+        ? await collection.updateOne(versionGuard(key, existing), { $set: update }, { upsert: false })
+        // Create: guarded on "no version yet" instead of on the key alone, so
+        // a versioned record another writer created between our read and this
+        // write can never be matched — and therefore never overwritten with a
+        // payload that carries no increment. Such a race reaches us either as
+        // a matched-but-not-inserted result (an unversioned record was in the
+        // way) or as the unique `key` index refusing the duplicate insert; both
+        // mean "someone else's record is there", so the loop re-reads it.
+        : await collection.updateOne(
+            { key, version: { $exists: false } },
+            { $set: update },
+            { upsert: true },
+          );
+    } catch (error) {
+      if (existing === null && isDuplicateKeyError(error)) continue;
+      throw error;
+    }
 
     if (existing !== null ? matched(result) : inserted(result)) {
       return resolvePersonalityConfig(db, userId);
     }
+    // `matched` without `upsertedId`: the create hit an existing record (or a
+    // racing writer's create won), so re-read and take the guarded update
+    // path — every increment is then counted exactly once.
   }
 
   throw new PersonalityWriteConflictError(
@@ -420,15 +450,32 @@ export async function updatePersonalityConfig(
 }
 
 /**
- * The compare-and-set filter for an observed record: on the version we read,
- * or — for a record that carries no numeric version at all (hand-written or
- * pre-versioned) — on the absence of the field, so such a record can still be
- * versioned rather than being permanently unwritable.
+ * The compare-and-set filter for an observed record: equality on the version
+ * value that was actually read — whatever it is, including `null` or a string
+ * left by a hand-written or pre-versioned record, so such a record can still
+ * be versioned instead of being permanently unwritable — and, only when the
+ * field is absent, on its absence (`$exists`, since the fake supports no
+ * `$not`/`$or`). A concurrent change to any of those values fails the filter,
+ * so the loop re-reads rather than overwriting it.
+ *
+ * (`resolvePersonalityConfig` reports version 0 for a stored non-number, so
+ * the first write over such a record is version 1 — the count of successful
+ * writes, as everywhere else.)
  */
 function versionGuard(key: string, existing: Record<string, any>): Record<string, unknown> {
-  return typeof existing.version === 'number' && Number.isFinite(existing.version)
-    ? { key, version: existing.version }
-    : { key, version: { $exists: false } };
+  return existing.version === undefined
+    ? { key, version: { $exists: false } }
+    : { key, version: existing.version };
+}
+
+/**
+ * True for the duplicate-key error the unique index on `system_settings.key`
+ * raises when two writers create the same record at once (MongoDB E11000).
+ * The numeric code is the contract; the message check keeps it working across
+ * driver packagings that surface the error differently.
+ */
+function isDuplicateKeyError(error: any): boolean {
+  return error?.code === 11000 || /E\d*11000/.test(String(error?.message ?? ''));
 }
 
 /** True when a guarded (`upsert:false`) update hit the document it filtered on. */

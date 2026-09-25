@@ -47,6 +47,13 @@ jobs:
         working-directory: .
         run: python3 integrations/kolega-code/scripts/test_personality_registry.py
 
+      # The bridge's per-identity personality fetch: the request it sends, the
+      # per-identity cache, the rejected-key warning and the fail-open paths.
+      # Stdlib only (no httpx), so it runs here as well.
+      - name: Bridge personality fetch (per identity)
+        working-directory: .
+        run: python3 integrations/kolega-code/scripts/test_bridge_personality_fetch.py
+
       - name: Install dependencies
         run: npm ci
 

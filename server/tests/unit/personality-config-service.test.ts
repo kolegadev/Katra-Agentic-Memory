@@ -178,6 +178,36 @@ describe('resolvePersonalityConfig — read order per flag state', () => {
     expect(fallback.profile).not.toBe(IDENTITY_A_DOC.personality);
   });
 
+  it('reports version 0 for a stored version that is absent, non-finite or not a number', async () => {
+    process.env.PER_IDENTITY_PERSONALITY = '1';
+    const storedValues: Array<[string, unknown]> = [
+      ['absent', undefined],
+      ['null', null],
+      ['a string', '4'],
+      ['NaN', Number.NaN],
+      ['Infinity', Number.POSITIVE_INFINITY],
+    ];
+
+    for (const [label, stored] of storedValues) {
+      const doc: Record<string, unknown> = {
+        key: IDENTITY_A_KEY,
+        personality: 'dreamer',
+        source_weights: {},
+        scoring: {},
+        origin: 'identity',
+      };
+      if (stored !== undefined) doc.version = stored;
+      settings().docs = [doc];
+
+      const resolved = await resolvePersonalityConfig(FAKE_DB.asDb(), 'agent-a');
+
+      expect(resolved.version, `stored version = ${label}`).toBe(0);
+      // A record present with an unusable version is still an identity record.
+      expect(resolved.origin).toBe('identity');
+      expect(resolved.profile).toBe('dreamer');
+    }
+  });
+
   it('flag ON: two identities resolve their own records independently', async () => {
     process.env.PER_IDENTITY_PERSONALITY = 'yes';
     settings().docs.push(
@@ -600,6 +630,229 @@ describe('updatePersonalityConfig — concurrent writes keep every increment', (
     ).rejects.toBeInstanceOf(PersonalityWriteConflictError);
 
     expect(settings().docs).toEqual(before);
+  });
+});
+
+// ── Guarded create, repairable versions, per-attempt timestamps ──────────
+
+/** A write that actually landed, with the version it stored. */
+interface LandedWrite {
+  version: unknown;
+  personality: unknown;
+}
+
+/**
+ * Record every write that lands: an insert (the collection grew) or a filter
+ * that matched. A miss — including the unique `key` index refusing a duplicate
+ * insert — did not land and is not recorded. Two landed writes at one version,
+ * or a landed write that moved the version by anything but one, is exactly the
+ * silent payload loss these tests exist to catch.
+ *
+ * `onFirstUpsert` runs once, just before the first upsert-insert attempt: the
+ * hook that lets a test land a competing writer between our read and our write.
+ */
+function trackLandedWrites(onFirstUpsert?: () => void): LandedWrite[] {
+  const landed: LandedWrite[] = [];
+  let notified = false;
+  const realUpdateOne = settings().updateOne.bind(settings());
+  vi.spyOn(settings(), 'updateOne').mockImplementation(async (filter: any, update: any, opts?: any) => {
+    if (opts?.upsert && !notified) {
+      notified = true;
+      onFirstUpsert?.();
+    }
+    const before = settings().docs.length;
+    const result = await realUpdateOne(filter, update, opts);
+    if (settings().docs.length > before || (result.matchedCount ?? 0) > 0) {
+      landed.push({ version: update?.$set?.version, personality: update?.$set?.personality });
+    }
+    return result;
+  });
+  return landed;
+}
+
+describe('updatePersonalityConfig — guarded create and repairable versions', () => {
+  beforeEach(() => {
+    process.env.PER_IDENTITY_PERSONALITY = '1';
+  });
+
+  it('two concurrent creates keep both increments and never discard a payload', async () => {
+    snapshotReads();
+    const landed = trackLandedWrites();
+
+    const [first, second] = await Promise.all([
+      updatePersonalityConfig(FAKE_DB.asDb(), 'agent-a', PATCH_ANALYST, untrusted('agent-a')),
+      updatePersonalityConfig(FAKE_DB.asDb(), 'agent-a', PATCH_SENTINEL, untrusted('agent-a')),
+    ]);
+
+    // Exactly two writes landed, at versions 1 and 2: the loser of the create
+    // race re-read the winner's record and bumped it, instead of writing
+    // version 1 over it. (Pre-fix: landed [1, 1, 2] — the first payload was
+    // replaced without any increment.)
+    const landedVersions = landed.map((w) => w.version);
+    expect(landedVersions, `landed writes: ${JSON.stringify(landed)}`).toEqual([1, 2]);
+    expect(landed).toHaveLength(2);
+
+    expect([first.version, second.version].sort((a, b) => a - b)).toEqual([1, 2]);
+    const stored = settings().docs.filter((d) => d.key === IDENTITY_A_KEY);
+    expect(stored).toHaveLength(1);
+    // version = the number of successful writes.
+    expect(stored[0].version).toBe(2);
+    expect(stored[0].origin).toBe('identity');
+    // The record holds the payload of the write that bumped it last — nothing
+    // was blended, and no payload was dropped without an increment.
+    const bumped = first.version === 2 ? first : second;
+    expect(stored[0].personality).toBe(bumped.profile);
+    expect(stored[0].source_weights).toEqual(bumped.source_weights);
+  });
+
+  it('a record another writer creates mid-flight is never overwritten without an increment', async () => {
+    snapshotReads();
+    const competitor = {
+      key: IDENTITY_A_KEY,
+      personality: 'sentinel',
+      source_weights: { missions: 9 },
+      scoring: {},
+      origin: 'identity',
+      version: 7,
+      updated_at: '2026-09-12T00:00:00.000Z',
+    };
+    const landed = trackLandedWrites(() => {
+      settings().docs.push(structuredClone(competitor));
+    });
+
+    const resolved = await updatePersonalityConfig(
+      FAKE_DB.asDb(),
+      'agent-a',
+      PATCH_ANALYST,
+      untrusted('agent-a'),
+    );
+
+    // Our write landed on top of the competing record: 7 → 8, so its seven
+    // increments survive. (Pre-fix the create branch's unguarded upsert matched
+    // that record and stored version 1 with our payload — the competitor's
+    // payload and its whole version history were discarded without an
+    // increment, which is the loss this guard exists to prevent.)
+    expect(resolved.version).toBe(8);
+    const stored = settings().docs.filter((d) => d.key === IDENTITY_A_KEY);
+    expect(stored).toHaveLength(1);
+    expect(stored[0].version).toBe(8);
+    expect(stored[0].personality).toBe('analyst');
+    expect(stored[0].source_weights).toEqual(PATCH_ANALYST.source_weights);
+    // One landed write, at the version it stored — nothing was written twice.
+    expect(landed.map((w) => w.version)).toEqual([8]);
+  });
+
+  it.each([
+    ['a string version', '4'],
+    ['a null version', null],
+  ])('a record whose stored version is %s is writable and re-versioned', async (_label, storedVersion) => {
+    settings().docs.push({
+      key: IDENTITY_A_KEY,
+      personality: 'dreamer',
+      source_weights: { working_memory: 2 },
+      scoring: {},
+      origin: 'identity',
+      version: storedVersion,
+      updated_at: '2026-09-10T10:00:00.000Z',
+    });
+
+    // No usable version is reported…
+    expect((await resolvePersonalityConfig(FAKE_DB.asDb(), 'agent-a')).version).toBe(0);
+
+    // …and the record is still writable: the guard pins the RAW value it read.
+    // (Pre-fix the guard asked for the ABSENCE of the field, which a record
+    // that has one never satisfies, so every attempt missed and the write
+    // ended in a 409 — permanently unwritable.)
+    const resolved = await updatePersonalityConfig(
+      FAKE_DB.asDb(),
+      'agent-a',
+      PATCH_ANALYST,
+      untrusted('agent-a'),
+    );
+
+    expect(resolved.version).toBe(1);
+    const doc = settings().docs.find((d) => d.key === IDENTITY_A_KEY)!;
+    expect(doc.version).toBe(1);
+    expect(doc.personality).toBe('analyst');
+  });
+
+  it('a raw-version record stays writable after a concurrent change to it', async () => {
+    settings().docs.push({
+      key: IDENTITY_A_KEY,
+      personality: 'dreamer',
+      source_weights: {},
+      scoring: {},
+      origin: 'identity',
+      version: '4',
+      updated_at: '2026-09-10T10:00:00.000Z',
+    });
+    const realUpdateOne = settings().updateOne.bind(settings());
+    let competing = false;
+    vi.spyOn(settings(), 'updateOne').mockImplementation(async (filter: any, update: any, opts?: any) => {
+      if (!competing) {
+        competing = true;
+        // Someone else moves the raw value while our first attempt is in
+        // flight, and that attempt matches nothing.
+        settings().docs.find((d) => d.key === IDENTITY_A_KEY)!.version = '5';
+        return { acknowledged: true, matchedCount: 0 };
+      }
+      return realUpdateOne(filter, update, opts);
+    });
+
+    const resolved = await updatePersonalityConfig(
+      FAKE_DB.asDb(),
+      'agent-a',
+      PATCH_ANALYST,
+      untrusted('agent-a'),
+    );
+
+    // The retry pinned the raw value it re-read ('5') and landed. A guard on
+    // the absence of the field could never match a record that has one, so the
+    // write would have exhausted its attempts and reported a conflict.
+    expect(resolved.version).toBe(1);
+    const doc = settings().docs.find((d) => d.key === IDENTITY_A_KEY)!;
+    expect(doc.version).toBe(1);
+    expect(doc.personality).toBe('analyst');
+  });
+
+  it('stamps the timestamp of the attempt that landed, not the one the request started with', async () => {
+    settings().docs.push(structuredClone(IDENTITY_A_DOC)); // version 4
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(new Date('2026-09-25T10:00:00.000Z'));
+      const realUpdateOne = settings().updateOne.bind(settings());
+      let competing = false;
+      vi.spyOn(settings(), 'updateOne').mockImplementation(async (filter: any, update: any, opts?: any) => {
+        if (!competing) {
+          competing = true;
+          // The first guarded attempt loses the race (a competitor bumps the
+          // record 4 → 5) and five minutes pass before the retry lands.
+          const doc = settings().docs.find((d) => d.key === IDENTITY_A_KEY)!;
+          doc.version += 1;
+          vi.setSystemTime(new Date('2026-09-25T10:05:00.000Z'));
+          return { acknowledged: true, matchedCount: 0 };
+        }
+        return realUpdateOne(filter, update, opts);
+      });
+
+      const resolved = await updatePersonalityConfig(
+        FAKE_DB.asDb(),
+        'agent-a',
+        PATCH_ANALYST,
+        untrusted('agent-a'),
+      );
+
+      expect(resolved.version).toBe(6);
+      // The record says when it was actually written, not when the request
+      // began. (Pre-fix the timestamp was captured before the loop, so a
+      // retried write claimed a time five minutes in the past.)
+      expect(resolved.updated_at).toBe('2026-09-25T10:05:00.000Z');
+      const stored = settings().docs.find((d) => d.key === IDENTITY_A_KEY)!;
+      expect(stored.updated_at).toBeInstanceOf(Date);
+      expect((stored.updated_at as Date).toISOString()).toBe('2026-09-25T10:05:00.000Z');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

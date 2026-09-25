@@ -5,6 +5,12 @@ import type { Db } from 'mongodb';
 export type Doc = Record<string, any>;
 
 export const UNIQUE_INDEXES: Record<string, string[][]> = {
+  // `system_settings` carries a unique index on `key` in every deployment
+  // (IndexManager: name `key_unique`), so an upsert that cannot match but
+  // whose insert would duplicate a key must fail with E11000 here too —
+  // otherwise a racing create looks like two successful inserts instead of
+  // the conflict the real collection reports.
+  system_settings: [['key']],
   mission_states: [['mission_id']],
   mission_state_versions: [['mission_id', 'version']],
   epistemic_entries: [['entry_id']],

@@ -133,9 +133,16 @@ export const create_admin_routes = (): Hono => {
     }
 
     // ITER-2: the personality endpoints left this allowlist. A resolved caller
-    // may read/write its own record; `?user_id=` names another identity and
+    // may read/write its own record; naming ANOTHER identity with `?user_id=`
     // needs the admin key, so those requests fall through to the check below.
-    const namesAnotherIdentity = Boolean((c.req.query('user_id') ?? '').trim());
+    // ITER-3: naming the caller's OWN identity is not "another identity". The
+    // endpoint is caller-pinned and the bridge always sends `?user_id=<its
+    // identity>`, so that request must behave exactly like omitting the
+    // parameter (200, resolved for the caller). The comparison is against the
+    // resolved caller, so any other id — and an unresolved caller naming
+    // anything — is still admin-gated.
+    const requestedUserId = (c.req.query('user_id') ?? '').trim();
+    const namesAnotherIdentity = Boolean(requestedUserId && requestedUserId !== getCaller().user_id);
     if (
       PERSONALITY_PATHS.includes(c.req.path)
       && (c.req.method === 'GET' || c.req.method === 'PUT')
@@ -1585,10 +1592,12 @@ export const create_admin_routes = (): Hono => {
    * The caller's resolved memory personality (persisted selection + overrides),
    * or the default 'balanced' when nothing has been saved.
    *
-   * ITER-2: caller-pinned — `?user_id=<id>` names another identity and is
-   * admin-gated by the router (see the auth gate above). With
-   * PER_IDENTITY_PERSONALITY off, resolution skips the identity record and
-   * serves the legacy global record, i.e. today's behaviour.
+   * ITER-2: caller-pinned — `?user_id=<another id>` is admin-gated by the
+   * router (see the auth gate above). ITER-3: `?user_id=<the caller's own id>`
+   * is equivalent to omitting the parameter, so a client (the Kolega bridge)
+   * may always name itself. With PER_IDENTITY_PERSONALITY off, resolution
+   * skips the identity record and serves the legacy global record, i.e.
+   * today's behaviour.
    */
   router.get('/personality', async (c) => {
     try {
@@ -1623,8 +1632,8 @@ export const create_admin_routes = (): Hono => {
   /**
    * PUT /api/v1/admin/personality
    * Persist the personality selection + optional overrides for the CALLER's
-   * identity (`?user_id=<id>` writes another identity and is admin-gated by
-   * the router). Body:
+   * identity (`?user_id=<another id>` is admin-gated by the router;
+   * `?user_id=<the caller's own id>` is equivalent to omitting it). Body:
    *   { personality: string, source_weights?: {}, scoring?: {}, max_context_tokens?: number }
    * The agent_message weight is force-pinned to 10.0 (cannot be overridden).
    * With PER_IDENTITY_PERSONALITY off the write targets the legacy global

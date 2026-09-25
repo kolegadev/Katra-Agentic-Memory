@@ -195,6 +195,25 @@ describe('personality REST — flag OFF keeps today’s global behaviour', () =>
     expect([a.body.origin, b.body.origin]).toEqual(['legacy', 'legacy']);
   });
 
+  it('a caller naming its own identity is served with the flag off too', async () => {
+    // The bridge sends `?user_id=` unconditionally (ITER-3), so the allowance
+    // must not depend on which record the flag resolves.
+    settings().docs.push(structuredClone(LEGACY_DOC));
+
+    const named = await call('GET', '/personality?user_id=agent-a', { key: AGENT_A_KEY });
+    const omitted = await call('GET', '/personality', { key: AGENT_A_KEY });
+
+    expect(named.status).toBe(200);
+    expect(named.body).toEqual(omitted.body);
+    expect(named.body.resolved_for).toBe('agent-a');
+    expect(named.body.origin).toBe('legacy');
+    expect(named.body.config.personality).toBe('scholar');
+    expect(named.body.per_identity_enabled).toBe(false);
+
+    // Nobody else's identity, same key.
+    expect((await call('GET', '/personality?user_id=agent-b', { key: AGENT_A_KEY })).status).toBe(401);
+  });
+
   it('flag OFF: the responses keep the pre-iteration shape and only add fields', async () => {
     settings().docs.push(structuredClone(LEGACY_DOC));
 
@@ -461,6 +480,65 @@ describe('personality REST — caller pinning and ?user_id= (flag ON)', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.resolved_for).toBe('agent-b');
+  });
+
+  // ── ITER-3: naming your OWN identity is not naming another one ──────────
+  // The Kolega bridge always sends `?user_id=<its identity>` (the endpoint is
+  // caller-pinned), so that request must behave exactly like one that omits
+  // the parameter — for every resolved caller, and only for its own id.
+
+  it('untrusted GET ?user_id=<its own id> is identical to omitting the parameter', async () => {
+    await call('PUT', '/personality', { key: AGENT_A_KEY, body: VALID_BODY });
+
+    const named = await call('GET', '/personality?user_id=agent-a', { key: AGENT_A_KEY });
+    const omitted = await call('GET', '/personality', { key: AGENT_A_KEY });
+
+    expect(named.status).toBe(200);
+    expect(named.body).toEqual(omitted.body);
+    expect(named.body.resolved_for).toBe('agent-a');
+    expect(named.body.origin).toBe('identity');
+    expect(named.body.config.personality).toBe('analyst');
+  });
+
+  it('untrusted PUT ?user_id=<its own id> writes its own record (the bridge’s request)', async () => {
+    const res = await call('PUT', '/personality?user_id=agent-b', { key: AGENT_B_KEY, body: VALID_BODY });
+
+    expect(res.status).toBe(200);
+    expect(res.body.resolved_for).toBe('agent-b');
+    expect(res.body.version).toBe(1);
+    expect(settings().docs.find((d) => d.key === keyFor('agent-b'))!.personality).toBe('analyst');
+    // Naming itself still never touches anybody else's record.
+    expect(settings().docs.some((d) => d.key === keyFor('agent-a'))).toBe(false);
+  });
+
+  it('every caller may name itself, and only itself', async () => {
+    for (const [key, own, other] of [
+      [AGENT_A_KEY, 'agent-a', 'agent-b'],
+      [AGENT_B_KEY, 'agent-b', 'agent-a'],
+    ] as const) {
+      const mine = await call('GET', `/personality?user_id=${own}`, { key });
+      const theirs = await call('GET', `/personality?user_id=${other}`, { key });
+
+      expect(mine.status, `${own} naming itself`).toBe(200);
+      expect(mine.body.resolved_for).toBe(own);
+      expect(theirs.status, `${own} naming ${other}`).toBe(401);
+      expect(JSON.stringify(theirs.body)).not.toContain('analyst');
+    }
+  });
+
+  it('an unnamed default is not "own id": ?user_id=katra is still admin-gated', async () => {
+    const res = await call('GET', '/personality?user_id=katra', { key: AGENT_A_KEY });
+
+    expect(res.status).toBe(401);
+  });
+
+  it('the gate and the handler agree on trimming the parameter', async () => {
+    await call('PUT', '/personality', { key: AGENT_A_KEY, body: VALID_BODY });
+
+    const padded = await call('GET', '/personality?user_id=%20agent-a%20', { key: AGENT_A_KEY });
+
+    expect(padded.status).toBe(200);
+    expect(padded.body.resolved_for).toBe('agent-a');
   });
 });
 
