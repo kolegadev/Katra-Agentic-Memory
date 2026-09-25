@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<!--
+  macOS bridge-guard agent — the Mac-side equivalent of the */10 cron guard
+  on thebrick/natasha (wake-ritual directive item d, gap recorded 2026-09-25).
+  Install once Mac access exists:
+    cp this file ~/Library/LaunchAgents/com.kolega.bridge-guard.plist
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.kolega.bridge-guard.plist
+  It runs the repo's bridge-guard.sh every 10 minutes, self-healing a dropped
+  hook registration the way crontab does on Linux.
+-->
+<dict>
+  <key>Label</key><string>com.kolega.bridge-guard</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/johnpellew/Katra-Agentic-Memory/integrations/kolega-code/scripts/bridge-guard.sh</string>
+    <string>--quiet</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>KATRA_USER_ID</key><string>lilly</string>
+    <key>KATRA_HOST</key><string>100.101.206.13</string>
+    <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+  <key>StartInterval</key><integer>600</integer>
+  <key>RunAtLoad</key><true/>
+  <key>StandardOutPath</key><string>/tmp/com.kolega.bridge-guard.log</string>
+  <key>StandardErrorPath</key><string>/tmp/com.kolega.bridge-guard.log</string>
+</dict>
+</plist>
