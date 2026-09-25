@@ -22,7 +22,7 @@ exit  : always 0 for the TURN (a broken memory hook must never break the
         the machine-health collector escalates the marker to an alarm.
 
 Handled events (2026-09-23 wake-ritual re-implementation, id + /compress
-detection fixed 2026-09-25):
+detection fixed 2026-09-25, pre-reset recap added 2026-09-25):
   SessionStart      full bootstrap, all 11 sources            (startup)
   PostCompact       full bootstrap re-injection               (auto-compaction)
   UserPromptSubmit  query retrieval + RESET-DETECTION: when the CLI's session
@@ -32,6 +32,11 @@ detection fixed 2026-09-25):
                     fires PostCompact only from _auto_compact_once) —
                     escalate to the full bootstrap and prefix it before the
                     query context.
+                    Every escalated turn LEADS with a pre-reset recap quoted
+                    from this session's journal (compaction summary + the
+                    user's own last prompts), so the first question after a
+                    reset — "what was I doing?" — is answered from the record
+                    instead of from whatever the retrieval happened to rank.
 
 The CLI stamps hook events with the session's THREAD id, while the store keys
 directories by SESSION id (baseagent.fire_hook: session_id=self.thread_id vs
@@ -42,8 +47,10 @@ disabled /clear detection from 2026-09-23 to 2026-09-25.
 """
 
 import asyncio
+import ast
 import json
 import os
+import re
 import socket
 import sys
 from datetime import datetime, timezone
@@ -262,6 +269,137 @@ def _iso_ts(value: Any) -> datetime | None:
     return parsed
 
 
+# ── Pre-reset recap ───────────────────────────────────────────────────────
+# The ritual's whole purpose is continuity, and the first question after any
+# reset is "what was I doing?". The journal answers it exactly, and locally:
+#   * every turn records the prompt that started it (`turn.started`), with the
+#     user's own words as the first text block — the memory blocks this bridge
+#     appends follow it;
+#   * every compaction records the summary it wrote (`context.compacted` →
+#     payload.compaction, a Python-repr dict, so `ast.literal_eval` is the
+#     reliable reader and a regex over `'summary':` is the truncated-window
+#     fallback).
+# Both live in the same tail window the epoch scan reads, so the recap costs
+# one extra backwards pass on the (rare) reset path. Content is QUOTED, never
+# regenerated: a confidently wrong summary of your own last turn is worse than
+# none, and these are the CLI's own words about the work it compressed.
+_RECAP_PROMPT_LIMIT = 3
+_RECAP_PROMPT_CHARS = 220
+_RECAP_SUMMARY_CHARS = 700
+
+
+def _clip(text: str, limit: int) -> str:
+    """One-line, whitespace-collapsed clip of `text`."""
+    collapsed = " ".join(str(text).split())
+    if len(collapsed) <= limit:
+        return collapsed
+    return collapsed[: limit - 1].rstrip() + "…"
+
+
+def _clock(ts: str) -> str:
+    """HH:MM local time from an ISO timestamp ('' when unparseable)."""
+    parsed = _iso_ts(ts)
+    return parsed.astimezone().strftime("%H:%M") if parsed else ""
+
+
+def _compaction_summary(line: str) -> tuple[str, str]:
+    """(timestamp, summary head) from a `context.compacted` record."""
+    doc = _safe_json(line)
+    if not doc or doc.get("type") != "context.compacted":
+        return "", ""
+    raw = (doc.get("payload") or {}).get("compaction")
+    summary = ""
+    if isinstance(raw, str):
+        try:
+            parsed = ast.literal_eval(raw)
+            if isinstance(parsed, dict):
+                summary = str(parsed.get("summary") or "")
+        except (ValueError, SyntaxError, TypeError):
+            match = re.search(r"'summary':\s*'(.*)$", raw, re.S)
+            if match:
+                summary = match.group(1)
+    elif isinstance(raw, dict):
+        summary = str(raw.get("summary") or "")
+    return str(doc.get("timestamp") or ""), summary
+
+
+def _user_prompts(lines: list[str], current_prompt: str, limit: int) -> list[tuple[str, str]]:
+    """(timestamp, prompt) for the last `limit` turns, newest first.
+
+    Each `turn.started` embeds the whole message the model received: the
+    human's words plus the memory blocks this bridge appended. Only the first
+    text block that is neither a system reminder nor a memory block is the
+    prompt. The turn being submitted right now is already journaled by the
+    time the hook runs, so it is excluded by text match.
+    """
+    wanted = _clip(current_prompt, 120)
+    found: list[tuple[str, str]] = []
+    for line in lines:
+        if '"turn.started"' not in line:
+            continue
+        doc = _safe_json(line)
+        if not doc or doc.get("type") != "turn.started":
+            continue
+        blocks = ((doc.get("payload") or {}).get("message") or {}).get("content") or []
+        prompt = ""
+        for block in blocks:
+            if not isinstance(block, dict) or block.get("type") != "text":
+                continue
+            text = str(block.get("text") or "")
+            if text.lstrip().startswith(("<katra-memory", "<system-reminder", "<session")):
+                continue
+            prompt = text
+            break
+        if not prompt.strip():
+            continue
+        if wanted and _clip(prompt, 120) == wanted:
+            continue  # this turn's own prompt
+        found.append((str(doc.get("timestamp") or ""), _clip(prompt, _RECAP_PROMPT_CHARS)))
+        if len(found) >= limit:
+            break
+    return found
+
+
+def _pre_reset_recap(session_id: str, current_prompt: str) -> str:
+    """The 'what was I doing?' block attached to the turn after a reset."""
+    session_dir = _resolve_session_dir(session_id)
+    if session_dir is None:
+        return ""
+    lines = _journal_tail_lines(os.path.join(session_dir, "events.jsonl"))
+    if not lines:
+        return ""
+
+    summary_ts = summary = ""
+    for line in lines:  # tail is newest-first, so this is the LAST compaction
+        if "context.compacted" in line:
+            summary_ts, summary = _compaction_summary(line)
+            if summary:
+                break
+    prompts = _user_prompts(lines, current_prompt, _RECAP_PROMPT_LIMIT)
+    if not summary and not prompts:
+        return ""
+
+    out = [
+        "",
+        "<katra-memory>",
+        "🕘 PRE-RESET RECAP — what you were doing immediately before this reset.",
+        "Quoted from your own session journal, not regenerated: this is your",
+        "continuity of work, context to resume from — not a new request.",
+        "",
+    ]
+    if summary:
+        stamp = _clock(summary_ts)
+        out.append(f"Compaction summary{' [' + stamp + ']' if stamp else ''}: {_clip(summary, _RECAP_SUMMARY_CHARS)}")
+        out.append("")
+    if prompts:
+        out.append("Your own last prompts (most recent first):")
+        for ts, text in prompts:
+            stamp = _clock(ts)
+            out.append(f"  • {'[' + stamp + '] ' if stamp else ''}{text}")
+    out.append("</katra-memory>")
+    return "\n".join(out)
+
+
 def _marker_path(session_id: str) -> str:
     return os.path.join(SESSION_MARKER_DIR, f"{session_id}.json")
 
@@ -346,7 +484,16 @@ async def _run_prompt_with_escalation(event: SimpleNamespace, session_id: str):
         bctx = bootstrap.get("additional_context") or ""
         qctx = result.get("additional_context") or ""
         if bctx:
-            result["additional_context"] = (bctx + "\n\n" + qctx).strip() if qctx else bctx
+            # The recap leads: after a reset the first question is always "what
+            # was I doing?", and the bootstrap's own sections are the wider
+            # context around it. It is attached ONLY to a delivered bootstrap —
+            # emitting the recap alone would mask a dead Katra behind the
+            # empty-additionalContext alarm.
+            prompt = str((getattr(event, "payload", {}) or {}).get("user_message") or "")
+            recap = _pre_reset_recap(session_id, prompt)
+            result["additional_context"] = "\n\n".join(
+                part for part in (recap, bctx, qctx) if part
+            )
     return result
 
 
@@ -369,8 +516,12 @@ def main() -> int:
         elif name == "PostCompact":
             # After /compress the context was rewritten; re-run the FULL
             # bootstrap immediately (directive item b) — advisory PreCompact
-            # stays unregistered.
+            # stays unregistered. The recap leads so the compacted work is
+            # named on the first turn after it.
             result = asyncio.run(_run_bootstrap(event, session_id))
+            recap = _pre_reset_recap(session_id, "")
+            if recap and result.get("additional_context"):
+                result["additional_context"] = recap + "\n\n" + result["additional_context"]
         elif name == "UserPromptSubmit":
             result = asyncio.run(_run_prompt_with_escalation(event, session_id))
         else:

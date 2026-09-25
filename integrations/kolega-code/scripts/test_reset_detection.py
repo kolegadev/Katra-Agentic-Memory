@@ -77,15 +77,45 @@ def make_env(root: Path) -> dict:
     return env
 
 
-def write_session(state_root: Path, *, epochs: list[str], compactions: list[str], thread_id: str = THREAD_ID) -> None:
-    """Session dir is keyed by SESSION id; the hook doc carries the THREAD id."""
+def write_session(
+    state_root: Path,
+    *,
+    epochs: list[str],
+    compactions: list[str],
+    thread_id: str = THREAD_ID,
+    prompts: list[tuple[str, str]] | None = None,
+    summary: str | None = None,
+) -> None:
+    """Session dir is keyed by SESSION id; the hook doc carries the THREAD id.
+
+    `prompts` writes `turn.started` records in the CLI's payload shape (the
+    user's words as the first text block) and `summary` fills a
+    `context.compacted` record's payload.compaction — a Python-repr dict, not
+    JSON — so the pre-reset recap can be exercised offline.
+    """
     sdir = state_root / "sessions" / SESSION_ID
     (sdir / "metadata.json").write_text(json.dumps({"session_id": SESSION_ID, "thread_id": thread_id}))
     lines = []
     for i, epoch in enumerate(epochs):
         lines.append(json.dumps({"type": "context.epoch_started", "epoch_id": epoch, "timestamp": f"2026-09-25T10:00:{i:02d}+00:00"}))
     for i, ts in enumerate(compactions):
-        lines.append(json.dumps({"type": "context.compacted", "epoch_id": epochs[-1], "timestamp": ts}))
+        record: dict = {"type": "context.compacted", "epoch_id": epochs[-1], "timestamp": ts}
+        if summary:
+            record["payload"] = {
+                "compaction": repr({"summary": summary, "trigger": "manual", "reason": "ok"})
+            }
+        lines.append(json.dumps(record))
+    for ts, text in prompts or []:
+        lines.append(
+            json.dumps(
+                {
+                    "type": "turn.started",
+                    "epoch_id": epochs[-1],
+                    "timestamp": ts,
+                    "payload": {"message": {"role": "user", "content": [{"type": "text", "text": text}]}},
+                }
+            )
+        )
     (sdir / "events.jsonl").write_text("\n".join(lines) + "\n")
 
 
@@ -141,24 +171,46 @@ def main() -> int:
     def case_clear(root: Path) -> None:
         env = make_env(root)
         state = Path(env["KOLEGA_CODE_STATE_DIR"])
-        # Bootstrapped on epoch A, then /clear started epoch B.
-        write_session(state, epochs=["epoch-A"], compactions=[])
-        write_marker(state, epoch_id="epoch-A")
+        # Bootstrapped on epoch A, then /clear started epoch B. The journal
+        # carries the work that was in flight, which the recap must quote.
+        write_session(
+            state,
+            epochs=["epoch-A"],
+            compactions=["2026-09-25T10:03:00+00:00"],
+            prompts=[("2026-09-25T10:04:00+00:00", "Fix the wake ritual on the MacBook Pro")],
+            summary="## Goal Fix the wake ritual: after /clear and /compress the session must re-bootstrap",
+        )
+        write_marker(state, epoch_id="epoch-A", compacted_at="2026-09-25T10:03:00+00:00")
         # before the /clear
         ctx_before = context_of(run_hook(env, prompt_event()))
         check("no reset → no bootstrap escalation", "<<BOOTSTRAP-FULL>>" not in ctx_before, ctx_before[:80])
         check("no reset → query context still delivered", "<<QUERY-CONTEXT>>" in ctx_before, ctx_before[:80])
+        check("no reset → no pre-reset recap", "PRE-RESET RECAP" not in ctx_before, ctx_before[:80])
         # /clear: the CLI appends a new epoch (TUI: start_epoch("thread_reset"))
-        write_session(state, epochs=["epoch-A", "epoch-B"], compactions=[])
+        write_session(
+            state,
+            epochs=["epoch-A", "epoch-B"],
+            compactions=["2026-09-25T10:03:00+00:00"],
+            prompts=[
+                ("2026-09-25T10:04:00+00:00", "Fix the wake ritual on the MacBook Pro"),
+                ("2026-09-25T10:30:00+00:00", "Hi Lilly"),
+            ],
+            summary="## Goal Fix the wake ritual: after /clear and /compress the session must re-bootstrap",
+        )
         ctx_after = context_of(run_hook(env, prompt_event()))
         check("/clear (new epoch) → full bootstrap injected", "<<BOOTSTRAP-FULL>>" in ctx_after, ctx_after[:80])
         check("/clear → bootstrap precedes query context", ctx_after.find("<<BOOTSTRAP-FULL>>") < ctx_after.find("<<QUERY-CONTEXT>>"), ctx_after[:120])
+        check("/clear → recap leads the context", ctx_after.lstrip().startswith("<katra-memory>") and "PRE-RESET RECAP" in ctx_after, ctx_after[:80])
+        check("recap quotes the compaction summary", "Fix the wake ritual: after /clear and /compress" in ctx_after, ctx_after[:200])
+        recap = ctx_after.split("PRE-RESET RECAP")[1].split("</katra-memory>")[0] if "PRE-RESET RECAP" in ctx_after else ""
+        check("recap lists the earlier prompt", "Fix the wake ritual on the MacBook Pro" in recap, recap[:200])
+        check("recap does NOT echo this turn's own prompt", "Hi Lilly" not in recap, recap[:200])
         marker = json.loads((state / "bridge-session" / f"{THREAD_ID}.json").read_text())
         check("marker advanced to the new epoch", marker.get("epoch_id") == "epoch-B", str(marker))
         ctx_settled = context_of(run_hook(env, prompt_event()))
         check("next prompt after escalation does NOT re-escalate", "<<BOOTSTRAP-FULL>>" not in ctx_settled, ctx_settled[:80])
 
-    case("1-3. thread-id resolution, /clear escalation, negative control", case_clear)
+    case("1-3. thread-id resolution, /clear escalation, recap, negative control", case_clear)
 
     # ---- 4/5: manual /compress (no hook) ----------------------------------
     def case_compress(root: Path) -> None:
@@ -167,9 +219,16 @@ def main() -> int:
         write_session(state, epochs=["epoch-A"], compactions=[])
         # marker from BEFORE the /compress (old-style: no compacted_at)
         write_marker(state, epoch_id="epoch-A", ts="2026-09-25T10:05:00+00:00")
-        write_session(state, epochs=["epoch-A"], compactions=["2026-09-25T10:09:00+00:00"])
+        write_session(
+            state,
+            epochs=["epoch-A"],
+            compactions=["2026-09-25T10:09:00+00:00"],
+            prompts=[("2026-09-25T10:08:00+00:00", "close out the Satori threads")],
+            summary="## Goal Fix the wake ritual, then close the Satori threads",
+        )
         ctx = context_of(run_hook(env, prompt_event()))
         check("/compress (context.compacted, no hook) → bootstrap injected", "<<BOOTSTRAP-FULL>>" in ctx, ctx[:80])
+        check("/compress → recap quotes the compacted work", "Fix the wake ritual, then close the Satori threads" in ctx, ctx[:200])
         # a newer compaction must not re-trigger now that the marker has it
         ctx_again = context_of(run_hook(env, prompt_event()))
         check("compaction recorded in marker → no repeat escalation", "<<BOOTSTRAP-FULL>>" not in ctx_again, ctx_again[:80])

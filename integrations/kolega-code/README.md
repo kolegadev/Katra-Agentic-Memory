@@ -263,6 +263,30 @@ Per-agent wake guidance lives in `AGENTS.<name>.md` files — keep yours in the
 git-ignored `private/` folder. The CLI re-sends them after thread resets and
 compaction.
 
+### Wake content freshness
+
+A ritual that re-injects stale content is worse than none: it answers "what
+was I doing?" with last week's news. Three rules keep the content current
+(2026-09-25, after John reported the wake reading as "legacy, stale
+information"):
+
+1. **The recap leads every reset.** After `/clear` or `/compress` the context
+   opens with a `🕘 PRE-RESET RECAP` block, quoted from the machine's own
+   session journal — the compaction summary the CLI wrote plus the user's own
+   last prompts. Nothing is regenerated: a confidently wrong summary of your
+   own last turn is worse than no summary. The recap is attached only to a
+   *delivered* bootstrap, so a dead Katra still raises the empty-context alarm
+   instead of being masked by it.
+2. **The bulletin is time-ordered.** `temporal_recall` with
+   `event_type=agent_message` (72 h, widening to 14 days only when quiet),
+   newest first, hard-dropped past 14 days. It used to be a relevance search
+   on the identity names, and relevance cannot tell "new" from "old" — which
+   is how three-week-old settled threads kept arriving as today's mail.
+3. **A stale reflection says so.** `get_daily_reflection` returns the newest
+   entry that EXISTS; when that is older than 72 h the block is prefixed with
+   a `⚠️ STALE` line naming its age, so an old consolidation cannot pass for
+   current state.
+
 ## Staying healthy across updates
 
 Run after every `kolega-code update`:
@@ -292,6 +316,10 @@ On each prompt, the hook:
 3. Ranks, deduplicates, and truncates results to the configured token budget.
 4. Returns formatted memory context as `additional_context`, and posts a
    read receipt when a bulletin was surfaced.
+5. On a reset — a new epoch (`/clear`, thread reset) or a compaction newer
+   than our marker (manual `/compress`) — the same call escalates to the full
+   bootstrap and leads it with the pre-reset recap drawn from this session's
+   journal; see *Wake content freshness* above.
 
 If Katra is unreachable or the query fails, the hook returns empty context so
 Kolega Code continues normally. Debug output lands in

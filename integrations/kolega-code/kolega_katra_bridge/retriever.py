@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
 import os
 import random
@@ -51,6 +52,37 @@ BOOTSTRAP_EMOTIONAL_ENTITIES = [
     "OpenCode", "opencode-agent"
 ]
 MAX_BOOTSTRAP_EMOTIONAL_ENTITIES = 3
+
+# ── Freshness policy (2026-09-25) ─────────────────────────────────────────
+# The ritual is a continuity instrument: it has to answer "what was I doing?"
+# and "what changed while I was away?". Two sources failed that and were
+# reported as "legacy, stale information":
+#   * the bulletin ranked by RELEVANCE with no time filter, so a three-week-old
+#     thread could be the first thing on screen as if it were today's mail;
+#   * the daily reflection re-rendered lilly's 2026-08-23 entry every wake as
+#     if it were current state (consolidation has produced nothing newer).
+# Recency is now structural: the bulletin is read in time order, and a stale
+# reflection is labelled instead of passed off as present-tense.
+BULLETIN_RECENT_HOURS = 72        # preferred window: the team channel, last 3 days
+BULLETIN_FALLBACK_DAYS = 14       # if quiet, widen to the newest available
+BULLETIN_MAX_AGE_DAYS = 14        # hard drop — older is history, not news
+BULLETIN_LIMIT = 6                # messages shown, newest first
+REFLECTION_MAX_AGE_HOURS = 72     # beyond this the block is labelled stale
+
+# One entry of a `## Temporal Recall` report: "- **[<iso>]** (type) text…".
+_RECALL_ENTRY = re.compile(r"^- \*\*\[([^\]]+)\]\*\*\s*(.*)$")
+# A search-report entry starts with its event timestamp: "[<iso>] {json|text}".
+_REPORT_TS = re.compile(r"^\[([^\]]+)\]")
+
+
+def _parse_iso(value: str) -> datetime | None:
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
 
 
 
@@ -140,6 +172,7 @@ class MemoryRetriever:
                 "Katra fetch [personality=%s]: %s", profile.name, by_source
             )
 
+        fetched = self._annotate_reflection(fetched)
         ranked = self._rank_and_dedupe(fetched, query)
         return self._apply_token_budget(ranked)
 
@@ -225,6 +258,7 @@ class MemoryRetriever:
                 "Bootstrap fetch [personality=%s]: %s", self.profile.name, by_source
             )
 
+        fetched = self._annotate_reflection(fetched)
         ranked = self._rank_and_dedupe(fetched, bootstrap_query)
         return self._apply_token_budget(ranked)
 
@@ -243,6 +277,55 @@ class MemoryRetriever:
                 continue
             fetched.extend(result)
         return fetched
+
+    async def _recent_agent_messages(self, client: KatraMCPClient) -> list[MemoryItem]:
+        """Inter-agent messages in TIME order, newest first (or []).
+
+        This is the bulletin's primary source, replacing the relevance-ranked
+        search: `search_memories` scores similarity to the identity names, so
+        a message from this morning and one from three weeks ago matched
+        equally well, and settled threads kept arriving as if they were news.
+        `temporal_recall` answers the question the bulletin actually asks —
+        what has the team said lately — with a hard freshness bound.
+        """
+        now = datetime.now(timezone.utc)
+        windows = (
+            (BULLETIN_RECENT_HOURS, "recent"),
+            (BULLETIN_FALLBACK_DAYS * 24, "window-widened"),
+        )
+        for hours, label in windows:
+            try:
+                items = await client.temporal_recall(
+                    (now - timedelta(hours=hours)).isoformat(),
+                    now.isoformat(),
+                    limit=12,
+                    event_type="agent_message",
+                )
+            except Exception:
+                logger.warning("recent agent-message recall failed")
+                return []
+            messages: list[MemoryItem] = []
+            seen: set[str] = set()
+            for item in items:
+                for ts, text in self._split_recall_events(item.content or ""):
+                    snippet = f"[{ts}] {text}"
+                    if snippet in seen:
+                        continue
+                    seen.add(snippet)
+                    messages.append(
+                        MemoryItem(
+                            source="agent_message",
+                            content=snippet,
+                            metadata={
+                                "is_agent_message": True,
+                                "created_at": ts,
+                                "freshness": label,
+                            },
+                        )
+                    )
+            if messages:
+                return messages[:BULLETIN_LIMIT]
+        return []
 
     async def _fetch_agent_messages(self, client: KatraMCPClient) -> list[MemoryItem]:
         """Inter-agent message scan (independent of user query).
@@ -263,6 +346,14 @@ class MemoryRetriever:
         reports sat un-surfaced. The scan now always includes the full team
         list plus the local config identity and any operator-declared extras.
         """
+        recent = await self._recent_agent_messages(client)
+        if recent:
+            return recent
+
+        # Fallback: the time-ordered recall found nothing even across the wide
+        # window (a quiet channel). A relevance search can still surface a
+        # semantic copy of a message, but only recent ones are admissible —
+        # see the freshness filter in _expand_agent_messages.
         names = {"Satori", "Shoshin", "Zanshin", "Lilly", "Zefir",
                  "KolegaCode", "KolegaCoder", "OpenCode", "OpenCoder"}
         for candidate in (
@@ -301,15 +392,162 @@ class MemoryRetriever:
                 fallback,
                 limit=5,
             )
-        return [
-            MemoryItem(
-                source="agent_message",
-                content=msg.content,
-                metadata={**msg.metadata, "is_agent_message": True},
-                score=msg.score,
-            )
-            for msg in messages
-        ]
+        return self._expand_agent_messages(messages, query)
+
+    def _annotate_reflection(self, items: list[MemoryItem]) -> list[MemoryItem]:
+        """Label a stale consolidation instead of passing it off as current.
+
+        The server returns the NEWEST entry that exists — for this identity
+        that is 2026-08-23, a month old. Re-rendering it unchanged on every
+        wake is what made the ritual read as legacy: nothing in the block said
+        the cycle had stopped running. Undated entries are left untouched.
+        """
+        now = datetime.now(timezone.utc)
+        annotated: list[MemoryItem] = []
+        for item in items:
+            if item.source == "daily_reflection":
+                match = re.search(r"\((\d{4}-\d{2}-\d{2})\)", item.content or "")
+                when = None
+                if match:
+                    try:
+                        when = datetime.strptime(match.group(1), "%Y-%m-%d").replace(
+                            tzinfo=timezone.utc
+                        )
+                    except ValueError:
+                        when = None
+                if when is not None:
+                    age_hours = (now - when).total_seconds() / 3600.0
+                    if age_hours > REFLECTION_MAX_AGE_HOURS:
+                        head = (
+                            f"⚠️ STALE — the newest consolidation entry for this identity is "
+                            f"{int(age_hours // 24)} days old ({match.group(1)}); no newer cycle "
+                            f"has run. Read it as disposition, NOT as current state or recent work."
+                            f"\n\n"
+                        )
+                        item = MemoryItem(
+                            source=item.source,
+                            content=head + (item.content or ""),
+                            metadata=item.metadata,
+                            score=item.score,
+                        )
+            annotated.append(item)
+        return annotated
+
+    @staticmethod
+    def _split_recall_events(content: str) -> list[tuple[str, str]]:
+        """Parse a `## Temporal Recall` report into (timestamp, text) pairs.
+
+        The MCP tool returns the whole recall as ONE markdown blob::
+
+            - **[2026-09-25T14:44:11.235Z]** (agent_message) Attention: Lilly — …
+              continuation line
+
+        Entries have to be split before they can be time-ordered, labelled
+        with their own timestamp, or aged out.
+        """
+        entries: list[tuple[str, str]] = []
+        ts = ""
+        buf = ""
+        for raw in content.splitlines():
+            match = _RECALL_ENTRY.match(raw.strip())
+            if match:
+                if ts and buf.strip():
+                    entries.append((ts, buf.strip()))
+                ts, buf = match.group(1), match.group(2)
+            elif ts and raw.strip():
+                buf += " " + raw.strip()
+        if ts and buf.strip():
+            entries.append((ts, buf.strip()))
+        return entries
+
+    @staticmethod
+    def _split_search_report(content: str) -> list[tuple[str, str]]:
+        """Split a '## Memory Search:' report into (source, entry) pairs.
+
+        The MCP ``search_memories`` tool returns ONE markdown text block per
+        call (server/src/mcp-server.ts builds it), so the bridge receives the
+        whole report as a single item and nothing can be retagged per message
+        without splitting it first. That is why the 🔔 INTER-AGENT BULLETIN
+        section never rendered: the formatter had one report blob instead of
+        individual messages. Returns [] when the content is not a report.
+        """
+        if "## Memory Search:" not in content:
+            return []
+        entries: list[tuple[str, str]] = []
+        source = ""
+        for raw in content.splitlines():
+            line = raw.rstrip()
+            if line.startswith("### "):
+                source = line[4:].strip()
+                continue
+            if line.startswith("- "):
+                entries.append((source, line[2:].strip()))
+        return entries
+
+    @staticmethod
+    def _message_text(text: str) -> str:
+        """Readable message text for one report entry.
+
+        Report bullets are raw episodic/semantic documents, e.g.
+        ``[2026-09-25T14:02:43.346Z] {"content": {"message": "Attention: ..."}}``.
+        Surfacing that JSON verbatim would spend the prompt budget on fields
+        instead of the message, so pull the ``message`` value out. The server
+        truncates each snippet, so the JSON is usually incomplete: match the
+        field with a regex rather than parsing the whole document.
+        """
+        stripped = text.strip()
+        match = re.search(r'"message"\s*:\s*"((?:[^"\\]|\\.)*)"?', stripped)
+        if match:
+            raw = match.group(1)
+            try:
+                value = json.loads(f'"{raw}"')
+            except (ValueError, TypeError):
+                value = raw
+            if value.strip():
+                return value.strip()
+        return stripped
+
+    def _expand_agent_messages(self, messages: list[MemoryItem], query: str) -> list[MemoryItem]:
+        """One MemoryItem per inter-agent message, not one per search call."""
+        expanded: list[MemoryItem] = []
+        seen: set[str] = set()
+        for msg in messages:
+            entries = self._split_search_report(msg.content or "")
+            if not entries:
+                # Not a report — keep the item as-is (vector-search items are
+                # already individual entries).
+                if msg.content and msg.content.strip() not in seen:
+                    seen.add(msg.content.strip())
+                    expanded.append(
+                        MemoryItem(
+                            source="agent_message",
+                            content=msg.content,
+                            metadata={**msg.metadata, "is_agent_message": True},
+                            score=msg.score,
+                        )
+                    )
+                continue
+            for source, text in entries:
+                if "Attention:" not in text and "TASK FOR" not in text:
+                    continue  # not an inter-agent message
+                stamp = _REPORT_TS.match(text.strip())
+                when = _parse_iso(stamp.group(1)) if stamp else None
+                if when is not None and (datetime.now(timezone.utc) - when).days > BULLETIN_MAX_AGE_DAYS:
+                    continue  # history, not news — this is the stale-bulletin class
+                readable = self._message_text(text)
+                snippet = f"[{source}] {readable}" if source else readable
+                if snippet in seen:
+                    continue
+                seen.add(snippet)
+                expanded.append(
+                    MemoryItem(
+                        source="agent_message",
+                        content=snippet,
+                        metadata={"is_agent_message": True, "query": query, "report_source": source},
+                        score=msg.score,
+                    )
+                )
+        return expanded
 
     def _rank_and_dedupe(self, items: list[MemoryItem], query: str) -> list[MemoryItem]:
         """Remove near-duplicates, drop empty placeholders, and rank."""

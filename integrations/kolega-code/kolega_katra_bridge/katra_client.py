@@ -220,14 +220,23 @@ class KatraMCPClient:
         from_iso: str,
         to_iso: str,
         limit: int = 10,
+        event_type: str | None = None,
     ) -> list[MemoryItem]:
-        """Fetch recent episodic events in a time range."""
+        """Fetch recent episodic events in a time range.
+
+        ``event_type`` narrows the recall to one event class (the MCP tool
+        takes a single value). The inter-agent bulletin uses it to read the
+        team channel in TIME order — relevance order cannot tell "new" from
+        "old", which is how weeks-old messages kept arriving as a bulletin.
+        """
         args: dict[str, Any] = {
             "user_id": self.config.user_id,
             "from": from_iso,
             "to": to_iso,
             "limit": limit,
         }
+        if event_type:
+            args["event_type"] = event_type
         if self.config.shared_id:
             args["shared_id"] = self.config.shared_id
 
