@@ -10,7 +10,7 @@
 #
 # Usage (per machine):
 #   KATRA_USER_ID=satori KATRA_HOST=localhost      kolega-update.sh   # on the Katra host
-#   KATRA_USER_ID=zefir  KATRA_HOST=100.101.206.13 kolega-update.sh   # on a client machine
+#   KATRA_USER_ID=zefir  KATRA_HOST=<katra-host> kolega-update.sh   # on a client machine
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
