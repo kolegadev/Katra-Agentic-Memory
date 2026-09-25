@@ -60,6 +60,15 @@ export const UNIQUE_INDEXES: Record<string, string[][]> = {
   imagination_cycle_states: [['user_id', 'mission_id']],
   imagination_cycles: [['user_id', 'mission_id', 'cycle_id']],
   idea_candidate_outcomes: [['user_id', 'seed_id', 'outcome']],
+  // ITER-8: the cognitive team's mode assignments, inheritance envelopes and
+  // portfolios (allocation / first pass / synthesis share one collection and are
+  // discriminated by `kind`). Each key is the DERIVED id the service writes, so
+  // "a re-run of the same grant, allocation or synthesis writes nothing new —
+  // and a concurrent loser reads the winner's row" is observable here the way
+  // the real deployment's unique index makes it observable.
+  thinking_mode_assignments: [['assignment_id']],
+  inheritance_envelopes: [['envelope_id']],
+  cognitive_portfolios: [['portfolio_id']],
 };
 
 export interface FakeIndex {

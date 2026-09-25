@@ -53,6 +53,17 @@ export const PERSONAL_KINDS: readonly string[] = [
   'imagination_cycle_states',
   'imagination_cycles',
   'idea_candidate_outcomes',
+  // ITER-8 (cognitive team): the mode assignments, the inheritance envelopes and
+  // the cognitive portfolios (allocation / first pass / synthesis) are personal
+  // by construction — a mode is one identity's own working disposition on a
+  // mission, an envelope is the parent's own bounded grant to a spawned scope,
+  // and a portfolio names which of ITS candidates an evaluator will look at.
+  // All three are listed by the collection they protect, and nothing in this
+  // iteration writes a shared scope at all: a synthesis carries
+  // `promoted: false`, and promotion remains Phase 5's, on the baton.
+  'thinking_mode_assignments',
+  'inheritance_envelopes',
+  'cognitive_portfolios',
 ];
 
 /** Default shared scope for every non-personal write. */

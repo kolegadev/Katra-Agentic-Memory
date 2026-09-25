@@ -50,6 +50,12 @@ describe('resolveWriteScope — personal kinds are forced private', () => {
     // compiled baton is the one artifact this feature may share, written
     // privately at compile time and promoted by the gated promoter) nor
     // `creative_baton_promotions` (the team-scoped audit of that promotion).
+    // ITER-8 added the cognitive team's three stores: a mode assignment is one
+    // identity's own working disposition on a mission, an inheritance envelope
+    // is the parent's own bounded grant to a spawned scope, and a cognitive
+    // portfolio (allocation / first pass / synthesis) names which of ITS
+    // candidates an evaluator will look at. Nothing in that iteration writes a
+    // shared scope at all.
     expect(PERSONAL_KINDS).toEqual([
       'journal',
       'reflection',
@@ -63,6 +69,9 @@ describe('resolveWriteScope — personal kinds are forced private', () => {
       'imagination_cycle_states',
       'imagination_cycles',
       'idea_candidate_outcomes',
+      'thinking_mode_assignments',
+      'inheritance_envelopes',
+      'cognitive_portfolios',
     ]);
     expect(PERSONAL_KINDS).not.toContain('idea_archive_cells');
     expect(PERSONAL_KINDS).not.toContain('creative_batons');

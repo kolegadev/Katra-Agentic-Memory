@@ -160,7 +160,12 @@ and its quality-diversity idea archive) plus the Phase 5 quartet
 and `record_candidate_outcome` (plateau cycles, the sanitised Creative Baton,
 the controller adapter and the outcome feedback) — and, with
 `CREATIVE_BATON_PROMOTION=1` as well, `promote_creative_baton`, the only tool
-that may share a baton with the team. The cognitive-control plane adds
+that may share a baton with the team. `COGNITIVE_TEAM_ALLOCATION=1` registers
+the Phase 6 team layer — `assign_thinking_mode`, `get_active_mode`,
+`create_inheritance_envelope`, `allocate_cognitive_portfolio`,
+`plan_independent_first_pass` and `synthesize_portfolios` (ephemeral thinking
+modes, bounded inheritance, portfolio allocation, the independent first pass and
+synthesis). The cognitive-control plane adds
 25–38 tools when `COGNITIVE_CONTROL_ENABLED` is not off — see
 [MCP Tools Reference](docs/MCP-TOOLS.md).
 
@@ -233,6 +238,15 @@ are always private; everything else is team-shared by default.
   separate, explicit, idempotent call behind `CREATIVE_BATON_PROMOTION` (default
   off) that re-validates the stored payload and refuses a tampered baton;
   behind `FOCUSED_IMAGINATION` (default off)
+- **Cognitive team** — ephemeral, EXPIRING thinking modes on top of each
+  identity's own disposition (the brief's eight roles with their attention bias
+  and obligation recorded verbatim), a bounded inheritance envelope for spawned
+  work (`parent_identity_id` + an immutable disposition snapshot, never a copy
+  of private memory), a §4.5 portfolio allocator that covers the archive's
+  MISSING approach bins and reserves an independent verifier/critic, an
+  independent first pass where no agent sees a peer's ideas, and a synthesis
+  that preserves provenance and exclusion reasons verbatim and cannot promote;
+  behind `COGNITIVE_TEAM_ALLOCATION` (default off)
 - **Autonomous loop** — salience-driven autonomy; no cron, no hand-written task files
 - **Identity separation** — named identities per agent; personal always private
 - **Inter-agent message bus** — `Attention:` messages through shared memory,

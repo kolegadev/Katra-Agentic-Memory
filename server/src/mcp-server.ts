@@ -78,6 +78,13 @@ import {
   dispatchCreativeBatonTool,
 } from './services/processing/creative-baton-tools.js';
 import {
+  COGNITIVE_TEAM_TOOL_DEFS,
+  cognitiveTeamAllocationEnabled,
+  dispatchCognitiveTeamTool,
+} from './services/processing/cognitive-team-tools.js';
+import { COGNITIVE_TEAM_COLLECTIONS } from './services/processing/cognitive-team-collections.js';
+import { verifyAssignment } from './services/processing/cognitive-mode-service.js';
+import {
   effectivePersonalityConfig,
   perIdentityPersonalityEnabled,
   resolvePersonalityConfig,
@@ -1069,7 +1076,7 @@ const GetMyPersonalityInput = z.object({
 if (perIdentityPersonalityEnabled()) {
   tools.push({
     name: 'get_my_personality',
-    description: 'Returns the caller\'s resolved memory personality — profile, effective source weights, scoring, version, origin and the active thinking mode (null until Phase 6). Pinned to the caller\'s own identity: untrusted callers cannot read another identity\'s configuration.',
+    description: 'Returns the caller\'s resolved memory personality — profile, effective source weights, scoring, version, origin and the thinking mode in force right now (its mode, mission, assignment id and expiry; null when none is live — with COGNITIVE_TEAM_ALLOCATION=1 that is the newest mode assignment that has not expired). Pinned to the caller\'s own identity: untrusted callers cannot read another identity\'s configuration.',
     inputSchema: zodToJsonSchema(GetMyPersonalityInput) as Record<string, unknown>,
   });
 }
@@ -1097,6 +1104,18 @@ if (focusedImaginationEnabled()) {
       (tool) => !tool.requires_promotion_flag || creativeBatonPromotionEnabled(),
     ),
   );
+}
+
+// ── The cognitive team: modes, inheritance, allocation, first pass (ITER-8) ──
+// Registered only when COGNITIVE_TEAM_ALLOCATION is on (default off), on its
+// own flag: the family is the team layer (mode assignments, bounded
+// inheritance, portfolio allocation, an independent first pass and synthesis),
+// which is why it is not folded into FOCUSED_IMAGINATION — a deployment may run
+// the single-agent imagination surface without ever assembling a team. With the
+// flag off the six tools are absent from ListTools and the dispatch-time
+// re-check throws `Unknown tool` — indistinguishable from not existing.
+if (cognitiveTeamAllocationEnabled()) {
+  tools.push(...COGNITIVE_TEAM_TOOL_DEFS);
 }
 
 /** Names of the tools registered for the current flag/feature state. */
@@ -1268,7 +1287,10 @@ async function handleGetMyIdentity(args: unknown): Promise<TextContent[]> {
  * get_my_personality — the caller's own resolved memory personality (ITER-2).
  * Caller-pinned: user_id is resolved through resolveUserId(), so an untrusted
  * caller always reads its own record even when it passes another identity's
- * user_id. `active_mode` is reported null — thinking modes arrive in Phase 6.
+ * user_id. `active_mode` reports the NEWEST live thinking mode the identity
+ * holds (ITER-8, `COGNITIVE_TEAM_ALLOCATION`), and is read WITHOUT touching the
+ * mode collections at all while that flag is off — the flag-off contract is that
+ * nothing touches them.
  */
 export async function handleGetMyPersonality(args: unknown): Promise<TextContent[]> {
   // Dispatch-time re-check: with the flag off this is a plain unknown tool.
@@ -1278,8 +1300,10 @@ export async function handleGetMyPersonality(args: unknown): Promise<TextContent
   if (!is_database_connected()) return VAULT_DISCONNECTED;
 
   const userId = resolveUserId(input.user_id);
-  const resolved = await resolvePersonalityConfig(get_database(), userId);
+  const db = get_database();
+  const resolved = await resolvePersonalityConfig(db, userId);
   const effective = effectivePersonalityConfig(resolved);
+  const activeMode = await readNewestLiveMode(db, userId);
   return [{
     type: 'text',
     text: JSON.stringify({
@@ -1292,10 +1316,49 @@ export async function handleGetMyPersonality(args: unknown): Promise<TextContent
       version: resolved.version,
       origin: resolved.origin,
       updated_at: resolved.updated_at,
-      active_mode: null,
-      active_mode_note: 'No thinking mode is active — thinking modes arrive in Phase 6.',
+      active_mode: activeMode?.mode ?? null,
+      active_mode_mission_id: activeMode?.mission_id ?? null,
+      active_mode_expires_at: activeMode?.expires_at ?? null,
+      active_mode_assignment_id: activeMode?.assignment_id ?? null,
+      active_mode_note: activeMode
+        ? 'A thinking mode is in force for this identity on the mission named here; it expires on its own and the mission-scoped get_active_mode records the transition.'
+        : 'No thinking mode is in force for this identity.',
     }, null, 2),
   }];
+}
+
+/**
+ * The newest LIVE thinking-mode assignment for one identity, read-only: the
+ * mission-scoped `get_active_mode` is what records a read-computed expiry, so
+ * this summary never writes. With `COGNITIVE_TEAM_ALLOCATION` off nothing is
+ * read at all.
+ */
+async function readNewestLiveMode(
+  db: ReturnType<typeof get_database>,
+  userId: string,
+): Promise<{ mode: string; mission_id: string; expires_at: string; assignment_id: string } | null> {
+  if (!cognitiveTeamAllocationEnabled()) return null;
+  const nowMs = Date.now();
+  const rows = (await db
+    .collection(COGNITIVE_TEAM_COLLECTIONS.modeAssignments)
+    .find({ user_id: userId, status: 'active' }, { projection: { _id: 0 } })
+    .sort({ started_at: -1, assignment_id: 1 })
+    .limit(10)
+    .toArray()) as unknown as Array<Record<string, unknown>>;
+  for (const row of rows) {
+    const expiresAt = String(row.expires_at ?? '');
+    const expiresMs = Date.parse(expiresAt);
+    if (!Number.isFinite(expiresMs) || expiresMs <= nowMs) continue;
+    const assignment = verifyAssignment(row);
+    if (!assignment.ok) continue;
+    return {
+      mode: String(row.mode),
+      mission_id: String(row.mission_id),
+      expires_at: expiresAt,
+      assignment_id: String(row.assignment_id),
+    };
+  }
+  return null;
 }
 
 async function handleGetMindWander(args: unknown): Promise<TextContent[]> {
@@ -3974,6 +4037,17 @@ function registerHandlers(server: Server, getIdentity?: () => CallerIdentity) {
           // re-checks both, so a tool whose flag went off throws the plain
           // unknown-tool error and writes nothing.
           result = await dispatchCreativeBatonTool(name, args, caller); break;
+        case 'assign_thinking_mode':
+        case 'get_active_mode':
+        case 'create_inheritance_envelope':
+        case 'allocate_cognitive_portfolio':
+        case 'plan_independent_first_pass':
+        case 'synthesize_portfolios':
+          // ITER-8 (Phase 6): the cognitive-team family, gated on
+          // COGNITIVE_TEAM_ALLOCATION alone; the dispatcher re-checks the flag,
+          // so with it off every one of these throws the plain unknown-tool
+          // error, writes nothing and makes no model call.
+          result = await dispatchCognitiveTeamTool(name, args, caller); break;
         default: throw new Error(`Unknown tool: ${name}`);
       }
       // ── Cerebellum: procedural pattern observation ──────────

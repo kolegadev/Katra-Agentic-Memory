@@ -83,6 +83,12 @@ const SURFACE_FLAGS = [
   // only adds anything while FOCUSED_IMAGINATION is on, so the surface must be
   // measured with it on its own as well as together with the family flag.
   'CREATIVE_BATON_PROMOTION',
+  // ITER-8: the cognitive team (modes, inheritance envelopes, allocation, the
+  // independent first pass and synthesis). It is its own family flag — a
+  // deployment may run the single-agent imagination surface without ever
+  // assembling a team — so it is measured alone and in combination with every
+  // ITER-5/6/7 state above.
+  'COGNITIVE_TEAM_ALLOCATION',
 ];
 
 /** The registered tool names for one flag state (module re-loaded each time). */
@@ -214,13 +220,19 @@ describe('MCP surface — the docs state the measured default count', () => {
       { FOCUSED_IMAGINATION: '1' },
       { FOCUSED_IMAGINATION: '1', CREATIVE_BATON_PROMOTION: '1' },
       { PER_IDENTITY_PERSONALITY: '1', FOCUSED_IMAGINATION: '1', CREATIVE_BATON_PROMOTION: '1' },
+      // ITER-8: the cognitive-team family, alone and alongside every state
+      // above (its six tools must be catalogued and its flag must not perturb
+      // anybody else's measurement).
+      { COGNITIVE_TEAM_ALLOCATION: '1' },
+      { COGNITIVE_TEAM_ALLOCATION: '1', PER_IDENTITY_PERSONALITY: '1' },
+      { COGNITIVE_TEAM_ALLOCATION: '1', FOCUSED_IMAGINATION: '1', CREATIVE_BATON_PROMOTION: '1' },
     ]) {
       states.push(await registeredSurface(env));
     }
-    // …which, since ITER-7, is the surface of ten flag-gated tools: one
+    // …which, since ITER-8, is the surface of sixteen flag-gated tools: one
     // personality tool, the ITER-5 salience pair, the ITER-6 imagination pair,
-    // the four ITER-7 cycle/baton/adapter/outcome tools and — only with the
-    // promotion flag too — `promote_creative_baton`.
+    // the four ITER-7 cycle/baton/adapter/outcome tools, `promote_creative_baton`
+    // (only with the promotion flag too) and the six cognitive-team tools.
     const surface = [...new Set(states.flat())];
     const catalogued = cataloguedTools();
 
@@ -393,6 +405,88 @@ describe('MCP surface — the docs state the measured flag-gated additions', () 
     }
     // The baton row the docs state must be the measured pair.
     expect(MCP_TOOLS).toContain(`**${withFlag.length} / ${withPromotion.length}**`);
+  });
+
+  it('COGNITIVE_TEAM_ALLOCATION adds exactly the six catalogued tools it owns', async () => {
+    // ITER-8 gated the whole cognitive-team family on its OWN flag: the eight
+    // ITER-5/6/7 tools above are unchanged by it, and it is unchanged by them.
+    const withoutFlag = await registeredSurface();
+    const withTeam = await registeredSurface({ COGNITIVE_TEAM_ALLOCATION: '1' });
+    const added = withTeam.filter((name) => !withoutFlag.includes(name));
+
+    expect(withTeam.length - withoutFlag.length).toBe(6);
+    expect(added.sort()).toEqual([
+      'allocate_cognitive_portfolio',
+      'assign_thinking_mode',
+      'create_inheritance_envelope',
+      'get_active_mode',
+      'plan_independent_first_pass',
+      'synthesize_portfolios',
+    ]);
+    for (const name of added) expect(withoutFlag).not.toContain(name);
+
+    expect(flagRow('`COGNITIVE_TEAM_ALLOCATION=1`').total).toBe(withTeam.length);
+    expect(flagRow('`COGNITIVE_TEAM_ALLOCATION=1`').added).toMatch(
+      new RegExp(`^\\+${withTeam.length - withoutFlag.length}\\b`),
+    );
+
+    // It is independent of every other row: it adds the same six wherever it is
+    // set, and setting it never changes another family's contribution.
+    const withPersonality = await registeredSurface({
+      PER_IDENTITY_PERSONALITY: '1',
+      COGNITIVE_TEAM_ALLOCATION: '1',
+    });
+    const withImagination = await registeredSurface({
+      FOCUSED_IMAGINATION: '1',
+      COGNITIVE_TEAM_ALLOCATION: '1',
+    });
+    const withPromotion = await registeredSurface({
+      FOCUSED_IMAGINATION: '1',
+      CREATIVE_BATON_PROMOTION: '1',
+      COGNITIVE_TEAM_ALLOCATION: '1',
+    });
+    const withCognitive = await registeredSurface({
+      COGNITIVE_CONTROL_ENABLED: 'read',
+      COGNITIVE_TEAM_ALLOCATION: '1',
+    });
+    const withScheduler = await registeredSurface({
+      COGNITIVE_CONTROL_ENABLED: 'read',
+      COGNITIVE_SCHEDULER_MODE: 'shadow',
+      COGNITIVE_TEAM_ALLOCATION: '1',
+    });
+    const everything = await registeredSurface({
+      COGNITIVE_CONTROL_ENABLED: 'read',
+      COGNITIVE_SCHEDULER_MODE: 'shadow',
+      PER_IDENTITY_PERSONALITY: '1',
+      FOCUSED_IMAGINATION: '1',
+      CREATIVE_BATON_PROMOTION: '1',
+      COGNITIVE_TEAM_ALLOCATION: '1',
+    });
+    expect(withPersonality.length).toBe(withoutFlag.length + 1 + 6);
+    expect(withImagination.length).toBe(withTeam.length + 8);
+    expect(withPromotion.length).toBe(withTeam.length + 9);
+    expect(withCognitive.length).toBe(withTeam.length + 25);
+    expect(withScheduler.length).toBe(withTeam.length + 38);
+    expect(everything.length).toBe(withScheduler.length + 10); // +1 personality, +9 imagination family
+    for (const total of [
+      withTeam.length,
+      withPersonality.length,
+      withImagination.length,
+      withPromotion.length,
+      withCognitive.length,
+      withScheduler.length,
+      everything.length,
+    ]) {
+      expect(MCP_TOOLS).toContain(`**${total}**`);
+    }
+    // The number the prose states for the family on its own must be measured.
+    expect(MCP_TOOLS).toContain(`**${withTeam.length}**`);
+
+    // FOCUSED_IMAGINATION on its own still adds exactly its eight: the ITER-8
+    // family is NOT reachable through it.
+    const imaginationOnly = await registeredSurface({ FOCUSED_IMAGINATION: '1' });
+    expect(imaginationOnly.length - withoutFlag.length).toBe(8);
+    for (const name of added) expect(imaginationOnly).not.toContain(name);
   });
 });
 

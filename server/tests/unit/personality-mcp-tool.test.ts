@@ -48,6 +48,8 @@ const untrustedA: CallerIdentity = { user_id: 'agent-a', trusted: false };
 const untrustedB: CallerIdentity = { user_id: 'agent-b', trusted: false };
 const TRUSTED_OPERATOR: CallerIdentity = { user_id: 'operator', trusted: true };
 
+
+
 const LEGACY_DOC = {
   key: 'personality_config',
   personality: 'scholar',
@@ -99,6 +101,9 @@ beforeEach(() => {
   // ITER-7: the promotion capability is a second flag that only adds a tool
   // while the family flag is on.
   delete process.env.CREATIVE_BATON_PROMOTION;
+  // ITER-8: the cognitive-team family is its own flag; the registration test
+  // below sets it, so it must not leak into the payload tests.
+  delete process.env.COGNITIVE_TEAM_ALLOCATION;
 });
 
 afterEach(() => {
@@ -108,6 +113,7 @@ afterEach(() => {
   // ITER-7: the promotion capability is a second flag that only adds a tool
   // while the family flag is on.
   delete process.env.CREATIVE_BATON_PROMOTION;
+  delete process.env.COGNITIVE_TEAM_ALLOCATION;
 });
 
 describe('get_my_personality — registration is gated by the flag', () => {
@@ -146,6 +152,11 @@ describe('get_my_personality — registration is gated by the flag', () => {
       [undefined, { FOCUSED_IMAGINATION: '1' }],
       ['1', { FOCUSED_IMAGINATION: '1' }],
       ['1', { FOCUSED_IMAGINATION: '1', CREATIVE_BATON_PROMOTION: '1' }],
+      // ITER-8 gated the cognitive-team family on its OWN flag, so its state is
+      // measured here too — otherwise its six catalogued tools would look
+      // documented-but-unregistered.
+      [undefined, { COGNITIVE_TEAM_ALLOCATION: '1' }],
+      ['1', { COGNITIVE_TEAM_ALLOCATION: '1', FOCUSED_IMAGINATION: '1', CREATIVE_BATON_PROMOTION: '1' }],
     ] as Array<[string | undefined, Record<string, string>]>) {
       states.push(await registeredNamesWithFlag(value, extra));
     }
@@ -168,6 +179,18 @@ describe('get_my_personality — registration is gated by the flag', () => {
       'promote_creative_baton',
       'baton_candidates_to_work_items',
       'record_candidate_outcome',
+    ]) {
+      expect(documented).toContain(name);
+    }
+    // ITER-8 added the cognitive-team family behind its own flag; all six have
+    // catalogue entries, so none of that surface is invisible either.
+    for (const name of [
+      'assign_thinking_mode',
+      'get_active_mode',
+      'create_inheritance_envelope',
+      'allocate_cognitive_portfolio',
+      'plan_independent_first_pass',
+      'synthesize_portfolios',
     ]) {
       expect(documented).toContain(name);
     }
@@ -206,6 +229,7 @@ describe('get_my_personality — resolved payload', () => {
   });
 
   it('returns the caller’s own record with effective weights, version and origin', async () => {
+    delete process.env.COGNITIVE_TEAM_ALLOCATION;
     settings().docs.push(structuredClone(LEGACY_DOC), structuredClone(IDENTITY_A_DOC));
 
     const payload = await callTool({}, untrustedA);
@@ -224,7 +248,14 @@ describe('get_my_personality — resolved payload', () => {
     expect(payload.source_weights.agent_message).toBe(AGENT_MESSAGE_WEIGHT);
     // Thinking modes are Phase 6.
     expect(payload.active_mode).toBeNull();
-    expect(payload.active_mode_note).toContain('Phase 6');
+    // ITER-8: the field is real now — it reports the newest LIVE thinking-mode
+    // assignment, and with `COGNITIVE_TEAM_ALLOCATION` off nothing is read at
+    // all (this identity has no assignment either way).
+    expect(payload.active_mode_note).toContain('No thinking mode is in force');
+    expect(payload.active_mode_assignment_id).toBeNull();
+    // With COGNITIVE_TEAM_ALLOCATION off the mode collection is not even
+    // CREATED by this read — the flag-off contract is that nothing touches it.
+    expect(FAKE_DB.collections.has('thinking_mode_assignments')).toBe(false);
   });
 
   it('reports origin legacy when the identity has no record, with the profile budget', async () => {

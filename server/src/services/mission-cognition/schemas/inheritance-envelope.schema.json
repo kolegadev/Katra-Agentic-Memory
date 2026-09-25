@@ -1,0 +1,210 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://katra.dev/schemas/inheritance-envelope.schema.json",
+  "title": "Katra Inheritance Envelope",
+  "description": "The bounded, immutable-bounded inheritance grant a spawned cognitive agent receives (ITER-8, Phase 6). IT IS AN IMMUTABLE REFERENCE, NEVER A COPY: it names the parent identity, the parent's disposition snapshot (profile + version + hash), the immutable bounds (the agent-message priority 10.0, the working-memory/vector floors, the per-source cap bounds and the privacy policy), the approved dimensions the child may bias, the parent's baseline values and the child's expiry. Journals, reflections, salience traces, seeds, beliefs and every other private store have no place in this shape at all, and the taint suite proves none of their text reaches a document of this type, its hash input or any tool output. Strictness: `additionalProperties` is FALSE at the top level and on every object, so an extra key is not merely dropped by the creator — it fails validation at CREATE and at READ time, which is what makes the closed schema the layer that refuses a packet carrying a field the creator never wrote, hash or no hash.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "envelope_version",
+    "envelope_id",
+    "root_envelope_id",
+    "parent_envelope_id",
+    "parent_identity_id",
+    "mission_id",
+    "child_label",
+    "mode",
+    "disposition_snapshot",
+    "bounds",
+    "baseline",
+    "allowed_dimensions",
+    "effective_scoring",
+    "mutations",
+    "expires_at",
+    "policy_hash",
+    "privacy",
+    "created_at"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "envelope_version": {
+      "description": "The envelope FORMAT version. A stored envelope is used only if its version is one this deployment can validate.",
+      "const": "1.0"
+    },
+    "envelope_id": {
+      "description": "Derived: sha256 over the parent, the mission, the child label, the mode, the disposition hash, the window and (for a derived envelope) the mutation chain. Never a random UUID.",
+      "type": "string",
+      "minLength": 1
+    },
+    "root_envelope_id": {
+      "description": "The id of the envelope this one descends from (its own id when it is a root). A bounded mutation produces a NEW document; the chain is what makes 'the parent's own configuration was never modified' checkable.",
+      "type": "string",
+      "minLength": 1
+    },
+    "parent_envelope_id": {
+      "description": "The envelope this one was derived from, or null for a root.",
+      "type": ["string", "null"]
+    },
+    "parent_identity_id": {
+      "description": "The identity whose disposition this scope inherits. The child receives a REFERENCE to it — never its private memory.",
+      "type": "string",
+      "minLength": 1
+    },
+    "mission_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "child_label": {
+      "description": "The label of the spawned scope (a role or a machine name the parent chose). It is a LABEL, not an identity claim: it grants no authenticated continuity.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "mode": {
+      "description": "The thinking mode this envelope was granted for, or null for a mode-free scope (which may bias every approved dimension).",
+      "type": ["string", "null"],
+      "enum": [
+        "philosopher",
+        "technician",
+        "strategist",
+        "creative",
+        "analyst",
+        "critic",
+        "verifier",
+        "synthesizer",
+        null
+      ]
+    },
+    "disposition_snapshot": {
+      "description": "The immutable disposition reference: the parent's profile name, its stored version and a hash over the allow-listed snapshot subset (profile, version, source_weights, scoring, max_context_tokens).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "version", "hash"],
+      "properties": {
+        "profile": { "type": "string", "minLength": 1 },
+        "version": { "type": "integer", "minimum": 0 },
+        "hash": { "type": "string", "minLength": 1 }
+      }
+    },
+    "bounds": {
+      "description": "The immutable bounds. A mode or a mutation may move an APPROVED dimension inside these bounds and can never move them.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["message_priority", "floors", "caps", "privacy_policy"],
+      "properties": {
+        "message_priority": {
+          "description": "The agent-message retrieval priority — the highest-priority retrieval, immutable at 10.0.",
+          "const": 10.0
+        },
+        "floors": {
+          "description": "The working-memory / vector-search task floors, inherited unchanged.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["working_memory", "vector_search"],
+          "properties": {
+            "working_memory": { "type": "number", "exclusiveMinimum": 0 },
+            "vector_search": { "type": "number", "exclusiveMinimum": 0 }
+          }
+        },
+        "caps": {
+          "description": "The bounds a bounded mutation may move inside: the parent's per-source cap (a child may tighten it, never widen it) and the documented k band and vector fetch ceiling.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["max_single_source_pct", "k_floor", "k_ceiling", "vector_fetch_limit_max"],
+          "properties": {
+            "max_single_source_pct": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+            "k_floor": { "type": "number", "exclusiveMinimum": 0 },
+            "k_ceiling": { "type": "number", "exclusiveMinimum": 0 },
+            "vector_fetch_limit_max": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "privacy_policy": { "const": "immutable" }
+      }
+    },
+    "baseline": {
+      "description": "The parent's own values. Every documented range is measured from here, so a chain of small mutations can never drift beyond the band.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["k", "vector_fetch_limit", "cap_pct"],
+      "properties": {
+        "k": { "type": "number", "exclusiveMinimum": 0 },
+        "vector_fetch_limit": { "type": "integer", "minimum": 1 },
+        "cap_pct": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 }
+      }
+    },
+    "allowed_dimensions": {
+      "description": "The approved dimensions this scope may bias. The vocabulary is closed, a hard invariant is not in it, and a mode narrows it further to the dimensions that mode may bias.",
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "enum": ["k", "vector_fetch_limit", "cap_pct"] }
+    },
+    "effective_scoring": {
+      "description": "The scoring this scope actually resolves to: the parent's own values with the recorded mutations applied in bounds. The floors and the agent-message weight are carried unchanged, which is what makes them checkable at verify time.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "relevance_multiplier",
+        "vector_fetch_limit",
+        "max_single_source_pct",
+        "working_memory_floor",
+        "vector_search_floor",
+        "agent_message_weight"
+      ],
+      "properties": {
+        "profile": { "type": "string", "minLength": 1 },
+        "relevance_multiplier": { "type": "number", "exclusiveMinimum": 0 },
+        "vector_fetch_limit": { "type": "integer", "minimum": 1 },
+        "max_single_source_pct": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+        "working_memory_floor": { "type": "number", "exclusiveMinimum": 0 },
+        "vector_search_floor": { "type": "number", "exclusiveMinimum": 0 },
+        "agent_message_weight": { "const": 10.0 }
+      }
+    },
+    "mutations": {
+      "description": "The bounded-mutation history, in order: what was asked for, what was applied after clamping, and the range it was clamped into. A refusal never appears here — a refused mutation is not applied at all.",
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["dimension", "requested", "applied", "clamped", "min", "max", "source", "at", "by"],
+        "properties": {
+          "dimension": { "enum": ["k", "vector_fetch_limit", "cap_pct"] },
+          "requested": { "type": "number" },
+          "applied": { "type": "number" },
+          "clamped": { "type": "boolean" },
+          "min": { "type": "number" },
+          "max": { "type": "number" },
+          "source": { "enum": ["caller", "mode_default_bias"] },
+          "at": { "type": "string", "minLength": 1 },
+          "by": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "expires_at": {
+      "description": "The window this scope was granted for. A mutation NEVER moves it: a derived envelope expires with its parent.",
+      "type": "string",
+      "minLength": 1
+    },
+    "policy_hash": {
+      "description": "sha256 over the canonical payload (the stored document with the hash removed and `privacy.shared` normalised to false). Recomputed on every read for use.",
+      "type": "string",
+      "minLength": 1
+    },
+    "privacy": {
+      "description": "The privacy attestation. An envelope is a private, identity-owned grant: it carries no private content and is never shared.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["private_content_included", "shared"],
+      "properties": {
+        "private_content_included": { "const": false },
+        "shared": { "const": false }
+      }
+    },
+    "created_at": { "type": "string", "minLength": 1 }
+  }
+}

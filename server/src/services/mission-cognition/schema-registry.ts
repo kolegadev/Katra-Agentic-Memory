@@ -33,6 +33,12 @@ export const SCHEMA_IDS = {
   // stamps a shared scope, so a tampered payload can neither be stored nor
   // promoted.
   creativeBaton: 'https://katra.dev/schemas/creative-baton.schema.json',
+  // ITER-8: the bounded inheritance envelope a spawned cognitive agent
+  // receives. It is validated before it is stored and re-validated before every
+  // read for use, and it is CLOSED (`additionalProperties: false` everywhere),
+  // so a field the creator never wrote fails even when the policy hash was
+  // recomputed.
+  inheritanceEnvelope: 'https://katra.dev/schemas/inheritance-envelope.schema.json',
 } as const;
 
 let _ajv: Ajv2020 | null = null;

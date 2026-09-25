@@ -6,7 +6,7 @@ Katra (the self-hosted cognitive memory appliance) exposes **81 tools** via the 
 
 `tools/list` reports **81 tools** on a default deployment: `COGNITIVE_CONTROL_ENABLED` off,
 `COGNITIVE_SCHEDULER_MODE` off, `PER_IDENTITY_PERSONALITY` off, `FOCUSED_IMAGINATION` off,
-`CREATIVE_BATON_PROMOTION` off. That
+`CREATIVE_BATON_PROMOTION` off, `COGNITIVE_TEAM_ALLOCATION` off. That
 number is *measured, not hand-maintained* — `server/tests/unit/mcp-tool-surface-docs.test.ts` counts
 the registered tools in `server/src/mcp-server.ts` and fails if this page or the README states
 anything else.
@@ -14,7 +14,9 @@ anything else.
 Those 81 are **66 catalogued tools** (every `###` entry below except the flag-gated
 `get_my_personality`, `run_focused_consolidation`, `get_salience_trace`,
 `generate_imagination_seeds`, `get_idea_archive`, `run_imagination_cycle`, `get_creative_baton`,
-`promote_creative_baton`, `baton_candidates_to_work_items` and `record_candidate_outcome`) plus
+`promote_creative_baton`, `baton_candidates_to_work_items`, `record_candidate_outcome`,
+`assign_thinking_mode`, `get_active_mode`, `create_inheritance_envelope`,
+`allocate_cognitive_portfolio`, `plan_independent_first_pass` and `synthesize_portfolios`) plus
 **15 tools in two families that have their own reference** instead of a catalogue entry:
 
 | Family | Tools | Names |
@@ -35,6 +37,7 @@ Feature flags grow the same surface. Totals are `tools/list` counts:
 | `PER_IDENTITY_PERSONALITY=1` | **82** | +1 — `get_my_personality` (catalogued below) |
 | `FOCUSED_IMAGINATION=1` | **89** | +8 — `run_focused_consolidation`, `get_salience_trace`, `generate_imagination_seeds`, `get_idea_archive`, `run_imagination_cycle`, `get_creative_baton`, `baton_candidates_to_work_items`, `record_candidate_outcome` (catalogued below) |
 | `FOCUSED_IMAGINATION=1` + `CREATIVE_BATON_PROMOTION=1` | **90** | +1 — `promote_creative_baton` (the promotion flag on its own adds nothing: it is meaningless without the family flag) |
+| `COGNITIVE_TEAM_ALLOCATION=1` | **87** | +6 — `assign_thinking_mode`, `get_active_mode`, `create_inheritance_envelope`, `allocate_cognitive_portfolio`, `plan_independent_first_pass`, `synthesize_portfolios` (catalogued below; the family is gated on its own flag, so a deployment may run the single-agent imagination surface without ever assembling a team) |
 | `COGNITIVE_CONTROL_ENABLED=read` or `write` | **106** | +25 — mission state, state deltas, epistemic ledger, batons, allocator evidence/counterfactuals, skill-candidate lifecycle (`server/src/services/mission-cognition/`) |
 | `COGNITIVE_SCHEDULER_MODE=shadow` or `recommend` or `allocate_internal` (with the row above) | **119** | +13 more — scheduler queue/decision, uncertainty, trigger and experiment tools |
 | `PER_IDENTITY_PERSONALITY=1` with a cognitive-control row | **82 / 107 / 120** | both — the flags are independent |
@@ -46,6 +49,13 @@ cognitive-control row, **128** with a scheduler mode, and **129** with all of th
 contributed the salience trace pair, ITER-6 the imagination pair, ITER-7 the
 cycle/baton/adapter/outcome quartet and — behind the second flag — the promotion; the default
 surface is unchanged because every one of them is flag-gated.)
+
+`COGNITIVE_TEAM_ALLOCATION` is independent of every other row as well: it adds its **6**
+wherever it is set — **87** on its own, **88** with `PER_IDENTITY_PERSONALITY=1`, **95** with
+`FOCUSED_IMAGINATION=1`, **96** with the promotion flag too, **112** with the cognitive-control row,
+**125** with a scheduler mode and **135** with everything on. (ITER-8 contributed the team layer:
+expiring thinking modes, the bounded inheritance envelope, the portfolio allocator, the independent
+first pass and synthesis.)
 
 `COGNITIVE_ACTIVATION_KILL_SWITCH=1` forces the scheduler mode back to `off` (those last 13 tools
 disappear again); the cognitive-control plane is off in production by default.
@@ -1143,4 +1153,228 @@ outcome for the same seed is a new record). **Write.**
 | outcome | `useful_information` \| `mere_variance` \| `unnecessary_cost` | Yes | — |
 | baton_id | string | No | — (recorded on the outcome row when given) |
 | detail | string (≤2000) | No | — (stays on the PRIVATE outcome row; never in telemetry) |
+| user_id | string | No | caller's identity (trusted callers only may override) |
+
+## Cognitive team — modes, inheritance, allocation, first pass, synthesis (`COGNITIVE_TEAM_ALLOCATION`, default off)
+
+Phase 6 turns one identity into a **team** of cognitive roles without letting any of them read a
+peer's ideas or a parent's private memory. Everything is mission-scoped, ephemeral and private: the
+three collections this family owns (`thinking_mode_assignments`, `inheritance_envelopes`,
+`cognitive_portfolios`) are **personal kinds**, so no row of theirs can ever carry a `shared_id` —
+and nothing in this iteration writes a shared scope at all.
+
+**Modes expire.** A thinking mode is an assignment with a **required reason**, a start, an explicit
+`expires_at`, the policy version, the inheritance policy, the parent's disposition snapshot
+**version** and a reset behaviour. Expiry is **computed at READ** — there is no cron, no sweep and
+no background timer — and the transition to `expired` is recorded **once** (a guarded update that
+pins both the row's status and the exact `expires_at` the read computed from, so a renewal landing
+between a read's snapshot and its write is never reverted by the stale read; a guard that loses
+re-reads the row and reports the state that is actually stored). The only code that moves
+`expires_at` is an explicit `renew` (which requires a reason and extends from `max(now, current
+expiry)`); an assignment whose window has passed cannot be renewed at all, so a lapsed mode is
+replaced by a new assignment rather than revived in place. Nothing silently extends a mode: reads
+never touch the window, and the assignment's GRANT (mode, reason, actor, start, TTL, policy names,
+snapshot version, reset behaviour) is hashed, so a tampered grant is refused by name. The bounds are
+enforced in the **service**, not only in this surface's schema: a reason is capped at 500 characters
+(refused rather than truncated), a TTL must be a **number** inside the documented window (the string
+`'60000'` is refused, never coerced), and a mode is only granted or renewed on a mission that is
+still runnable — `completed`, `cancelled`, a draft or any other state is refused by name
+(`mission_not_runnable`) before anything is written.
+
+**The catalogue is the brief's Appendix C, verbatim** — the eight modes with the attention bias and
+the obligation the brief states, each declaring which **approved dimensions** it may bias (`k` — the
+retrieval relevance multiplier within ±25% of the parent's own value; `vector_fetch_limit` — 1..20;
+`cap_pct` — the per-source cap, which a child may tighten and never widen) and never a hard
+invariant. The approved vocabulary does not CONTAIN an invariant, so "a mode may bias an approved
+dimension and never a hard invariant" is a property of the vocabulary rather than a rule to remember.
+A mode also carries the descriptor bins it tends to occupy (which is what the allocator's coverage
+term reads), the engine spread it drives (`explore` / `balanced` / `exploit`) and the operator-family
+budget of its generation round — the two knobs through which a mode reaches the ITER-6 engine
+without reimplementing it.
+
+**Inheritance is bounded.** An envelope is an IMMUTABLE REFERENCE: `parent_identity_id` plus a
+disposition snapshot (profile, version and a hash over an allow-listed subset of the parent's
+configuration), the immutable bounds (the agent-message priority **10.0**, the working-memory/vector
+floors, the per-source cap bounds and the privacy policy), the approved dimensions this scope may
+bias, the parent's baseline values and an expiry. It carries no journal, reflection, trace, seed or
+belief — a taint suite plants markers in every one of those stores and proves none reaches an
+envelope, its hash input or any tool output. A bounded mutation is **clamped** into its documented
+range and recorded in the envelope's `mutations` history (requested → applied, the range, and where
+it came from); a request that cannot be honoured is refused **by name**:
+
+| Refusal | What it means |
+| --- | --- |
+| `immutable_invariant` | the message priority (and every alias of it), the floors, the cap bounds or the privacy policy |
+| `dimension_not_approved` | a dimension outside the approved vocabulary, or one this envelope's MODE may not bias |
+| `out_of_bounds` | not a finite number, or an attempt to WIDEN a per-source cap above the parent's own bound |
+
+A mutation produces a **new derived envelope** (the parent's row is never rewritten, and the derived
+scope expires with its parent — a mutation never moves a window). `verifyEnvelope` is the Creative
+Baton's discipline: the version, a CLOSED registered schema (`inheritance-envelope.schema.json`), the
+recomputed `policy_hash`, and the invariants re-checked on the decoded values — so a tamperer who
+recomputed the hash is still refused for the cap it widened, the band it stretched or the weight it
+lowered. The parent's own configuration is never touched: this family has no write path to
+`system_settings` at all.
+
+**Allocation builds a PORTFOLIO, not one winner.** The brief's §4.5 score, with every term and input
+reported in `allocation_report`: `0.35 * emotional_proximity + 0.25 * task_skill_fit + 0.20 *
+missing_approach_coverage + 0.10 * recent_success + 0.10 * availability - convergence_penalty -
+load_penalty`. `missing_approach_coverage` is read from the archive's coverage gaps, so the portfolio
+targets the descriptor bins NOTHING occupies; `recent_success` comes from the identity's recorded
+candidate outcomes; `availability` from its live mode assignments; the convergence penalty punishes
+sharing a mode with peers AND picking one more agent of a mode the portfolio already holds — the
+duplicate-pick cost is measured against the portfolio AS IT STANDS on every comparison, so it
+decides the pick rather than being reported after it; the load penalty punishes an identity that has
+just been cycling inside the persisted window. Selection is a documented greedy pass — coverage,
+then the reserved evaluator, then fill — with identity-order tie-breaks, so equal inputs always
+produce the same portfolio, and the `portfolio_id` is derived from the candidate **set** (identities
+and modes, normalised and sorted), so re-ordering the same candidates reuses the stored row instead
+of writing a second, identical one. One **verifier/critic that is not among the generators** is
+reserved with the reason `independent evaluator`; when the team holds none, the portfolio says so by
+name instead of inventing one.
+
+**The first pass is independent.** `plan_independent_first_pass` turns the team into per-agent
+generation requests carrying ONLY the mission digest (ids, version, title, intent, the trace's
+problem-state digest, a summary of signal SHAPES, the coverage gaps and the exclusions as
+`{ref, kind, reason, text_hash}` fingerprints), the agent's OWN envelope and mode, and the engine
+settings derived from them — no peer seeds, no peer identities, no peer envelope, no private memory.
+With `run: true` each READY request runs through ITER-6's engine, which reads that agent's OWN trace
+and archive (both `{user_id, mission_id}`-keyed, so the isolation is structural rather than a filter
+that could be forgotten). Each agent's stream is derived from the pass, its MODE and its envelope
+scoring — never from a peer and never from the identity's private state. A request whose agent has no
+trace, or whose envelope is missing, expired, tampered with or granted for another mode, comes back
+`blocked` with the named reason and makes zero model calls.
+
+**Synthesis preserves.** `synthesize_portfolios` merges the portfolios with provenance intact: a
+candidate several agents produced keeps EVERY source in its `provenance` (the merge collapses the
+statement, never the lineage), the exclusions ride along VERBATIM as fingerprints, and supplying a
+list that DROPS one is refused (`exclusion_dropped`) or REWRITES one (`exclusion_rewritten`). A
+synthesizer **cannot add** an exclusion either: one that is supplied but NOT on record is IGNORED —
+it never reaches the artifact, and the tool names it back under *Ignored* rather than dropping it
+silently — because an exclusion is the mission's record of what it ruled out, and a merge preserves
+that record instead of extending it. The merged artifact appends a `synthesis` lineage record and
+**cannot promote**: it is a private row carrying `promoted: false`, and no promotion path exists in
+this family.
+
+### assign_thinking_mode
+
+Assign, renew or expire an ephemeral thinking mode for a mission. `action: "assign"` (the default)
+records the reason (≤500 characters — refused, never truncated), the TTL (default 4h; a NUMBER of
+milliseconds, refused outside the documented 1 minute..7 day window rather than clamped, and never
+coerced from a string), the policy version, the inheritance policy, the parent's disposition
+snapshot version and the reset behaviour, and returns the catalogue entry with the mode's attention
+bias and obligation **verbatim**. A mode is working state, so assigning or renewing one on a mission
+that is not runnable (`completed`, `cancelled`, a draft or any other state) is refused by name
+(`mission_not_runnable`) before anything is written. `action: "renew"` is the ONLY path that moves
+`expires_at` — it requires a reason and extends from `max(now, current expiry)`; an expired
+assignment cannot be renewed (assign the mode again with a fresh reason). `action: "expire"` ends a
+mode early, with a reason, and is idempotent (a second attempt reports `already_expired` and rewrites
+nothing). An untrusted caller may only act for its own identity. **Write.**
+
+| Parameter | Type | Required | Default |
+|---|---|---|---|
+| action | `assign` \| `renew` \| `expire` | No | `assign` |
+| mission_id | string | Yes | — |
+| mode | one of the eight Appendix C modes | Yes for `assign` | — |
+| reason | string (≤500) | Yes | — (every transition needs one) |
+| ttl_ms | integer | No | 4 hours (`renew` reuses the assignment's TTL) |
+| assignment_id | string | Yes for `renew`/`expire` | — |
+| user_id | string | No | caller's identity (trusted callers only may override) |
+
+### get_active_mode
+
+Read the thinking mode in force for a mission, with **expiry computed at read**: an assignment past
+its window is reported `expired` (and recorded as expired exactly once — there is no cron anywhere),
+together with the catalogue entry (attention bias, obligation, the approved dimensions it may bias,
+its attention bins and its engine spread), the window, the renewals and the recorded expiry. It also
+lists the newest recorded assignments. Reads are **pinned**: an untrusted caller is served its OWN
+mode, and NAMING another identity is refused by name rather than silently answered for the caller —
+a mission's owner reads the mode it holds on its mission under its own identity, and another
+identity's assignment needs a trusted caller. **Read.**
+
+| Parameter | Type | Required | Default |
+|---|---|---|---|
+| mission_id | string | Yes | — |
+| limit | integer (1..50) | No | 10 (the recorded-assignment list) |
+| user_id | string | No | caller's identity (trusted callers only may override) |
+
+### create_inheritance_envelope
+
+Create the bounded inheritance grant a spawned cognitive scope receives, or apply bounded MUTATIONS
+to one (`envelope_id`). The envelope is an immutable reference (parent identity + disposition
+snapshot + immutable bounds + approved dimensions + the parent's baseline + an expiry) and carries
+no private memory of any kind. A mutation is clamped into its documented range and recorded in the
+envelope's history; anything else is refused BY NAME — `immutable_invariant` (the message priority,
+the floors, the cap bounds, the privacy policy and every alias), `dimension_not_approved` (an unknown
+dimension, or one this envelope's mode may not bias) or `out_of_bounds` (not a finite number, or an
+attempt to widen a per-source cap). Refused mutations are reported together with the envelope the
+accepted ones produced, and the parent's own configuration is never modified. **Write.**
+
+| Parameter | Type | Required | Default |
+|---|---|---|---|
+| mission_id | string | Yes | — |
+| child_label | string (≤120) | Yes to create | — |
+| envelope_id | string | Yes to mutate | — |
+| mode | one of the eight modes | No | no mode (every approved dimension is open) |
+| ttl_ms | integer | No | 4 hours |
+| mutations | `[{dimension, value}]` (≤16) | No | — (the mode's own default bias is applied either way) |
+| user_id | string | No | caller's identity (trusted callers only may override) |
+
+### allocate_cognitive_portfolio
+
+Allocate a portfolio — not one winner — for a mission, with every score component and penalty
+reported with its inputs. `missing_approach_coverage` comes from the archive's coverage gaps unless
+`missing_bins` is supplied, so the allocation targets the bins nothing occupies; `recent_success` is
+derived from the identity's recorded candidate outcomes; `availability` from its live mode
+assignments; the convergence penalty punishes sharing a mode with peers and picking a further agent
+of a mode the portfolio already holds; the load penalty punishes recent cycling. The result reserves
+one verifier/critic that is **not** among the generators, recorded with the reason `independent
+evaluator`. Deterministic: equal inputs produce the same portfolio, and re-allocating returns the
+stored one. **Write.**
+
+| Parameter | Type | Required | Default |
+|---|---|---|---|
+| mission_id | string | Yes | — |
+| candidates | `[{identity, mode, emotional_proximity?, task_skill_fit?, availability?, covered_bins?, recent_cycles?}]` (1..24) | Yes | — |
+| missing_bins | string[] (≤64) | No | the archive's coverage gaps |
+| max_agents | integer (1..12) | No | 6 |
+| user_id | string | No | caller's identity (trusted callers only may override) |
+
+### plan_independent_first_pass
+
+Plan — and with `run: true` execute — an independent first pass. Each agent gets its OWN generation
+request: the mission digest (ids, version, title, intent, the trace's problem-state digest, a summary
+of signal SHAPES, the coverage gaps and the exclusions as fingerprints), its OWN envelope and mode
+definition, and the engine settings derived from them. With `run: true` each ready request runs
+through ITER-6's engine against that agent's own trace and archive, and each agent's stream is
+derived from the pass, its mode and its envelope scoring — never from a peer. A request whose agent
+has no trace, or whose envelope is missing, expired, tampered with or granted for another mode, is
+returned `blocked` with the named reason. **Write** (`run: false` plans and writes only the pass
+record; no model call is made). 
+
+| Parameter | Type | Required | Default |
+|---|---|---|---|
+| mission_id | string | Yes | — |
+| team | `[{identity, mode, envelope_id?}]` (1..12) | Yes | — |
+| run | boolean | No | `false` (plan only) |
+| user_id | string | No | caller's identity (trusted callers only may override) |
+
+### synthesize_portfolios
+
+Merge the portfolios of an independent first pass into ONE synthesized portfolio with provenance
+intact. A candidate several agents produced keeps every source in its `provenance` — the merge
+collapses the statement, never the lineage — and the exclusions ride along verbatim as fingerprints.
+Supplying an `exclusions` list that drops one on record is refused (`exclusion_dropped`), and
+rewriting one is refused (`exclusion_rewritten`). A synthesizer cannot ADD one either: an exclusion
+supplied that is not on record is **ignored** — it never reaches the artifact and the output lists it
+under *Ignored* — because a synthesis preserves the mission's exclusions instead of extending them.
+The artifact appends a `synthesis` lineage record, carries `promoted: false` and cannot promote.
+**Write.**
+
+| Parameter | Type | Required | Default |
+|---|---|---|---|
+| mission_id | string | Yes | — |
+| pass_id | string | Yes | — |
+| exclusions | `[{ref, kind, reason, text_hash}]` | No | the source portfolios' own exclusions, carried verbatim |
+| synthesizer_identity | string | No | the caller's identity |
 | user_id | string | No | caller's identity (trusted callers only may override) |
