@@ -41,6 +41,18 @@ export const PERSONAL_KINDS: readonly string[] = [
   'idea_seeds',
   'idea_lineages',
   'imagination_runs',
+  // ITER-7 (creative baton): the cycle state row, the cycle run ledger and the
+  // candidate-outcome rows are personal by construction — they carry one
+  // identity's cooldown/budget bookkeeping, its cycle history and what it
+  // learned about its own candidates. All three are listed by the collection
+  // they protect. NOTE the deliberate omissions: `creative_batons` (compiled
+  // privately, promoted to a team scope by the gated promoter) and
+  // `creative_baton_promotions` (the audit row of that team artifact) are NOT
+  // personal kinds, because the baton is the one artifact this feature may
+  // share — see processing/creative-baton-collections.ts for the full reading.
+  'imagination_cycle_states',
+  'imagination_cycles',
+  'idea_candidate_outcomes',
 ];
 
 /** Default shared scope for every non-personal write. */

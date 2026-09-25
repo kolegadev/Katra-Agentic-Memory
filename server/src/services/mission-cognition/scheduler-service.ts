@@ -10,7 +10,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Db } from 'mongodb';
 import { COLLECTIONS } from './collections.js';
-import { generateWorkItems } from './work-item-generator.js';
+import { generateWorkItems, type ExtraWorkItem } from './work-item-generator.js';
 import { scorePriority, type ScoredItem } from './priority-scorer.js';
 import { candidateAgents, scoreSuitability } from './suitability-scorer.js';
 import { schedulerMode } from './index.js';
@@ -20,6 +20,11 @@ import type { CognitiveWorkItem, SchedulerCandidate, SchedulerDecision } from '.
 export interface ShadowRunResult {
   decision: SchedulerDecision;
   queue: CognitiveWorkItem[];
+}
+
+/** Extra items an authorised caller contributes to a persistence pass. */
+export interface UpsertWorkItemsOptions {
+  extra?: readonly ExtraWorkItem[];
 }
 
 export class SchedulerService {
@@ -33,9 +38,18 @@ export class SchedulerService {
     return this.db.collection<SchedulerDecision & { _id?: unknown }>(COLLECTIONS.schedulerDecisions);
   }
 
-  /** Persist generated work items (dedupe by trigger+description+mission). */
-  async upsertWorkItems(missionId: string): Promise<CognitiveWorkItem[]> {
-    const generated = await generateWorkItems(this.db, missionId);
+  /**
+   * Persist generated work items (dedupe by trigger+description+mission).
+   *
+   * ITER-7: `options.extra` lets an authorised caller contribute items that the
+   * generator builds and this method persists — the Creative Baton adapter's
+   * candidates go through HERE, so there is exactly one write path into
+   * `cognitive_work_items` and the dedupe below is what makes the adapter
+   * idempotent. An extra item is not trusted to invent a feature vector: the
+   * generator stamps it like any other item.
+   */
+  async upsertWorkItems(missionId: string, options: UpsertWorkItemsOptions = {}): Promise<CognitiveWorkItem[]> {
+    const generated = await generateWorkItems(this.db, missionId, { extra: options.extra });
     const now = new Date().toISOString();
     const stored: CognitiveWorkItem[] = [];
     for (const g of generated) {

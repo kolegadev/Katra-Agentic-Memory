@@ -79,6 +79,10 @@ const SURFACE_FLAGS = [
   'COGNITIVE_ACTIVATION_KILL_SWITCH',
   // ITER-5: focused consolidation + the private Salience Trace.
   'FOCUSED_IMAGINATION',
+  // ITER-7: the Creative Baton promotion capability. It is a SECOND flag that
+  // only adds anything while FOCUSED_IMAGINATION is on, so the surface must be
+  // measured with it on its own as well as together with the family flag.
+  'CREATIVE_BATON_PROMOTION',
 ];
 
 /** The registered tool names for one flag state (module re-loaded each time). */
@@ -198,13 +202,25 @@ describe('MCP surface — the docs state the measured default count', () => {
     // coverage check runs over the UNION of the catalogued flag states rather
     // than one of them — a tool that is reachable in ANY documented state must
     // be documented, and nothing may be catalogued that no state registers.
-    const states = await Promise.all([
-      registeredSurface({ PER_IDENTITY_PERSONALITY: '1' }),
-      registeredSurface({ FOCUSED_IMAGINATION: '1' }),
-      registeredSurface({ PER_IDENTITY_PERSONALITY: '1', FOCUSED_IMAGINATION: '1' }),
-    ]);
-    // …which, since ITER-6, is the surface of five flag-gated tools: one
-    // personality tool, the ITER-5 salience pair and the ITER-6 pair.
+    //
+    // The states are measured SEQUENTIALLY (ITER-7): `registeredSurface` sets
+    // the environment and re-imports, so running the states concurrently lets a
+    // later state's env be visible to an earlier state's module evaluation —
+    // which is exactly how a two-flag state can silently measure as a one-flag
+    // state and report a registered tool as missing.
+    const states: string[][] = [];
+    for (const env of [
+      { PER_IDENTITY_PERSONALITY: '1' },
+      { FOCUSED_IMAGINATION: '1' },
+      { FOCUSED_IMAGINATION: '1', CREATIVE_BATON_PROMOTION: '1' },
+      { PER_IDENTITY_PERSONALITY: '1', FOCUSED_IMAGINATION: '1', CREATIVE_BATON_PROMOTION: '1' },
+    ]) {
+      states.push(await registeredSurface(env));
+    }
+    // …which, since ITER-7, is the surface of ten flag-gated tools: one
+    // personality tool, the ITER-5 salience pair, the ITER-6 imagination pair,
+    // the four ITER-7 cycle/baton/adapter/outcome tools and — only with the
+    // promotion flag too — `promote_creative_baton`.
     const surface = [...new Set(states.flat())];
     const catalogued = cataloguedTools();
 
@@ -287,20 +303,26 @@ describe('MCP surface — the docs state the measured flag-gated additions', () 
     expect(killed.length).toBe(read.length);
   });
 
-  it('FOCUSED_IMAGINATION adds exactly the four catalogued tools it owns', async () => {
-    // ITER-6 added the imagination pair behind the SAME flag, so this row now
-    // measures all four: the flag-gated family is what the docs describe, and a
-    // fifth tool appearing behind this flag without a docs change fails here.
+  it('FOCUSED_IMAGINATION adds exactly the eight catalogued tools it owns', async () => {
+    // ITER-6 added the imagination pair behind the SAME flag and ITER-7 added
+    // four more (the cycle, the baton read, the adapter and the outcome), so
+    // this row now measures all eight: the flag-gated family is what the docs
+    // describe, and a ninth tool appearing behind this flag without a docs
+    // change fails here.
     const withoutFlag = await registeredSurface();
     const withFlag = await registeredSurface({ FOCUSED_IMAGINATION: '1' });
     const added = withFlag.filter((name) => !withoutFlag.includes(name));
 
-    expect(withFlag.length - withoutFlag.length).toBe(4);
+    expect(withFlag.length - withoutFlag.length).toBe(8);
     expect(added.sort()).toEqual([
+      'baton_candidates_to_work_items',
       'generate_imagination_seeds',
+      'get_creative_baton',
       'get_idea_archive',
       'get_salience_trace',
+      'record_candidate_outcome',
       'run_focused_consolidation',
+      'run_imagination_cycle',
     ]);
     for (const name of added) expect(withoutFlag).not.toContain(name);
 
@@ -309,34 +331,68 @@ describe('MCP surface — the docs state the measured flag-gated additions', () 
       new RegExp(`^\\+${withFlag.length - withoutFlag.length}\\b`),
     );
 
-    // Independent of every other row: it adds the same 2 in combination, and
+    // ITER-7: promotion needs a SECOND flag, and that flag on its own exposes
+    // nothing at all — the capability is meaningless without the family.
+    const promotionAlone = await registeredSurface({ CREATIVE_BATON_PROMOTION: '1' });
+    const withPromotion = await registeredSurface({
+      FOCUSED_IMAGINATION: '1',
+      CREATIVE_BATON_PROMOTION: '1',
+    });
+    expect(promotionAlone.length).toBe(withoutFlag.length);
+    expect(withPromotion.length - withFlag.length).toBe(1);
+    expect(withPromotion.filter((name) => !withFlag.includes(name))).toEqual(['promote_creative_baton']);
+    expect(flagRow('`FOCUSED_IMAGINATION=1` + `CREATIVE_BATON_PROMOTION=1`').total).toBe(withPromotion.length);
+    expect(flagRow('`FOCUSED_IMAGINATION=1` + `CREATIVE_BATON_PROMOTION=1`').added).toMatch(
+      new RegExp(`^\\+${withPromotion.length - withFlag.length}\\b`),
+    );
+
+    // Independent of every other row: it adds the same tools in combination, and
     // every total the prose states is the measured one.
     const combined = await registeredSurface({
       PER_IDENTITY_PERSONALITY: '1',
       FOCUSED_IMAGINATION: '1',
     });
+    const combinedPromoted = await registeredSurface({
+      PER_IDENTITY_PERSONALITY: '1',
+      FOCUSED_IMAGINATION: '1',
+      CREATIVE_BATON_PROMOTION: '1',
+    });
     const withCognitive = await registeredSurface({
       COGNITIVE_CONTROL_ENABLED: 'read',
       FOCUSED_IMAGINATION: '1',
+      CREATIVE_BATON_PROMOTION: '1',
     });
     const withScheduler = await registeredSurface({
       COGNITIVE_CONTROL_ENABLED: 'read',
       COGNITIVE_SCHEDULER_MODE: 'shadow',
       FOCUSED_IMAGINATION: '1',
+      CREATIVE_BATON_PROMOTION: '1',
     });
     const all = await registeredSurface({
       COGNITIVE_CONTROL_ENABLED: 'read',
       COGNITIVE_SCHEDULER_MODE: 'shadow',
       PER_IDENTITY_PERSONALITY: '1',
       FOCUSED_IMAGINATION: '1',
+      CREATIVE_BATON_PROMOTION: '1',
     });
-    expect(combined.length).toBe(withoutFlag.length + 5);
-    expect(withCognitive.length).toBe(withFlag.length + 25);
-    expect(withScheduler.length).toBe(withFlag.length + 38);
+    expect(combined.length).toBe(withoutFlag.length + 9);
+    expect(combinedPromoted.length).toBe(combined.length + 1);
+    expect(withCognitive.length).toBe(withPromotion.length + 25);
+    expect(withScheduler.length).toBe(withPromotion.length + 38);
     expect(all.length).toBe(withScheduler.length + 1);
-    for (const total of [withFlag.length, combined.length, withCognitive.length, withScheduler.length, all.length]) {
+    for (const total of [
+      withFlag.length,
+      withPromotion.length,
+      combined.length,
+      combinedPromoted.length,
+      withCognitive.length,
+      withScheduler.length,
+      all.length,
+    ]) {
       expect(MCP_TOOLS).toContain(`**${total}**`);
     }
+    // The baton row the docs state must be the measured pair.
+    expect(MCP_TOOLS).toContain(`**${withFlag.length} / ${withPromotion.length}**`);
   });
 });
 

@@ -44,6 +44,22 @@ export const UNIQUE_INDEXES: Record<string, string[][]> = {
   idea_lineages: [['lineage_id']],
   idea_archive_cells: [['user_id', 'mission_id', 'cell_key']],
   imagination_runs: [['idempotency_key']],
+  // ITER-7: the Creative Baton, its promotion audit, the cycle run ledger, the
+  // per-mission cycle state and the candidate-outcome rows. The ones that carry
+  // the concurrency contract are here for the same reason the seeds are:
+  // `{user_id, mission_id, cycle_id}` is what makes "two concurrent callers of
+  // ONE mission start exactly one cycle — and two missions that share a version
+  // and an ordinal never share a cycle" enforceable (the compound key mirrors
+  // the claim lookup in the cycle service; a `cycle_id`-only key would collide
+  // across missions and serve the second one the first one's row),
+  // `{user_id, mission_id}` is what makes one cycle-state row per mission
+  // enforceable, and `{user_id, seed_id, outcome}` is what makes "repeating an
+  // outcome is recorded once" enforceable.
+  creative_batons: [['baton_id']],
+  creative_baton_promotions: [['promotion_id']],
+  imagination_cycle_states: [['user_id', 'mission_id']],
+  imagination_cycles: [['user_id', 'mission_id', 'cycle_id']],
+  idea_candidate_outcomes: [['user_id', 'seed_id', 'outcome']],
 };
 
 export interface FakeIndex {

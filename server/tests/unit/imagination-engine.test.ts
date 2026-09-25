@@ -1214,7 +1214,11 @@ describe('imagination archive — dedupe, exclusions and reasons', () => {
   it('is deterministic and documented: the similarity metric and its guards are explicit', () => {
     expect(PARAPHRASE_THRESHOLD).toBe(0.72);
     expect(LENGTH_GUARD_RATIO).toBe(0.5);
-    expect(CONTAINMENT_THRESHOLD).toBe(0.7);
+    // ITER-7 residual F1: ONE effective threshold. The containment branch fires
+    // at the gate the archive compares against, so there is no band in which the
+    // documented containment rule and the operative gate disagree.
+    expect(CONTAINMENT_THRESHOLD).toBe(PARAPHRASE_THRESHOLD);
+    expect(CONTAINMENT_THRESHOLD).toBe(0.72);
     expect(MIN_CONTAINMENT_OVERLAP).toBe(2);
     // Identical after normalisation.
     expect(statementSimilarity('The Queue, starves!', 'the queue starves')).toBe(1);

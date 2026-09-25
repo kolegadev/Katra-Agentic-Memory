@@ -394,7 +394,13 @@ export type TriggerType =
   | 'unexpected_experiment_result'
   | 'plan_unchanged_despite_evidence'
   | 'critic_disagreement'
-  | 'convergent_agents';
+  | 'convergent_agents'
+  // ITER-7 (Phase 5): the trigger whose OUTCOME is a baton candidate's fate.
+  // The imagination cycle fires no uncertainty detector; what it produces is a
+  // candidate, and `recordCandidateOutcome` records whether acting on it
+  // produced useful information, mere variance or unnecessary cost — through
+  // the SAME telemetry instrument, grouped by value like every other trigger.
+  | 'imagination_candidate';
 
 export interface FiredTrigger {
   trigger: TriggerType;

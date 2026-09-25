@@ -28,6 +28,11 @@ export const SCHEMA_IDS = {
   // that cannot answer "what, why, how would we know, and on what evidence"
   // never reaches the collection.
   ideaSeed: 'https://katra.dev/schemas/idea-seed.schema.json',
+  // ITER-7: the SANITISED Creative Baton. The compiler validates it before it
+  // is written, and the promoter RE-validates the stored document before it
+  // stamps a shared scope, so a tampered payload can neither be stored nor
+  // promoted.
+  creativeBaton: 'https://katra.dev/schemas/creative-baton.schema.json',
 } as const;
 
 let _ajv: Ajv2020 | null = null;

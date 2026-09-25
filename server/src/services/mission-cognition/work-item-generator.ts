@@ -28,6 +28,25 @@ export interface GeneratedItem {
   description: string;
 }
 
+/**
+ * A work item an AUTHORISED caller supplies instead of one this generator
+ * derived from mission state (ITER-7: the Creative Baton adapter is the only
+ * such caller). It is not a second write path — it is an extra INPUT to this
+ * generator, so the item is built here with the same priority feature vector and
+ * persisted by the same `SchedulerService.upsertWorkItems` funnel and the same
+ * `{mission_id, trigger, description}` dedupe.
+ *
+ * `provenance` is stamped on the row (the work-item schema tolerates extra
+ * keys) so a baton-derived item can be traced to the baton and seed it came
+ * from without parsing the description.
+ */
+export interface ExtraWorkItem {
+  trigger: CognitiveWorkItem['trigger'];
+  description: string;
+  mode: BatonMode;
+  provenance?: Record<string, unknown>;
+}
+
 function missionImpact(state: MissionRow): number {
   // Derived, documented heuristic: active missions with unmet criteria and
   // open uncertainty weigh more; authority class A/B/C scales the impact.
@@ -58,7 +77,11 @@ function urgency(staleCheckpoint: boolean, blockedCount: number, invalidatedDeci
   return (staleCheckpoint ? 3 : 0) + Math.min(blockedCount * 2, 6) + Math.min(invalidatedDecisions * 2, 4) + 1;
 }
 
-export async function generateWorkItems(db: Db, missionId: string): Promise<GeneratedItem[]> {
+export async function generateWorkItems(
+  db: Db,
+  missionId: string,
+  options: { extra?: readonly ExtraWorkItem[] } = {},
+): Promise<GeneratedItem[]> {
   const state = await db
     .collection<MissionRow & { _id?: unknown }>(COLLECTIONS.missionStates)
     .findOne({ mission_id: missionId }, { projection: { _id: 0 } });
@@ -112,7 +135,12 @@ export async function generateWorkItems(db: Db, missionId: string): Promise<Gene
   });
 
   const items: GeneratedItem[] = [];
-  const push = (trigger: GeneratedItem['trigger'], description: string, mode: BatonMode) => {
+  const push = (
+    trigger: GeneratedItem['trigger'],
+    description: string,
+    mode: BatonMode,
+    provenance?: Record<string, unknown>,
+  ) => {
     items.push({
       trigger,
       description,
@@ -125,7 +153,8 @@ export async function generateWorkItems(db: Db, missionId: string): Promise<Gene
         authority_class: state.authority_class as CognitiveWorkItem['authority_class'],
         trigger,
         features: features(mode),
-      },
+        ...(provenance ? { provenance } : {}),
+      } as GeneratedItem['item'],
     });
   };
 
@@ -143,6 +172,12 @@ export async function generateWorkItems(db: Db, missionId: string): Promise<Gene
   }
   if (staleCheckpoint) {
     push('stale_checkpoint', `Checkpoint stale (${checkpointAgeHours.toFixed(0)}h) — checkpoint ${state.title}`, 'verify');
+  }
+  // Caller-supplied items (ITER-7: promoted Creative Baton candidates) come
+  // last: they are additional work the mission has already decided to consider,
+  // and they are built with the same feature vector as everything else.
+  for (const extra of options.extra ?? []) {
+    push(extra.trigger, extra.description, extra.mode, extra.provenance);
   }
   // A mission with no triggers still gets nothing — absence of work is a finding, not a filler item.
   return items;

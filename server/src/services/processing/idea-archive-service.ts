@@ -50,6 +50,20 @@
  *      hypothesis is a ruled-out hypothesis). Every rejection carries its
  *      reason and the id it collided with.
  *
+ *      ONE GATE, AND IT IS COMPARED FIELD BY FIELD (two ITER-6 residuals):
+ *        - the containment branch fires at the SAME threshold the archive
+ *          compares against (`CONTAINMENT_THRESHOLD = PARAPHRASE_THRESHOLD`),
+ *          so there is no band in which the documented rule and the operative
+ *          gate disagree;
+ *        - a candidate is compared against a stored seed as the MAXIMUM of
+ *          three measurements — hypothesis against hypothesis, mechanism
+ *          against mechanism, and comparable text against comparable text —
+ *          exactly the way an exclusion region is compared. Comparing only the
+ *          concatenations let a VERBATIM hypothesis followed by a fresh
+ *          mechanism dilute the overlap below the gate (5 shared content tokens
+ *          out of 15 reads as 0.33, not as 1.0), so a restated claim could be
+ *          admitted as new merely by rewording its mechanism.
+ *
  *   4. CHANGED-PREMISE RE-ENTRY. An excluded idea may come back ONLY with a
  *      valid changed premise AND a lineage link to the prior rejection
  *      (`parent_seed_ids` naming it). A VALID premise is deterministic and
@@ -69,6 +83,28 @@
  *      `premise_restates_exclusion`); a valid premise without a lineage link is
  *      `missing_lineage_link`. With both, the cell's history records the
  *      re-entry and the premise is stored on the seed.
+ *
+ *      TWO LIMITATIONS OF THIS GATE, STATED PLAINLY (ITER-6 residual, no code
+ *      change — the behaviour is unchanged and is the behaviour the gate
+ *      intends):
+ *        - THE VACUITY STOPLIST IS FINITE. `NO_CHANGE_PHRASES` is a closed list
+ *          of English phrasings (22 of them, matched longest-first as whole
+ *          words). A no-change assertion phrased OUTSIDE the list — "the
+ *          situation is what it was", "we are where we were" — passes (b), and
+ *          is then caught only if it also fails (c): either it introduces no new
+ *          content token (rejected as `premise_restates_exclusion`) or it does
+ *          introduce some, in which case this gate has no further defence. The
+ *          stoplist is deliberately blunt and errs toward refusing a re-entry,
+ *          but it is not a semantic understanding of "changed".
+ *        - THERE IS NO SYNONYM REWRITE. A premise that restates the excluded
+ *          text in synonyms ("the nightly rebuild", "the compaction process")
+ *          introduces tokens the excluded text does not contain, so (c) counts
+ *          them as change and the re-entry is admitted. Catching that would need
+ *          an embedding or a thesaurus; this module has neither, and pretending
+ *          otherwise by tuning the token floor would only move the hole. The
+ *          archive's own dedupe (1–3) is what keeps such a re-entry honest: it
+ *          lands in the SAME descriptor cell as the prior rejection, where it
+ *          has to beat the incumbent to take the cell over.
  *
  * PRIVACY. Seeds and lineages are personal kinds and cells are identity-owned
  * (see imagination-collections.ts); every write resolves its scope through
@@ -223,10 +259,18 @@ export const PARAPHRASE_THRESHOLD = 0.72;
 /**
  * Containment at or above this fraction of the SHORTER statement's content
  * tokens makes the pair a paraphrase — regardless of how much longer the other
- * one is. 0.7 is deliberately below 1.0: a verbose restatement rarely reuses
- * every content word, and a padded one reuses all of them.
+ * one is.
+ *
+ * ONE EFFECTIVE THRESHOLD (the ITER-6 residual fix): this constant IS the gate
+ * the archive compares against — `PARAPHRASE_THRESHOLD` — and is not merely
+ * close to it. Before, containment fired at 0.7 while the archive rejected at
+ * 0.72, so a containment value in `[0.7, 0.72)` returned early from
+ * `statementSimilarity` (skipping the Jaccard branch entirely) and was then
+ * judged "not a duplicate" by the caller: a band in which the documented
+ * containment rule and the operative gate disagreed. There is now one number;
+ * raising or lowering `PARAPHRASE_THRESHOLD` moves both together.
  */
-export const CONTAINMENT_THRESHOLD = 0.7;
+export const CONTAINMENT_THRESHOLD = PARAPHRASE_THRESHOLD;
 /**
  * The arithmetic floor for containment to be decisive: with fewer than two
  * shared content tokens "overlap" is not a measurement (a single shared word
@@ -542,6 +586,31 @@ export interface CoverageView {
   gaps: Array<{ dimension: DescriptorDimension; unoccupied_bins: string[] }>;
   descriptor_dimensions: DescriptorDimension[];
   coverage_date: string;
+  /**
+   * THE SCAN BEHIND THE NUMBERS (ITER-6 residual): every read this view is
+   * built from is bounded, so the bounds and whether any of them bit are part of
+   * the view. A truncated view still reports what it saw — it just says so,
+   * instead of presenting a bounded scan as the whole archive.
+   */
+  scan: CoverageScan;
+}
+
+export interface CoverageScan {
+  /** The bound on cells read (`MAX_COVERAGE_CELLS`). */
+  cells_limit: number;
+  cells_scanned: number;
+  /** True when the cell scan hit its bound: `cells_total` is then a FLOOR. */
+  cells_truncated: boolean;
+  /** The bound on the dedupe scan (`MAX_DEDUPE_SCAN`). */
+  seeds_dedupe_limit: number;
+  seeds_scanned: number;
+  /**
+   * True when the mission holds at least `seeds_dedupe_limit` seeds, so the
+   * dedupe scan cannot have seen all of them.
+   */
+  seeds_truncated: boolean;
+  /** Any bound bit at all. */
+  truncated: boolean;
 }
 
 export interface SeedOutcome {
@@ -789,7 +858,18 @@ export class IdeaArchiveService {
     const rows = await this.getSeeds(seed.user_id, seed.mission_id);
     for (const row of rows) {
       if (row.seed_id === id) continue;
-      const similarity = seedSimilarity(seed, row);
+      // THE SAME THREE MEASUREMENTS THE EXCLUSION PATH USES (ITER-6 residual):
+      // hypothesis against hypothesis, mechanism against mechanism, and the
+      // concatenation against the concatenation — the closest match wins.
+      // Comparing only the concatenations let a VERBATIM hypothesis followed by
+      // a reworded mechanism dilute the overlap below the gate and be admitted
+      // as new. Exactness is still decided by normalised equality, never by the
+      // score.
+      const similarity = Math.max(
+        seedSimilarity(seed, row),
+        statementSimilarity(String(seed.hypothesis ?? ''), String(row.hypothesis ?? '')),
+        statementSimilarity(String(seed.mechanism ?? ''), String(row.mechanism ?? '')),
+      );
       if (similarity < PARAPHRASE_THRESHOLD) continue;
       const exact = comparableText(row) === text;
       const reason = exact ? 'duplicate_of' : 'paraphrase_of';
@@ -1299,9 +1379,11 @@ export class IdeaArchiveService {
   }
 
   /**
-   * The SANITIZED coverage view: cells, bins, counts, quality and ids only.
-   * `cycleId` anchors `new_cells_this_cycle`; without one the newest cycle the
-   * archive knows about is used.
+   * The SANITIZED coverage view: cells, bins, counts, quality and ids only —
+   * plus the SCAN it was read through (`scan`), so a bounded read is never
+   * presented as the whole archive. `cycleId` anchors
+   * `new_cells_this_cycle`; without one the newest cycle the archive knows
+   * about is used.
    */
   async coverage(missionId: string, userId: string, opts: { cycleId?: string } = {}): Promise<CoverageView> {
     const cells = (await this.cells()
@@ -1309,6 +1391,7 @@ export class IdeaArchiveService {
       .sort({ cell_key: 1 })
       .limit(MAX_COVERAGE_CELLS)
       .toArray()) as unknown as IdeaArchiveCell[];
+    const seedCount = await this.seeds().countDocuments({ user_id: userId, mission_id: missionId });
 
     const cellsByDimension = DESCRIPTOR_DIMENSIONS.reduce((acc, dimension) => {
       acc[dimension] = {};
@@ -1346,6 +1429,15 @@ export class IdeaArchiveService {
       })),
       descriptor_dimensions: [...DESCRIPTOR_DIMENSIONS],
       coverage_date: coverageDate(),
+      scan: {
+        cells_limit: MAX_COVERAGE_CELLS,
+        cells_scanned: cells.length,
+        cells_truncated: cells.length >= MAX_COVERAGE_CELLS,
+        seeds_dedupe_limit: MAX_DEDUPE_SCAN,
+        seeds_scanned: seedCount,
+        seeds_truncated: seedCount >= MAX_DEDUPE_SCAN,
+        truncated: cells.length >= MAX_COVERAGE_CELLS || seedCount >= MAX_DEDUPE_SCAN,
+      },
     };
   }
 

@@ -84,6 +84,7 @@ async function registeredNamesWithFlag(
   if (value === undefined) delete process.env.PER_IDENTITY_PERSONALITY;
   else process.env.PER_IDENTITY_PERSONALITY = value;
   delete process.env.FOCUSED_IMAGINATION;
+  delete process.env.CREATIVE_BATON_PROMOTION;
   for (const [key, flagValue] of Object.entries(extraFlags)) process.env[key] = flagValue;
   const mod = await import('../../src/mcp-server.js');
   return mod.registeredToolNames();
@@ -95,12 +96,18 @@ beforeEach(() => {
   // ITER-5: the focused-consolidation tools are a separate flag-gated family;
   // keep it off unless a test asks for it.
   delete process.env.FOCUSED_IMAGINATION;
+  // ITER-7: the promotion capability is a second flag that only adds a tool
+  // while the family flag is on.
+  delete process.env.CREATIVE_BATON_PROMOTION;
 });
 
 afterEach(() => {
   FAKE_DB.reset();
   delete process.env.PER_IDENTITY_PERSONALITY;
   delete process.env.FOCUSED_IMAGINATION;
+  // ITER-7: the promotion capability is a second flag that only adds a tool
+  // while the family flag is on.
+  delete process.env.CREATIVE_BATON_PROMOTION;
 });
 
 describe('get_my_personality — registration is gated by the flag', () => {
@@ -130,11 +137,18 @@ describe('get_my_personality — registration is gated by the flag', () => {
     // ITER-5 added a second flag-gated catalogue family (`FOCUSED_IMAGINATION`),
     // so every catalogue entry must be registered in SOME documented flag state
     // — this checks the two the docs name, together and apart.
-    const states = await Promise.all([
-      registeredNamesWithFlag('1'),
-      registeredNamesWithFlag(undefined, { FOCUSED_IMAGINATION: '1' }),
-      registeredNamesWithFlag('1', { FOCUSED_IMAGINATION: '1' }),
-    ]);
+    // The states are measured SEQUENTIALLY: `registeredNamesWithFlag` sets the
+    // environment and re-imports, so concurrent states can see each other's
+    // flags and report a registered tool as missing.
+    const states: string[][] = [];
+    for (const [value, extra] of [
+      ['1', {}],
+      [undefined, { FOCUSED_IMAGINATION: '1' }],
+      ['1', { FOCUSED_IMAGINATION: '1' }],
+      ['1', { FOCUSED_IMAGINATION: '1', CREATIVE_BATON_PROMOTION: '1' }],
+    ] as Array<[string | undefined, Record<string, string>]>) {
+      states.push(await registeredNamesWithFlag(value, extra));
+    }
     const registered = [...new Set(states.flat())];
     const catalogue = readFileSync(new URL('../../../docs/MCP-TOOLS.md', import.meta.url), 'utf8');
     const documented = (catalogue.match(/^### ([a-z0-9_]+)/gm) ?? []).map((line) => line.replace('### ', ''));
@@ -146,6 +160,17 @@ describe('get_my_personality — registration is gated by the flag', () => {
     // catalogue entry, so nothing on that surface is invisible either.
     expect(documented).toContain('generate_imagination_seeds');
     expect(documented).toContain('get_idea_archive');
+    // ITER-7 added the cycle/baton/adapter/outcome quartet behind the same flag
+    // and the promotion behind a SECOND flag: all five have catalogue entries.
+    for (const name of [
+      'run_imagination_cycle',
+      'get_creative_baton',
+      'promote_creative_baton',
+      'baton_candidates_to_work_items',
+      'record_candidate_outcome',
+    ]) {
+      expect(documented).toContain(name);
+    }
     // Every documented tool really is registered…
     for (const name of documented) {
       expect(registered, `${name} is documented but not registered`).toContain(name);

@@ -5,15 +5,17 @@ Katra (the self-hosted cognitive memory appliance) exposes **81 tools** via the 
 ## Registered surface (and what the flags add)
 
 `tools/list` reports **81 tools** on a default deployment: `COGNITIVE_CONTROL_ENABLED` off,
-`COGNITIVE_SCHEDULER_MODE` off, `PER_IDENTITY_PERSONALITY` off, `FOCUSED_IMAGINATION` off. That
+`COGNITIVE_SCHEDULER_MODE` off, `PER_IDENTITY_PERSONALITY` off, `FOCUSED_IMAGINATION` off,
+`CREATIVE_BATON_PROMOTION` off. That
 number is *measured, not hand-maintained* — `server/tests/unit/mcp-tool-surface-docs.test.ts` counts
 the registered tools in `server/src/mcp-server.ts` and fails if this page or the README states
 anything else.
 
 Those 81 are **66 catalogued tools** (every `###` entry below except the flag-gated
 `get_my_personality`, `run_focused_consolidation`, `get_salience_trace`,
-`generate_imagination_seeds` and `get_idea_archive`) plus **15 tools in two
-families that have their own reference** instead of a catalogue entry:
+`generate_imagination_seeds`, `get_idea_archive`, `run_imagination_cycle`, `get_creative_baton`,
+`promote_creative_baton`, `baton_candidates_to_work_items` and `record_candidate_outcome`) plus
+**15 tools in two families that have their own reference** instead of a catalogue entry:
 
 | Family | Tools | Names |
 | --- | --- | --- |
@@ -31,16 +33,19 @@ Feature flags grow the same surface. Totals are `tools/list` counts:
 | --- | --- | --- |
 | all off (**default**) | **81** | — |
 | `PER_IDENTITY_PERSONALITY=1` | **82** | +1 — `get_my_personality` (catalogued below) |
-| `FOCUSED_IMAGINATION=1` | **85** | +4 — `run_focused_consolidation`, `get_salience_trace`, `generate_imagination_seeds`, `get_idea_archive` (catalogued below) |
+| `FOCUSED_IMAGINATION=1` | **89** | +8 — `run_focused_consolidation`, `get_salience_trace`, `generate_imagination_seeds`, `get_idea_archive`, `run_imagination_cycle`, `get_creative_baton`, `baton_candidates_to_work_items`, `record_candidate_outcome` (catalogued below) |
+| `FOCUSED_IMAGINATION=1` + `CREATIVE_BATON_PROMOTION=1` | **90** | +1 — `promote_creative_baton` (the promotion flag on its own adds nothing: it is meaningless without the family flag) |
 | `COGNITIVE_CONTROL_ENABLED=read` or `write` | **106** | +25 — mission state, state deltas, epistemic ledger, batons, allocator evidence/counterfactuals, skill-candidate lifecycle (`server/src/services/mission-cognition/`) |
 | `COGNITIVE_SCHEDULER_MODE=shadow` or `recommend` or `allocate_internal` (with the row above) | **119** | +13 more — scheduler queue/decision, uncertainty, trigger and experiment tools |
 | `PER_IDENTITY_PERSONALITY=1` with a cognitive-control row | **82 / 107 / 120** | both — the flags are independent |
 
-`FOCUSED_IMAGINATION` is independent of every row above: it adds its **4** wherever it is set —
-**85** alone, **86** with `PER_IDENTITY_PERSONALITY=1`, **110** with the cognitive-control row,
-**123** with a scheduler mode, and **124** with all of them on. (ITER-5 contributed the salience
-trace pair, ITER-6 the imagination pair; the default surface is unchanged because every one of the
-four is flag-gated.)
+`FOCUSED_IMAGINATION` is independent of every row above: it adds its **8** (and its **9th** with
+`CREATIVE_BATON_PROMOTION`) wherever it is set — **89 / 90** for the family on the promotion flag
+off and on, **90** with `PER_IDENTITY_PERSONALITY=1`, **91** with both, **115** with the
+cognitive-control row, **128** with a scheduler mode, and **129** with all of them on. (ITER-5
+contributed the salience trace pair, ITER-6 the imagination pair, ITER-7 the
+cycle/baton/adapter/outcome quartet and — behind the second flag — the promotion; the default
+surface is unchanged because every one of them is flag-gated.)
 
 `COGNITIVE_ACTIVATION_KILL_SWITCH=1` forces the scheduler mode back to `off` (those last 13 tools
 disappear again); the cognitive-control plane is off in production by default.
@@ -967,4 +972,175 @@ cannot see is refused before any read. **Read.**
 |---|---|---|---|
 | mission_id | string | Yes | — |
 | limit | number (1–200) | No | 50 |
+| user_id | string | No | caller's identity (trusted callers only may override) |
+
+---
+
+## Creative Baton — plateau cycles, promotion, adapter, outcomes (`FOCUSED_IMAGINATION` + `CREATIVE_BATON_PROMOTION`, both default off)
+
+Phase 5 of the imagination engine. A **stalled** mission runs **exactly one** imagination cycle,
+receives a **sanitised, versioned Creative Baton**, has its candidates turned into work the
+controller can pick up, and records what happened — with the cooldown, the budget and the claim
+state **persisted per mission**, so a restart cannot re-trigger early.
+
+**The gates, in order** (`runImaginationCycle`): single-flight (a concurrent caller joins the run
+instead of starting a second one) → the **persisted** cooldown (`imagination_cycle_states`, one row
+per `{user_id, mission_id}`) → the per-mission **window budget** (cycles *and* measured tokens, from
+the usage ledger) → the **plateau evaluation**. `force: true` bypasses the plateau gate only —
+never the cooldown or the budget. A skipped cycle writes **nothing at all**: no cycle row, no state
+change, no baton, no model call.
+
+**The plateau** is five conditions from the brief's §4.1, each reported with the evidence that
+decided it: below-minimum active candidates (`IMAGINATION_PLATEAU_MIN_CANDIDATES`, 3), novelty gain
+below ε over N rounds (`IMAGINATION_PLATEAU_NOVELTY_EPSILON`, 0.05, `..._NOVELTY_ROUNDS`, 2), a
+repeated failure signature, archive coverage below a floor (`IMAGINATION_PLATEAU_COVERAGE_FLOOR`,
+6 cells), and contradiction pressure above a threshold
+(`IMAGINATION_PLATEAU_CONTRADICTION_THRESHOLD`, 2 live contradictions).
+
+**The cycle** records one row in `imagination_cycles`, unique per **`{user_id, mission_id,
+cycle_id}`** with a **derived** `cycle_id` (`imagination_cycle_<scope16hex>_v<version>_c<ordinal>`,
+where the scope digest covers the identity AND the mission): two concurrent callers of ONE mission
+compute the same id and exactly one runs, while two DIFFERENT missions that share (version, ordinal)
+derive different ids and each run their own cycle — the claim lookup is scoped to the same key, so no
+mission can read, replay or inherit another's trace, baton or counts. The row carries the counts, the
+effective budget and what was spent, the novelty mean, the coverage view **with its scan bounds and a
+`truncated` flag**, and the **stop condition that fired** — `budget_exhausted`,
+`coverage_target_reached`, `no_candidate_above_floor`, `no_new_cells_two_rounds`,
+`promoted_inventory_restored`, `privacy_validation_failed`, `mission_cancelled_or_superseded`, or
+`completed`. Every condition is reported with whether it was met; the first met one in precedence
+order is the reason. The **returned `status` agrees with the stored row**: `ran` only for a cycle that
+completed, `failed` (with `reason`, `stop_reason` and `error`) for one whose row is `failed` — an
+upstream failure, a privacy-validation failure, a cancelled/superseded mission — so a caller reading
+only `status` is never told a failed cycle ran.
+
+**The baton** is a compiled allow-list (brief §4.3): `creative_baton_version`, `mission_id`,
+`cycle_id`, `trigger {type, evidence}`, `problem_state_digest`, `excluded_regions` (kind + ordinal +
+a **hash** of the ruled-out text — never the text), `attention_targets` (derived from each signal's
+kind and calibration, never its statement or its own `why_operationally_relevant`),
+`candidate_portfolio` (seed id, hypothesis, mechanism, descriptor bins, scores, cheapest test,
+lineage ref, `privacy_safe: true`), `coverage_gaps`, `coverage_summary` (with the scan bounds),
+`next_round_budget`, `privacy {raw_reflections_included: false, shared}` and `payload_hash`.
+`coverage_gaps[].unoccupied_bins` is **re-validated against the archive's closed `DESCRIPTOR_BINS`
+vocabulary** (and each gap's dimension against `DESCRIPTOR_DIMENSIONS`), with anything unknown dropped
+and counted, so a marker cannot be injected through the coverage view. Nothing else is copied: no
+evidence ref, no changed premise, no bridge path, no parent link, no cell key. It is validated against
+`creative-baton.schema.json` (registered in the mission-cognition registry) and secret-scanned
+**before** it is written — and that schema is **closed** (`additionalProperties: false` at the top
+level and on every object), so an extra key anywhere in the packet fails validation at compile,
+promote and read time even for a writer who recomputed the payload hash.
+
+**Promotion** is the one operation that writes a team scope, and it happens through a separate,
+gated call: both flags on **and** a trusted caller, plus a **re-validation of the stored document**
+(schema, secret scan, `creative_baton_version`, and the payload hash the compiler wrote — a tampered
+baton is refused with a named reason rather than shared). **The re-validation runs on EVERY call,
+before the idempotency answer**: an existing `shared_id` records that the payload validated once,
+which is not the same as validating now, so a baton tampered with *after* its promotion is refused
+rather than reported as an unchanged no-op. It records the promoting identity, the timestamp, the
+schema version and the payload hash in `creative_baton_promotions`, stamps `shared_id` on the baton,
+and is idempotent: promoting the same payload twice reports the existing promotion and writes
+nothing. Reads are verified too — `getCreativeBaton`/`readCreativeBaton` and the controller adapter
+run the same `verifyStoredBaton` check and refuse a tampered row **by name**
+(`payload_hash_mismatch`, `schema_invalid`, `secret_material`, `version_unsupported`). `imagination_cycle_states`, `imagination_cycles` and
+`idea_candidate_outcomes` are **personal kinds** (no `shared_id`, ever); `creative_batons` is the
+one artifact that may carry a shared scope, and only after a promotion.
+
+### run_imagination_cycle
+
+Run ONE imagination cycle for a mission, or evaluate the plateau without writing. With
+`mode: "evaluate_only"` (alias `dry_run: true`) it returns the five plateau conditions with their
+evidence, the persisted cycle state, the window budget and the cooldown remaining — with **zero
+writes and no model call**. Otherwise it runs the gates in order and, when they allow it, runs
+focused consolidation, generates and admits seeds, reads the bounded coverage view, compiles the
+Creative Baton and (only with `CREATIVE_BATON_PROMOTION=1` and a trusted caller) promotes it.
+Idempotent per `cycle_id`: a repeat replays the recorded cycle. The returned `status` is `ran`,
+`failed` (with `reason`/`error`), `skipped` or `replayed`. **Write** (evaluate-only: read). An
+untrusted caller may only run a mission it owns; trusted callers may name another identity with
+`user_id`.
+
+| Parameter | Type | Required | Default |
+|---|---|---|---|
+| mission_id | string | Yes | — |
+| cycle_id | string | No | derived from the scope of the mission (identity + mission id), the mission version and the mission's next cycle ordinal — a repeat replays the recorded cycle, and no two missions share one |
+| trigger | string | No | `plateau` (sanitised, ≤40 characters) |
+| force | boolean | No | `false` — bypasses the PLATEAU gate only (never the cooldown or the budget) |
+| mode | `run` \| `evaluate_only` | No | `run` |
+| dry_run | boolean | No | `false` — alias for `mode: "evaluate_only"` |
+| user_id | string | No | caller's identity (trusted callers only may override) |
+
+### get_creative_baton
+
+Read a Creative Baton, caller/scope-aware: pass a `baton_id`, or a `mission_id` for its newest
+**visible** baton. An untrusted caller sees its own batons plus batons **promoted** to the team
+scope; another identity's unpromoted baton is reported exactly like a missing one. Every stored baton
+is **integrity-checked before it is served** (format version, the closed schema, the secret scan and
+the payload hash recomputed over the stored document), so a row tampered with after it was written —
+including one tampered with after it was **promoted** — is refused by name (`payload_hash_mismatch`,
+`schema_invalid`, `secret_material`, `version_unsupported`) instead of being rendered as a baton; when
+a `mission_id` is given, the recorded candidate outcomes for that mission are listed alongside.
+**Read.**
+
+| Parameter | Type | Required | Default |
+|---|---|---|---|
+| baton_id | string | No (one of `baton_id` / `mission_id` is required) | — |
+| mission_id | string | No | — |
+| limit | number (1–20) | No | 5 (batons listed for a mission) |
+| user_id | string | No | caller's identity (trusted callers only may override) |
+
+### promote_creative_baton
+
+Promote a baton to the team scope — the only operation in this feature that writes shared state.
+Requires `FOCUSED_IMAGINATION=1` **and** `CREATIVE_BATON_PROMOTION=1` (with either off the tool is
+`Unknown tool` — the promotion flag on its own adds no tool at all) and a **trusted** caller. The
+stored baton is re-validated (schema + secret scan), its `creative_baton_version` is checked, and
+its payload hash is recomputed and compared with the one the compiler wrote — a tampered stored
+baton is refused with a named reason (`payload_hash_mismatch`, `schema_invalid`, `secret_material`,
+`version_unsupported`, `not_owner`, `untrusted_caller`, `flag_off`). The promotion writes the audit
+row (identity, timestamp, schema version, payload hash) and stamps `shared_id`; promoting twice is a
+no-op that reports the existing promotion. **Write** (team scope).
+
+| Parameter | Type | Required | Default |
+|---|---|---|---|
+| baton_id | string | Yes | — |
+| user_id | string | No | caller's identity (the baton must belong to it) |
+
+### baton_candidates_to_work_items
+
+Turn a baton's eligible candidates into **controller work items** through the existing scheduler
+funnel (`SchedulerService.upsertWorkItems` → `generateWorkItems`): no new write path, the same
+priority feature vector and the same `{mission_id, trigger, description}` dedupe — so re-running
+inserts nothing and reports the same items as reused. Each item carries `[creative_baton <id> seed
+<id>]` in its description and a `provenance` field (`{source, baton_id, seed_id, cycle_id,
+requested_by}`) on the row. The trigger reuses the existing `manual` value (the item exists because
+a caller explicitly asked for it) and the mode is `explore`. An untrusted caller may only adapt a
+**promoted** baton (the work queue is shared state); a trusted caller may adapt its own. The stored
+baton is **integrity-checked before a single candidate is copied**, so a tampered row reaches neither
+the queue nor the caller (refused by name). The result counts what the call actually added:
+`created`/`reused` describe the **baton-derived** items and `work_items_added_total` (with
+`funnel_derived_added`) describes **every** row the funnel added, including the items it derives from
+mission state itself — the baton-derived number alone understates the call. **Write.**
+
+| Parameter | Type | Required | Default |
+|---|---|---|---|
+| baton_id | string | Yes | — |
+| user_id | string | No | caller's identity (trusted callers only may override) |
+
+### record_candidate_outcome
+
+Record what a candidate turned out to be: `useful_information`, `mere_variance` or
+`unnecessary_cost`. Three consumers: the archive's identity-bound `recordOutcome` (the seed is
+looked up by seed id **and** identity, so no caller can write into another identity's lineage and a
+cross-identity call is reported exactly like an unknown id), the existing trigger telemetry
+(measured token cost from the usage ledger, grouped under the `imagination_candidate` trigger; the
+telemetry note carries ids only, never the caller's `detail`), and a **capped** novelty-drive
+replenishment: `+0.05` per useful outcome, at most `0.2` per identity and mission per rolling 24
+hours, computed from the **stored** outcome rows so a restart cannot refill the same budget.
+Idempotent per `{seed, outcome}`: a repeat is recorded once and reported as a repeat (a *different*
+outcome for the same seed is a new record). **Write.**
+
+| Parameter | Type | Required | Default |
+|---|---|---|---|
+| seed_id | string | Yes | — |
+| outcome | `useful_information` \| `mere_variance` \| `unnecessary_cost` | Yes | — |
+| baton_id | string | No | — (recorded on the outcome row when given) |
+| detail | string (≤2000) | No | — (stays on the PRIVATE outcome row; never in telemetry) |
 | user_id | string | No | caller's identity (trusted callers only may override) |

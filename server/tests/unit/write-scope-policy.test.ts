@@ -45,6 +45,11 @@ describe('resolveWriteScope — personal kinds are forced private', () => {
     // engine's seeds, lineages and run ledger the same way — and deliberately
     // NOT `idea_archive_cells`, which is identity-owned but mission-indexed and
     // therefore written with the policy's explicit private opt-out instead.
+    // ITER-7 added the cycle state row, the cycle ledger and the candidate
+    // outcome rows the same way — and deliberately NOT `creative_batons` (the
+    // compiled baton is the one artifact this feature may share, written
+    // privately at compile time and promoted by the gated promoter) nor
+    // `creative_baton_promotions` (the team-scoped audit of that promotion).
     expect(PERSONAL_KINDS).toEqual([
       'journal',
       'reflection',
@@ -55,8 +60,13 @@ describe('resolveWriteScope — personal kinds are forced private', () => {
       'idea_seeds',
       'idea_lineages',
       'imagination_runs',
+      'imagination_cycle_states',
+      'imagination_cycles',
+      'idea_candidate_outcomes',
     ]);
     expect(PERSONAL_KINDS).not.toContain('idea_archive_cells');
+    expect(PERSONAL_KINDS).not.toContain('creative_batons');
+    expect(PERSONAL_KINDS).not.toContain('creative_baton_promotions');
   });
 
   it.each(PERSONAL_KINDS)('%s → shared_id null even when shared is requested', (kind) => {

@@ -73,6 +73,11 @@ import {
   dispatchImaginationTool,
 } from './services/processing/imagination-tools.js';
 import {
+  CREATIVE_BATON_TOOL_DEFS,
+  creativeBatonPromotionEnabled,
+  dispatchCreativeBatonTool,
+} from './services/processing/creative-baton-tools.js';
+import {
   effectivePersonalityConfig,
   perIdentityPersonalityEnabled,
   resolvePersonalityConfig,
@@ -1082,6 +1087,16 @@ if (focusedImaginationEnabled()) {
   // share the same flag and the same dispatch-time re-check — one switch, four
   // tools, and with it off they are indistinguishable from not existing.
   tools.push(...IMAGINATION_TOOL_DEFS);
+  // ITER-7 (Phase 5): the cycle orchestrator, the Creative Baton read, the
+  // controller adapter and the outcome feedback share `FOCUSED_IMAGINATION`;
+  // `promote_creative_baton` is registered only when CREATIVE_BATON_PROMOTION
+  // is ALSO on, and the dispatch re-checks both — with either flag off the
+  // promotion surface (like the rest of the family) is `Unknown tool`.
+  tools.push(
+    ...CREATIVE_BATON_TOOL_DEFS.filter(
+      (tool) => !tool.requires_promotion_flag || creativeBatonPromotionEnabled(),
+    ),
+  );
 }
 
 /** Names of the tools registered for the current flag/feature state. */
@@ -3949,6 +3964,16 @@ function registerHandlers(server: Server, getIdentity?: () => CallerIdentity) {
           // ITER-6 (Phase 4): same flag, same gate, same guarantee — the
           // imagination tools vanish with the flag rather than degrading.
           result = await dispatchImaginationTool(name, args, caller); break;
+        case 'run_imagination_cycle':
+        case 'get_creative_baton':
+        case 'promote_creative_baton':
+        case 'baton_candidates_to_work_items':
+        case 'record_candidate_outcome':
+          // ITER-7 (Phase 5): the family is gated on FOCUSED_IMAGINATION and
+          // promotion additionally on CREATIVE_BATON_PROMOTION; the dispatcher
+          // re-checks both, so a tool whose flag went off throws the plain
+          // unknown-tool error and writes nothing.
+          result = await dispatchCreativeBatonTool(name, args, caller); break;
         default: throw new Error(`Unknown tool: ${name}`);
       }
       // ── Cerebellum: procedural pattern observation ──────────

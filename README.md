@@ -155,7 +155,12 @@ surface: `PER_IDENTITY_PERSONALITY=1` registers `get_my_personality`,
 `FOCUSED_IMAGINATION=1` registers `run_focused_consolidation`,
 `get_salience_trace` (a private, mission-scoped Salience Trace) and its Phase 4
 pair `generate_imagination_seeds` / `get_idea_archive` (the imagination engine
-and its quality-diversity idea archive), and the cognitive-control plane adds
+and its quality-diversity idea archive) plus the Phase 5 quartet
+`run_imagination_cycle`, `get_creative_baton`, `baton_candidates_to_work_items`
+and `record_candidate_outcome` (plateau cycles, the sanitised Creative Baton,
+the controller adapter and the outcome feedback) — and, with
+`CREATIVE_BATON_PROMOTION=1` as well, `promote_creative_baton`, the only tool
+that may share a baton with the team. The cognitive-control plane adds
 25–38 tools when `COGNITIVE_CONTROL_ENABLED` is not off — see
 [MCP Tools Reference](docs/MCP-TOOLS.md).
 
@@ -218,6 +223,16 @@ are always private; everything else is team-shared by default.
   has changed") plus a lineage link to the prior rejection; private seeds,
   identity-owned cells, sanitized coverage view; behind `FOCUSED_IMAGINATION`
   (default off)
+- **Creative Baton** — a stalled mission runs **exactly one** imagination cycle
+  (plateau trigger, persisted cooldown and window budget, so a restart cannot
+  re-trigger early), gets a **versioned, sanitised** baton compiled from an
+  allow-list (no evidence refs, changed premises, trace text or bridges), has
+  its candidates turned into controller work items through the existing
+  scheduler funnel, and records what happened — archive outcome, trigger
+  telemetry and a capped novelty replenishment. Promotion to the team scope is a
+  separate, explicit, idempotent call behind `CREATIVE_BATON_PROMOTION` (default
+  off) that re-validates the stored payload and refuses a tampered baton;
+  behind `FOCUSED_IMAGINATION` (default off)
 - **Autonomous loop** — salience-driven autonomy; no cron, no hand-written task files
 - **Identity separation** — named identities per agent; personal always private
 - **Inter-agent message bus** — `Attention:` messages through shared memory,
