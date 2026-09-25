@@ -139,6 +139,15 @@ class MemoryRetriever:
                 tasks.append(("temporal_context", client.get_temporal_context(session_id)))
 
             # ── Cue-driven semantic retrieval ──
+            # NOTE (2026-09-25): these hits are deliberately NOT score-floored.
+            # A continuity question ("what was the last thing you were working
+            # on?") retrieves 9–12% matches from other machines' projects
+            # (Wispr, saas-factory) because the stored memories genuinely do not
+            # match — and John confirmed from the outside that they were
+            # correctly IGNORED, not acted on. The block is labelled background
+            # context, and the failure mode to fear is a dropped REAL memory,
+            # not a weak one being skimmed past. One unrepresentative query is
+            # not evidence for a threshold; do not add one without a corpus.
             if active("vector_search") and query.strip():
                 tasks.append(
                     ("vector_search", client.vector_search(query, limit=profile.vector_fetch_limit))
