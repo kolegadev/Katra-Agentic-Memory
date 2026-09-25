@@ -4,9 +4,19 @@
 <!--
   macOS bridge-guard agent — the Mac-side equivalent of the */10 cron guard
   on thebrick/natasha (wake-ritual directive item d, gap recorded 2026-09-25).
-  Install once Mac access exists:
-    cp this file ~/Library/LaunchAgents/com.kolega.bridge-guard.plist
-    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.kolega.bridge-guard.plist
+
+  THIS IS A TEMPLATE. The placeholders __REPO_DIR__, __KATRA_HOST__,
+  __KATRA_USER_ID__ and __USER_BIN__ are substituted per machine by
+  install-bridge-guard-macos.sh — do not copy this file directly:
+
+      integrations/kolega-code/scripts/install-bridge-guard-macos.sh
+
+  Absolute paths, tailnet addresses and the user's private bin directory
+  (which carries `uv`, needed by the repair path) are placeholders here on purpose: the
+  repo's privacy lint forbids them in tracked files, and the values genuinely
+  differ per machine (the first hand-install pinned a repo path that does not
+  exist on the Mac — the failure this installer removes).
+
   It runs the repo's bridge-guard.sh every 10 minutes, self-healing a dropped
   hook registration the way crontab does on Linux.
 -->
@@ -15,14 +25,14 @@
   <key>ProgramArguments</key>
   <array>
     <string>/bin/bash</string>
-    <string>/Users/johnpellew/Katra-Agentic-Memory/integrations/kolega-code/scripts/bridge-guard.sh</string>
+    <string>__REPO_DIR__/integrations/kolega-code/scripts/bridge-guard.sh</string>
     <string>--quiet</string>
   </array>
   <key>EnvironmentVariables</key>
   <dict>
-    <key>KATRA_USER_ID</key><string>lilly</string>
-    <key>KATRA_HOST</key><string>100.101.206.13</string>
-    <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>KATRA_USER_ID</key><string>__KATRA_USER_ID__</string>
+    <key>KATRA_HOST</key><string>__KATRA_HOST__</string>
+    <key>PATH</key><string>__USER_BIN__:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
   </dict>
   <key>StartInterval</key><integer>600</integer>
   <key>RunAtLoad</key><true/>
