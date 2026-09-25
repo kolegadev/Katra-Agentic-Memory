@@ -252,8 +252,21 @@ def _to_dt(ts):
 
 def is_skippable(msg: dict) -> bool:
     tags = [t.lower() for t in (msg.get("metadata", {}).get("tags") or [])]
-    if any(t in SKIP_TAGS for t in tags):
-        return True
+    author = str(msg.get("user_id") or "").lower()
+    for t in tags:
+        if t in SKIP_TAGS:
+            if t == "inbox-auto-reply" and author and author not in {_norm(n) for n in MY_NAMES}:
+                # 2026-09-25 (Lilly's evidence — 214 swallowed messages since
+                # 09-09): EVERY agent's inbox_reply.py stamps completion replies
+                # with inbox-auto-reply, and this check dropped them all, so
+                # genuine peer replies were undeliverable to every loop. Fix:
+                # skip inbox-auto-reply ONLY when WE authored it (echo/loop
+                # protection); deliver peer-authored replies. Ping-pong stays
+                # bounded by in_reply_to threading, MAX_ATTEMPTS and the daily
+                # dispatch cap. The other SKIP_TAGS remain unconditional —
+                # receipts/acks are one-way signals.
+                continue
+            return True
     return False
 
 
