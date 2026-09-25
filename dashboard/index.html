@@ -347,6 +347,14 @@ button{padding:8px 16px;border-radius:var(--radius-sm);border:none;font-size:0.8
   <div class="cards cols-2">
     <div class="card">
       <div class="form-group">
+        <label>Identity</label>
+        <input type="text" id="pers-identity" list="pers-identity-list" placeholder="this caller's own identity"
+          oninput="onPersonalityIdentityChange()" style="max-width:320px">
+        <datalist id="pers-identity-list"></datalist>
+        <div class="hint">Stored as <code>personality_config:&lt;identity&gt;</code>. Empty = the caller's own identity;
+          naming another identity requires the admin key.</div>
+      </div>
+      <div class="form-group">
         <label>Personality Profile</label>
         <select id="pers-profile" onchange="onProfileChange()"></select>
         <div class="hint" id="pers-desc" style="margin-top:6px;min-height:32px"></div>
@@ -381,6 +389,11 @@ button{padding:8px 16px;border-radius:var(--radius-sm);border:none;font-size:0.8
         <div class="hint">Homeostatic cap — prevents any one source dominating (anti-rumination)</div>
       </div>
     </div>
+  </div>
+
+  <div class="card" style="margin-top:12px">
+    <div class="card-title">Where this configuration comes from</div>
+    <div id="pers-resolution" style="font-size:0.8rem;line-height:1.8;color:var(--text2)">Loading…</div>
   </div>
 
   <div class="section-title">⚖️ Source Weights <span style="font-size:0.72rem;font-weight:400;color:var(--text3)">(0–10; agent_message pinned at 10)</span></div>
@@ -450,6 +463,20 @@ function requireAuth() {
     else { toast('Admin key required for this operation', 'error'); return false; }
   }
   return true;
+}
+
+// ── Escaping ──
+// Every value that originates from the server or from user input (identity
+// ids, profile names, timestamps, vault fields) is escaped BEFORE it is
+// interpolated into innerHTML. Escaping belongs at the interpolation site:
+// `escHtml(x)` inside a template literal, or `textContent` for plain text.
+function escHtml(v) {
+  return String(v === undefined || v === null ? '' : v)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
 
 async function api(method, path, body) {
@@ -889,8 +916,9 @@ async function forceProcess() {
 // value exists only as a local variable in vaultCreateSecret(), is sent once
 // in the request body, is never logged or stored, and is cleared immediately.
 
-function vaultEsc(s) {
-  return String(s === undefined || s === null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+/** The vault renderers' name for the shared HTML escaper (see escHtml). */
+function vaultEsc(v) {
+  return escHtml(v);
 }
 
 /** JSON-string-literal form of an id, safe to embed inside a quoted onclick.
@@ -1280,6 +1308,7 @@ async function unmuteAgent(agentId) {
 // ═══════════ PERSONALITY ═══════════
 let personalityRegistry = null;   // { profiles, sources, agent_message_weight, recommended_budgets }
 let activePersonalityCfg = null;  // persisted config
+let callerIdentityId = '';        // the caller's own identity (from /admin/identity)
 
 const SOURCE_LABELS = {
   agent_message: "Agent Messages (pinned)",
@@ -1302,22 +1331,106 @@ async function loadPersonality() {
       const rr = await fetch(`${API}/admin/personality/profiles`);
       personalityRegistry = await rr.json();
     }
-    const r = await fetch(`${API}/admin/personality`);
-    const d = await r.json();
-    if (!d.success) { toast(d.error || 'Failed to load personality', 'error'); return; }
+    await loadPersonalityIdentities();
+    const input = document.getElementById('pers-identity');
+    if (input && !input.value && callerIdentityId) input.value = callerIdentityId;
+
+    let query = personalityIdentityQuery(selectedPersonalityIdentity());
+    let d = await getPersonalityConfig(query);
+    // A pinned request (no ?user_id=) is resolved for the caller: learn our own
+    // identity from it. If another identity had been selected before we knew
+    // it, ask again for that one instead of silently showing the caller's.
+    if (!query && d.success && d.resolved_for) {
+      callerIdentityId = d.resolved_for;
+      if (input && !input.value) input.value = callerIdentityId;
+      const retry = personalityIdentityQuery((input && input.value) || '');
+      if (retry) d = await getPersonalityConfig(retry);
+    }
+    if (!d.success) {
+      document.getElementById('pers-resolution').textContent = '❌ ' + (d.error || 'Failed to load');
+      toast(d.error || 'Failed to load personality', 'error');
+      return;
+    }
     activePersonalityCfg = d.config;
+    renderPersonalityResolution(d);
 
     // Populate profile dropdown
     const sel = document.getElementById('pers-profile');
     const profiles = personalityRegistry.profiles || {};
     sel.innerHTML = Object.keys(profiles).map(name =>
-      `<option value="${name}"${name === d.config.personality ? ' selected' : ''}>${name}</option>`
+      `<option value="${escHtml(name)}"${name === d.config.personality ? ' selected' : ''}>${escHtml(name)}</option>`
     ).join('');
 
     renderPersonalityForm(d.config.personality, d.config);
   } catch (e) {
     toast('Error loading personality: ' + e.message, 'error');
   }
+}
+
+async function getPersonalityConfig(query) {
+  // The personality GET now authenticates: it resolves the caller's own record.
+  const r = await fetch(`${API}/admin/personality${query}`, { headers: authHeaders() });
+  if (r.status === 401) return { success: false, error: 'Unauthorized — enter the admin key to read another identity' };
+  return r.json();
+}
+
+// ── Identity scope (ITER-2) ──
+// The saved personality is per identity. The selector defaults to the admin's
+// own identity; ?user_id= is sent only when a different one is chosen, and
+// the server requires the admin key for it.
+function selectedPersonalityIdentity() {
+  const el = document.getElementById('pers-identity');
+  return ((el && el.value) || '').trim() || callerIdentityId;
+}
+
+function personalityIdentityQuery(target) {
+  const id = (target || '').trim();
+  if (!id || !callerIdentityId || id === callerIdentityId) return '';
+  return '?user_id=' + encodeURIComponent(id);
+}
+
+async function loadPersonalityIdentities() {
+  const list = document.getElementById('pers-identity-list');
+  if (!list || list.dataset.loaded) return;
+  try {
+    const r = await fetch(`${API}/admin/dashboard-stats`);
+    const d = await r.json();
+    const ids = new Set((d.agents || []).map(a => a.user_id).filter(Boolean));
+    if (callerIdentityId) ids.add(callerIdentityId);
+    list.innerHTML = [...ids].map(id => `<option value="${escHtml(id)}"></option>`).join('');
+    list.dataset.loaded = '1';
+  } catch (e) { /* the selector still works as a plain text input */ }
+}
+
+function onPersonalityIdentityChange() {
+  const el = document.getElementById('pers-identity');
+  if (el) el.value = el.value.trim();
+}
+
+function renderPersonalityResolution(d) {
+  const el = document.getElementById('pers-resolution');
+  if (!el) return;
+  // Server-provided values (the resolved identity id, profile, timestamps) are
+  // escaped before interpolation — they are data, never markup.
+  const resolvedFor = escHtml(d.resolved_for);
+  const originLabel = {
+    identity: 'identity record (personality_config:' + resolvedFor + ')',
+    legacy: 'legacy global record (system_settings.personality_config)',
+    default: 'built-in profile defaults (nothing saved yet)',
+  }[d.origin] || escHtml(d.origin);
+  const lines = [
+    `<div><strong>Resolved for:</strong> <span class="mono">${resolvedFor || '—'}</span></div>`,
+    `<div><strong>Profile:</strong> <span class="mono">${escHtml(d.config.personality)}</span></div>`,
+    `<div><strong>Origin:</strong> ${originLabel}</div>`,
+    `<div><strong>Version:</strong> <span class="mono">${escHtml(d.version ?? 0)}</span></div>`,
+    `<div><strong>Updated:</strong> <span class="mono">${escHtml(d.config.updated_at) || '—'}</span></div>`,
+  ];
+  if (d.per_identity_enabled === false) {
+    lines.push('<div style="margin-top:8px;color:var(--amber,#e0a100)">⚠️ PER_IDENTITY_PERSONALITY is off — serving the ' +
+      'legacy global record for every identity. Set it to <code>1</code> (or <code>true</code>/<code>yes</code>) and restart ' +
+      'the server to give each identity its own configuration. Saving now writes the legacy global record.</div>');
+  }
+  el.innerHTML = lines.join('');
 }
 
 function effectiveProfile(profileName, cfg) {
@@ -1363,11 +1476,11 @@ function renderPersonalityForm(profileName, cfg) {
     const pinned = src === 'agent_message';
     const label = SOURCE_LABELS[src] || src;
     return `<div style="display:flex;align-items:center;gap:8px">
-      <label style="flex:1;font-size:0.78rem;color:var(--text2)" title="${src}">${label}</label>
-      <input type="range" min="0" max="10" step="0.5" value="${val}"
-        data-source="${src}" ${pinned ? 'disabled' : ''}
+      <label style="flex:1;font-size:0.78rem;color:var(--text2)" title="${escHtml(src)}">${escHtml(label)}</label>
+      <input type="range" min="0" max="10" step="0.5" value="${escHtml(val)}"
+        data-source="${escHtml(src)}" ${pinned ? 'disabled' : ''}
         style="flex:1.4" oninput="this.nextElementSibling.textContent=this.value">
-      <span class="mono" style="width:32px;text-align:right;color:${pinned ? 'var(--text3)' : 'var(--accent)'}">${val}</span>
+      <span class="mono" style="width:32px;text-align:right;color:${pinned ? 'var(--text3)' : 'var(--accent)'}">${escHtml(val)}</span>
     </div>`;
   }).join('');
 }
@@ -1417,16 +1530,24 @@ function collectPersonalityOverrides() {
 async function savePersonality() {
   if (!requireAuth()) return;
   const body = collectPersonalityOverrides();
+  const target = selectedPersonalityIdentity();
   document.getElementById('pers-status').innerHTML = '<span class="spinner"></span> Saving…';
   try {
-    const r = await fetch(`${API}/admin/personality`, {
+    const r = await fetch(`${API}/admin/personality${personalityIdentityQuery(target)}`, {
       method: 'PUT', headers: authHeaders(), body: JSON.stringify(body),
     });
+    if (r.status === 401) {
+      const msg = 'Unauthorized — an admin key is required to write another identity';
+      document.getElementById('pers-status').textContent = '❌ ' + msg;
+      toast(msg, 'error');
+      return;
+    }
     const d = await r.json();
     if (d.success) {
       const nOverrides = Object.keys(body.source_weights).length + Object.keys(body.scoring).length;
       document.getElementById('pers-status').textContent =
-        `✅ Saved '${body.personality}'` + (nOverrides ? ` with ${nOverrides} override(s)` : '');
+        `✅ Saved '${body.personality}' for ${d.resolved_for || target || 'this identity'}`
+        + (nOverrides ? ` with ${nOverrides} override(s)` : '');
       toast(`Personality set to '${body.personality}'`, 'success');
       loadPersonality();
     } else {
@@ -1435,6 +1556,7 @@ async function savePersonality() {
     }
   } catch (e) {
     document.getElementById('pers-status').textContent = '❌ ' + e.message;
+    toast('Save failed: ' + e.message, 'error');
   }
 }
 
@@ -1443,6 +1565,7 @@ async function loadIdentity() {
   try {
     const d = await api('GET', '/admin/identity');
     if (d && d.success && d.identity) {
+      if (d.identity.user_id) callerIdentityId = d.identity.user_id;
       document.getElementById('identity-name').value = d.identity.name || '';
       document.getElementById('identity-chosen').value = d.identity.chosen_by || '';
       document.title = `${d.identity.name} — Agentic Memory Dashboard`;

@@ -63,6 +63,11 @@ import { AnomalyDetectionService } from './services/processing/anomaly-detection
 import { SalienceService } from './services/processing/salience-service.js';
 import { COGNITIVE_TOOL_DEFS, dispatchCognitiveTool, dispatchSchedulerTool, dispatchUncertaintyTool, dispatchActivationTool } from './services/mission-cognition/mcp-tools.js';
 import { cognitiveControlMode, schedulerMode } from './services/mission-cognition/index.js';
+import {
+  effectivePersonalityConfig,
+  perIdentityPersonalityEnabled,
+  resolvePersonalityConfig,
+} from './services/integration/personality-config-service.js';
 
 const SCHEDULER_TOOL_NAMES = ['create_cognitive_work_item', 'get_cognitive_queue', 'explain_scheduler_decision'];
 const UNCERTAINTY_TOOL_NAMES = [
@@ -1037,6 +1042,27 @@ if (cognitiveControlMode() !== 'off') {
     .filter(t => schedulerMode() !== 'off' || ![...SCHEDULER_TOOL_NAMES, ...UNCERTAINTY_TOOL_NAMES].includes(t.name)));
 }
 
+// ── Per-identity memory personality (ITER-2) ───────────────────────────────
+// Registered only when PER_IDENTITY_PERSONALITY is on (default off). With the
+// flag off the tool is indistinguishable from not existing: absent from
+// ListTools, and the dispatch-time re-check throws `Unknown tool`.
+const GetMyPersonalityInput = z.object({
+  user_id: z.string().optional(),
+});
+
+if (perIdentityPersonalityEnabled()) {
+  tools.push({
+    name: 'get_my_personality',
+    description: 'Returns the caller\'s resolved memory personality — profile, effective source weights, scoring, version, origin and the active thinking mode (null until Phase 6). Pinned to the caller\'s own identity: untrusted callers cannot read another identity\'s configuration.',
+    inputSchema: zodToJsonSchema(GetMyPersonalityInput) as Record<string, unknown>,
+  });
+}
+
+/** Names of the tools registered for the current flag/feature state. */
+export function registeredToolNames(): string[] {
+  return tools.map(t => t.name);
+}
+
 // ── Memory Decay handlers ────────────────────────────────────────
 
 async function handleGetMemoryDecayStats(args: unknown): Promise<TextContent[]> {
@@ -1195,6 +1221,40 @@ async function handleGetMyIdentity(args: unknown): Promise<TextContent[]> {
   ];
   if (identity.rationale) lines.push(`**rationale:** ${identity.rationale}`);
   return [{ type: 'text', text: lines.join('\n') }];
+}
+
+/**
+ * get_my_personality — the caller's own resolved memory personality (ITER-2).
+ * Caller-pinned: user_id is resolved through resolveUserId(), so an untrusted
+ * caller always reads its own record even when it passes another identity's
+ * user_id. `active_mode` is reported null — thinking modes arrive in Phase 6.
+ */
+export async function handleGetMyPersonality(args: unknown): Promise<TextContent[]> {
+  // Dispatch-time re-check: with the flag off this is a plain unknown tool.
+  if (!perIdentityPersonalityEnabled()) throw new Error('Unknown tool: get_my_personality');
+
+  const input = GetMyPersonalityInput.parse(args);
+  if (!is_database_connected()) return VAULT_DISCONNECTED;
+
+  const userId = resolveUserId(input.user_id);
+  const resolved = await resolvePersonalityConfig(get_database(), userId);
+  const effective = effectivePersonalityConfig(resolved);
+  return [{
+    type: 'text',
+    text: JSON.stringify({
+      user_id: resolved.user_id,
+      profile: resolved.profile,
+      source_weights: effective.source_weights,
+      scoring: effective.scoring,
+      max_context_tokens: effective.max_context_tokens,
+      max_context_tokens_source: resolved.max_context_tokens === null ? 'profile-default' : 'record',
+      version: resolved.version,
+      origin: resolved.origin,
+      updated_at: resolved.updated_at,
+      active_mode: null,
+      active_mode_note: 'No thinking mode is active — thinking modes arrive in Phase 6.',
+    }, null, 2),
+  }];
 }
 
 async function handleGetMindWander(args: unknown): Promise<TextContent[]> {
@@ -3750,6 +3810,7 @@ function registerHandlers(server: Server, getIdentity?: () => CallerIdentity) {
         case 'get_action_policy': result = await handleGetActionPolicy(args); break;
         case 'get_identity_kernel': result = await handleGetIdentityKernel(args); break;
         case 'get_my_identity': result = await handleGetMyIdentity(args); break;
+        case 'get_my_personality': result = await handleGetMyPersonality(args); break;
         case 'get_mind_wander': result = await handleGetMindWander(args); break;
         case 'get_agent_beliefs': result = await handleGetAgentBeliefs(args); break;
         case 'get_procedural_templates': result = await handleGetProceduralTemplates(args); break;

@@ -24,9 +24,11 @@ Authorization: Bearer <your-api-key>
 API keys are stored as **SHA-256 hashes** in MongoDB (`system_settings.generated_api_keys`, `system_settings.client_keys`) — plaintext keys never touch the database. Client keys for additional identities are generated once at boot and their plaintext printed once in the server log. Timing-safe comparison is used for all key validation.
 
 **No-auth endpoints** (caller identity is still resolved, but no key is required):
-`/api/v1/health`, `/api/v1/admin/dashboard-stats`, `/api/v1/admin/memory-search`, `/api/v1/admin/pubsub/presence`, `/api/v1/admin/pubsub/topics`, `/api/v1/admin/pubsub/muted`, `/api/v1/admin/personality`, `/api/v1/admin/personality/profiles`, and `GET /api/v1/admin/identity` (caller's own record).
+`/api/v1/health`, `/api/v1/admin/dashboard-stats`, `/api/v1/admin/memory-search`, `/api/v1/admin/pubsub/presence`, `/api/v1/admin/pubsub/topics`, `/api/v1/admin/pubsub/muted`, `/api/v1/admin/personality/profiles` (static profile catalogue — names no identity), and `GET /api/v1/admin/identity` (caller's own record).
 
-**Admin-gated** (require the `KATRA_API_KEY` regardless of the caller middleware): `PUT /api/v1/admin/identity`, `GET /api/v1/admin/identity?user_id=`, all `/api/v1/assets/*` routes, all `/api/v1/tenants/*` routes, and every other `/api/v1/admin/*` endpoint not listed as no-auth above.
+**Caller-pinned** (no admin key needed for the caller's own data, but a resolved caller is required): `GET`/`PUT /api/v1/admin/personality` — the saved personality resolves for the calling identity.
+
+**Admin-gated** (require the `KATRA_API_KEY` regardless of the caller middleware): `PUT /api/v1/admin/identity`, `GET /api/v1/admin/identity?user_id=`, `GET`/`PUT /api/v1/admin/personality?user_id=` (naming another identity), all `/api/v1/assets/*` routes, all `/api/v1/tenants/*` routes, and every other `/api/v1/admin/*` endpoint not listed above.
 
 ## Response Format
 
@@ -474,7 +476,14 @@ Read (masked), update (applied live; providers `deepseek`, `openai`, `moonshot`,
 
 ### GET /api/v1/admin/personality · PUT /api/v1/admin/personality · GET /api/v1/admin/personality/profiles
 
-Memory-weighted retrieval disposition. The personality endpoints and profiles registry are read-only with no auth; PUT requires the admin key.
+Memory-weighted retrieval disposition. The saved-configuration endpoints are **caller-pinned**: the configuration resolves for the resolved caller's identity (`?user_id=<id>` names another identity and requires the admin key, else **401**). The response reports `resolved_for`, `origin` (`identity` | `legacy` | `default`), `version` and `per_identity_enabled`. `GET .../profiles` is the static profile catalogue and stays public.
+
+Per-identity storage is gated by `PER_IDENTITY_PERSONALITY` (default **off**; truthy `1|true|yes`):
+
+- **off** — resolution and writes use the legacy global record `system_settings{key:'personality_config'}`, i.e. today's behaviour; the identity record is not even read.
+- **on** — resolution reads `personality_config:<user_id>`, then the legacy global record, then the built-in `balanced` defaults; `PUT` upserts the caller's own identity record with a server-owned `origin`/`version`.
+
+Resolution is read-only (it never writes, migrates or creates a record), an identity never inherits another's configuration, and the legacy record is left untouched. `PUT` keeps the pre-existing validation: unknown profile → **400**, weights filtered to known sources and clamped 0–10 with `agent_message` never settable, scoring keys whitelisted, `max_context_tokens` clamped 500–20000. With the flag on, `PUT` serialises concurrent writes with a bounded compare-and-set on the stored `version`, so interleaved updates land as sequential increments instead of overwriting each other; a write that loses every retry returns **409** with `retry: true` and stores nothing.
 
 ### GET /api/v1/admin/pubsub/presence · GET /api/v1/admin/pubsub/topics · GET /api/v1/admin/pubsub/muted
 

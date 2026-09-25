@@ -16,6 +16,14 @@ import { validateKatraKey } from '../utils/api-key-manager.js';
 import { SleepConsolidationService } from '../services/processing/sleep-consolidation-service.js';
 import { escape_regex } from '../utils/regex-escape.js';
 import { PROFILES, ALL_SOURCES, AGENT_MESSAGE_WEIGHT, RECOMMENDED_BUDGETS } from '../services/integration/personality-profiles.js';
+import {
+  PersonalityAccessError,
+  PersonalityWriteConflictError,
+  perIdentityPersonalityEnabled,
+  resolvePersonalityConfig,
+  sanitizePersonalityPatch,
+  updatePersonalityConfig,
+} from '../services/integration/personality-config-service.js';
 import { embeddingService } from '../services/infrastructure/embedding-service.js';
 
 // ---- Admin memory-search helpers ----------------------------------------
@@ -25,6 +33,22 @@ import { embeddingService } from '../services/infrastructure/embedding-service.j
 // augments it with semantic matches when the model is available.
 
 const MEMORY_COLLECTIONS: string[] = ['episodic_events', 'semantic_facts', 'knowledge_nodes', 'reflective_journals'];
+
+/**
+ * Personality endpoints that are caller-pinned instead of admin-gated: a
+ * resolved caller reads and writes its OWN record, so GET/PUT without
+ * `?user_id=` needs no admin key here (the global caller-auth middleware still
+ * requires a resolved caller). Naming another identity (`?user_id=<id>`) is an
+ * admin operation and falls through to the admin-key check.
+ */
+const PERSONALITY_PATHS: string[] = ['/admin/personality', '/api/v1/admin/personality'];
+
+/** Does the request carry a valid admin key? (loopback callers may not need one) */
+const hasAdminKey = (c: { req: { header: (name: string) => string | undefined } }): boolean => {
+  const header = c.req.header('Authorization') ?? '';
+  const presented = /^Bearer\s+(.+)$/i.exec(header)?.[1];
+  return Boolean(presented && validateKatraKey(presented));
+};
 
 const normalizeCollection = (col: string): string =>
   col.replace('_events', '').replace('_facts', '').replace('_nodes', '').replace('_journals', '').replace('reflective', 'reflections');
@@ -93,15 +117,14 @@ export const create_admin_routes = (): Hono => {
   // middleware state (no open-access fallback even in dev mode). Rejects tenant
   // keys in multi-tenant deployments because only the master admin key matches.
   router.use('*', async (c, next) => {
-    // Dashboard stats, memory search, pub-sub bus, and personality read-only
-    // endpoints — no auth required (read-only, dashboard-facing).
+    // Dashboard stats, memory search, pub-sub bus, and the static personality
+    // registry — no auth required (read-only, dashboard-facing).
     const readOnlyPaths = [
       '/admin/dashboard-stats', '/api/v1/admin/dashboard-stats',
       '/admin/memory-search', '/api/v1/admin/memory-search',
       '/admin/pubsub/presence', '/api/v1/admin/pubsub/presence',
       '/admin/pubsub/topics', '/api/v1/admin/pubsub/topics',
       '/admin/pubsub/muted', '/api/v1/admin/pubsub/muted',
-      '/admin/personality', '/api/v1/admin/personality',
       '/admin/personality/profiles', '/api/v1/admin/personality/profiles',
       '/admin/identity', '/api/v1/admin/identity',
     ];
@@ -109,10 +132,19 @@ export const create_admin_routes = (): Hono => {
       return next();
     }
 
-    const header = c.req.header('Authorization') ?? '';
-    const presented = /^Bearer\s+(.+)$/i.exec(header)?.[1];
+    // ITER-2: the personality endpoints left this allowlist. A resolved caller
+    // may read/write its own record; `?user_id=` names another identity and
+    // needs the admin key, so those requests fall through to the check below.
+    const namesAnotherIdentity = Boolean((c.req.query('user_id') ?? '').trim());
+    if (
+      PERSONALITY_PATHS.includes(c.req.path)
+      && (c.req.method === 'GET' || c.req.method === 'PUT')
+      && !namesAnotherIdentity
+    ) {
+      return next();
+    }
 
-    if (!presented || !validateKatraKey(presented)) {
+    if (!hasAdminKey(c)) {
       console.warn(`Admin auth rejected: ${c.req.method} ${c.req.path}`);
       return c.json({ error: 'Unauthorized', message: 'Admin API key required' }, 401);
     }
@@ -1534,6 +1566,9 @@ export const create_admin_routes = (): Hono => {
    * GET /api/v1/admin/personality/profiles
    * Returns the built-in personality profile registry (read-only reference)
    * so the dashboard can populate the selector and pre-fill the weight grid.
+   * Static catalogue — it stays on the no-auth read-only list (naming no
+   * identity, and reading no data): only the two /personality endpoints that
+   * resolve a caller's record are caller-pinned.
    */
   router.get('/personality/profiles', async (c) => {
     return c.json({
@@ -1547,27 +1582,37 @@ export const create_admin_routes = (): Hono => {
 
   /**
    * GET /api/v1/admin/personality
-   * Returns the currently active personality config (persisted selection +
-   * overrides), or the default 'balanced' if none has been saved.
-   * Read-only, no auth required.
+   * The caller's resolved memory personality (persisted selection + overrides),
+   * or the default 'balanced' when nothing has been saved.
+   *
+   * ITER-2: caller-pinned — `?user_id=<id>` names another identity and is
+   * admin-gated by the router (see the auth gate above). With
+   * PER_IDENTITY_PERSONALITY off, resolution skips the identity record and
+   * serves the legacy global record, i.e. today's behaviour.
    */
   router.get('/personality', async (c) => {
     try {
       const db = get_database();
-      const doc = await db.collection('system_settings').findOne({ key: 'personality_config' });
-      const active = doc?.personality || 'balanced';
-      const resolvedBase = PROFILES[active] || PROFILES['balanced'];
+      const requestedUserId = (c.req.query('user_id') ?? '').trim();
+      const resolvedFor = requestedUserId || getCaller().user_id;
+      const resolved = await resolvePersonalityConfig(db, resolvedFor);
+      const resolvedBase = PROFILES[resolved.profile] || PROFILES['balanced'];
       return c.json({
         success: true,
         config: {
-          personality: active,
-          source_weights: doc?.source_weights || {},
-          scoring: doc?.scoring || {},
-          max_context_tokens: doc?.max_context_tokens ?? (RECOMMENDED_BUDGETS[active] || 5000),
-          updated_at: doc?.updated_at || null,
+          personality: resolved.profile,
+          source_weights: resolved.source_weights,
+          scoring: resolved.scoring,
+          max_context_tokens:
+            resolved.max_context_tokens ?? (RECOMMENDED_BUDGETS[resolved.profile] || 5000),
+          updated_at: resolved.updated_at,
         },
         // Echo the resolved base profile so the UI can show effective weights.
         base_profile: resolvedBase,
+        resolved_for: resolved.user_id,
+        origin: resolved.origin,
+        version: resolved.version,
+        per_identity_enabled: perIdentityPersonalityEnabled(),
       });
     } catch (error: any) {
       console.error('Personality get error:', error.message);
@@ -1577,83 +1622,54 @@ export const create_admin_routes = (): Hono => {
 
   /**
    * PUT /api/v1/admin/personality
-   * Persist the active personality selection + optional overrides.
-   * Requires admin auth. Body:
+   * Persist the personality selection + optional overrides for the CALLER's
+   * identity (`?user_id=<id>` writes another identity and is admin-gated by
+   * the router). Body:
    *   { personality: string, source_weights?: {}, scoring?: {}, max_context_tokens?: number }
    * The agent_message weight is force-pinned to 10.0 (cannot be overridden).
+   * With PER_IDENTITY_PERSONALITY off the write targets the legacy global
+   * record, exactly as before.
    */
   router.put('/personality', async (c) => {
     try {
       const body = await c.req.json();
-      const { personality, source_weights, scoring, max_context_tokens } = body;
-
-      if (!personality || typeof personality !== 'string') {
-        return c.json({ success: false, error: 'personality (profile name) is required' }, 400);
+      const sanitized = sanitizePersonalityPatch(body);
+      if (!sanitized.ok) {
+        return c.json({ success: false, error: sanitized.error }, 400);
       }
-      if (!PROFILES[personality]) {
-        return c.json({
-          success: false,
-          error: `Unknown personality '${personality}'. Valid: ${Object.keys(PROFILES).join(', ')}`,
-        }, 400);
-      }
+      const { patch } = sanitized;
 
-      // Sanitize weight overrides: only known sources, numeric, and never
-      // allow agent_message to be lowered (operational invariant).
-      const cleanWeights: Record<string, number> = {};
-      if (source_weights && typeof source_weights === 'object') {
-        for (const [src, val] of Object.entries(source_weights)) {
-          if (!ALL_SOURCES.includes(src as any)) continue;
-          const num = Number(val);
-          if (!Number.isFinite(num)) continue;
-          if (src === 'agent_message') continue; // pinned — ignore attempts to change
-          cleanWeights[src] = Math.max(0, Math.min(10, num)); // clamp 0..10
-        }
-      }
-
-      // Sanitize scoring params.
-      const cleanScoring: Record<string, any> = {};
-      if (scoring && typeof scoring === 'object') {
-        const allowed = [
-          'relevance_multiplier', 'recency_half_life_days',
-          'budget_floors', 'max_single_source_pct',
-          'vector_fetch_limit', 'vector_sample', 'min_fetch_weight',
-        ];
-        for (const [k, v] of Object.entries(scoring)) {
-          if (allowed.includes(k)) cleanScoring[k] = v;
-        }
-      }
-
-      const budget = Number.isFinite(Number(max_context_tokens))
-        ? Math.max(500, Math.min(20000, Number(max_context_tokens)))
-        : undefined;
-
+      const requestedUserId = (c.req.query('user_id') ?? '').trim();
+      const caller = getCaller();
+      const targetUserId = requestedUserId || caller.user_id;
       const db = get_database();
-      const update: Record<string, unknown> = {
-        key: 'personality_config',
-        personality,
-        source_weights: cleanWeights,
-        scoring: cleanScoring,
-        updated_at: new Date(),
-      };
-      if (budget !== undefined) update.max_context_tokens = budget;
-
-      await db.collection('system_settings').updateOne(
-        { key: 'personality_config' },
-        { $set: update },
-        { upsert: true },
-      );
+      const resolved = await updatePersonalityConfig(db, targetUserId, patch, caller);
 
       return c.json({
         success: true,
-        message: `Personality set to '${personality}'`,
+        message: `Personality set to '${patch.personality}'`,
         config: {
-          personality,
-          source_weights: cleanWeights,
-          scoring: cleanScoring,
-          max_context_tokens: budget ?? (RECOMMENDED_BUDGETS[personality] || 5000),
+          personality: patch.personality,
+          source_weights: patch.source_weights,
+          scoring: patch.scoring,
+          max_context_tokens:
+            patch.max_context_tokens ?? (RECOMMENDED_BUDGETS[patch.personality] || 5000),
         },
+        resolved_for: resolved.user_id,
+        origin: resolved.origin,
+        version: resolved.version,
       });
     } catch (error: any) {
+      if (error instanceof PersonalityAccessError) {
+        console.warn(`Personality put rejected: ${error.message}`);
+        return c.json({ success: false, error: error.message }, 403);
+      }
+      if (error instanceof PersonalityWriteConflictError) {
+        // Contention, not a bad request: every guarded attempt lost the race,
+        // so nothing was stored and the caller may safely retry.
+        console.warn(`Personality put conflicted: ${error.message}`);
+        return c.json({ success: false, error: error.message, retry: true }, 409);
+      }
       console.error('Personality put error:', error.message);
       return c.json({ success: false, error: 'Internal server error' }, 500);
     }
@@ -1671,9 +1687,7 @@ export const create_admin_routes = (): Hono => {
       // per-user lookup enforces the admin key itself.
       const requestedUserId = c.req.query('user_id')?.trim();
       if (requestedUserId) {
-        const header = c.req.header('Authorization') ?? '';
-        const presented = /^Bearer\s+(.+)$/i.exec(header)?.[1];
-        if (!presented || !validateKatraKey(presented)) {
+        if (!hasAdminKey(c)) {
           console.warn(`Identity per-user lookup rejected (no admin key): user_id=${requestedUserId}`);
           return c.json({ error: 'Unauthorized', message: 'Admin API key required for ?user_id=' }, 401);
         }
@@ -1706,9 +1720,7 @@ export const create_admin_routes = (): Hono => {
       // F3: identity writes are admin-gated. The route path is on the
       // no-auth read-only list (GET /identity must stay open for the wake
       // rituals), so enforce the admin key here instead of the middleware.
-      const header = c.req.header('Authorization') ?? '';
-      const presented = /^Bearer\s+(.+)$/i.exec(header)?.[1];
-      if (!presented || !validateKatraKey(presented)) {
+      if (!hasAdminKey(c)) {
         console.warn(`Identity put rejected (no admin key): ${c.req.method} ${c.req.path}`);
         return c.json({ error: 'Unauthorized', message: 'Admin API key required' }, 401);
       }

@@ -1,0 +1,238 @@
+/**
+ * MCP tool-surface documentation consistency.
+ *
+ * Guarded failure (the verifier's finding on ITER-2): `tools/list` returned 81
+ * tools with every flag off while `README.md` and `docs/MCP-TOOLS.md` both said
+ * 67 — a 15-tool gap that hid the `vault_*`/`auth_*` families. Nothing failed,
+ * because the only existing "check" compared the two documents to each other.
+ *
+ * So this suite never trusts a written-down number: it loads
+ * `server/src/mcp-server.ts` per flag state, counts what is actually
+ * registered, and requires every number the docs state to equal a measurement.
+ * Add a tool without updating the docs (or change the docs without changing the
+ * code) and this suite fails.
+ */
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+
+vi.mock('../../src/database/connection.js', () => ({
+  get_database: () => null,
+  is_database_connected: () => false,
+  connect_to_mongodb: async () => {},
+  close_connection: async () => {},
+}));
+
+vi.mock('../../src/database/redis-connection.js', () => ({
+  get_redis_client: async () => null,
+  is_redis_healthy: async () => false,
+  close_redis_connection: async () => {},
+  get_redis_status: () => ({ connected: false }),
+}));
+
+const README = readFileSync(new URL('../../../README.md', import.meta.url), 'utf8');
+const MCP_TOOLS = readFileSync(new URL('../../../docs/MCP-TOOLS.md', import.meta.url), 'utf8');
+
+/** Every environment flag that shapes the registered surface. */
+const SURFACE_FLAGS = [
+  'PER_IDENTITY_PERSONALITY',
+  'COGNITIVE_CONTROL_ENABLED',
+  'COGNITIVE_SCHEDULER_MODE',
+  'COGNITIVE_ACTIVATION_KILL_SWITCH',
+];
+
+/** The registered tool names for one flag state (module re-loaded each time). */
+async function registeredSurface(env: Record<string, string> = {}): Promise<string[]> {
+  vi.resetModules();
+  for (const key of SURFACE_FLAGS) delete process.env[key];
+  for (const [key, value] of Object.entries(env)) process.env[key] = value;
+  const mod = await import('../../src/mcp-server.js');
+  return mod.registeredToolNames();
+}
+
+/** `### tool_name` catalogue headings in docs/MCP-TOOLS.md. */
+function cataloguedTools(): string[] {
+  return (MCP_TOOLS.match(/^### ([a-z0-9_]+)/gm) ?? []).map((line) => line.slice(4));
+}
+
+/** The tool total stated in the header sentence: `exposes **81 tools**`. */
+function declaredHeaderTotal(): number | null {
+  const match = MCP_TOOLS.match(/exposes \*\*(\d+) tools\*\*/);
+  return match ? Number(match[1]) : null;
+}
+
+/** Every tool-number mention in README.md (the four public-facing shapes). */
+function readmeTotals(): number[] {
+  const mentions = README.match(
+    /\*\*\d+\*\* specialized tools|\(\d+ tools\)|\*\*\d+ MCP tools\*\*|all \d+ tools/g,
+  ) ?? [];
+  return mentions.map((mention) => Number(mention.match(/\d+/)![0]));
+}
+
+/** The family table rows: `| **Katra Vault** (`vault_*`) … | 11 | names |`. */
+function documentedFamilies(): Array<{ prefix: string; stated: number }> {
+  const families: Array<{ prefix: string; stated: number }> = [];
+  for (const line of MCP_TOOLS.split('\n')) {
+    const match = line.match(/^\| \*\*[^*]+\*\* \(`(\w+)_\*`\)[^|]*\| (\d+) \|/);
+    if (match) families.push({ prefix: match[1], stated: Number(match[2]) });
+  }
+  return families;
+}
+
+/** The flag table rows: flags label, stated total, and stated delta. */
+function documentedFlagRows(): Array<{ flags: string; total: number | null; added: string }> {
+  const rows: Array<{ flags: string; total: number | null; added: string }> = [];
+  for (const line of MCP_TOOLS.split('\n')) {
+    // A flag row is any table row whose second cell is a bolded number (or
+    // numbers joined by `/`); the family rows carry a plain number there.
+    const match = line.match(/^\| ([^|]+) \| \*\*([\d /]+)\*\* \| ([^|]*) \|$/);
+    if (!match) continue;
+    const numbers = match[2].split('/').map((n) => Number(n.trim()));
+    rows.push({ flags: match[1].trim(), total: numbers[numbers.length - 1], added: match[3].trim() });
+  }
+  return rows;
+}
+
+const flagRow = (flags: string) => {
+  const row = documentedFlagRows().find((r) => r.flags === flags);
+  expect(row, `docs/MCP-TOOLS.md has no flag-table row for ${flags}`).toBeTruthy();
+  return row!;
+};
+
+beforeEach(() => {
+  for (const key of SURFACE_FLAGS) delete process.env[key];
+});
+
+afterEach(() => {
+  for (const key of SURFACE_FLAGS) delete process.env[key];
+});
+
+describe('MCP surface — the docs state the measured default count', () => {
+  it('README.md and docs/MCP-TOOLS.md agree with `tools/list`, flags off', async () => {
+    const defaultSurface = await registeredSurface();
+
+    // docs/MCP-TOOLS.md: the header sentence and the "all off" table row.
+    expect(declaredHeaderTotal()).toBe(defaultSurface.length);
+    expect(flagRow('all off (**default**)').total).toBe(defaultSurface.length);
+    expect(flagRow('all off (**default**)').added).toBe('—');
+
+    // README.md: every mention states the same, measured, number.
+    const totals = readmeTotals();
+    expect(totals).toHaveLength(4); // the four public mentions still exist
+    for (const total of totals) expect(total).toBe(defaultSurface.length);
+
+    // No stale pre-fix number survives anywhere.
+    for (const stale of ['66 tools', '67 tools', '66 MCP tools', '67 MCP tools']) {
+      expect(README, `README.md still claims ${stale}`).not.toContain(stale);
+      expect(MCP_TOOLS, `docs/MCP-TOOLS.md still claims ${stale}`).not.toContain(stale);
+    }
+    expect(README).not.toMatch(/\*\*6[67]\*\* specialized tools/);
+  });
+
+  it('the 15-tool gap is documented, not invisible: vault_* and auth_* families', async () => {
+    const defaultSurface = await registeredSurface();
+    const catalogued = cataloguedTools();
+
+    // The two families the catalogue does not list entry-by-entry.
+    const families = documentedFamilies();
+    expect(families.map((f) => f.prefix).sort()).toEqual(['auth', 'vault']);
+    for (const family of families) {
+      const measured = defaultSurface.filter((name) => name.startsWith(`${family.prefix}_`));
+      expect(family.stated, `${family.prefix}_* family count`).toBe(measured.length);
+      expect(measured.length).toBeGreaterThan(0);
+    }
+
+    // Arithmetic that used to be wrong: catalogued-by-default + families = total.
+    const cataloguedByDefault = catalogued.filter(
+      (name) => name !== 'get_my_personality' && defaultSurface.includes(name),
+    );
+    const familyTools = defaultSurface.filter(
+      (name) => name.startsWith('vault_') || name.startsWith('auth_'),
+    );
+    expect(cataloguedByDefault.length + familyTools.length).toBe(defaultSurface.length);
+    expect(MCP_TOOLS).toContain(`**${cataloguedByDefault.length} catalogued tools**`);
+  });
+
+  it('every registered tool is documented somewhere in docs/MCP-TOOLS.md', async () => {
+    const defaultSurface = await registeredSurface({ PER_IDENTITY_PERSONALITY: '1' });
+    const catalogued = cataloguedTools();
+
+    const invisible = defaultSurface.filter(
+      (name) => !catalogued.includes(name) && !MCP_TOOLS.includes(`\`${name}\``),
+    );
+    expect(invisible, 'registered but undocumented').toEqual([]);
+
+    // …and nothing is documented that is not registered in some flag state.
+    const registered = new Set(defaultSurface);
+    for (const name of catalogued) {
+      expect(registered, `${name} is catalogued but not registered`).toContain(name);
+    }
+  });
+});
+
+describe('MCP surface — the docs state the measured flag-gated additions', () => {
+  it('PER_IDENTITY_PERSONALITY adds exactly the catalogued get_my_personality', async () => {
+    const withoutFlag = await registeredSurface();
+    const withFlag = await registeredSurface({ PER_IDENTITY_PERSONALITY: '1' });
+
+    expect(withFlag.length - withoutFlag.length).toBe(1);
+    expect(withFlag.filter((name) => !withoutFlag.includes(name))).toEqual(['get_my_personality']);
+    expect(flagRow('`PER_IDENTITY_PERSONALITY=1`').total).toBe(withFlag.length);
+    expect(flagRow('`PER_IDENTITY_PERSONALITY=1`').added).toBe('+1 — `get_my_personality` (catalogued below)');
+  });
+
+  it('the cognitive-control rows state the measured 106 and 119 totals', async () => {
+    const defaultCount = (await registeredSurface()).length;
+    const read = await registeredSurface({ COGNITIVE_CONTROL_ENABLED: 'read' });
+    const write = await registeredSurface({ COGNITIVE_CONTROL_ENABLED: 'write' });
+    const scheduled = await registeredSurface({
+      COGNITIVE_CONTROL_ENABLED: 'read',
+      COGNITIVE_SCHEDULER_MODE: 'shadow',
+    });
+    const scheduledAlt = await registeredSurface({
+      COGNITIVE_CONTROL_ENABLED: 'read',
+      COGNITIVE_SCHEDULER_MODE: 'allocate_internal',
+    });
+
+    // read and write expose the same tools; any scheduler mode adds the same 13.
+    expect(write.length).toBe(read.length);
+    expect(scheduledAlt.length).toBe(scheduled.length);
+
+    expect(flagRow('`COGNITIVE_CONTROL_ENABLED=read` or `write`').total).toBe(read.length);
+    expect(flagRow('`COGNITIVE_CONTROL_ENABLED=read` or `write`').added).toMatch(
+      new RegExp(`^\\+${read.length - defaultCount}\\b`),
+    );
+    const schedulerRow = flagRow(
+      '`COGNITIVE_SCHEDULER_MODE=shadow` or `recommend` or `allocate_internal` (with the row above)',
+    );
+    expect(schedulerRow.total).toBe(scheduled.length);
+    expect(schedulerRow.added).toMatch(new RegExp(`^\\+${scheduled.length - read.length}\\b`));
+
+    // The combined row: personality + each cognitive-control total.
+    const combined = await registeredSurface({
+      PER_IDENTITY_PERSONALITY: '1',
+      COGNITIVE_CONTROL_ENABLED: 'read',
+    });
+    const combinedScheduled = await registeredSurface({
+      PER_IDENTITY_PERSONALITY: '1',
+      COGNITIVE_CONTROL_ENABLED: 'read',
+      COGNITIVE_SCHEDULER_MODE: 'shadow',
+    });
+    expect(combined.length).toBe(read.length + 1);
+    expect(combinedScheduled.length).toBe(scheduled.length + 1);
+    expect(
+      flagRow('`PER_IDENTITY_PERSONALITY=1` with a cognitive-control row').total,
+    ).toBe(combinedScheduled.length);
+    const personalityOnly = (await registeredSurface({ PER_IDENTITY_PERSONALITY: '1' })).length;
+    expect(MCP_TOOLS).toContain(
+      `**${personalityOnly} / ${combined.length} / ${combinedScheduled.length}**`,
+    );
+
+    // The kill switch removes the scheduler-only tools again.
+    const killed = await registeredSurface({
+      COGNITIVE_CONTROL_ENABLED: 'read',
+      COGNITIVE_SCHEDULER_MODE: 'shadow',
+      COGNITIVE_ACTIVATION_KILL_SWITCH: '1',
+    });
+    expect(killed.length).toBe(read.length);
+  });
+});

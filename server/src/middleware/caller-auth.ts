@@ -27,7 +27,14 @@ import { getCaller, runWithCaller, type CallerIdentity } from '../utils/caller-i
 import { isMultiTenant, runWithTenant } from '../database/tenant-context.js';
 import { resolveTenant } from '../services/integration/tenant-service.js';
 
-/** Paths exempt from API-key auth (health checks, read-only dashboard data). */
+/**
+ * Paths exempt from API-key auth (health checks, read-only dashboard data).
+ *
+ * ITER-2: `/api/v1/admin/personality` left this list — the saved personality
+ * is now resolved per caller, so the dashboard authenticates. The static
+ * profile catalogue (`/api/v1/admin/personality/profiles`) stays public: it
+ * carries no identity data.
+ */
 const AUTH_SKIP_PATHS = new Set([
   '/api/v1/health',
   '/api/v1/admin/dashboard-stats',
@@ -35,7 +42,6 @@ const AUTH_SKIP_PATHS = new Set([
   '/api/v1/admin/pubsub/presence',
   '/api/v1/admin/pubsub/topics',
   '/api/v1/admin/pubsub/muted',
-  '/api/v1/admin/personality',
   '/api/v1/admin/personality/profiles',
   '/api/v1/admin/identity',
 ]);

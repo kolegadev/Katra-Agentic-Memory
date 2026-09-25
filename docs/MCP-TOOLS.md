@@ -1,6 +1,40 @@
 # MCP Tools Reference
 
-Katra (the self-hosted cognitive memory appliance) exposes **66 tools** via the Model Context Protocol (MCP). All tools are accessible through the MCP endpoint at `http://<host>:3112/mcp` (host port 3112 → container port 3100). The transport is **POST-only streamable HTTP** — `GET /mcp` returns 405 (standalone SSE streams are not supported). A plain `GET /health` on the same port (3112) reports service health without authentication.
+Katra (the self-hosted cognitive memory appliance) exposes **81 tools** via the Model Context Protocol (MCP) on a default deployment — every feature flag off, i.e. exactly what `tools/list` returns out of the box (see [Registered surface](#registered-surface-and-what-the-flags-add)). All tools are accessible through the MCP endpoint at `http://<host>:3112/mcp` (host port 3112 → container port 3100). The transport is **POST-only streamable HTTP** — `GET /mcp` returns 405 (standalone SSE streams are not supported). A plain `GET /health` on the same port (3112) reports service health without authentication.
+
+## Registered surface (and what the flags add)
+
+`tools/list` reports **81 tools** on a default deployment: `COGNITIVE_CONTROL_ENABLED` off,
+`COGNITIVE_SCHEDULER_MODE` off, `PER_IDENTITY_PERSONALITY` off. That number is *measured, not
+hand-maintained* — `server/tests/unit/mcp-tool-surface-docs.test.ts` counts the registered tools in
+`server/src/mcp-server.ts` and fails if this page or the README states anything else.
+
+Those 81 are **66 catalogued tools** (every `###` entry below except the flag-gated
+`get_my_personality`) plus **15 tools in two families that have their own reference** instead of a
+catalogue entry:
+
+| Family | Tools | Names |
+| --- | --- | --- |
+| **Katra Vault** (`vault_*`) — encrypted-at-rest secrets, approvals, and the approval-gated capability calls | 11 | `vault_put_secret`, `vault_list_secrets`, `vault_get_secret`, `vault_delete_secret`, `vault_rotate_secret`, `vault_audit`, `vault_approve_service`, `vault_revoke_approval`, `vault_list_approvals`, `vault_http`, `vault_instagram_login` |
+| **Vault agent auth** (`auth_*`) — TOTP enrolment and short-lived agent sessions | 4 | `auth_enroll_totp`, `auth_issue_session`, `auth_revoke_session`, `auth_session_status` |
+
+A secret value never crosses this interface: `vault_http` / `vault_instagram_login` open it
+server-side and refuse to run without an active per-service approval, writes and approvals are
+operator-only (untrusted callers are rejected before any store work), and the list/get calls return
+metadata only. Design and usage: `docs/katra-vault-design.md`, `docs/katra-vault-usage.md`.
+
+Feature flags grow the same surface. Totals are `tools/list` counts:
+
+| Flags | `tools/list` | Added over the default |
+| --- | --- | --- |
+| all off (**default**) | **81** | — |
+| `PER_IDENTITY_PERSONALITY=1` | **82** | +1 — `get_my_personality` (catalogued below) |
+| `COGNITIVE_CONTROL_ENABLED=read` or `write` | **106** | +25 — mission state, state deltas, epistemic ledger, batons, allocator evidence/counterfactuals, skill-candidate lifecycle (`server/src/services/mission-cognition/`) |
+| `COGNITIVE_SCHEDULER_MODE=shadow` or `recommend` or `allocate_internal` (with the row above) | **119** | +13 more — scheduler queue/decision, uncertainty, trigger and experiment tools |
+| `PER_IDENTITY_PERSONALITY=1` with a cognitive-control row | **82 / 107 / 120** | both — the flags are independent |
+
+`COGNITIVE_ACTIVATION_KILL_SWITCH=1` forces the scheduler mode back to `off` (those last 13 tools
+disappear again); the cognitive-control plane is off in production by default.
 
 ## Authentication & Identity Separation
 
@@ -35,7 +69,7 @@ Implemented in `server/src/services/memory/write-scope-policy.ts`:
 
 ## Security
 
-- **Caller-bound scoping**: every tool invocation runs inside the resolved caller identity (`runWithCaller`). Memory writes (`store_memory`, `store_journal`) and every scoped read tool pin untrusted callers to their own identity (`resolveWriteScope` / `resolveUserId`) — supplied `user_id` values are ignored. Since 2026-08-21 this covers `vector_search`, `temporal_recall`, `temporal_search`, `get_journal`, `get_auto_journal`, missions, time-block and pattern tools, `get_memory_diagnostics`, `get_transaction_log`, `list_assets`, and `trigger_reflection`.
+- **Caller-bound scoping**: every tool invocation runs inside the resolved caller identity (`runWithCaller`). Memory writes (`store_memory`, `store_journal`) and every scoped read tool pin untrusted callers to their own identity (`resolveWriteScope` / `resolveUserId`) — supplied `user_id` values are ignored. Since 2026-08-21 this covers `vector_search`, `temporal_recall`, `temporal_search`, `get_journal`, `get_auto_journal`, missions, time-block and pattern tools, `get_memory_diagnostics`, `get_transaction_log`, `list_assets`, and `trigger_reflection`; `get_my_identity` and `get_my_personality` are pinned to the caller's own identity record either way.
 - **Admin tools**: `set_memory_scope` and `configure_llm` are admin-level operations — their handlers refuse to run unless a Katra admin key (`KATRA_API_KEY`) is configured.
 - **Input validation**: Working memory rejects prototype-pollution keys (`__proto__`, `constructor`, `prototype`). MCP request bodies are capped at 10MB.
 - **Key storage**: only sha256 digests persist; the database never holds a value that grants access directly.
@@ -451,6 +485,16 @@ Trace the emotional trajectory for an entity over time.
 ### get_my_identity
 
 Who am I? Returns the **caller's own** identity record (`name`, `user_id`, `established`, `chosen_by`, optional `rationale`). Pinned to the resolved caller identity — an untrusted caller can never read another agent's identity, even with a `user_id` argument.
+
+| Parameter | Type | Required |
+|---|---|---|
+| user_id | string | No (ignored for untrusted callers — always pinned to the caller) |
+
+### get_my_personality
+
+Returns the **caller's own** resolved memory personality: profile, effective source weights (profile defaults merged with the saved overrides; `agent_message` pinned at 10.0), scoring, `max_context_tokens`, `version`, `origin` (`identity` | `legacy` | `default`), `updated_at`, and `active_mode` (reported `null` — thinking modes arrive in Phase 6). Pinned to the resolved caller identity: an untrusted caller always reads its own configuration, even with a `user_id` argument.
+
+Registered only when `PER_IDENTITY_PERSONALITY` is on (**default off**) — with the flag off, calling it returns `Unknown tool`. With the flag off overall the saved personality is the single legacy global record, so every identity resolves the same configuration with `origin: "legacy"`.
 
 | Parameter | Type | Required |
 |---|---|---|

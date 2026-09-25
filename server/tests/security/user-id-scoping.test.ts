@@ -4,7 +4,18 @@
  * Verifies that ALL data access paths enforce user isolation.
  * These tests should run on every build — if any fail, a security fix was regressed.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+
+import { FakeDb } from '../helpers/fake-mongo.js';
+import {
+  PersonalityAccessError,
+  perIdentityPersonalityEnabled,
+  personalityConfigKey,
+  resolvePersonalityConfig,
+  updatePersonalityConfig,
+} from '../../src/services/integration/personality-config-service.js';
+
+const SECURITY_FAKE_DB = new FakeDb();
 
 // Replicate the key patterns that must always include user_id
 
@@ -167,5 +178,77 @@ describe('Security: Admin Gating', () => {
   it('tenant key regeneration requires confirm=true', () => {
     const requiresConfirm = true; // This is what the fix enforces
     expect(requiresConfirm).toBe(true);
+  });
+});
+
+/**
+ * ITER-2 — per-identity personality (real code, not a re-implementation).
+ * `personality_config:<user_id>` must honour the same IDOR boundary as every
+ * other identity-scoped record: an untrusted caller writes only its own, and
+ * no read or write may create or expose another identity's configuration.
+ */
+describe('Security: per-identity personality scoping', () => {
+  const settings = () => SECURITY_FAKE_DB.collection('system_settings');
+
+  beforeEach(() => {
+    SECURITY_FAKE_DB.reset();
+    process.env.PER_IDENTITY_PERSONALITY = '1';
+  });
+
+  afterEach(() => {
+    SECURITY_FAKE_DB.reset();
+    delete process.env.PER_IDENTITY_PERSONALITY;
+  });
+
+  it('refuses an untrusted cross-identity write and leaves both records intact', async () => {
+    const other = { key: personalityConfigKey('agent-b'), personality: 'sentinel', source_weights: {}, scoring: {}, origin: 'identity', version: 2, updated_at: '2026-09-11T00:00:00.000Z' };
+    settings().docs.push(structuredClone(other));
+
+    await expect(
+      updatePersonalityConfig(
+        SECURITY_FAKE_DB.asDb(),
+        'agent-b',
+        { personality: 'dreamer', source_weights: {}, scoring: {} },
+        { user_id: 'agent-a', trusted: false },
+      ),
+    ).rejects.toBeInstanceOf(PersonalityAccessError);
+
+    expect(settings().docs).toEqual([other]);
+    expect(settings().docs.some((d) => d.key === personalityConfigKey('agent-a'))).toBe(false);
+  });
+
+  it('an untrusted read of another identity resolves that identity’s own record, never the caller’s target', async () => {
+    settings().docs.push({
+      key: personalityConfigKey('agent-a'),
+      personality: 'dreamer',
+      source_weights: {},
+      scoring: {},
+      origin: 'identity',
+      version: 1,
+      updated_at: '2026-09-10T10:00:00.000Z',
+    });
+
+    // The service resolves the id it is given (transport-level pinning is what
+    // restricts it); a read for agent-b must not surface agent-a's record.
+    const resolved = await resolvePersonalityConfig(SECURITY_FAKE_DB.asDb(), 'agent-b');
+    expect(resolved.user_id).toBe('agent-b');
+    expect(resolved.origin).toBe('default');
+    expect(resolved.profile).not.toBe('dreamer');
+  });
+
+  it('resolution never creates a document for the caller or for anyone else', async () => {
+    const before = structuredClone(settings().docs);
+
+    await resolvePersonalityConfig(SECURITY_FAKE_DB.asDb(), 'agent-a');
+    await resolvePersonalityConfig(SECURITY_FAKE_DB.asDb(), 'agent-b');
+
+    expect(settings().docs).toEqual(before);
+  });
+
+  it('the flag fails closed: an unset/typo value keeps the legacy global behaviour', async () => {
+    delete process.env.PER_IDENTITY_PERSONALITY;
+    expect(perIdentityPersonalityEnabled()).toBe(false);
+    process.env.PER_IDENTITY_PERSONALITY = 'TRUE-ish';
+    expect(perIdentityPersonalityEnabled()).toBe(false);
   });
 });
