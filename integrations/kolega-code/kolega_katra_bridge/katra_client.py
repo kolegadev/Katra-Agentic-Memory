@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from dataclasses import dataclass
@@ -82,15 +83,28 @@ class KatraMCPClient:
             },
         }
 
-        try:
-            response = await self._client.post(
-                self.config.mcp_url,
-                headers=self._headers(),
-                json=init_payload,
-            )
-            response.raise_for_status()
-        except httpx.HTTPError as exc:
-            raise KatraClientError(f"MCP initialize request failed: {exc}") from exc
+        # One retry: a single transient failure (the 2026-09-25 15:27 initialize
+        # timeout — empty httpx error, next request 90s later succeeded) used to
+        # cost the whole turn its context, including the post-/clear bootstrap.
+        # Slow-but-alive is common on a shared host, so retry once before
+        # giving up; ~0.4s of extra latency against a live server, nothing when
+        # the endpoint is genuinely down (connect timeout is 2s and still fails).
+        last_error: Optional[Exception] = None
+        for attempt in (1, 2):
+            try:
+                response = await self._client.post(
+                    self.config.mcp_url,
+                    headers=self._headers(),
+                    json=init_payload,
+                )
+                response.raise_for_status()
+                break
+            except httpx.HTTPError as exc:
+                last_error = exc
+                if attempt == 1:
+                    await asyncio.sleep(0.4)
+        else:
+            raise KatraClientError(f"MCP initialize request failed: {last_error}") from last_error
 
         self._mcp_session_id = response.headers.get("mcp-session-id")
         if not self._mcp_session_id:

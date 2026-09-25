@@ -21,14 +21,24 @@ exit  : always 0 for the TURN (a broken memory hook must never break the
         marker (state_dir/bridge-alarm.json), prints loudly on stderr, and
         the machine-health collector escalates the marker to an alarm.
 
-Handled events (2026-09-23 wake-ritual re-implementation):
+Handled events (2026-09-23 wake-ritual re-implementation, id + /compress
+detection fixed 2026-09-25):
   SessionStart      full bootstrap, all 11 sources            (startup)
-  PostCompact       full bootstrap re-injection               (after /compress)
-  UserPromptSubmit  query retrieval + CLEAR-DETECTION: when the CLI's
-                    session store shows a new epoch since our last
-                    bootstrap (clear_history() calls
-                    start_epoch("agent_clear_command")), escalate to the
-                    full bootstrap and prefix it before the query context.
+  PostCompact       full bootstrap re-injection               (auto-compaction)
+  UserPromptSubmit  query retrieval + RESET-DETECTION: when the CLI's session
+                    store has moved past our last bootstrap — a new EPOCH
+                    (/clear, thread reset) or a COMPACTION newer than our
+                    marker (a manual /compress fires no hook at all: the CLI
+                    fires PostCompact only from _auto_compact_once) —
+                    escalate to the full bootstrap and prefix it before the
+                    query context.
+
+The CLI stamps hook events with the session's THREAD id, while the store keys
+directories by SESSION id (baseagent.fire_hook: session_id=self.thread_id vs
+session_store.session_dir_for(session_id)). Every journal read therefore
+resolves the id first (_resolve_session_dir). Reading
+sessions/<thread-id>/events.jsonl, which never exists, is what silently
+disabled /clear detection from 2026-09-23 to 2026-09-25.
 """
 
 import asyncio
@@ -38,6 +48,7 @@ import socket
 import sys
 from datetime import datetime, timezone
 from types import SimpleNamespace
+from typing import Any
 
 
 def state_dir() -> str:
@@ -119,30 +130,136 @@ def _load_event() -> dict | None:
     return doc if isinstance(doc, dict) else None
 
 
-def _latest_epoch_id(session_id: str) -> str | None:
-    """Read the session's recorded epoch from the CLI's own store, tail only.
-    clear_history() starts a new epoch ('agent_clear_command'), which is the
-    ONLY reliable signal a /clear happened — the CLI emits no hook for it."""
-    try:
-        path = os.path.join(STATE_DIR, "sessions", session_id, "events.jsonl")
-        with open(path, "rb") as f:
-            f.seek(0, os.SEEK_END)
-            size = f.tell()
-            f.seek(max(0, size - 8192))
-            tail = f.read().decode("utf-8", errors="ignore")
-        for line in reversed(tail.splitlines()):
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                doc = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(doc, dict) and doc.get("epoch_id"):
-                return str(doc["epoch_id"])
+def _sessions_root() -> str:
+    return os.path.join(STATE_DIR, "sessions")
+
+
+def _resolve_session_dir(identifier: str) -> str | None:
+    """Map the id the CLI put in the hook document to its session directory.
+
+    The CLI stamps hook events with the session's THREAD id
+    (kolega_code/agent/baseagent.py: fire_hook → session_id=self.thread_id),
+    while the store keys directories by SESSION id
+    (<state>/sessions/<session_id>/events.jsonl, session_store.py:
+    session_dir_for). Markers are written under the hook's id, so both have to
+    resolve to the same directory — otherwise every journal read hits a
+    non-existent path and reset detection dies silently (the 2026-09-25
+    regression: marker `542b9442….json` for thread 542b9442… existed, no such
+    session directory did, so /clear was never detected).
+
+    A direct hit wins (synthetic ids in tests/guards, and any future CLI that
+    passes the session id). Otherwise the thread id is matched against the
+    small metadata projections, newest `updated_at` first, because a thread
+    can be resumed into a new session.
+    """
+    if not identifier:
         return None
+    direct = os.path.join(_sessions_root(), identifier)
+    if os.path.isfile(os.path.join(direct, "events.jsonl")):
+        return direct
+    best: tuple[str, str] | None = None
+    try:
+        names = os.listdir(_sessions_root())
     except OSError:
         return None
+    for name in names:
+        if name.startswith("."):
+            continue
+        meta_path = os.path.join(_sessions_root(), name, "metadata.json")
+        try:
+            with open(meta_path) as f:
+                meta = json.load(f)
+        except (OSError, ValueError):
+            continue
+        if not isinstance(meta, dict) or meta.get("thread_id") != identifier:
+            continue
+        updated = str(meta.get("updated_at") or "")
+        if best is None or updated > best[0]:
+            best = (updated, os.path.join(_sessions_root(), name))
+    return best[1] if best else None
+
+
+# Journal tail window. The window must stay wide enough to still contain the
+# last epoch/compaction record after the turns that followed it wrote their
+# own lines — 8 KB was not: one turn of a busy session writes ~500 KB of
+# journal, and a compaction record carries its whole summary. The scan itself
+# stays cheap (substring pre-filter, see _journal_state), so a generous window
+# costs a few milliseconds per prompt.
+_TAIL_BYTES = 4 << 20  # 4 MiB
+
+
+def _journal_tail_lines(events_path: str) -> list[str]:
+    """Return the non-empty lines of the journal's tail window, newest first."""
+    try:
+        with open(events_path, "rb") as f:
+            f.seek(0, os.SEEK_END)
+            size = f.tell()
+            f.seek(max(0, size - _TAIL_BYTES))
+            chunk = f.read().decode("utf-8", errors="ignore")
+    except OSError:
+        return []
+    return [line for line in (ln.strip() for ln in reversed(chunk.splitlines())) if line]
+
+
+def _safe_json(line: str) -> dict | None:
+    try:
+        doc = json.loads(line)
+    except json.JSONDecodeError:
+        # The window boundary can cut a line in half; it is the OLDEST line.
+        return None
+    return doc if isinstance(doc, dict) else None
+
+
+def _journal_state(identifier: str) -> tuple[str | None, str | None]:
+    """(latest epoch id, latest compaction timestamp) from the CLI's session store.
+
+    Both signals come from ONE backwards pass over the same tail window:
+      * `epoch_id` is stamped on every record, so the newest record carries the
+        live epoch; a change means /clear or a thread reset happened
+        (clear_history()/start_epoch, and the TUI's _reset_current_thread →
+        start_epoch("thread_reset")).
+      * `context.compacted` (session_journal.record_compaction) is the only
+        signal a MANUAL /compress leaves: the CLI fires PostCompact hooks from
+        _auto_compact_once only, so the manual command's re-injection has to be
+        driven from the journal. Only candidate lines are parsed, so the pass
+        stays a cheap substring scan in the common case (no compaction at all).
+    """
+    session_dir = _resolve_session_dir(identifier)
+    if session_dir is None:
+        return None, None
+    epoch: str | None = None
+    compacted_at: str | None = None
+    for line in _journal_tail_lines(os.path.join(session_dir, "events.jsonl")):
+        if epoch is None and '"epoch_id"' in line:
+            doc = _safe_json(line)
+            if doc and doc.get("epoch_id"):
+                epoch = str(doc["epoch_id"])
+        if compacted_at is None and "context.compacted" in line:
+            doc = _safe_json(line)
+            if doc and doc.get("type") == "context.compacted":
+                ts = doc.get("timestamp") or doc.get("ts")
+                if ts:
+                    compacted_at = str(ts)
+        if epoch is not None and compacted_at is not None:
+            break
+    return epoch, compacted_at
+
+
+def _latest_epoch_id(session_id: str) -> str | None:
+    """Back-compat shim: the session's current epoch, or None when unknown."""
+    return _journal_state(session_id)[0]
+
+
+def _iso_ts(value: Any) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
 
 
 def _marker_path(session_id: str) -> str:
@@ -158,33 +275,63 @@ def _read_marker(session_id: str) -> dict | None:
         return None
 
 
-def _write_marker(session_id: str, epoch_id: str | None) -> None:
+def _write_marker(session_id: str, epoch_id: str | None, compacted_at: str | None = None) -> None:
     try:
         os.makedirs(SESSION_MARKER_DIR, exist_ok=True)
         with open(_marker_path(session_id), "w") as f:
-            json.dump({"epoch_id": epoch_id, "ts": datetime.now(timezone.utc).isoformat()}, f)
+            json.dump(
+                {
+                    "epoch_id": epoch_id,
+                    "compacted_at": compacted_at,
+                    "ts": datetime.now(timezone.utc).isoformat(),
+                },
+                f,
+            )
     except OSError:
         pass
 
 
 def _cleared_since_last_bootstrap(session_id: str) -> bool:
-    """True when the CLI's session store is on an epoch we have not
-    bootstrapped into — i.e. /clear (or any epoch restart) happened."""
+    """True when the CLI's session store moved past our last bootstrap.
+
+    Two ways that happens, both of which wipe or summarize the injected wake
+    context and therefore need a fresh bootstrap on THIS turn:
+      * a new epoch — /clear or a thread reset;
+      * a compaction recorded after our marker — /compress. The manual command
+        fires no hook at all, so the journal is the only witness.
+    Markers written before 2026-09-25 carry no `compacted_at`; their own write
+    time is the fallback cutoff.
+    """
     marker = _read_marker(session_id)
     if marker is None:
         return False  # no prior bootstrap in this session; SessionStart owns it
-    epoch = _latest_epoch_id(session_id)
-    if epoch is None:
+    epoch, compacted_at = _journal_state(session_id)
+    if epoch is None and compacted_at is None:
         return False
-    return marker.get("epoch_id") != epoch
+    if epoch != marker.get("epoch_id"):
+        return True
+    compaction_ts = _iso_ts(compacted_at)
+    marker_ts = _iso_ts(marker.get("compacted_at") or marker.get("ts"))
+    if compaction_ts is not None and (marker_ts is None or compaction_ts > marker_ts):
+        return True
+    return False
 
 
 async def _run_bootstrap(event: SimpleNamespace, session_id: str):
     from kolega_katra_bridge import hook as bridge_hook
 
-    result = await bridge_hook.on_session_start(event)
-    _write_marker(session_id, _latest_epoch_id(session_id))
-    return result or {}
+    epoch, compacted_at = _journal_state(session_id)
+    result = (await bridge_hook.on_session_start(event)) or {}
+    if result.get("additional_context"):
+        _write_marker(session_id, epoch, compacted_at)
+    else:
+        # Nothing was delivered — Katra unreachable. Record an UNBOOTSTRAPPED
+        # marker (null epoch) rather than nothing at all, so two things hold:
+        # the next prompt escalates and retries instead of the session staying
+        # memory-less, and there is still a marker for a later /clear to be
+        # measured against. A failed bootstrap must never look like a done one.
+        _write_marker(session_id, None, None)
+    return result
 
 
 async def _run_prompt_with_escalation(event: SimpleNamespace, session_id: str):
@@ -192,8 +339,9 @@ async def _run_prompt_with_escalation(event: SimpleNamespace, session_id: str):
 
     result = (await bridge_hook.on_user_prompt(event)) or {}
     if _cleared_since_last_bootstrap(session_id):
-        # /clear fired no hook — escalate to the full bootstrap so identity
-        # and memory return on THIS turn, not one turn later.
+        # /clear and /compress fire no UserPromptSubmit-time signal of their
+        # own — escalate to the full bootstrap so identity and memory return on
+        # THIS turn, not one turn later.
         bootstrap = await _run_bootstrap(event, session_id)
         bctx = bootstrap.get("additional_context") or ""
         qctx = result.get("additional_context") or ""

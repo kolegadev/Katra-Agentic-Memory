@@ -302,6 +302,7 @@ Kolega Code continues normally. Debug output lands in
 ```bash
 cd integrations/kolega-code
 .venv/bin/python scripts/test_hook.py        # end-to-end against live Katra
+.venv/bin/python scripts/test_reset_detection.py   # offline: /clear + /compress detection
 printf '{"hook_event_name":"SessionStart","session_id":"t1"}' | .venv/bin/python scripts/hook_runner.py
 ```
 
@@ -310,16 +311,36 @@ printf '{"hook_event_name":"SessionStart","session_id":"t1"}' | .venv/bin/python
 The wake ritual (identity + memory bootstrap) is re-asserted at FOUR points:
 
 1. **Kolega Code startup** — `SessionStart` hook: full bootstrap, all 11 sources.
-2. **After /compress** — `PostCompact` hook: re-runs the FULL bootstrap
-   immediately (PreCompact stays advisory/unregistered). Registered by
-   `ensure-bridge.sh`.
+2. **After /compress** — two mechanisms, because they cover different commands:
+   - `PostCompact` hook: re-runs the FULL bootstrap immediately (PreCompact
+     stays advisory/unregistered). The CLI fires this from
+     `_auto_compact_once`, i.e. for AUTOMATIC compaction only.
+   - journal detection: the MANUAL `/compress` command calls
+     `compress_history()` directly and fires **no hook at all**
+     (`agent/utils/commands.py` → `_handle_compress`), so it is detected from
+     the `context.compacted` record that same command writes into the session
+     journal (`session_journal.record_compaction`), and re-bootstrapped on the
+     next `UserPromptSubmit`.
 3. **After /clear** — the CLI emits NO event for /clear, so the bridge
-   DETECTS it: `clear_history()` starts a new epoch in the CLI's session
-   store (`start_epoch("agent_clear_command")`), and the next
-   `UserPromptSubmit` escalates to a full bootstrap when the stored epoch
-   changed since our last bootstrap (marker files in
+   DETECTS it: `clear_history()` / the TUI's thread reset start a new epoch in
+   the CLI's session store (`start_epoch(...)`), and the next
+   `UserPromptSubmit` escalates to a full bootstrap when the stored epoch — or
+   a compaction — moved past our last bootstrap (marker files in
    `<state dir>/bridge-session/`). Chosen over patching the CLI because any
    venv edit is wiped by the next update — the exact trap this work prevents.
+
+   **Identity caveat (2026-09-25 regression).** The CLI stamps hook documents
+   with the session's **thread** id (`agent/baseagent.py: fire_hook →
+   session_id=self.thread_id`), while the store keys directories by **session**
+   id (`sessions/<session_id>/events.jsonl`). Reading
+   `sessions/<thread-id>/events.jsonl` — which never exists — made detection
+   return `False` forever while every other check stayed green: the hook fired,
+   returned context and reported healthy. `hook_runner._resolve_session_dir()`
+   now resolves the id first (direct hit, else `metadata.json.thread_id`,
+   newest `updated_at`), and only a DELIVERED bootstrap advances the marker so
+   a failed one is retried on the next prompt. The offline regression test is
+   `scripts/test_reset_detection.py`; `bridge-guard.sh` runs it every 10
+   minutes.
 4. **After `kolega-code update`** — NEVER run `kolega-code update` bare on a
    bridge machine. Use `scripts/kolega-update.sh`: upgrade, then
    `ensure-bridge.sh` re-assertion, then `bridge-guard.sh` verification.
