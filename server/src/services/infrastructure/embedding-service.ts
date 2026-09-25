@@ -26,6 +26,21 @@ const EMBEDDING_DIMENSION = 384;
 const MODEL_NAME = 'Xenova/all-MiniLM-L6-v2';
 const EMBEDDING_VERSION = 1;
 
+// Long-document handling (2026-09-25). all-MiniLM-L6-v2 has 512 learned
+// positions, so a document was previously truncated at ~512 tokens and
+// mean-pooled ONCE: everything past the first window was invisible to search
+// (a 3,700-char report is ~1,180 tokens, so two thirds of it never reached its
+// vector). Documents are now encoded as overlapping windows whose vectors are
+// averaged and re-normalised, so the whole document contributes.
+//
+// WINDOW_CHARS is measured, not guessed: on the longest real documents in the
+// corpus, 1,000-char windows peak at 350 tokens (headroom under 512); 1,500-char
+// windows already hit 515 and would truncate.
+const WINDOW_CHARS = 1000;
+const WINDOW_OVERLAP_CHARS = 100;
+const MAX_WINDOWS = 24; // bounds cost: ~22k chars per document
+const BATCH_CHUNK = 32; // windows per forward pass in encodeBatch
+
 interface EmbeddingDocument {
   _id?: any;
   content?: string;
@@ -165,6 +180,45 @@ export class EmbeddingService {
   }
 
   /**
+   * Split text into embedding windows. Model positions are capped at 512
+   * tokens, so anything longer used to be silently truncated; overlapping
+   * windows keep whole-document recall at the cost of a few extra forward
+   * passes. Exposed for tests.
+   */
+  splitForEmbedding(text: string): string[] {
+    const trimmed = (text || '').trim();
+    if (!trimmed) return [];
+    if (trimmed.length <= WINDOW_CHARS) return [trimmed];
+
+    const windows: string[] = [];
+    const step = WINDOW_CHARS - WINDOW_OVERLAP_CHARS;
+    for (let start = 0; start < trimmed.length && windows.length < MAX_WINDOWS; start += step) {
+      windows.push(trimmed.slice(start, start + WINDOW_CHARS));
+      if (start + WINDOW_CHARS >= trimmed.length) break;
+    }
+    return windows;
+  }
+
+  /**
+   * Mean of per-window vectors, re-normalised to unit length. Returns null if
+   * nothing usable came back (the caller then degrades silently, as before).
+   */
+  private averageVectors(vectors: number[][]): number[] | null {
+    const usable = vectors.filter(v => Array.isArray(v) && v.length === EMBEDDING_DIMENSION);
+    if (usable.length === 0) return null;
+
+    const acc = new Array<number>(EMBEDDING_DIMENSION).fill(0);
+    for (const vec of usable) {
+      for (let i = 0; i < EMBEDDING_DIMENSION; i++) acc[i] += vec[i];
+    }
+    let norm = 0;
+    for (let i = 0; i < EMBEDDING_DIMENSION; i++) norm += acc[i] * acc[i];
+    norm = Math.sqrt(norm);
+    if (norm === 0) return null;
+    return acc.map(value => value / norm);
+  }
+
+  /**
    * Encode text into a dense vector.
    * Returns null if model unavailable or content fails quality filter.
    */
@@ -175,6 +229,21 @@ export class EmbeddingService {
     if (!modelReady || !this.model) return null;
 
     try {
+      const windows = this.splitForEmbedding(text);
+      if (windows.length === 0) return null;
+
+      if (windows.length > 1) {
+        const vectors: number[][] = [];
+        for (const window of windows) {
+          const out = await this.model(window, {
+            pooling: 'mean',
+            normalize: true,
+          });
+          vectors.push(Array.from(out.data as Float32Array));
+        }
+        return this.averageVectors(vectors);
+      }
+
       const output = await this.model(text, {
         pooling: 'mean',
         normalize: true,
@@ -206,18 +275,37 @@ export class EmbeddingService {
     if (qualified.length === 0) return texts.map(() => null);
 
     try {
-      // Native batched inference — all texts processed in one GPU/CPU call.
-      // ~10-50x throughput vs sequential (32GB RAM + GPU).
-      const output = await this.model(qualified.map(q => q.text), {
-        pooling: 'mean',
-        normalize: true,
-      });
-      const allVectors: number[][] = output.tolist();
+      // Expand each document into its embedding windows, then run the model in
+      // bounded chunks — one document can be up to MAX_WINDOWS windows, and
+      // batching every window of every document in one call could exhaust
+      // memory on the CPU path. ~10-50x throughput vs sequential per chunk.
+      const flat: Array<{ idx: number; text: string }> = [];
+      for (const q of qualified) {
+        const windows = this.splitForEmbedding(q.text);
+        for (const window of windows.length > 0 ? windows : [q.text]) {
+          flat.push({ idx: q.idx, text: window });
+        }
+      }
+
+      const perDoc = new Map<number, number[][]>();
+      for (let start = 0; start < flat.length; start += BATCH_CHUNK) {
+        const slice = flat.slice(start, start + BATCH_CHUNK);
+        const output = await this.model(slice.map(item => item.text), {
+          pooling: 'mean',
+          normalize: true,
+        });
+        const vectors: number[][] = output.tolist();
+        for (let j = 0; j < slice.length; j++) {
+          const bucket = perDoc.get(slice[j].idx) ?? [];
+          bucket.push(vectors[j]);
+          perDoc.set(slice[j].idx, bucket);
+        }
+      }
 
       // Map back to original positions, null for skipped items
       const results: (number[] | null)[] = new Array(texts.length).fill(null);
-      for (let j = 0; j < qualified.length; j++) {
-        results[qualified[j].idx] = allVectors[j];
+      for (const [idx, vectors] of perDoc) {
+        results[idx] = vectors.length === 1 ? vectors[0] : this.averageVectors(vectors);
       }
       return results;
     } catch (error: any) {

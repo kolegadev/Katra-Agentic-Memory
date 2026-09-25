@@ -46,6 +46,7 @@ import {
 import { embeddingService } from './services/infrastructure/embedding-service.js';
 import { getMemoryScope, buildScopeFilter, resolveSharedId, invalidateScopeCache } from './services/memory/memory-scope-service.js';
 import { resolveWriteScope } from './services/memory/write-scope-policy.js';
+import { selectVectorCandidates } from './services/memory/vector-candidate-selector.js';
 import { llmService, get_llm_config_from_db, save_llm_config_to_db } from './services/infrastructure/llm-service.js';
 import { getEpisodicEventManager } from './services/memory/episodic-event-manager.js';
 import { stableContentHash } from './services/infrastructure/content-hash-utils.js';
@@ -2046,16 +2047,26 @@ async function handleVectorSearch(args: unknown): Promise<TextContent[]> {
   try {
     const queryVec = await embeddingService.encode(input.query);
     if (queryVec) {
-      const facts = await db.collection('semantic_facts')
-        .find({ ...factsFilter, embedding: { $exists: true } })
-        .limit(50)
-        .toArray();
+      // Candidate pool: newest-in-scope ∪ query-matched documents. See
+      // services/memory/vector-candidate-selector.ts — the previous unsorted
+      // find().limit(50) made every query score the same old slice.
+      const facts = await selectVectorCandidates(
+        db.collection('semantic_facts'),
+        factsFilter,
+        input.query,
+      );
       if (facts.length > 0) {
         results = facts
           .map((f: any) => {
             if (f.embedding?.length === embeddingService.embeddingDimension) {
               const cosine = embeddingService.cosineSimilarity(queryVec, f.embedding);
-              const score = embeddingService.combinedScore(cosine, f.created_at, 0.6);
+              const timestamp = f.created_at ?? f.updated_at ?? f.timestamp ?? null;
+              // An undated document scores on similarity alone: unknown age
+              // must not read as brand new (it would otherwise win the
+              // recency term outright).
+              const score = timestamp
+                ? embeddingService.combinedScore(cosine, timestamp, 0.6)
+                : cosine * 0.6;
               return { ...f, _score: score };
             }
             return { ...f, _score: 0 };

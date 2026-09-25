@@ -23,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Helm chart directory `helm/katra/` → `helm/katra/`
 
 ### Fixed
+- `vector_search` scored a frozen candidate slice — `find(...).limit(50)` with no sort meant every query re-ranked the same documents (measured: a four-day window of mid-July, 0 of 50 newer than seven days, out of 45k embedded facts in scope). Candidates are now the newest-in-scope ∪ query-matched documents; undated documents no longer score `NaN`
+- Long documents were truncated at the model's 512 positions and mean-pooled once, so everything past the first window was invisible to search. Embedding now splits into overlapping windows (1,000 chars, measured ≤350 tokens) and averages their vectors; `server/scripts/reembed-long-docs.mjs` refreshes documents embedded before the change
 - `ensure-bridge.sh` step-3 rewrite condition now also compares `mcp_url` against `KATRA_HOST` (a non-login run could pin `localhost` permanently)
 - Cross-identity semantic leak in `search_memories` — vector pass scoped to the caller's view
 - Hybrid scope regression in `search_memories` keyword pass — `$or` nested under `$and`
