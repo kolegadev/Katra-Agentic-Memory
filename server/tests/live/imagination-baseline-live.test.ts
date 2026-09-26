@@ -88,7 +88,7 @@
  *     --grade   /tmp/imagination-baseline-live-GRADES.json
  */
 import { describe, expect, it } from 'vitest';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { hostname } from 'node:os';
 import path from 'node:path';
 
@@ -374,8 +374,22 @@ describe.skipIf(!LIVE)('imagination baseline — the bounded LIVE run (DoD #8)',
       const store = new LiveCaptureStore(db);
       setCaptureDb(store.asFakeDb());
       const pipeline: Array<{ step: string; at: string; detail?: string }> = [];
+      // A live run takes minutes and can fail at any step: the marks go to the
+      // progress file (and to stderr) the MOMENT they happen, so a failed run
+      // still says exactly how far it got — the capture itself is only written
+      // on success, and an in-memory trail dies with the process.
+      const progressPath = `${config.out}.progress.log`;
       const mark = (step: string, detail?: string): void => {
-        pipeline.push({ step, at: new Date().toISOString(), ...(detail ? { detail } : {}) });
+        const entry = { step, at: new Date().toISOString(), ...(detail ? { detail } : {}) };
+        pipeline.push(entry);
+        const line = `${entry.at} ${step}${detail ? ` — ${detail}` : ''}`;
+        console.error(`[live] ${line}`);
+        try {
+          mkdirSync(path.dirname(progressPath), { recursive: true });
+          appendFileSync(progressPath, `${line}\n`);
+        } catch (error) {
+          console.error(`[live] the progress file could not be appended: ${messageOf(error)}`);
+        }
       };
 
       let finishedAt = new Date().toISOString();
@@ -738,6 +752,7 @@ describe.skipIf(!LIVE)('imagination baseline — the bounded LIVE run (DoD #8)',
         const judgeCalls: Row[] = [];
         const verdicts: ReturnType<typeof parseJudgeReply>['verdicts'] = [];
         const judgeRefusals: string[] = [];
+        mark('judge started', `${batches.length} batch(es) of at most ${JUDGE_BATCH_SIZE} case(s) with ${judgeModel}`);
         for (const [index, batch] of batches.entries()) {
           const prompt = judgePrompt(batch);
           const usageBefore = usageSnapshot();
@@ -749,6 +764,11 @@ describe.skipIf(!LIVE)('imagination baseline — the bounded LIVE run (DoD #8)',
           );
           const callUsage = usageDeltaSince(usageBefore);
           const parsed = parseJudgeReply(raw, batch);
+          mark(
+            'judge batch done',
+            `batch ${index + 1}/${batches.length} — ${parsed.verdicts.length} verdict(s), ${parsed.refusals.length} refusal(s), ` +
+              `${callUsage.input_tokens} input / ${callUsage.output_tokens} output token(s)`,
+          );
           verdicts.push(...parsed.verdicts);
           judgeRefusals.push(...parsed.refusals);
           judgeCalls.push({
@@ -775,6 +795,7 @@ describe.skipIf(!LIVE)('imagination baseline — the bounded LIVE run (DoD #8)',
         // ── the outcome channel: the STORE records what the judge said ──────
         const byCase = new Map(mapping.map((row) => [row.case_id, row]));
         const outcomeRefusals: Row[] = [];
+        mark('recording outcomes', `${verdicts.length} verdict(s) through recordCandidateOutcome`);
         for (const verdict of verdicts) {
           const target = byCase.get(verdict.case_id) as CaseMapping;
           const identity = candidateOwners.get(target.seed_id);
