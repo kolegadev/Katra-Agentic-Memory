@@ -242,8 +242,28 @@ const WRITTEN_COLLECTIONS = [
   'thinking_mode_assignments',
 ];
 
-/** The judge's max_tokens for a batch: the shape it must return, plus headroom. */
-function judgeMaxTokens(cases: number): number {
+/**
+ * The engine's own knobs, with the defaults its accessors document. Recorded in
+ * the capture beside the process's raw values so a reader can see BOTH what the
+ * run used and what the deployment would use with nothing set — a reasoning
+ * model is truncated by the small defaults, which is a rollout finding, and an
+ * unrecorded override is an unreproducible run.
+ */
+const KNOB_DEFAULTS: Record<string, string> = {
+  FOCUSED_CONSOLIDATION_MAX_TOKENS: '2000',
+  FOCUSED_CONSOLIDATION_TIMEOUT_MS: '60000',
+  FOCUSED_IMAGINATION_MAX_TOKENS: '3000',
+  FOCUSED_IMAGINATION_TIMEOUT_MS: '60000',
+  FOCUSED_IMAGINATION_MAX_LLM_CALLS: '3',
+  FOCUSED_IMAGINATION_MAX_SEEDS: '8',
+  FOCUSED_IMAGINATION_MAX_OPERATORS: '6',
+  IMAGINATION_CYCLE_COOLDOWN_MS: '900000',
+  IMAGINATION_CYCLE_MAX_PER_WINDOW: '3',
+  IMAGINATION_CYCLE_MAX_TOKENS_PER_WINDOW: '20000',
+  IMAGINATION_MAX_CONCURRENT_CYCLES: '2',
+};
+
+/** The judge's max_tokens for a batch: the shape it must return, plus headroom. */function judgeMaxTokens(cases: number): number {
   const override = Number(process.env.IMAGINATION_BASELINE_JUDGE_MAX_TOKENS);
   if (Number.isFinite(override) && override > 0) return Math.floor(override);
   // The estate's canonical model is a REASONING model: it spends output tokens
@@ -944,6 +964,23 @@ describe.skipIf(!LIVE)('imagination baseline — the bounded LIVE run (DoD #8)',
         };
 
         // ── the capture, in the harness's shape ────────────────────────────
+        // The run's CONFIGURATION is recorded, not assumed: the ceilings, the
+        // timeouts and the window budget the services actually read from THIS
+        // process (a raw value, or null meaning "unset — the service's own
+        // documented default is in force"), and how many blinded cases mention a
+        // mission id inside their own text. A reviewer verified an earlier run
+        // whose raised ceilings existed only in an uncommitted runner script;
+        // these two blocks are why that cannot recur silently.
+        const knob = (name: string): { value: string | null; default?: string } => ({
+          value: process.env[name] ?? null,
+          ...(KNOB_DEFAULTS[name] ? { default: KNOB_DEFAULTS[name] } : {}),
+        });
+        const modelEnvironment = Object.fromEntries(Object.keys(KNOB_DEFAULTS).map((name) => [name, knob(name)]));
+        const missionMentionsInText = cases.filter((item) =>
+          allMissions.some((missionId) =>
+            [item.hypothesis, item.mechanism, item.cheapest_test].some((field) => String(field ?? '').includes(missionId)),
+          ),
+        ).length;
         const capture = {
           fixture_version: '1.0',
           frozen_at: finishedAt,
@@ -981,6 +1018,7 @@ describe.skipIf(!LIVE)('imagination baseline — the bounded LIVE run (DoD #8)',
               'when an evaluation is missing',
           },
           arms,
+          model_environment: modelEnvironment,
           capture: {
             kind: 'live_run',
             summary:
@@ -994,10 +1032,11 @@ describe.skipIf(!LIVE)('imagination baseline — the bounded LIVE run (DoD #8)',
               `FLAGS IN THIS PROCESS ONLY: FOCUSED_IMAGINATION=1, CREATIVE_BATON_PROMOTION=1 and COGNITIVE_TEAM_ALLOCATION=1 were set by this instrument before the services were imported. The deployment runs with all four flags OFF; this process is the instrument, and nothing it writes changes any process's configuration.`,
               'BOUNDED EVALUATION: arm C ran with RunCycleArgs.force=true — the plateau gate is bypassed by an explicit caller override, recorded in the arm’s config.cycle_trigger. The gate is what normally bounds the engine to one cycle per plateau; here the bound is this run.',
               `JUDGED SET: EVERY candidate each arm generated was judged — admitted AND rejected — so each side's denominator is its generated set, not its admitted set (candidate counts: ${armInputs.map((arm) => `${arm.label}=${arm.candidates.length}`).join(', ')}).`,
-              `BLIND JUDGE: the judge saw only {hypothesis, mechanism, cheapest_test, evidence_refs, descriptor_bins} under opaque case ids from a seeded shuffle (seed ${config.shuffleSeed}); the arm labels, the identities, the mission ids and the seed ids never entered a payload. The prompt is frozen and recorded with its sha256; the raw replies, the mapping and every call's token usage are in the transcript.`,
+              `BLIND JUDGE: the judge saw only {hypothesis, mechanism, cheapest_test, evidence_refs, descriptor_bins} under opaque case ids from a seeded shuffle (seed ${config.shuffleSeed}); no case carries an arm label, an identity or a seed id and the CASES ARE INTERLEAVED across arms. The blinding is STRUCTURAL, not textual: a candidate's own text is judged as written, and ${missionMentionsInText} of ${cases.length} case(s) mention one of this run's mission ids inside their own text (a real candidate can name its mission). The prompt is frozen and recorded with its sha256; the raw replies, the mapping and every call's token usage are in the transcript.`,
               `SELF-PREFERENCE RISK, DISCLOSED: the judge is a language model, and the treatment arms' text was written by a model of the same family while the comparators' text is a fixed template. A judge may prefer one style over another for reasons unrelated to the ideas. The prompt, the shuffle seed and every raw reply are recorded precisely so this reading can be re-scored from the transcript by another judge, or by a person.`,
               'NOT DONE HERE: no container executed the engine (the services ran in this process); nothing was promoted beyond what the shipped promotion step does inside arm C’s cycle; no experiments row was written (that is the harness’s job, and it is what turns this capture into the recorded baseline); no row was deleted.',
               `OUTCOME CHANNEL: ${recordedCount} of ${verdicts.length} verdict(s) were recorded through recordCandidateOutcome into the store; ${outcomeRefusals.length} refusal(s) are reported verbatim in this block.${judgeRefusals.length > 0 ? ` The judge itself refused ${judgeRefusals.length} case(s) by name (recorded in the transcript and this block).` : ''}`,
+              `RUN CONFIGURATION (recorded, not assumed): the engine's knobs as THIS process read them are in this capture's `model_environment` block — raw value, plus the default its accessor documents when the value is null. ${Object.entries(modelEnvironment).filter(([, k]) => k.value !== null).map(([n, k]) => `${n}=${k.value}`).join(', ') || 'every knob unset — the documented defaults were in force'}.`,
               `TRANSCRIPT: ${transcriptPath} (system prompt verbatim, mapping, raw replies, per-call tokens); GRADES: ${config.grades} (the harness's --grade file, built from the store-recorded verdicts).`,
             ],
             judge: {

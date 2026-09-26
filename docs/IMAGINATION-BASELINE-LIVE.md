@@ -19,7 +19,7 @@ re-run `node scripts/imagination-baseline.mjs`.*
 | instrument | `server/tests/live/imagination-baseline-live.test.ts` (skips unless `IMAGINATION_BASELINE_LIVE=1`; refuses, by name, any missing identity/run token/output path) |
 | bounds | 35 candidates judged (bound 60, raised deliberately after the first complete attempt produced 48), one engine cycle, one team first pass |
 | flags | `FOCUSED_IMAGINATION`, `CREATIVE_BATON_PROMOTION`, `COGNITIVE_TEAM_ALLOCATION` **in the instrument process only**. The deployment runs with all four flags off; nothing the run wrote changes any process's configuration |
-| wrote / deleted | 35 outcomes, 8 + 15 candidates, 2 cycles, 3 team portfolios, 1 baton, 4 missions, 16 graph rows — counted by the run's namespaces. **Nothing was deleted or overwritten** |
+| wrote / deleted | counted by the run's namespaces, from the capture's own `written` block: 35 outcomes, 35 candidate seeds, 25 archive cells, 25 lineages, 1 cycle, 4 engine runs, 6 salience traces, 6 consolidation runs, 1 team portfolio, 3 inheritance envelopes, 1 baton + 1 promotion, 2 mission states, 4 graph nodes + 4 edges, 35 trigger evaluations, 12 mission events, 6 ledger entries, 4 state deltas, 2 work items. **Nothing was deleted or overwritten** |
 
 ```bash
 # the whole live evaluation, from a checkout of this tree on a machine that can reach the store
@@ -30,6 +30,32 @@ IMAGINATION_BASELINE_RUN=<fresh run token> IMAGINATION_BASELINE_OUT=<capture.jso
 node scripts/imagination-baseline.mjs \
   --fixture <capture.json> --store <store.json> --grade <capture-GRADES.json>
 ```
+
+### The run's configuration (recorded, because an unrecorded override is an unreproducible run)
+
+The first complete run of this instrument used the deployment's default ceilings and **failed**: the
+estate's canonical model is a *reasoning* model whose reasoning tokens count against `max_tokens`,
+and the engine's own defaults — `FOCUSED_CONSOLIDATION_MAX_TOKENS` **2000**,
+`FOCUSED_IMAGINATION_MAX_TOKENS` **3000** — truncate its first JSON reply mid-array. The run that
+produced the evidence above set:
+
+| knob | value used | the default it replaces |
+| --- | --- | --- |
+| `FOCUSED_CONSOLIDATION_MAX_TOKENS` | 16 000 | 2000 |
+| `FOCUSED_CONSOLIDATION_TIMEOUT_MS` | 300 000 | 60 000 |
+| `FOCUSED_IMAGINATION_MAX_TOKENS` | 16 000 | 3000 |
+| `FOCUSED_IMAGINATION_TIMEOUT_MS` | 300 000 | 60 000 |
+| `IMAGINATION_CYCLE_MAX_TOKENS_PER_WINDOW` | 200 000 | 20 000 |
+| judge batch ceiling | 3 000 + 1 000 per case (capped at the provider's accepted 16 000) | — |
+| `IMAGINATION_BASELINE_MAX_CANDIDATES` | 60 | 40 |
+
+At the time of the run those values lived in an **uncommitted runner script**; a reviewer flagged
+that the capture did not carry them, so the instrument now records every knob it read — raw value
+plus the default the accessor documents — in the capture's `model_environment` block, and prints a
+`RUN CONFIGURATION` disclosure line. The numbers above are the ones that run used and the ones this
+document is accountable for. **None of them is a deployment change**: the deployment's `.env` is
+untouched and the rollout decides the production values before `FOCUSED_IMAGINATION` is switched on
+(see the stage gate in `docs/IMAGINATION-ROLLOUT.md`).
 
 ## The arms, as the store recorded them
 
@@ -73,6 +99,7 @@ denominator is the set the judge actually saw, not the set the archive kept.
   prints that beside every magnitude (`text_is_scripted` on `A` and `B`): the baseline's *procedure*
   is the pre-engine path's own (degree-ranked retrieval, an undeduped walk), its *sentences* are the
   frozen fixture's. The treatment side's text is a real model's.
+- **The blinding is structural, not textual.** No case carried an arm label, an identity or a seed id, and the cases were interleaved across arms — but a candidate's own text is judged as written, and **2 of the 35** cases mention one of the run's mission ids inside their own `cheapest_test` field (a real candidate can name its mission). The instrument now counts those mentions into every capture it writes.
 - **The judge is a language model of the same family that wrote the treatment text.** Self-preference
   is possible; the prompt, the shuffle seed and every raw reply are recorded so the reading can be
   re-scored by another judge or by a person without re-running anything.
@@ -82,13 +109,13 @@ denominator is the set the judge actually saw, not the set the archive kept.
 
 ## What the live run found that the fixture could not (all fixed before the run above passed)
 
-Each of the five earlier attempts failed for a **real** reason that only a live store and a live
-model can produce — every one of them is now either fixed in the instrument or raised as a
+Seven earlier attempts failed, each for a **real** reason that only a live store and a live
+model can produce (six distinct causes) — every one of them is now either fixed in the instrument or raised as a
 deployment finding:
 
 | attempt failed with | what it was | what changed |
 | --- | --- | --- |
-| `MONGODB_URI` authentication failure | the host's default Mongo port belongs to another project; the deployment's Mongo publishes no host port | the runner derives the store address from the deployment's own `.env` |
+| `MONGODB_URI` authentication failure (twice: once at connect, once late in a run) | the host's default Mongo port belongs to another project; the deployment's Mongo publishes no host port, so the run reaches it by its container address | the runner derives the store address from the deployment's own `.env`; the late failure remains **not fully explained** (a 200-second idle-then-write probe against the same URI did not reproduce it) and is recorded here rather than papered over |
 | malformed / truncated model JSON | **a deployment finding**: the estate's canonical model is a *reasoning* model, its reasoning tokens count against `max_tokens`, and the engine's default ceilings (`FOCUSED_CONSOLIDATION_MAX_TOKENS` 2000, `FOCUSED_IMAGINATION_MAX_TOKENS` 3000) truncate the JSON → the run discloses raised ceilings (16 000) until the rollout decides the production values |
 | `E11000 … knowledge_relationships from_to_type` | the store's edge index is GLOBAL on `(from_id, to_id, relationship_type)` | `SeedOptions.idPrefix` (default none — the fixture's bytes unchanged) so a run's graph is its own |
 | `E11000 … idea_seeds is_seed_unique` | `seed_id` is GLOBALLY unique, not per identity or mission | the live driver namespaces its comparator candidate ids with its run token |
