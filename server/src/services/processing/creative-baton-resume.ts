@@ -50,6 +50,7 @@ export const MAX_BATON_ROWS = 10;
 export const MAX_RESUME_WORK_ITEMS = 50;
 
 export type BatonResumeCode =
+  | 'included'
   | 'no_baton'
   | 'foreign_identity'
   | 'stale_version'
@@ -332,7 +333,12 @@ export async function buildBatonResumeSection(
   const withWorkItem = portfolio.filter((row) => row.work_item_ids.length > 0).length;
   return {
     status: 'included',
-    code: 'no_baton',
+    // The INCLUDED case names itself: before this, a section that carried the
+    // promoted baton reported `code: 'no_baton'` — the same code the ABSENT and
+    // failed-read cases use — so a reader branching on the code alone read
+    // "there is no baton" from a baton the resume had just included. Found by
+    // the full-loop live run on a real mission (docs/IMAGINATION-LOOP-LIVE.md).
+    code: 'included',
     reason:
       `active promoted baton ${identified.baton_id} (version ${identified.creative_baton_version}, ` +
       `compiled at mission version ${identified.mission_version ?? 'unknown'}) is current and re-verified`,

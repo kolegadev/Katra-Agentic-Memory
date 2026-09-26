@@ -138,6 +138,9 @@ describe('resume — the baton-aware section (ITER-11 WS-1)', () => {
     const report = await buildResumeReport(db.asDb(), SCENARIO_MISSION);
     const section = report.creative_baton;
     expect(section.status).toBe('included');
+    // The included case names itself: `no_baton` is for the ABSENT (and failed-read)
+    // cases, and using it here made the field contradict the section it labelled.
+    expect(section.code).toBe('included');
     expect(section.baton_id).toBe(baton.baton_id);
     expect(section.creative_baton_version).toBe('1.0');
     expect(section.promoted).toBe(true);
