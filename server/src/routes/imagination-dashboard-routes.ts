@@ -22,12 +22,33 @@
  *   - EVERY NUMBER CARRIES ITS BASIS. Counts name their collections, the metrics
  *     view carries the window, the `n` and the documented minimum behind every
  *     metric, and a metric below its minimum says `insufficient_data` instead of
- *     producing a rate.
+ *     producing a rate. The traces view carries a view-level basis of the same
+ *     house shape (window, n, sources, measurement).
+ *   - THE SCOPE IS THE CALLER'S OWN IDENTITY, AND EVERY PAYLOAD SAYS SO
+ *     (ITER-10 F4). With no identity named, EVERY view reads the caller's own
+ *     rows — for a trusted caller too; trust no longer widens a read by
+ *     default. A trusted caller may opt in to a wider read explicitly, and the
+ *     payload's `scope` states what was actually read:
+ *       `caller` — the caller's own identity (the default for everyone);
+ *       `named`  — one identity the trusted caller named with `user_id`;
+ *       `all`    — every identity, only when a trusted caller asked for it with
+ *                  `all_identities=1` (and only the views that can span
+ *                  identities honour it: overview, cycles, the cycle detail,
+ *                  traces and batons — the per-identity views are always pinned
+ *                  to exactly one identity).
+ *     `scope.identities` counts the identities the payload's rows span: the one
+ *     identity a pinned read covers (minimum 1), and for `all` the number of
+ *     distinct identities actually found. An untrusted caller's `user_id` and
+ *     `all_identities` are IGNORED, never honoured. `/rollout` is the one view
+ *     that reads no identity rows at all (it reports the running process's flag
+ *     and kill-switch state), so it states no scope.
  *   - NO PRIVATE TEXT ACROSS IDENTITIES. Traces, seeds, lineages and portfolios
  *     are identity-private: an untrusted caller is pinned to its own identity
  *     and a non-owner read returns NOTHING — no rows, no marker text, and no
- *     error that would reveal existence. The shareable surfaces are the
- *     sanitised baton fields, the coverage view (bins/counts/ids), the
+ *     error that would reveal existence. A trusted caller reading outside its
+ *     own identity has to SAY SO (`user_id`, or `all_identities=1`), and even
+ *     then the payload states which identities it covers. The shareable surfaces
+ *     are the sanitised baton fields, the coverage view (bins/counts/ids), the
  *     allocation reports and the metrics.
  *   - PRIVACY INDICATORS on every artefact view: `scope` (private | shared |
  *     private+shared), `private_rows` / `shared_rows`, and
@@ -43,7 +64,7 @@ import { cognitiveControlMode } from '../services/mission-cognition/index.js';
 import { killSwitchActive, schedulerMode } from '../services/mission-cognition/scheduler-mode.js';
 import { perIdentityPersonalityEnabled } from '../services/integration/personality-config-service.js';
 import { focusedImaginationEnabled } from '../services/processing/focused-consolidation-service.js';
-import { creativeBatonPromotionEnabled, batonVisibleTo, verifyStoredBaton } from '../services/processing/creative-baton-compiler.js';
+import { creativeBatonPromotionEnabled, verifyStoredBaton } from '../services/processing/creative-baton-compiler.js';
 import { cognitiveTeamAllocationEnabled, verifyAssignment } from '../services/processing/cognitive-mode-service.js';
 import { invariantViolation, verifyEnvelope } from '../services/processing/inheritance-envelope.js';
 import { CREATIVE_BATON_COLLECTIONS } from '../services/processing/creative-baton-collections.js';
@@ -86,20 +107,86 @@ function nonEmpty(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
 }
 
-/**
- * The identity a view is measured for. An untrusted caller is pinned to itself
- * — a supplied `user_id` is IGNORED, never honoured — and a trusted caller may
- * name one. `null` (trusted, no name) means "every identity", which is the
- * convention `cognition-dashboard-routes.ts` uses for trusted reads.
- */
-export function scopedIdentity(caller: CallerIdentity, requested: unknown): string | null {
-  if (!caller.trusted) return caller.user_id;
-  return nonEmpty(requested);
+/** The house flag convention: `1|true|yes` (case-insensitive) is on. */
+function truthy(value: unknown): boolean {
+  const text = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  return text === '1' || text === 'true' || text === 'yes';
 }
 
-function identityFilter(caller: CallerIdentity, requested: unknown): Record<string, unknown> {
-  const scoped = scopedIdentity(caller, requested);
-  return scoped ? { user_id: scoped } : {};
+/** Which identities a payload's rows cover. */
+export type ViewScopeKind = 'caller' | 'named' | 'all';
+
+export interface ViewScope {
+  kind: ViewScopeKind;
+  /** The identity every query in this view is pinned to (null when `all`). */
+  userId: string | null;
+  /** The `user_id` filter fragment the view's queries add ({} for `all`). */
+  filter: Record<string, unknown>;
+}
+
+/**
+ * The identity a view is read for (ITER-10 F4). The DEFAULT — for a trusted
+ * caller too — is the caller's own identity. A trusted caller may widen it
+ * explicitly: `user_id` names ONE identity (`kind: 'named'`), and, where the
+ * view can span identities (`options.allowAll`), `all_identities=1` reads every
+ * identity (`kind: 'all'`). `user_id` wins when both are supplied: the narrower
+ * instruction is the one honoured, so a read can never widen by accident.
+ *
+ * An untrusted caller may do neither: both parameters are IGNORED, never
+ * honoured, so a non-owner read stays pinned to the caller and cannot leak
+ * existence.
+ */
+export function resolveViewScope(
+  caller: CallerIdentity,
+  requested: unknown,
+  allIdentities: unknown,
+  options: { allowAll?: boolean } = {},
+): ViewScope {
+  if (caller.trusted) {
+    const named = nonEmpty(requested);
+    if (named) return { kind: 'named', userId: named, filter: { user_id: named } };
+    if (options.allowAll !== false && truthy(allIdentities)) return { kind: 'all', userId: null, filter: {} };
+  }
+  return { kind: 'caller', userId: caller.user_id, filter: { user_id: caller.user_id } };
+}
+
+/** The scope of a view that reads exactly ONE identity: `all` is not offered. */
+export function resolveIdentityScope(caller: CallerIdentity, requested: unknown): ViewScope {
+  return resolveViewScope(caller, requested, undefined, { allowAll: false });
+}
+
+/** How many distinct identities a set of rows spans. */
+function distinctIdentities(rows: Array<Record<string, any>>): number {
+  return new Set(rows.map((row) => nonEmpty(row.user_id)).filter((id): id is string => id !== null)).size;
+}
+
+/**
+ * The scope statement EVERY payload carries. A pinned read covers exactly the
+ * one identity it is pinned to (1 — the identity is named even when it holds no
+ * row); an `all` read covers the identities its rows actually span (0 when
+ * nothing was read or the store holds none).
+ */
+function scopeStatement(scope: ViewScope, identitiesInRows: number) {
+  return { kind: scope.kind, identities: scope.kind === 'all' ? identitiesInRows : Math.max(1, identitiesInRows) };
+}
+
+/**
+ * The scope statement of a view pinned to ONE identity (archive, team, metrics,
+ * experiments, and the comparison): it covers exactly that identity.
+ */
+function pinnedScope(scope: ViewScope) {
+  return { kind: scope.kind, identities: 1 };
+}
+
+/**
+ * The batons view's row scope: the caller's own batons PLUS the promoted
+ * (shared) artefact — the one shared surface this feature has — unless the
+ * caller explicitly asked for every identity. A named read is the named
+ * identity's own batons plus the shared ones.
+ */
+function batonInScope(row: Record<string, any>, scope: ViewScope): boolean {
+  if (scope.kind === 'all') return true;
+  return row.user_id === scope.userId || nonEmpty(row.shared_id) !== null;
 }
 
 function privacyIndicator(args: { privateRows: number; sharedRows: number; basis: string }) {
@@ -181,12 +268,14 @@ export const createImaginationDashboardRoutes = (): Hono => {
   router.get('/overview', async (c) => {
     const d = db();
     const caller = getCaller();
-    const filter = identityFilter(caller, c.req.query('user_id'));
+    const scope = resolveViewScope(caller, c.req.query('user_id'), c.req.query('all_identities'));
+    const filter = scope.filter;
     const missionId = nonEmpty(c.req.query('mission_id'));
     if (!focusedImaginationEnabled()) {
       return c.json(
         flagOff(IMAGINATION_FLAG, FLAG_OFF_REASON, {
-          identity: scopedIdentity(caller, c.req.query('user_id')) ?? 'all',
+          identity: scope.userId ?? 'all',
+          scope: scopeStatement(scope, 0),
           missions: [],
           privacy: privacyIndicator({
             privateRows: 0,
@@ -244,7 +333,8 @@ export const createImaginationDashboardRoutes = (): Hono => {
     return c.json({
       plane: 'on',
       flag: { name: IMAGINATION_FLAG, on: true },
-      identity: scopedIdentity(caller, c.req.query('user_id')) ?? 'all',
+      identity: scope.userId ?? 'all',
+      scope: scopeStatement(scope, distinctIdentities(cycles)),
       missions,
       counts: {
         cycles: cycles.length,
@@ -270,10 +360,17 @@ export const createImaginationDashboardRoutes = (): Hono => {
   router.get('/cycles', async (c) => {
     const d = db();
     const caller = getCaller();
+    const scope = resolveViewScope(caller, c.req.query('user_id'), c.req.query('all_identities'));
     if (!focusedImaginationEnabled()) {
-      return c.json(flagOff(IMAGINATION_FLAG, FLAG_OFF_REASON, { cycles: [] }));
+      return c.json(
+        flagOff(IMAGINATION_FLAG, FLAG_OFF_REASON, {
+          identity: scope.userId ?? 'all',
+          scope: scopeStatement(scope, 0),
+          cycles: [],
+        }),
+      );
     }
-    const filter = identityFilter(caller, c.req.query('user_id'));
+    const filter = scope.filter;
     const missionId = nonEmpty(c.req.query('mission_id'));
     const status = nonEmpty(c.req.query('status'));
     const cycles = (await d
@@ -287,7 +384,8 @@ export const createImaginationDashboardRoutes = (): Hono => {
       .toArray()) as Array<Record<string, any>>;
     return c.json({
       plane: 'on',
-      identity: scopedIdentity(caller, c.req.query('user_id')) ?? 'all',
+      identity: scope.userId ?? 'all',
+      scope: scopeStatement(scope, distinctIdentities(cycles)),
       cycles: cycles.map((cycle) => ({
         cycle_id: cycle.cycle_id,
         user_id: cycle.user_id,
@@ -325,11 +423,19 @@ export const createImaginationDashboardRoutes = (): Hono => {
   router.get('/cycles/:cycleId', async (c) => {
     const d = db();
     const caller = getCaller();
+    const scope = resolveViewScope(caller, c.req.query('user_id'), c.req.query('all_identities'));
     if (!focusedImaginationEnabled()) {
-      return c.json(flagOff(IMAGINATION_FLAG, FLAG_OFF_REASON, { cycle: null, generated: [], rejected: [] }));
+      return c.json(
+        flagOff(IMAGINATION_FLAG, FLAG_OFF_REASON, {
+          scope: scopeStatement(scope, 0),
+          cycle: null,
+          generated: [],
+          rejected: [],
+        }),
+      );
     }
     const cycleId = nonEmpty(c.req.param('cycleId'));
-    const filter = identityFilter(caller, c.req.query('user_id'));
+    const filter = scope.filter;
     const cycle = (await d
       .collection(CREATIVE_BATON_COLLECTIONS.cycles)
       .findOne({ cycle_id: cycleId, ...filter }, { projection: { _id: 0 } })) as unknown as Record<string, any> | null;
@@ -338,6 +444,7 @@ export const createImaginationDashboardRoutes = (): Hono => {
     if (!cycle) {
       return c.json({
         plane: 'on',
+        scope: scopeStatement(scope, 0),
         cycle: null,
         generated: [],
         rejected: [],
@@ -364,6 +471,7 @@ export const createImaginationDashboardRoutes = (): Hono => {
       : null;
     return c.json({
       plane: 'on',
+      scope: scopeStatement(scope, distinctIdentities([cycle])),
       cycle: {
         cycle_id: cycle.cycle_id,
         user_id: cycle.user_id,
@@ -452,10 +560,17 @@ export const createImaginationDashboardRoutes = (): Hono => {
   router.get('/traces', async (c) => {
     const d = db();
     const caller = getCaller();
+    const scope = resolveViewScope(caller, c.req.query('user_id'), c.req.query('all_identities'));
     if (!focusedImaginationEnabled()) {
-      return c.json(flagOff(IMAGINATION_FLAG, FLAG_OFF_REASON, { traces: [] }));
+      return c.json(
+        flagOff(IMAGINATION_FLAG, FLAG_OFF_REASON, {
+          identity: scope.userId ?? 'all',
+          scope: scopeStatement(scope, 0),
+          traces: [],
+        }),
+      );
     }
-    const filter = identityFilter(caller, c.req.query('user_id'));
+    const filter = scope.filter;
     const missionId = nonEmpty(c.req.query('mission_id'));
     const traces = (await d
       .collection(FOCUSED_CONSOLIDATION_COLLECTIONS.salienceTraces)
@@ -465,7 +580,8 @@ export const createImaginationDashboardRoutes = (): Hono => {
       .toArray()) as Array<Record<string, any>>;
     return c.json({
       plane: 'on',
-      identity: scopedIdentity(caller, c.req.query('user_id')) ?? 'all',
+      identity: scope.userId ?? 'all',
+      scope: scopeStatement(scope, distinctIdentities(traces)),
       traces: traces.map((trace) => ({
         trace_id: trace.trace_id,
         user_id: trace.user_id,
@@ -501,7 +617,19 @@ export const createImaginationDashboardRoutes = (): Hono => {
         // evidence counts — so it carries neither.
         privacy: trace.privacy ?? { raw_reflections_included: false, shared: false },
       })),
-      caller_pinned: !caller.trusted,
+      caller_pinned: scope.kind === 'caller',
+      // ITER-10 F1: this view carries a view-level basis of the same house
+      // shape the metrics carry (window, n, sources, minimum, measurement) — it
+      // is a live listing with no time window and no minimum sample, so `from`,
+      // `days` and `minimum` are null and `to` is the moment of the read.
+      basis: {
+        window: { from: null, to: new Date().toISOString(), days: null },
+        n: traces.length,
+        sources: [FOCUSED_CONSOLIDATION_COLLECTIONS.salienceTraces],
+        minimum: null,
+        measurement:
+          'salience_traces rows visible in this scope, newest first — signals (kind, calibration numbers, evidence COUNTS), calibration and evidence counts only. The statement and why_operationally_relevant text is never projected, and neither is input_counts',
+      },
       privacy: privacyIndicator({
         privateRows: traces.length,
         sharedRows: 0,
@@ -519,14 +647,25 @@ export const createImaginationDashboardRoutes = (): Hono => {
   router.get('/archive', async (c) => {
     const d = db();
     const caller = getCaller();
+    // The archive is per identity AND mission: `all` is not offered here.
+    const scope = resolveIdentityScope(caller, c.req.query('user_id'));
     if (!focusedImaginationEnabled()) {
-      return c.json(flagOff(IMAGINATION_FLAG, FLAG_OFF_REASON, { coverage: null, incumbents: [] }));
+      return c.json(
+        flagOff(IMAGINATION_FLAG, FLAG_OFF_REASON, {
+          identity: scope.userId,
+          scope: pinnedScope(scope),
+          coverage: null,
+          incumbents: [],
+        }),
+      );
     }
     const missionId = nonEmpty(c.req.query('mission_id'));
-    const userId = scopedIdentity(caller, c.req.query('user_id')) ?? caller.user_id;
+    const userId = scope.userId!;
     if (!missionId) {
       return c.json({
         plane: 'on',
+        identity: userId,
+        scope: pinnedScope(scope),
         coverage: null,
         incumbents: [],
         reason:
@@ -539,6 +678,7 @@ export const createImaginationDashboardRoutes = (): Hono => {
     return c.json({
       plane: 'on',
       identity: userId,
+      scope: pinnedScope(scope),
       mission_id: missionId,
       coverage,
       incumbents: incumbents.map((cell: Record<string, any>) => ({
@@ -569,9 +709,17 @@ export const createImaginationDashboardRoutes = (): Hono => {
   router.get('/batons', async (c) => {
     const d = db();
     const caller = getCaller();
+    const scope = resolveViewScope(caller, c.req.query('user_id'), c.req.query('all_identities'));
     if (!focusedImaginationEnabled()) {
       return c.json(
-        flagOff(IMAGINATION_FLAG, FLAG_OFF_REASON, { batons: [], refusals: [], promotions: [], promotion_flag: false }),
+        flagOff(IMAGINATION_FLAG, FLAG_OFF_REASON, {
+          identity: scope.userId ?? 'all',
+          scope: scopeStatement(scope, 0),
+          batons: [],
+          refusals: [],
+          promotions: [],
+          promotion_flag: false,
+        }),
       );
     }
     const missionId = nonEmpty(c.req.query('mission_id'));
@@ -584,10 +732,12 @@ export const createImaginationDashboardRoutes = (): Hono => {
 
     const batons: Array<Record<string, any>> = [];
     const refusals: Array<Record<string, any>> = [];
+    const rowsInScope: Array<Record<string, any>> = [];
     for (const row of rows) {
-      // A baton the caller may not see is skipped SILENTLY: an untrusted caller
-      // must not learn that another identity's private baton exists.
-      if (!batonVisibleTo(row as never, caller)) continue;
+      // A baton outside the caller's scope — another identity's PRIVATE row —
+      // is skipped SILENTLY: the caller must not learn that it exists.
+      if (!batonInScope(row, scope)) continue;
+      rowsInScope.push(row);
       const integrity = verifyStoredBaton(row);
       if (!integrity.ok) {
         // The refusal is reported BY NAME (the code), and its free-text reason
@@ -614,10 +764,12 @@ export const createImaginationDashboardRoutes = (): Hono => {
       .sort({ promoted_at: -1 })
       .limit(MAX_ROWS)
       .toArray()) as Array<Record<string, any>>;
-    const visiblePromotions = promotions.filter((row) => caller.trusted || batonIds.includes(row.baton_id));
+    const visiblePromotions = promotions.filter((row) => scope.kind === 'all' || batonIds.includes(row.baton_id));
     const shared = batons.filter((baton) => baton.scope === 'shared').length;
     return c.json({
       plane: 'on',
+      identity: scope.userId ?? 'all',
+      scope: scopeStatement(scope, distinctIdentities(rowsInScope)),
       promotion_flag: creativeBatonPromotionEnabled(),
       batons,
       refusals,
@@ -649,12 +801,22 @@ export const createImaginationDashboardRoutes = (): Hono => {
   router.get('/team', async (c) => {
     const d = db();
     const caller = getCaller();
+    // The team view is per identity: `all` is not offered here.
+    const scope = resolveIdentityScope(caller, c.req.query('user_id'));
     if (!cognitiveTeamAllocationEnabled()) {
       return c.json(
-        flagOff(TEAM_FLAG, TEAM_FLAG_OFF_REASON, { modes: [], envelopes: [], allocations: [], first_pass: [], synthesis: [] }),
+        flagOff(TEAM_FLAG, TEAM_FLAG_OFF_REASON, {
+          identity: scope.userId,
+          scope: pinnedScope(scope),
+          modes: [],
+          envelopes: [],
+          allocations: [],
+          first_pass: [],
+          synthesis: [],
+        }),
       );
     }
-    const userId = scopedIdentity(caller, c.req.query('user_id')) ?? caller.user_id;
+    const userId = scope.userId!;
     const missionId = nonEmpty(c.req.query('mission_id'));
     const missionScope = missionId ? { mission_id: missionId } : {};
 
@@ -733,6 +895,7 @@ export const createImaginationDashboardRoutes = (): Hono => {
     return c.json({
       plane: 'on',
       identity: userId,
+      scope: pinnedScope(scope),
       modes,
       envelopes,
       allocations: value('allocation').map(allocationJson),
@@ -796,10 +959,18 @@ export const createImaginationDashboardRoutes = (): Hono => {
   router.get('/metrics', async (c) => {
     const d = db();
     const caller = getCaller();
+    // Metrics are computed for ONE identity: `all` is not offered here.
+    const scope = resolveIdentityScope(caller, c.req.query('user_id'));
     if (!focusedImaginationEnabled()) {
-      return c.json(flagOff(IMAGINATION_FLAG, FLAG_OFF_REASON, { metrics: null }));
+      return c.json(
+        flagOff(IMAGINATION_FLAG, FLAG_OFF_REASON, {
+          identity: scope.userId,
+          scope: pinnedScope(scope),
+          metrics: null,
+        }),
+      );
     }
-    const userId = scopedIdentity(caller, c.req.query('user_id')) ?? caller.user_id;
+    const userId = scope.userId!;
     const missionId = nonEmpty(c.req.query('mission_id'));
     const requestedDays = Number(c.req.query('window_days'));
     const metrics = await computeImaginationMetrics(d, {
@@ -810,6 +981,7 @@ export const createImaginationDashboardRoutes = (): Hono => {
     return c.json({
       plane: 'on',
       identity: userId,
+      scope: pinnedScope(scope),
       window_days: metricsWindowDays(),
       minimums: {
         outcomes: MIN_OUTCOME_SAMPLES,
@@ -835,10 +1007,18 @@ export const createImaginationDashboardRoutes = (): Hono => {
   router.get('/experiments', async (c) => {
     const d = db();
     const caller = getCaller();
+    // An experiment belongs to ONE identity: `all` is not offered here.
+    const scope = resolveIdentityScope(caller, c.req.query('user_id'));
     if (!focusedImaginationEnabled()) {
-      return c.json(flagOff(IMAGINATION_FLAG, FLAG_OFF_REASON, { experiments: [] }));
+      return c.json(
+        flagOff(IMAGINATION_FLAG, FLAG_OFF_REASON, {
+          identity: scope.userId,
+          scope: pinnedScope(scope),
+          experiments: [],
+        }),
+      );
     }
-    const userId = scopedIdentity(caller, c.req.query('user_id')) ?? caller.user_id;
+    const userId = scope.userId!;
     const experiments = await listExperiments(d, userId);
     const withObservations = [];
     for (const experiment of experiments) {
@@ -854,6 +1034,7 @@ export const createImaginationDashboardRoutes = (): Hono => {
     return c.json({
       plane: 'on',
       identity: userId,
+      scope: pinnedScope(scope),
       write_enabled: focusedImaginationEnabled(),
       write_path: `/api/v1/imagination${OBSERVATION_WRITE_PATH} (trusted callers only, idempotent per {experiment, arm, metric, checkpoint})`,
       experiments: withObservations,
@@ -879,13 +1060,30 @@ export const createImaginationDashboardRoutes = (): Hono => {
   async function compareHandler(c: any, pathExperimentId?: string) {
     const d = db();
     const caller = getCaller();
+    // A comparison is formed for ONE experiment, owned by ONE identity.
+    const scope = resolveIdentityScope(caller, c.req.query('user_id'));
     if (!focusedImaginationEnabled()) {
-      return c.json(flagOff(IMAGINATION_FLAG, FLAG_OFF_REASON, { comparison: null }));
+      return c.json(
+        flagOff(IMAGINATION_FLAG, FLAG_OFF_REASON, {
+          identity: scope.userId,
+          scope: pinnedScope(scope),
+          comparison: null,
+        }),
+      );
     }
-    const userId = scopedIdentity(caller, c.req.query('user_id')) ?? caller.user_id;
+    const userId = scope.userId!;
     const experimentId = nonEmpty(pathExperimentId) ?? nonEmpty(c.req.query('experiment_id'));
     if (!experimentId) {
-      return c.json({ plane: 'on', comparison: null, reason: 'experiment_id is required for a comparison' }, 400);
+      return c.json(
+        {
+          plane: 'on',
+          identity: userId,
+          scope: pinnedScope(scope),
+          comparison: null,
+          reason: 'experiment_id is required for a comparison',
+        },
+        400,
+      );
     }
     // `baseline=A,B` pools several control arms (the brief's §7.4 A/B vs C/D).
     const arms = (value: unknown) =>
@@ -900,11 +1098,21 @@ export const createImaginationDashboardRoutes = (): Hono => {
       ...(treatmentQuery.length > 0 ? { treatmentArms: treatmentQuery } : {}),
     });
     if (!comparison) {
-      return c.json({ plane: 'on', comparison: null, reason: `no experiment ${experimentId} is registered for this caller` }, 404);
+      return c.json(
+        {
+          plane: 'on',
+          identity: userId,
+          scope: pinnedScope(scope),
+          comparison: null,
+          reason: `no experiment ${experimentId} is registered for this caller`,
+        },
+        404,
+      );
     }
     return c.json({
       plane: 'on',
       identity: userId,
+      scope: pinnedScope(scope),
       comparison,
       basis: comparison.basis,
       privacy: comparison.privacy,
@@ -915,11 +1123,15 @@ export const createImaginationDashboardRoutes = (): Hono => {
   router.post(OBSERVATION_WRITE_PATH, async (c) => {
     const d = db();
     const caller = getCaller();
+    // The write is CALLER-OWNED by construction: the row's user_id is the
+    // caller's own, so its scope is always `caller` — and it says so, like
+    // every other payload.
+    const writeScope = { kind: 'caller' as const, identities: 1 };
     const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
     const result = await recordExperimentObservation(d, body as never, caller);
     if (!result.recorded) {
       const status = result.code === 'flag_off' || result.code === 'untrusted_caller' ? 403 : 400;
-      return c.json({ ...result, error: result.reason }, status as 400 | 403);
+      return c.json({ ...result, scope: writeScope, error: result.reason }, status as 400 | 403);
     }
     // The write is audited like the custodian control: the operator can see the
     // call, its outcome and what it touched.
@@ -940,6 +1152,7 @@ export const createImaginationDashboardRoutes = (): Hono => {
     });
     return c.json({
       ...result,
+      scope: writeScope,
       basis:
         'imagination_experiments, written through the one gated path: trusted caller + FOCUSED_IMAGINATION, caller-owned user_id, closed shape, idempotent per {experiment, arm, metric, checkpoint}',
     });

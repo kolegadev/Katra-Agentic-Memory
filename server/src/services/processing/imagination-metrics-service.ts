@@ -539,30 +539,20 @@ async function metricsForWindow(
   const privacyAudit = await auditSharedArtefacts(db, scope, window);
 
   // ── 8. Cost of novelty ───────────────────────────────────────────────────
+  // A spend is RECORDED only when at least one cycle in the window wrote a
+  // non-zero `budget.tokens_spent_this_cycle`. A window whose cycles all read 0
+  // (or carry no budget at all) has an UNRECORDED spend: reporting
+  // `tokens_per_useful_candidate: 0` there would read as "free", which is a
+  // claim the ledger does not support — so it is `insufficient_data` with a
+  // basis that says exactly that, distinct from the zero-denominator case.
   const tokensSpent = cycles.reduce((total, row) => total + Number(row.budget?.tokens_spent_this_cycle ?? 0), 0);
+  const cyclesRecordingTokens = cycles.filter((row) => Number(row.budget?.tokens_spent_this_cycle ?? 0) > 0).length;
   const usefulCandidates = new Set(
     outcomesWindowed.filter((row) => row.outcome === 'useful_information').map((row) => String(row.seed_id)),
   ).size;
   const costOfNovelty: Metric<any> =
-    usefulCandidates > 0
+    usefulCandidates === 0
       ? {
-          status: 'ok',
-          value: {
-            tokens_per_useful_candidate: round(tokensSpent / usefulCandidates, 2),
-            tokens: tokensSpent,
-            useful_candidates: usefulCandidates,
-          },
-          basis: {
-            window,
-            n: usefulCandidates,
-            sources: [CREATIVE_BATON_COLLECTIONS.cycles, CREATIVE_BATON_COLLECTIONS.candidateOutcomes],
-            minimum: 1,
-            measurement:
-              'measured tokens each cycle recorded from the usage ledger (budget.tokens_spent_this_cycle, summed over the window) per DISTINCT candidate whose recorded outcome is useful_information',
-          },
-          reason: null,
-        }
-      : {
           status: 'insufficient_data',
           value: null,
           basis: {
@@ -574,7 +564,38 @@ async function metricsForWindow(
           },
           reason:
             'no candidate has a recorded useful_information outcome in the window — a zero denominator is insufficient data, not a cost of 0',
-        };
+        }
+      : cyclesRecordingTokens === 0
+        ? {
+            status: 'insufficient_data',
+            value: null,
+            basis: {
+              window,
+              n: usefulCandidates,
+              sources: [CREATIVE_BATON_COLLECTIONS.cycles, CREATIVE_BATON_COLLECTIONS.candidateOutcomes],
+              minimum: 1,
+              measurement:
+                'measured tokens per useful candidate — no cycle in the window recorded a non-zero budget.tokens_spent_this_cycle, so the spend is UNRECORDED (absent from the usage ledger) rather than 0',
+            },
+            reason: `${usefulCandidates} useful candidate(s) in the window, but no included cycle recorded a non-zero token count — the spend is UNRECORDED, not zero, so no cost is reported`,
+          }
+        : {
+            status: 'ok',
+            value: {
+              tokens_per_useful_candidate: round(tokensSpent / usefulCandidates, 2),
+              tokens: tokensSpent,
+              useful_candidates: usefulCandidates,
+            },
+            basis: {
+              window,
+              n: usefulCandidates,
+              sources: [CREATIVE_BATON_COLLECTIONS.cycles, CREATIVE_BATON_COLLECTIONS.candidateOutcomes],
+              minimum: 1,
+              measurement:
+                'measured tokens each cycle recorded from the usage ledger (budget.tokens_spent_this_cycle, summed over the window) per DISTINCT candidate whose recorded outcome is useful_information — reported only because at least one included cycle recorded a non-zero spend',
+            },
+            reason: null,
+          };
 
   // ── 9. Personality stability ─────────────────────────────────────────────
   const stability = await personalityStability(db, scope, window);

@@ -603,6 +603,124 @@ describe('imagination metrics — hand-computed values with their bases', () => 
   });
 });
 
+describe('cost of novelty — a recorded spend is a cost, an unrecorded one is not zero (ITER-10 F3)', () => {
+  /**
+   * A window holding `useful` judged candidates and cycles whose ledger either
+   * recorded a token count or recorded nothing at all (`null` = no budget
+   * field, as an older or partially written cycle row has).
+   */
+  function seedCostFixture(args: { tokens: Array<number | null>; useful: number }): void {
+    args.tokens.forEach((tokens, index) => {
+      db.collection(CYCLES).docs.push({
+        schema_version: '1.0',
+        cycle_id: `cyc_cost_${index}`,
+        user_id: USER,
+        mission_id: MISSION,
+        mission_version: 1,
+        trigger: 'plateau',
+        status: 'completed',
+        stop_reason: 'completed',
+        counts: { seeds_generated: 1, seeds_admitted: 1, seeds_rejected: 0, new_cells: 1, cells_total: 1 },
+        ...(tokens === null ? {} : { budget: { window_ms: 1000, max_tokens: 20000, tokens_spent_this_cycle: tokens } }),
+        created_at: iso(1),
+      });
+    });
+    for (let index = 0; index < args.useful; index += 1) {
+      db.collection(SEEDS).docs.push({
+        schema_version: '1.0',
+        seed_id: `seed_cost_${index}`,
+        user_id: USER,
+        mission_id: MISSION,
+        cycle_id: 'cyc_cost_0',
+        state: 'admitted',
+        created_at: iso(1, 0, -5),
+      });
+      db.collection(OUTCOMES).docs.push({
+        schema_version: '1.0',
+        outcome_id: `o_cost_${index}`,
+        user_id: USER,
+        mission_id: MISSION,
+        seed_id: `seed_cost_${index}`,
+        outcome: 'useful_information',
+        recorded_at: iso(1),
+      });
+    }
+  }
+
+  it('with a useful candidate but no recorded token spend it is insufficient_data, NOT a free 0', async () => {
+    seedCostFixture({ tokens: [0], useful: 1 });
+    const unrecorded = await computeImaginationMetrics(db.asDb(), { userId: USER, missionId: MISSION, now: () => NOW });
+
+    expect(unrecorded.cost_of_novelty.status).toBe('insufficient_data');
+    expect(unrecorded.cost_of_novelty.value).toBeNull();
+    // The SAMPLE behind the metric is reported; what is missing is the spend.
+    expect(unrecorded.cost_of_novelty.basis.n).toBe(1);
+    expect(unrecorded.cost_of_novelty.basis.sources).toEqual([CYCLES, OUTCOMES]);
+    // The basis states that the spend was UNRECORDED rather than genuinely 0.
+    expect(unrecorded.cost_of_novelty.basis.measurement.toLowerCase()).toContain('unrecorded');
+    expect(unrecorded.cost_of_novelty.reason.toLowerCase()).toContain('unrecorded');
+    expect(unrecorded.cost_of_novelty.reason).toContain('not zero');
+
+    // …and the zero-denominator case keeps its own, different, stated reason.
+    db.collection(OUTCOMES).docs = [];
+    const noCandidates = await computeImaginationMetrics(db.asDb(), { userId: USER, missionId: MISSION, now: () => NOW });
+    expect(noCandidates.cost_of_novelty.status).toBe('insufficient_data');
+    expect(noCandidates.cost_of_novelty.reason).toContain('zero denominator is insufficient data, not a cost of 0');
+  });
+
+  it('is ok — with the token count — once ONE included cycle recorded a non-zero spend', async () => {
+    seedCostFixture({ tokens: [40], useful: 1 });
+    const recorded = await computeImaginationMetrics(db.asDb(), { userId: USER, missionId: MISSION, now: () => NOW });
+    expect(recorded.cost_of_novelty.status).toBe('ok');
+    expect(recorded.cost_of_novelty.value).toEqual({ tokens_per_useful_candidate: 40, tokens: 40, useful_candidates: 1 });
+    expect(recorded.cost_of_novelty.basis.n).toBe(1);
+
+    // A window whose cycles recorded 0 AND 40 is still a recorded spend: the
+    // sum is what the ledger holds, and the mean is over the useful candidates.
+    db.collection(CYCLES).docs.push({
+      schema_version: '1.0',
+      cycle_id: 'cyc_cost_extra',
+      user_id: USER,
+      mission_id: MISSION,
+      mission_version: 1,
+      trigger: 'plateau',
+      status: 'completed',
+      stop_reason: 'completed',
+      counts: { seeds_generated: 1, seeds_admitted: 1, seeds_rejected: 0, new_cells: 1, cells_total: 1 },
+      budget: { window_ms: 1000, max_tokens: 20000, tokens_spent_this_cycle: 60 },
+      created_at: iso(1),
+    });
+    const summed = await computeImaginationMetrics(db.asDb(), { userId: USER, missionId: MISSION, now: () => NOW });
+    expect(summed.cost_of_novelty.status).toBe('ok');
+    expect(summed.cost_of_novelty.value).toEqual({ tokens_per_useful_candidate: 100, tokens: 100, useful_candidates: 1 });
+  });
+
+  it('treats a window with no cycle (and a cycle with no budget field) as unrecorded, never as free', async () => {
+    // A useful candidate judged with NO cycle row in the window at all.
+    seedCostFixture({ tokens: [], useful: 1 });
+    const noCycles = await computeImaginationMetrics(db.asDb(), { userId: USER, missionId: MISSION, now: () => NOW });
+    expect(noCycles.cost_of_novelty.status).toBe('insufficient_data');
+    expect(noCycles.cost_of_novelty.reason.toLowerCase()).toContain('unrecorded');
+
+    // A cycle row that carries no budget at all is unrecorded too.
+    db.collection(CYCLES).docs.push({
+      schema_version: '1.0',
+      cycle_id: 'cyc_no_budget',
+      user_id: USER,
+      mission_id: MISSION,
+      mission_version: 1,
+      trigger: 'plateau',
+      status: 'completed',
+      stop_reason: 'completed',
+      counts: { seeds_generated: 1, seeds_admitted: 1, seeds_rejected: 0, new_cells: 1, cells_total: 1 },
+      created_at: iso(1),
+    });
+    const noBudget = await computeImaginationMetrics(db.asDb(), { userId: USER, missionId: MISSION, now: () => NOW });
+    expect(noBudget.cost_of_novelty.status).toBe('insufficient_data');
+    expect(noBudget.cost_of_novelty.basis.n).toBe(1);
+  });
+});
+
 describe('imagination experiments — the gated write and the comparison', () => {
   const EXPERIMENT = {
     userId: USER,
@@ -856,5 +974,45 @@ describe('imagination experiments — the gated write and the comparison', () =>
     expect(refused).toMatchObject({ recorded: false, code: 'experiment_not_found' });
     expect(db.collection(IMAGINATION_EXPERIMENTS_COLLECTION).docs.filter((row) => row.kind === 'observation')).toHaveLength(0);
     delete process.env.FOCUSED_IMAGINATION;
+  });
+
+  it('refuses an oversized note BY NAME at the service layer, and a note at the limit still records', async () => {
+    process.env.FOCUSED_IMAGINATION = '1';
+    const { experiment } = await registerExperiment(db.asDb(), EXPERIMENT);
+    const args = { experiment_id: experiment.experiment_id, arm: 'control', metric: 'useful_novelty_rate', value: 0.4, n: 10 };
+
+    // The MCP surface capped this at 2000; the service accepted it (ITER-10 F2).
+    const overLimit = await recordExperimentObservation(db.asDb(), { ...args, note: 'n'.repeat(2001) }, TRUSTED);
+    expect(overLimit).toMatchObject({ recorded: false, code: 'note_too_long' });
+    expect(overLimit.reason).toContain('2000');
+    expect(overLimit.experiment_id).toBeNull();
+
+    const huge = await recordExperimentObservation(db.asDb(), { ...args, note: 'n'.repeat(1_048_595) }, TRUSTED);
+    expect(huge).toMatchObject({ recorded: false, code: 'note_too_long' });
+
+    // Nothing was written by either refusal.
+    expect(await listObservations(db.asDb(), USER, experiment.experiment_id)).toHaveLength(0);
+
+    // A note AT the limit records, and is stored exactly as sent.
+    const atLimit = 'n'.repeat(2000);
+    const accepted = await recordExperimentObservation(db.asDb(), { ...args, note: atLimit }, TRUSTED);
+    expect(accepted).toMatchObject({ recorded: true, updated: false, code: null });
+    expect(accepted.observation?.note).toBe(atLimit);
+    expect(await listObservations(db.asDb(), USER, experiment.experiment_id)).toHaveLength(1);
+    delete process.env.FOCUSED_IMAGINATION;
+  });
+
+  it('shares ONE note limit between the MCP schema and the service, so the two cannot drift', async () => {
+    const service = await import('../../src/services/processing/imagination-experiments.js');
+    const tools = await import('../../src/services/processing/imagination-observability-tools.js');
+
+    const limit = (service as unknown as Record<string, unknown>).EXPERIMENT_NOTE_MAX_LENGTH;
+    expect(limit, 'the service must export the note limit the MCP schema caps with').toBe(2000);
+
+    const def = tools.IMAGINATION_OBSERVABILITY_TOOL_DEFS.find((tool) => tool.name === 'record_experiment_observation');
+    expect(def, 'the observation tool is not registered').toBeTruthy();
+    const note = (def!.inputSchema as any).properties.note;
+    // The MCP schema caps with the SAME constant — not a second literal.
+    expect(note.maxLength).toBe(limit);
   });
 });

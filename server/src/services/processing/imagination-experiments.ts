@@ -11,7 +11,9 @@
  *     this iteration adds to the dashboard/MCP surface. It is gated on
  *     `FOCUSED_IMAGINATION` AND a trusted caller, CALLER-OWNED (the row's
  *     `user_id` is the caller's own identity, never a supplied one), CLOSED (an
- *     unknown key is refused by name) and IDEMPOTENT per
+ *     unknown key is refused by name), BOUNDED (a `note` over
+ *     `EXPERIMENT_NOTE_MAX_LENGTH` is refused by name as `note_too_long` — the
+ *     same constant the MCP schema caps with) and IDEMPOTENT per
  *     `{experiment, arm, metric, checkpoint}`: repeating the same key updates
  *     the row, repeating the same key AND the same numbers writes nothing at
  *     all and says so.
@@ -56,6 +58,16 @@ export const OBSERVATION_KEYS = [
 
 /** Every key `registerExperiment` accepts. */
 export const EXPERIMENT_KEYS = ['user_id', 'name', 'hypothesis', 'checkpoints', 'arms'] as const;
+
+/**
+ * The ONE note bound of the observability surface (ITER-10 F2). The MCP zod
+ * schema for `record_experiment_observation` caps `note` with THIS constant and
+ * the service refuses anything longer — one number, two enforcement points, so
+ * the surface and the service cannot drift apart. The service is the authority:
+ * a caller that reaches the service directly (the REST route, a service call)
+ * gets the same refusal by name (`note_too_long`).
+ */
+export const EXPERIMENT_NOTE_MAX_LENGTH = 2000;
 
 export interface ExperimentArm {
   label: string;
@@ -119,6 +131,7 @@ export type ObservationRefusalCode =
   | 'flag_off'
   | 'untrusted_caller'
   | 'invalid_args'
+  | 'note_too_long'
   | 'experiment_not_found'
   | 'unknown_arm'
   | 'unknown_checkpoint';
@@ -397,7 +410,16 @@ export async function recordExperimentObservation(
   if (!metric) return refuse('invalid_args', 'metric is required');
   if (value === null) return refuse('invalid_args', 'value must be a finite number');
   if (n === null || n < 1) return refuse('invalid_args', 'n must be a positive integer');
-  const note = nonEmpty(raw.note);
+  // The note bound is enforced HERE, not only on the MCP surface: a note over
+  // the shared limit is refused BY NAME before a row (or a lookup) is touched.
+  const rawNote = typeof raw.note === 'string' ? raw.note : null;
+  if (rawNote !== null && rawNote.length > EXPERIMENT_NOTE_MAX_LENGTH) {
+    return refuse(
+      'note_too_long',
+      `note is ${rawNote.length} characters — the limit is ${EXPERIMENT_NOTE_MAX_LENGTH} (EXPERIMENT_NOTE_MAX_LENGTH, shared with the MCP schema)`,
+    );
+  }
+  const note = nonEmpty(rawNote);
 
   await ensureExperimentIndexes(db);
   const experiment = await getExperiment(db, caller.user_id, experimentId);

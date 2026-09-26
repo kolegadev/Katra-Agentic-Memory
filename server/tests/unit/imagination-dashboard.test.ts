@@ -271,7 +271,9 @@ afterEach(() => {
 describe('exit criterion — why it triggered, what it generated, what it rejected', () => {
   it('serves the cycle detail with conditions+evidence, the stop reason, the admitted and rejected lists with reasons, and the tokens', async () => {
     const fixture = await seedCycleFixture();
-    const { status, body } = await get(`/cycles/${fixture.cycleId}`);
+    // ITER-10 (F4): a trusted caller's DEFAULT scope is its own identity, so a
+    // read of another identity's cycle names it explicitly.
+    const { status, body } = await get(`/cycles/${fixture.cycleId}?user_id=${OWNER}`);
 
     expect(status).toBe(200);
     expect(body.cycle).toBeTruthy();
@@ -483,13 +485,81 @@ describe('exit criterion — why it triggered, what it generated, what it reject
       }
       expect(trace.evidence.total_refs).toBeGreaterThanOrEqual(0);
     }
-    expect(triggersBasis(traces.body.basis ?? traces.body.privacy.basis)).toBe(true);
+    // ITER-10 (F1): the traces VIEW carries a basis of the house shape too —
+    // the same key set the metrics view's per-metric bases carry.
+    const metricsBasis = (await get(`/metrics?user_id=${OWNER}&mission_id=${SCENARIO_MISSION}`)).body.metrics.useful_novelty_rate.basis;
+    expect(traces.body.basis, '/traces has no view-level basis').toBeTruthy();
+    expect(Object.keys(traces.body.basis).sort()).toEqual(Object.keys(metricsBasis).sort());
+    expect(traces.body.basis.window).toEqual({ from: null, to: expect.any(String), days: null }); // a live listing, not a windowed rate
+    expect(traces.body.basis.n).toBe(traces.body.traces.length);
+    expect(traces.body.basis.sources).toEqual([TRACES]);
+    expect(traces.body.basis.measurement).toContain('salience_traces');
+  });
+
+  it('every number-carrying view states a basis, and the traces basis is a measurement with its n', async () => {
+    const fixture = await seedCycleFixture();
+    const traces = await get(`/traces?user_id=${OWNER}&mission_id=${SCENARIO_MISSION}`);
+    const basis = traces.body.basis;
+    expect(basis).toBeTruthy();
+    expect(basis.window).toBeTruthy();
+    expect(Array.isArray(basis.sources) && basis.sources.length > 0).toBe(true);
+    expect(typeof basis.n).toBe('number');
+    expect(typeof basis.measurement).toBe('string');
+    expect(basis.measurement.length).toBeGreaterThan(20);
+    expect(basis.n).toBeGreaterThanOrEqual(2);
+    // The per-trace calibration and evidence data is unchanged by the addition.
+    for (const trace of traces.body.traces) {
+      expect(trace.calibration).toBeTruthy();
+      expect(trace.calibration.signal_count).toBeGreaterThanOrEqual(1);
+      expect(Object.keys(trace.evidence).sort()).toEqual([
+        'resolvable_collections',
+        'resolved_refs',
+        'total_refs',
+        'unresolved_evidence_count',
+        'unresolved_ref_count',
+      ]);
+    }
+
+    // Every other view that carries numbers states a basis as well (the views
+    // that carry a string basis keep it; /traces now carries the house object).
+    process.env.COGNITIVE_TEAM_ALLOCATION = '1';
+    const paths = [
+      `/overview?user_id=${OWNER}&mission_id=${SCENARIO_MISSION}`,
+      `/cycles?user_id=${OWNER}`,
+      `/cycles/${fixture.cycleId}?user_id=${OWNER}`,
+      `/traces?user_id=${OWNER}`,
+      `/archive?user_id=${OWNER}&mission_id=${SCENARIO_MISSION}`,
+      '/batons',
+      '/team',
+      `/metrics?user_id=${OWNER}`,
+      '/experiments',
+      '/rollout',
+    ];
+    for (const path of paths) {
+      const { body } = await get(path);
+      const stated = typeof body.basis === 'string' ? body.basis : body.basis?.measurement;
+      expect(typeof stated, `${path} has no stated basis`).toBe('string');
+      expect(stated.length, `${path} states an empty basis`).toBeGreaterThan(20);
+    }
+    // A payload that cannot serve numbers states WHY instead of a basis.
+    delete process.env.COGNITIVE_TEAM_ALLOCATION;
+    const noId = await get('/experiments/compare');
+    expect(noId.status).toBe(400);
+    expect(noId.body.basis).toBeUndefined();
+    expect(noId.body.reason).toContain('experiment_id is required');
+
+    // Source level: the /traces handler itself declares the basis fields rather
+    // than relying on a default.
+    const source = readFileSync(new URL('../../src/routes/imagination-dashboard-routes.ts', import.meta.url), 'utf8');
+    const start = source.indexOf("router.get('/traces'");
+    const end = source.indexOf('router.get(', start + 1);
+    expect(start).toBeGreaterThan(-1);
+    const handler = source.slice(start, end);
+    for (const field of ['window:', 'n:', 'sources:', 'measurement:']) {
+      expect(handler, `/traces does not declare ${field}`).toContain(field);
+    }
   });
 });
-
-function triggersBasis(text: string): boolean {
-  return typeof text === 'string' && text.length > 0;
-}
 
 // ── Read-only property ─────────────────────────────────────────────────────
 
@@ -578,11 +648,11 @@ describe('flag gating — every view states why it is empty', () => {
 
   it('with FOCUSED_IMAGINATION on the same views serve real data', async () => {
     const fixture = await seedCycleFixture();
-    const cycles = await get('/cycles');
+    const cycles = await get(`/cycles?user_id=${OWNER}`);
     expect(cycles.body.plane).toBe('on');
     expect(cycles.body.cycles).toHaveLength(1);
     expect(cycles.body.reason).toBeNull();
-    const detail = await get(`/cycles/${fixture.cycleId}`);
+    const detail = await get(`/cycles/${fixture.cycleId}?user_id=${OWNER}`);
     expect(detail.body.rejected.count).toBe(4);
     const metrics = await get('/metrics');
     expect(metrics.body.plane).toBe('on');
@@ -784,11 +854,182 @@ describe('caller pinning and privacy', () => {
     await seedCycleFixture();
     const baton = (db.collection(BATONS).docs as Array<Record<string, any>>)[0];
     baton.candidate_portfolio[0].hypothesis = 'tampered after compile';
-    const { body } = await get('/batons');
+    // ITER-10 (F4): the private baton belongs to OWNER, so the read names it —
+    // a trusted caller no longer sees another identity's private row by default.
+    const { body } = await get(`/batons?user_id=${OWNER}`);
     expect(body.batons).toEqual([]);
     expect(body.refusals).toHaveLength(1);
     expect(body.refusals[0].code).toBe('payload_hash_mismatch');
     expect(body.refusals[0].baton_id).toBe(String(baton.baton_id));
+  });
+});
+
+// ── View scope: the caller by default, cross-identity only on request ──────
+
+describe('view scope — the caller by default, cross-identity only on request (ITER-10 F4)', () => {
+  const OTHER_TRACE = 'trace_other_identity';
+
+  /** A SECOND identity's trace, so a cross-identity read is observable. */
+  function plantOtherIdentityTrace(): void {
+    db.collection(TRACES).docs.push({
+      schema_version: '1.0',
+      trace_id: OTHER_TRACE,
+      run_id: 'run_other',
+      mission_id: SCENARIO_MISSION,
+      mission_version: 1,
+      cycle_id: 'cycle_other',
+      user_id: 'agent-b',
+      trigger: 'plateau',
+      problem_state_digest: `sha256:${'b'.repeat(64)}`,
+      created_at: new Date().toISOString(),
+      signals: [],
+      calibration: { signal_count: 0 },
+      evidence: { total_refs: 0, resolved_refs: 0, unresolved_ref_count: 0, unresolved_evidence_count: 0, resolvable_collections: [] },
+      input_counts: {},
+      privacy: { raw_reflections_included: false, shared: false },
+    });
+  }
+
+  it("pins EVERY view to the caller's own identity by default — trusted callers included", async () => {
+    const fixture = await seedCycleFixture();
+    plantOtherIdentityTrace();
+
+    // The trusted caller (`operator`) owns none of the fixture's rows: with no
+    // identity named, every view answers for `operator` and nothing else.
+    const overview = await get('/overview');
+    expect(overview.body.scope).toEqual({ kind: 'caller', identities: 1 });
+    expect(overview.body.identity).toBe('operator');
+    expect(overview.body.missions).toEqual([]);
+
+    const cycles = await get('/cycles');
+    expect(cycles.body.scope).toEqual({ kind: 'caller', identities: 1 });
+    expect(cycles.body.identity).toBe('operator');
+    expect(cycles.body.cycles).toEqual([]);
+
+    const detail = await get(`/cycles/${fixture.cycleId}`);
+    expect(detail.body.scope).toEqual({ kind: 'caller', identities: 1 });
+    expect(detail.body.cycle).toBeNull();
+
+    const traces = await get('/traces');
+    expect(traces.body.scope).toEqual({ kind: 'caller', identities: 1 });
+    expect(traces.body.traces).toEqual([]);
+    expect(traces.body.caller_pinned).toBe(true);
+
+    const batons = await get('/batons');
+    expect(batons.body.scope).toEqual({ kind: 'caller', identities: 1 });
+    expect(batons.body.batons, "another identity's PRIVATE baton is not in scope").toEqual([]);
+    expect(batons.body.promotions).toEqual([]);
+
+    const metrics = await get('/metrics');
+    expect(metrics.body.scope).toEqual({ kind: 'caller', identities: 1 });
+    expect(metrics.body.identity).toBe('operator');
+    expect(metrics.body.metrics.useful_novelty_rate.status).toBe('insufficient_data');
+
+    // An untrusted caller is pinned in exactly the same way.
+    const untrusted = await get('/traces', UNTRUSTED);
+    expect(untrusted.body.scope).toEqual({ kind: 'caller', identities: 1 });
+    expect(untrusted.body.identity).toBe(INTRUDER);
+  });
+
+  it('a trusted caller may NAME one identity, and the payload states which', async () => {
+    await seedCycleFixture();
+    plantOtherIdentityTrace();
+
+    const cycles = await get(`/cycles?user_id=${OWNER}`);
+    expect(cycles.body.scope).toEqual({ kind: 'named', identities: 1 });
+    expect(cycles.body.identity).toBe(OWNER);
+    expect(cycles.body.cycles).toHaveLength(1);
+
+    const traces = await get(`/traces?user_id=${OWNER}`);
+    expect(traces.body.scope).toEqual({ kind: 'named', identities: 1 });
+    expect(traces.body.traces.length).toBeGreaterThanOrEqual(2);
+    expect(traces.body.traces.map((trace: any) => trace.trace_id)).not.toContain(OTHER_TRACE);
+
+    const batons = await get(`/batons?user_id=${OWNER}`);
+    expect(batons.body.scope).toEqual({ kind: 'named', identities: 1 });
+    expect(batons.body.batons).toHaveLength(1);
+
+    // The per-identity views name the identity too, and compute for it.
+    const metrics = await get(`/metrics?user_id=${OWNER}`);
+    expect(metrics.body.scope).toEqual({ kind: 'named', identities: 1 });
+    expect(metrics.body.identity).toBe(OWNER);
+    expect(metrics.body.metrics.useful_novelty_rate.status).toBe('ok');
+    const experiments = await get(`/experiments?user_id=${OWNER}`);
+    expect(experiments.body.scope).toEqual({ kind: 'named', identities: 1 });
+    expect(experiments.body.identity).toBe(OWNER);
+
+    // An untrusted caller naming another identity is IGNORED, never honoured.
+    const ignored = await get(`/traces?user_id=${OWNER}`, UNTRUSTED);
+    expect(ignored.body.scope).toEqual({ kind: 'caller', identities: 1 });
+    expect(ignored.body.traces).toEqual([]);
+    const ignoredMetrics = await get(`/metrics?user_id=${OWNER}`, UNTRUSTED);
+    expect(ignoredMetrics.body.scope).toEqual({ kind: 'caller', identities: 1 });
+    expect(ignoredMetrics.body.identity).toBe(INTRUDER);
+  });
+
+  it('the cross-identity read is an explicit, trusted-only opt-in that states its scope', async () => {
+    await seedCycleFixture();
+    plantOtherIdentityTrace();
+
+    // Untrusted: `all_identities` is ignored — the read stays pinned.
+    const refused = await get('/traces?all_identities=1', UNTRUSTED);
+    expect(refused.body.scope).toEqual({ kind: 'caller', identities: 1 });
+    expect(refused.body.traces).toEqual([]);
+    const namedToo = await get(`/cycles?user_id=${OWNER}&all_identities=1`, UNTRUSTED);
+    expect(namedToo.body.scope).toEqual({ kind: 'caller', identities: 1 });
+    expect(namedToo.body.cycles).toEqual([]);
+
+    // Trusted opt-in: the payload spans BOTH identities and says so.
+    const all = await get('/traces?all_identities=1');
+    expect(all.body.scope).toEqual({ kind: 'all', identities: 2 });
+    expect(all.body.identity).toBe('all');
+    expect(all.body.traces.map((trace: any) => trace.trace_id)).toContain(OTHER_TRACE);
+
+    const cycles = await get('/cycles?all_identities=1');
+    expect(cycles.body.scope).toEqual({ kind: 'all', identities: 1 });
+    expect(cycles.body.cycles).toHaveLength(1);
+
+    // `user_id` is the narrower instruction: given both, it wins (a narrower
+    // read can never widen by accident).
+    const narrower = await get(`/traces?user_id=${OWNER}&all_identities=1`);
+    expect(narrower.body.scope).toEqual({ kind: 'named', identities: 1 });
+    expect(narrower.body.traces.map((trace: any) => trace.trace_id)).not.toContain(OTHER_TRACE);
+
+    // The per-identity views cannot span identities: `all_identities` is not
+    // offered there, and the payload says which ONE identity it covers.
+    const metrics = await get('/metrics?all_identities=1');
+    expect(metrics.body.scope).toEqual({ kind: 'caller', identities: 1 });
+    expect(metrics.body.identity).toBe('operator');
+    const team = await get('/team?all_identities=1');
+    expect(team.body.scope).toEqual({ kind: 'caller', identities: 1 });
+  });
+
+  it('every view payload states its scope — including the flag-off payloads', async () => {
+    const fixture = await seedCycleFixture();
+    const paths = [
+      '/overview',
+      '/cycles',
+      `/cycles/${fixture.cycleId}`,
+      '/traces',
+      `/archive?mission_id=${SCENARIO_MISSION}`,
+      '/batons',
+      '/team',
+      '/metrics',
+      '/experiments',
+      '/experiments/compare',
+    ];
+    for (const path of paths) {
+      const { body } = await get(path);
+      expect(body.scope, `${path} states no scope`).toBeTruthy();
+      expect(['caller', 'named', 'all'], `${path} scope kind`).toContain(body.scope.kind);
+      expect(typeof body.scope.identities, `${path} scope identities`).toBe('number');
+    }
+
+    // Flag off: the view still says what its scope would be.
+    delete process.env.FOCUSED_IMAGINATION;
+    const off = await get('/traces');
+    expect(off.body.plane).toBe('off');
+    expect(off.body.scope).toEqual({ kind: 'caller', identities: 1 });
   });
 });
 
@@ -908,6 +1149,37 @@ describe('experiments — comparison verdicts and the gated write', () => {
     const gated = await post('/experiments/observations', { ...body, arm: 'treatment' });
     expect(gated.status).toBe(403);
     expect(gated.body.code).toBe('flag_off');
+  });
+
+  it('refuses an oversized note by name at the route, and a note at the limit still records', async () => {
+    const { experiment } = await registerExperiment(db.asDb(), EXPERIMENT);
+    const observation = {
+      experiment_id: experiment.experiment_id,
+      arm: 'control',
+      metric: 'useful_novelty_rate',
+      value: 0.4,
+      n: 10,
+    };
+
+    // ITER-10 (F2): the MCP zod capped the note at 2000; the ROUTE accepted a
+    // 1,048,595-character note because the service had no bound at all.
+    const { status, body } = await post('/experiments/observations', { ...observation, note: 'n'.repeat(1_048_595) });
+    expect(status).toBe(400);
+    expect(body.recorded).toBe(false);
+    expect(body.code).toBe('note_too_long');
+    expect(body.reason).toContain('2000');
+    // The refusal happens BEFORE a row is touched, and before the audit row.
+    expect(db.collection('imagination_experiments').docs.filter((row: any) => row.kind === 'observation')).toHaveLength(0);
+    expect(db.collection('custodian_audit').docs).toHaveLength(0);
+
+    // …and the write is caller-owned, so its payload states that scope too.
+    expect(body.scope).toEqual({ kind: 'caller', identities: 1 });
+
+    const atLimit = 'n'.repeat(2000);
+    const accepted = await post('/experiments/observations', { ...observation, note: atLimit });
+    expect(accepted.status).toBe(200);
+    expect(accepted.body.observation.note).toBe(atLimit);
+    expect(accepted.body.scope).toEqual({ kind: 'caller', identities: 1 });
   });
 });
 

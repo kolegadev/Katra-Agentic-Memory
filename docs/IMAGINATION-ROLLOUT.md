@@ -1,4 +1,4 @@
-# Imagination observability — canary and rollout policy (ITER-9, Phase 7)
+# Imagination observability — canary and rollout policy (ITER-9, Phase 7 · tightened in ITER-10)
 
 Branch `feat/imagination-engine` · the observability layer is **read-only** except one gated
 experiment write.
@@ -6,9 +6,10 @@ experiment write.
 Policy file: `docs/IMAGINATION-ROLLOUT.md` (this page). Dashboard view:
 `/api/v1/imagination/rollout`.
 
-This runbook is the operator's side of the imagination feature. It states the staged rollout
-(per-identity personality → focused imagination → baton promotion → cognitive team), the metric
-gates each stage has to pass, the kill switches, the executable rollback commands and what to watch.
+This runbook is the operator's side of the imagination feature. It states the read scope every view
+obeys, the staged rollout (per-identity personality → focused imagination → baton promotion →
+cognitive team), the metric gates each stage has to pass, the kill switches, the executable rollback
+commands and what to watch.
 
 Two things are checked mechanically, so this page cannot drift away from the code:
 
@@ -19,6 +20,50 @@ Two things are checked mechanically, so this page cannot drift away from the cod
 - the dashboard's **Rollout** view (`GET /api/v1/imagination/rollout`) reads the flag and
   kill-switch state from the running process, so it reports what is actually on rather than what
   this page claims. If the two ever disagree, the view is right.
+
+## Read scope — the caller's own identity by default, everything else on request (ITER-10 F4)
+
+Every view of `/api/v1/imagination` is read for **one identity by default: the caller's own** — for a
+trusted caller too. Trust no longer widens a read on its own; an operator who wants another
+identity's rows has to say so. The scope in force is stated IN the payload, so a response can never
+be mistaken for a wider or narrower read than it is:
+
+| `scope.kind` | What was read | How to ask for it |
+| --- | --- | --- |
+| `caller` | the caller's own identity — the DEFAULT, for trusted and untrusted callers alike | no parameter (or, for an untrusted caller, any parameter: they are ignored) |
+| `named` | exactly ONE identity | `?user_id=<identity>` from a **trusted** caller |
+| `all` | every identity | `?all_identities=1` from a **trusted** caller, on a view that can span identities |
+
+- `scope.identities` says how many identities the payload's rows actually span: the single identity
+  a pinned read covers (1), and for `all` the number of distinct identities found (0 when none).
+- **An untrusted caller's `user_id` and `all_identities` are ignored, never honoured** — the read
+  stays pinned to the caller and a non-owner sees no row, no marker text and no existence leak.
+- `user_id` wins when both are supplied: the narrower instruction is the one honoured, so a read can
+  never widen by accident.
+- The views that can span identities are `/overview`, `/cycles`, `/cycles/:cycleId`, `/traces` and
+  `/batons` (whose default is the caller's own batons plus the **promoted** — shared — artefact, the
+  one surface this feature shares). `/archive`, `/team`, `/metrics`, `/experiments` and
+  `/experiments/compare` are measured for exactly ONE identity, so `all_identities` is not offered
+  there and their payload states `caller` or `named`.
+- `GET /api/v1/imagination/rollout` reads no identity rows at all (it reports the running process's
+  flags and kill switches), so it is the one view that carries no `scope`.
+- The one write (`POST /experiments/observations`) is **caller-owned by construction** — the row's
+  `user_id` is the caller's own — and its payload states `scope: { kind: "caller", identities: 1 }`.
+  A `note` is capped at 2000 characters by `EXPERIMENT_NOTE_MAX_LENGTH` (the same constant the MCP
+  schema caps with, so the two cannot drift); anything longer is refused by name as `note_too_long`
+  before a row is touched, at the route and at the service alike.
+
+## The traces basis, and a cost that is never reported as free (ITER-10 F1, F3)
+
+Two more things worth knowing before reading a payload:
+
+- **`/traces` carries a view-level `basis`** of the same house shape the metrics carry — `window`
+  (`from`/`days` null: a live listing, not a windowed rate, with `to` the moment of the read), `n`
+  (the rows returned), `sources` and `measurement`. No view's number is left without one.
+- **`cost_of_novelty` is `insufficient_data` when the spend is UNRECORDED**, not 0: it reports `ok`
+  only when at least one included cycle recorded a non-zero `budget.tokens_spent_this_cycle`. A
+  window with useful candidates but no recorded spend states that the spend is unrecorded rather
+  than reading as "free" (the zero-denominator case keeps its own, different, stated reason).
 
 ## Deployment precondition — inherited from ITER-2 (server and bridge deploy together)
 
@@ -68,7 +113,7 @@ records that only exist once its own flag is on.
 | `false_novelty` | generated candidates rejected as `duplicate_of` / `paraphrase_of` / `excluded_region`, over every generated candidate | 5 generated candidates |
 | `agent_divergence` | mean pairwise statement similarity across agents (the archive's own metric), plus the same-mode control | 2 agents |
 | `privacy_leakage` | an **audit count**: shared-scope artefacts carrying a forbidden private key or a marker lifted from this identity's private stores | n/a — a count with its scanned-row basis |
-| `cost_of_novelty` | measured tokens per distinct useful candidate | denominator > 0 (a zero denominator is `insufficient_data`, **not** 0) |
+| `cost_of_novelty` | measured tokens per distinct useful candidate; `ok` only when at least one included cycle recorded a non-zero token count | denominator > 0 **and** a recorded spend (a zero denominator keeps its own stated reason; an unrecorded spend is `insufficient_data` too, **not** 0) |
 | `personality_stability` | stored envelopes and mode assignments that fail re-verification (expected 0) | n/a — a count with its basis |
 
 The measurement window defaults to 14 days; override it per call with `window_days`, or for a
@@ -173,7 +218,8 @@ The Rollout view is the single place to read all of this at once:
 3. **`false_novelty`** — a rising share of duplicates and paraphrases means the operators are
    re-covering known ground; watch it before raising the cycle budget.
 4. **`cost_of_novelty`** — tokens per useful candidate. `insufficient_data` means there are no useful
-   candidates yet, not that the cost is zero.
+   candidates yet **or** that no cycle in the window recorded a non-zero token count (the basis says
+   which): an unrecorded spend is not a cost of zero.
 5. **`time_to_next_viable_direction`** — the plateau trigger working as designed: the gap between the
    trigger and the first admitted candidate.
 6. **`agent_divergence` vs `agent_divergence_same_mode_control`** — a team that agrees as much as one

@@ -13,8 +13,10 @@
  *     write this iteration adds. It records an observation against a registered
  *     experiment (or registers one first, from a `register` block), it is
  *     caller-owned (the row's user_id is the caller's own — there is no
- *     parameter that could point it elsewhere), its shape is closed, and it is
- *     idempotent per `{experiment, arm, metric, checkpoint}`.
+ *     parameter that could point it elsewhere), its shape is closed, its `note`
+ *     is bounded by `EXPERIMENT_NOTE_MAX_LENGTH` (the service refuses a longer
+ *     one by name) and it is idempotent per `{experiment, arm, metric,
+ *     checkpoint}`.
  *
  * With the flag off, neither tool is registered AND the dispatch re-check
  * throws the plain `Unknown tool` error, so the surface is indistinguishable
@@ -28,7 +30,7 @@ import type { CallerIdentity } from '../../utils/caller-identity.js';
 import { get_database } from '../../database/connection.js';
 import { focusedImaginationEnabled } from './focused-consolidation-service.js';
 import { computeImaginationMetrics, metricsWindowDays } from './imagination-metrics-service.js';
-import { recordExperimentObservation, registerExperiment } from './imagination-experiments.js';
+import { EXPERIMENT_NOTE_MAX_LENGTH, recordExperimentObservation, registerExperiment } from './imagination-experiments.js';
 
 const metricsInput = z.object({
   user_id: z.string().optional(),
@@ -56,7 +58,10 @@ const observationInput = z
     value: z.number(),
     n: z.number().int().min(1),
     checkpoint: z.string().min(1).optional(),
-    note: z.string().max(2000).optional(),
+    // The bound is the SERVICE's own constant (ITER-10 F2): the schema caps
+    // with the same number `recordExperimentObservation` refuses on, so the two
+    // cannot drift apart.
+    note: z.string().max(EXPERIMENT_NOTE_MAX_LENGTH).optional(),
     // Register-on-first-write: the ONLY way this surface reaches
     // `registerExperiment` (there is no separate registration tool).
     register: registerInput.optional(),
@@ -77,7 +82,7 @@ export const IMAGINATION_OBSERVABILITY_TOOL_DEFS: Array<{
   {
     name: 'record_experiment_observation',
     description:
-      'Record one observation for a registered experiment (the ONE gated write of the observability layer). Trusted callers only, and only with FOCUSED_IMAGINATION on — the write is CALLER-OWNED (the row\'s user_id is the caller\'s own identity; there is no user_id parameter at all), its shape is CLOSED (an unknown key is refused by name) and it is IDEMPOTENT per {experiment, arm, metric, checkpoint}: repeating the same key updates the row in place, and repeating the same key with the same numbers writes nothing at all and says so. Supply experiment_id for an existing experiment, or a `register` block (name, hypothesis, checkpoints, arms) to register one first — registration is idempotent by a derived id and returns the same experiment_id for the same content. The comparison it feeds applies the brief\'s named target ("≥30% better useful novelty", overridable per call) and returns improved / not_improved / insufficient_data with the n and the threshold it used.',
+      'Record one observation for a registered experiment (the ONE gated write of the observability layer). Trusted callers only, and only with FOCUSED_IMAGINATION on — the write is CALLER-OWNED (the row\'s user_id is the caller\'s own identity; there is no user_id parameter at all), its shape is CLOSED (an unknown key is refused by name) and it is IDEMPOTENT per {experiment, arm, metric, checkpoint}: repeating the same key updates the row in place, and repeating the same key with the same numbers writes nothing at all and says so. Supply experiment_id for an existing experiment, or a `register` block (name, hypothesis, checkpoints, arms) to register one first — registration is idempotent by a derived id and returns the same experiment_id for the same content. The comparison it feeds applies the brief\'s named target ("≥30% better useful novelty", overridable per call) and returns improved / not_improved / insufficient_data with the n and the threshold it used. The `note` is capped at 2000 characters — the same bound the service enforces, refused by name as note_too_long.',
     inputSchema: zodToJsonSchema(observationInput) as Record<string, unknown>,
   },
 ];
