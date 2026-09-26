@@ -162,7 +162,16 @@ here: both sides meet 2 of 2 criteria, so the row reads `equal` instead of a `0`
 
 **Overall verdict: the decisive metric is still `insufficient_data`.** The brief's DoD bullet 8 asks
 for a demonstration that useful novelty improves without a material task-quality regression. This
-fixture cannot produce that demonstration, and it says so rather than inventing it:
+fixture cannot produce that demonstration, and it says so rather than inventing it.
+
+**Since this fixture was written, the LIVE run has been executed** — the same four arms over the
+same checkpoint material, against a real store with a real model and a blinded judge recording an
+outcome for every candidate on both sides. Its record is in `docs/IMAGINATION-BASELINE-LIVE.md`:
+both sides of `useful_novelty_rate` now exist (baseline **0**, n 12; treatment **0.913043**, n 23),
+the *relative* verdict is refused over a zero baseline, `false_novelty` reads `improved` on a real
+model, `time_to_next_viable_direction` reads `not_improved` (the engine is slower to its first
+admitted candidate), and the task-quality check reads `equal`. This fixture remains the reproducible,
+dependency-free measurement; the live capture is the evidence about a real model:
 
 - the CONTROL arms recorded no outcomes, so `useful_novelty_rate` has no baseline side at all. The
   pre-engine path never *recorded* whether an idea was useful — that channel is part of what the
