@@ -70,7 +70,8 @@ jobs:
       # about them, which is what the iteration contracts record as
       # "NOT VERIFIED" (the branch's reported counts: unit 0 failures,
       # security 0 failures, with the live-only suites skipped).
-      - name: Unit tests (no Mongo: the in-memory fake + a stubbed model)
+      - name: 'Unit tests (no Mongo: the in-memory fake + a stubbed model)'
+
         run: npx vitest run tests/unit/
 
       - name: Security tests (identity scoping, taint, caller pinning)
