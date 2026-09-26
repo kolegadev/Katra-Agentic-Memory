@@ -166,12 +166,21 @@ fixture cannot produce that demonstration, and it says so rather than inventing 
 
 **Since this fixture was written, the LIVE run has been executed** — the same four arms over the
 same checkpoint material, against a real store with a real model and a blinded judge recording an
-outcome for every candidate on both sides. Its record is in `docs/IMAGINATION-BASELINE-LIVE.md`:
-both sides of `useful_novelty_rate` now exist (baseline **0**, n 12; treatment **0.913043**, n 23),
-the *relative* verdict is refused over a zero baseline, `false_novelty` reads `improved` on a real
-model, `time_to_next_viable_direction` reads `not_improved` (the engine is slower to its first
-admitted candidate), and the task-quality check reads `equal`. This fixture remains the reproducible,
-dependency-free measurement; the live capture is the evidence about a real model:
+outcome for every candidate on both sides. Its record is in `docs/IMAGINATION-BASELINE-LIVE.md`, and
+**its comparators now answer the real model too** (the control fix in that file's last section): with
+one shipped admission rule on both sides and no scripted text anywhere,
+`useful_novelty_rate` reads **`improved`** — baseline **0.333333**, n 12 (1 useful of 4 in `A`, 3 of 8
+in `B`) against treatment **1**, n 22; +2.0 relative on the nominal 0.3 target — `false_novelty`
+`equal` (0/0; the earlier `improved` row was the template control's artefact and that reading is
+retracted), `time_to_next_viable_direction` `not_improved` (53.9 s vs 67.6 s, a fair race), and
+`task_quality_regression` `equal` with the comparator side still vacuous by construction. The owner
+accepted that outcome on 2026-09-26.
+
+The paragraphs below describe the FIRST live run, whose comparators were still the fixture's scripted
+templates — kept as the record of what that run showed (baseline **0**, n 12; treatment **0.913043**,
+n 23; the relative verdict refused over a zero baseline; `false_novelty` `improved` on a real model;
+`time_to_next_viable_direction` `not_improved`; task quality `equal`). This fixture remains the
+reproducible, dependency-free measurement; the live captures are the evidence about a real model:
 
 - the CONTROL arms recorded no outcomes, so `useful_novelty_rate` has no baseline side at all. The
   pre-engine path never *recorded* whether an idea was useful — that channel is part of what the
