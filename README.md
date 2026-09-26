@@ -206,7 +206,7 @@ are always private; everything else is team-shared by default.
 - **Dashboard** — web UI for stats, memory scope, and system health
 - **Katra Vault** — encrypted-at-rest secret store (no secret reaches an LLM)
 - **Portable data** — a single `DATA_DIR` env var controls where everything lives
-- **Local-first** — runs on a Raspberry Pi with zero external API costs
+- **Local-first** — designed to run on very minimal hardware ie as small aa Raspberry Pi with zero external API costs
 
 ## Architecture
 
