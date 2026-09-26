@@ -77,6 +77,12 @@ import {
   creativeBatonPromotionEnabled,
   dispatchCreativeBatonTool,
 } from './services/processing/creative-baton-tools.js';
+// ITER-9 (Phase 7): the observability pair — the metrics read and the ONE
+// gated experiment-observation write. Both share FOCUSED_IMAGINATION.
+import {
+  IMAGINATION_OBSERVABILITY_TOOL_DEFS,
+  dispatchImaginationObservabilityTool,
+} from './services/processing/imagination-observability-tools.js';
 import {
   COGNITIVE_TEAM_TOOL_DEFS,
   cognitiveTeamAllocationEnabled,
@@ -1104,6 +1110,10 @@ if (focusedImaginationEnabled()) {
       (tool) => !tool.requires_promotion_flag || creativeBatonPromotionEnabled(),
     ),
   );
+  // ITER-9 (Phase 7): the observability pair shares the family flag — the
+  // metrics read and the experiment-observation write (itself trusted-gated at
+  // dispatch). With the flag off both are `Unknown tool`.
+  tools.push(...IMAGINATION_OBSERVABILITY_TOOL_DEFS);
 }
 
 // ── The cognitive team: modes, inheritance, allocation, first pass (ITER-8) ──
@@ -4037,6 +4047,13 @@ function registerHandlers(server: Server, getIdentity?: () => CallerIdentity) {
           // re-checks both, so a tool whose flag went off throws the plain
           // unknown-tool error and writes nothing.
           result = await dispatchCreativeBatonTool(name, args, caller); break;
+        case 'get_imagination_metrics':
+        case 'record_experiment_observation':
+          // ITER-9 (Phase 7): the observability pair, gated on
+          // FOCUSED_IMAGINATION like the rest of the family. The dispatcher
+          // re-checks the flag (plain `Unknown tool` with it off) and the write
+          // additionally refuses an untrusted caller before touching a row.
+          result = await dispatchImaginationObservabilityTool(name, args, caller); break;
         case 'assign_thinking_mode':
         case 'get_active_mode':
         case 'create_inheritance_envelope':

@@ -15,6 +15,7 @@ Those 81 are **66 catalogued tools** (every `###` entry below except the flag-ga
 `get_my_personality`, `run_focused_consolidation`, `get_salience_trace`,
 `generate_imagination_seeds`, `get_idea_archive`, `run_imagination_cycle`, `get_creative_baton`,
 `promote_creative_baton`, `baton_candidates_to_work_items`, `record_candidate_outcome`,
+`get_imagination_metrics`, `record_experiment_observation`,
 `assign_thinking_mode`, `get_active_mode`, `create_inheritance_envelope`,
 `allocate_cognitive_portfolio`, `plan_independent_first_pass` and `synthesize_portfolios`) plus
 **15 tools in two families that have their own reference** instead of a catalogue entry:
@@ -35,25 +36,26 @@ Feature flags grow the same surface. Totals are `tools/list` counts:
 | --- | --- | --- |
 | all off (**default**) | **81** | — |
 | `PER_IDENTITY_PERSONALITY=1` | **82** | +1 — `get_my_personality` (catalogued below) |
-| `FOCUSED_IMAGINATION=1` | **89** | +8 — `run_focused_consolidation`, `get_salience_trace`, `generate_imagination_seeds`, `get_idea_archive`, `run_imagination_cycle`, `get_creative_baton`, `baton_candidates_to_work_items`, `record_candidate_outcome` (catalogued below) |
-| `FOCUSED_IMAGINATION=1` + `CREATIVE_BATON_PROMOTION=1` | **90** | +1 — `promote_creative_baton` (the promotion flag on its own adds nothing: it is meaningless without the family flag) |
+| `FOCUSED_IMAGINATION=1` | **91** | +10 — `run_focused_consolidation`, `get_salience_trace`, `generate_imagination_seeds`, `get_idea_archive`, `run_imagination_cycle`, `get_creative_baton`, `baton_candidates_to_work_items`, `record_candidate_outcome`, `get_imagination_metrics`, `record_experiment_observation` (catalogued below) |
+| `FOCUSED_IMAGINATION=1` + `CREATIVE_BATON_PROMOTION=1` | **92** | +1 — `promote_creative_baton` (the promotion flag on its own adds nothing: it is meaningless without the family flag) |
 | `COGNITIVE_TEAM_ALLOCATION=1` | **87** | +6 — `assign_thinking_mode`, `get_active_mode`, `create_inheritance_envelope`, `allocate_cognitive_portfolio`, `plan_independent_first_pass`, `synthesize_portfolios` (catalogued below; the family is gated on its own flag, so a deployment may run the single-agent imagination surface without ever assembling a team) |
 | `COGNITIVE_CONTROL_ENABLED=read` or `write` | **106** | +25 — mission state, state deltas, epistemic ledger, batons, allocator evidence/counterfactuals, skill-candidate lifecycle (`server/src/services/mission-cognition/`) |
 | `COGNITIVE_SCHEDULER_MODE=shadow` or `recommend` or `allocate_internal` (with the row above) | **119** | +13 more — scheduler queue/decision, uncertainty, trigger and experiment tools |
 | `PER_IDENTITY_PERSONALITY=1` with a cognitive-control row | **82 / 107 / 120** | both — the flags are independent |
 
-`FOCUSED_IMAGINATION` is independent of every row above: it adds its **8** (and its **9th** with
-`CREATIVE_BATON_PROMOTION`) wherever it is set — **89 / 90** for the family on the promotion flag
-off and on, **90** with `PER_IDENTITY_PERSONALITY=1`, **91** with both, **115** with the
-cognitive-control row, **128** with a scheduler mode, and **129** with all of them on. (ITER-5
+`FOCUSED_IMAGINATION` is independent of every row above: it adds its **10** (and its **11th** with
+`CREATIVE_BATON_PROMOTION`) wherever it is set — **91 / 92** for the family on the promotion flag
+off and on, **92** with `PER_IDENTITY_PERSONALITY=1`, **93** with both, **117** with the
+cognitive-control row, **130** with a scheduler mode, and **131** with all of them on. (ITER-5
 contributed the salience trace pair, ITER-6 the imagination pair, ITER-7 the
-cycle/baton/adapter/outcome quartet and — behind the second flag — the promotion; the default
-surface is unchanged because every one of them is flag-gated.)
+cycle/baton/adapter/outcome quartet and — behind the second flag — the promotion, and ITER-9 the
+metrics read plus the one gated experiment-observation write; the default surface is unchanged
+because every one of them is flag-gated.)
 
 `COGNITIVE_TEAM_ALLOCATION` is independent of every other row as well: it adds its **6**
-wherever it is set — **87** on its own, **88** with `PER_IDENTITY_PERSONALITY=1`, **95** with
-`FOCUSED_IMAGINATION=1`, **96** with the promotion flag too, **112** with the cognitive-control row,
-**125** with a scheduler mode and **135** with everything on. (ITER-8 contributed the team layer:
+wherever it is set — **87** on its own, **88** with `PER_IDENTITY_PERSONALITY=1`, **97** with
+`FOCUSED_IMAGINATION=1`, **98** with the promotion flag too, **112** with the cognitive-control row,
+**125** with a scheduler mode and **137** with everything on. (ITER-8 contributed the team layer:
 expiring thinking modes, the bounded inheritance envelope, the portfolio allocator, the independent
 first pass and synthesis.)
 
@@ -1378,3 +1380,65 @@ The artifact appends a `synthesis` lineage record, carries `promoted: false` and
 | exclusions | `[{ref, kind, reason, text_hash}]` | No | the source portfolios' own exclusions, carried verbatim |
 | synthesizer_identity | string | No | the caller's identity |
 | user_id | string | No | caller's identity (trusted callers only may override) |
+
+## Imagination observability — metrics and experiments (`FOCUSED_IMAGINATION`, default off)
+
+The operator's view of the imagination engine: what it generated, what it rejected and whether value
+improved versus a baseline. Both tools are behind `FOCUSED_IMAGINATION` — the same family flag every
+ITER-5/6/7 tool uses — and with it off they are `Unknown tool`, nothing is written and no model call
+is made. The same data is served read-only over `/api/v1/imagination/*` for the dashboard
+(`overview`, `cycles`, `cycles/:cycleId`, `traces`, `archive`, `batons`, `team`, `metrics`,
+`experiments`, `experiments/compare`, `rollout`), and the canary/rollout policy with its kill
+switches and rollback commands lives in `docs/IMAGINATION-ROLLOUT.md`.
+
+### get_imagination_metrics
+
+Read the §7.3 metric set for ONE identity — useful novelty rate, archive coverage gain, idea
+survival (declared as a **proxy**: admitted candidates carrying a recorded outcome over every
+admitted candidate), time to next viable direction, false novelty, agent divergence plus the
+same-mode control when one was recorded, cost of novelty and personality stability. **Every number
+carries its basis** (the measurement window, the `n` behind it, the collections it was read from and
+the documented minimum sample) and a metric below that minimum reports `insufficient_data` instead
+of a fabricated rate — cost of novelty with a zero denominator is `insufficient_data`, **not** `0`.
+Privacy leakage is reported as an **audit count with its basis**, never as a self-congratulatory
+constant: the shared-scope artefacts a promotion produced are read back and checked against the
+private keys the baton allow-list forbids AND against markers lifted verbatim from this identity's
+own private stores (rejected hypotheses, changed premises, trace statements). Caller-pinned: an
+untrusted caller always reads its own identity and a supplied `user_id` is ignored; only a trusted
+caller may name one. **Read** — no cycle runs, nothing is promoted and no mode changes.
+
+| Parameter | Type | Required | Default |
+|---|---|---|---|
+| user_id | string | No | caller's identity (pinned for untrusted callers) |
+| mission_id | string | No | all missions of the identity |
+| window_days | integer (1-365) | No | `IMAGINATION_METRICS_WINDOW_DAYS` (default 14) |
+
+### record_experiment_observation
+
+Record one observation for a registered experiment — the **one gated write** of the observability
+layer (the rest of the dashboard surface is read-only). Trusted callers only, and only with
+`FOCUSED_IMAGINATION` on. The write is **caller-owned**: the row's `user_id` is the caller's own
+identity and there is no `user_id` parameter that could point it at another one. Its shape is
+**closed** (an unknown key is refused by name) and it is **idempotent per
+`{experiment, arm, metric, checkpoint}`** — repeating the same key updates the row in place, and
+repeating the same key with the same numbers writes nothing at all and says so. Supply
+`experiment_id` for an existing experiment, or a `register` block (`name`, `hypothesis`,
+`checkpoints`, `arms[{label, config}]`) to register one first: registration is idempotent by a
+derived id, and the brief's §7.4 shape (control arms A/B, treatment arms C/D) is **data** — an arm is
+a label plus a configuration object, never code. The comparison this feeds
+(`GET /api/v1/imagination/experiments/compare`) applies the brief's named target — **"≥30% better
+useful novelty"**, overridable per call — and returns `improved` / `not_improved` /
+`insufficient_data` with the `n` of each side and the threshold it used. A side may pool several
+arms (`?baseline=A,B&treatment=C,D`), which is the brief's §7.4 shape — Control A/B against
+Treatment C/D — and the pooled rows are weighted by their own `n`. **Write.**
+
+| Parameter | Type | Required | Default |
+|---|---|---|---|
+| experiment_id | string | Yes (unless `register` is given) | — |
+| register | `{name, hypothesis, checkpoints[], arms[{label, config}]}` | No | — (registers the experiment when `experiment_id` is absent) |
+| arm | string | Yes | — (must be one of the experiment's arms) |
+| metric | string | Yes | — (e.g. `useful_novelty_rate`) |
+| value | number | Yes | — |
+| n | integer (≥1) | Yes | — |
+| checkpoint | string | No | the experiment's first checkpoint |
+| note | string (≤2000) | No | — |

@@ -69,6 +69,12 @@ export const UNIQUE_INDEXES: Record<string, string[][]> = {
   thinking_mode_assignments: [['assignment_id']],
   inheritance_envelopes: [['envelope_id']],
   cognitive_portfolios: [['portfolio_id']],
+  // ITER-9: the experiment record store. Only the OBSERVATION row carries
+  // `observation_key`, and that is the unique constraint that makes "repeating
+  // an observation for one {experiment, arm, metric, checkpoint} updates the
+  // existing row instead of inserting a second one" enforceable here the way
+  // the real deployment's unique index makes it enforceable.
+  imagination_experiments: [['observation_key']],
 };
 
 export interface FakeIndex {

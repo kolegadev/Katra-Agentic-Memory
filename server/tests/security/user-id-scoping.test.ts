@@ -483,3 +483,152 @@ describe('Security: imagination engine scoping (seeds + archive)', () => {
     expect(src).not.toMatch(/promote[A-Za-z]*\(/);
   });
 });
+
+// ── ITER-9: the imagination dashboard surface + the one gated write ─────────
+
+describe('Security: imagination observability scoping (ITER-9)', () => {
+  const OWNER = 'agent-a';
+  const INTRUDER = 'client-agent';
+  const MARKER = 'PRIVATE-ITER9-MARKER-DO-NOT-LEAK';
+
+  async function routes() {
+    const { createImaginationDashboardRoutes } = await import(
+      '../../src/routes/imagination-dashboard-routes.js'
+    );
+    const { Hono } = await import('hono');
+    return new Hono().route('/api/v1/imagination', createImaginationDashboardRoutes());
+  }
+
+  async function get(path: string, caller: { user_id: string; trusted: boolean }) {
+    const { runWithCaller } = await import('../../src/utils/caller-identity.js');
+    const app = await routes();
+    const res = await runWithCaller(caller, () => app.request(`http://x/api/v1/imagination${path}`));
+    return { status: res.status, body: await res.json() };
+  }
+
+  /** One identity's private imagination history, with a marker in every store. */
+  async function seedOwner(): Promise<void> {
+    const collections: Array<[string, Record<string, unknown>]> = [
+      ['idea_seeds', { seed_id: 'seed_sec_1', user_id: OWNER, mission_id: 'm_sec', cycle_id: 'cyc_sec', operator: 'assumption_inversion', hypothesis: MARKER, mechanism: MARKER, state: 'rejected', rejection: { reason: 'duplicate_of' }, quality: 0, novelty_score: 0, coherence_score: 0, created_at: new Date().toISOString() }],
+      ['idea_lineages', { lineage_id: 'lin_sec_1', seed_id: 'seed_sec_1', user_id: OWNER, mission_id: 'm_sec', cycle_id: 'cyc_sec', parent_seed_ids: [], transformations: [], tests: [], results: [], failure_signatures: [], changed_premise: MARKER, created_at: new Date().toISOString() }],
+      ['imagination_cycles', { cycle_id: 'cyc_sec', user_id: OWNER, mission_id: 'm_sec', mission_version: 1, trigger: 'plateau', actor_id: OWNER, forced: false, status: 'completed', stop_reason: 'completed', stop_conditions: [], plateau: [{ name: 'archive_coverage_below_floor', met: true, evidence: { cells_total: 0, floor: 6 } }], counts: { seeds_generated: 1, seeds_admitted: 0, seeds_below_incumbent: 0, seeds_rejected: 1, candidates_considered: 0, candidates_eligible: 0, new_cells: 0, cells_total: 0 }, budget: { tokens_spent_this_cycle: 7 }, created_at: new Date().toISOString() }],
+      ['idea_candidate_outcomes', { outcome_id: 'o_sec', user_id: OWNER, mission_id: 'm_sec', seed_id: 'seed_sec_1', outcome: 'useful_information', recorded_at: new Date().toISOString() }],
+      ['salience_traces', { trace_id: 'trace_sec', user_id: OWNER, mission_id: 'm_sec', cycle_id: 'cyc_sec', trigger: 'plateau', created_at: new Date().toISOString(), signals: [{ kind: 'tension', statement: MARKER, why_operationally_relevant: MARKER, intensity: 1, confidence: 1, valence: 0, evidence_refs: ['e'], low_confidence: false }], calibration: {}, evidence: { total_refs: 1, resolved_refs: 1, unresolved_ref_count: 0, unresolved_evidence_count: 0 } }],
+      ['imagination_experiments', { schema_version: '1.0', kind: 'experiment', experiment_id: 'impexp_sec', user_id: OWNER, name: MARKER, hypothesis: MARKER, checkpoints: ['c1'], arms: [{ label: 'control', config: {} }], created_at: new Date().toISOString() }],
+    ];
+    for (const [name, row] of collections) securityStore.db.collection(name).docs.push(row);
+  }
+
+  const VIEWS = [
+    '/overview',
+    '/cycles',
+    '/cycles/cyc_sec',
+    '/traces',
+    '/batons',
+    '/metrics',
+    '/experiments',
+  ];
+
+  beforeEach(() => {
+    securityStore.db = new FakeDb();
+    process.env.FOCUSED_IMAGINATION = '1';
+  });
+
+  afterEach(() => {
+    delete process.env.FOCUSED_IMAGINATION;
+    delete process.env.COGNITIVE_TEAM_ALLOCATION;
+  });
+
+  it("an untrusted caller reads nothing of another identity — and never the marker — from any view", async () => {
+    await seedOwner();
+    for (const path of VIEWS) {
+      const asked = await get(`${path}?user_id=${OWNER}&mission_id=m_sec`, { user_id: INTRUDER, trusted: false });
+      expect(asked.status, path).toBe(200);
+      const serialized = JSON.stringify(asked.body);
+      expect(serialized, `${path} leaked another identity's marker`).not.toContain(MARKER);
+      // The untrusted caller's identity is the one the view was measured for.
+      if (asked.body.identity) expect(asked.body.identity, path).toBe(INTRUDER);
+      // No list view carries the owner's rows.
+      for (const key of ['cycles', 'traces', 'batons', 'experiments']) {
+        if (Array.isArray(asked.body[key])) expect(asked.body[key], `${path}.${key}`).toEqual([]);
+      }
+      if (asked.body.cycle) expect(asked.body.cycle, path).toBeNull();
+      if (asked.body.metrics) {
+        expect(asked.body.metrics.useful_novelty_rate.status, path).toBe('insufficient_data');
+      }
+    }
+  });
+
+  it('the owner and a trusted caller DO see their own rows — the empty answers are pinning, not an empty store', async () => {
+    await seedOwner();
+    const owner = await get('/cycles?mission_id=m_sec', { user_id: OWNER, trusted: false });
+    expect(owner.body.cycles).toHaveLength(1);
+    const trusted = await get(`/cycles?user_id=${OWNER}`, { user_id: 'operator', trusted: true });
+    expect(trusted.body.cycles).toHaveLength(1);
+    // The OWNER's own payload still carries no seed text: the projection is
+    // ids, bins and reasons, whatever the caller's authority.
+    expect(JSON.stringify(trusted.body)).not.toContain(MARKER);
+    expect(JSON.stringify((await get('/traces', { user_id: OWNER, trusted: false })).body)).not.toContain(MARKER);
+  });
+
+  it('the gated write is caller-owned: a trusted caller writes only its own identity, and the row says so', async () => {
+    await seedOwner();
+    const { Hono } = await import('hono');
+    const { createImaginationDashboardRoutes } = await import('../../src/routes/imagination-dashboard-routes.js');
+    const { runWithCaller } = await import('../../src/utils/caller-identity.js');
+    const app = new Hono().route('/api/v1/imagination', createImaginationDashboardRoutes());
+
+    const post = (caller: { user_id: string; trusted: boolean }) =>
+      runWithCaller(caller, () =>
+        app.request('http://x/api/v1/imagination/experiments/observations', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ experiment_id: 'impexp_sec', arm: 'control', metric: 'useful_novelty_rate', value: 1, n: 5 }),
+        }),
+      );
+
+    // The trusted operator cannot write into agent-a's experiment…
+    const foreign = await post({ user_id: 'operator', trusted: true });
+    expect(foreign.status).toBe(400);
+    expect((await foreign.json() as any).code).toBe('experiment_not_found');
+    // …and an untrusted caller is refused outright.
+    const untrusted = await post({ user_id: INTRUDER, trusted: false });
+    expect(untrusted.status).toBe(403);
+    // Nothing was written for either attempt.
+    expect(
+      (securityStore.db.collection('imagination_experiments').docs as Array<Record<string, unknown>>).filter(
+        (row) => row.kind === 'observation',
+      ),
+    ).toEqual([]);
+    // …and there is no parameter that could aim the write at another identity.
+    const source = readFileSync(
+      new URL('../../src/services/processing/imagination-experiments.ts', import.meta.url),
+      'utf8',
+    );
+    expect(source).toContain("user_id: caller.user_id");
+    expect(source).toContain('getExperiment(db, caller.user_id, experimentId)');
+    expect(source).not.toMatch(/recordExperimentObservation\([\s\S]{0,400}user_id:\s*(args|raw)/);
+  });
+
+  it('the metrics tool pins an untrusted caller to its own identity', async () => {
+    const { resolveMetricsUserId } = await import(
+      '../../src/services/processing/imagination-observability-tools.js'
+    );
+    expect(resolveMetricsUserId({ user_id: INTRUDER, trusted: false }, OWNER)).toBe(INTRUDER);
+    expect(resolveMetricsUserId({ user_id: INTRUDER, trusted: false }, undefined)).toBe(INTRUDER);
+    expect(resolveMetricsUserId({ user_id: 'operator', trusted: true }, OWNER)).toBe(OWNER);
+    expect(resolveMetricsUserId({ user_id: 'operator', trusted: true }, '')).toBe('operator');
+
+    const src = readFileSync(
+      new URL('../../src/services/processing/imagination-observability-tools.ts', import.meta.url),
+      'utf8',
+    );
+    // The identity comes from the resolved caller, and the write is gated on
+    // trust BEFORE the service is called.
+    expect(src).toContain('resolveMetricsUserId(caller, input.user_id)');
+    expect(src).toContain("if (!caller.trusted) {");
+    expect(src).toContain("return text('❌ Recording an experiment observation requires a trusted caller (operator).');");
+    // The write never accepts a user_id of its own.
+    expect(src).not.toMatch(/user_id:\s*(input|args)\.user_id/);
+  });
+});

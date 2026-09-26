@@ -158,7 +158,11 @@ pair `generate_imagination_seeds` / `get_idea_archive` (the imagination engine
 and its quality-diversity idea archive) plus the Phase 5 quartet
 `run_imagination_cycle`, `get_creative_baton`, `baton_candidates_to_work_items`
 and `record_candidate_outcome` (plateau cycles, the sanitised Creative Baton,
-the controller adapter and the outcome feedback) — and, with
+the controller adapter and the outcome feedback) plus the Phase 7 observability
+pair `get_imagination_metrics` (every number with its basis, `insufficient_data`
+below the documented minimum) and `record_experiment_observation` (the one
+gated write: trusted caller, flag on, idempotent per
+`{experiment, arm, metric, checkpoint}`) — and, with
 `CREATIVE_BATON_PROMOTION=1` as well, `promote_creative_baton`, the only tool
 that may share a baton with the team. `COGNITIVE_TEAM_ALLOCATION=1` registers
 the Phase 6 team layer — `assign_thinking_mode`, `get_active_mode`,
@@ -247,6 +251,18 @@ are always private; everything else is team-shared by default.
   independent first pass where no agent sees a peer's ideas, and a synthesis
   that preserves provenance and exclusion reasons verbatim and cannot promote;
   behind `COGNITIVE_TEAM_ALLOCATION` (default off)
+- **Imagination observability** — read-only operator views over
+  `/api/v1/imagination` (overview, cycles with their plateau conditions and
+  stop reasons, generated/admitted and rejected candidates with reasons, traces,
+  archive coverage, batons with the promotion audit, team modes/envelopes/
+  allocations, the metric set and the experiment comparison) plus the rollout
+  view that reads flag and kill-switch state from the running process. Every
+  metric carries its basis (window, n, sources) and says `insufficient_data`
+  rather than fabricating a rate; privacy leakage is an audit count with the
+  rows it scanned; each view states why it is empty. One write only — a
+  trusted-gated, idempotent experiment observation. Policy and rollback:
+  [`docs/IMAGINATION-ROLLOUT.md`](docs/IMAGINATION-ROLLOUT.md); behind
+  `FOCUSED_IMAGINATION` (default off)
 - **Autonomous loop** — salience-driven autonomy; no cron, no hand-written task files
 - **Identity separation** — named identities per agent; personal always private
 - **Inter-agent message bus** — `Attention:` messages through shared memory,

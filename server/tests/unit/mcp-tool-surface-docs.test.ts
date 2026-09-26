@@ -315,24 +315,27 @@ describe('MCP surface — the docs state the measured flag-gated additions', () 
     expect(killed.length).toBe(read.length);
   });
 
-  it('FOCUSED_IMAGINATION adds exactly the eight catalogued tools it owns', async () => {
-    // ITER-6 added the imagination pair behind the SAME flag and ITER-7 added
-    // four more (the cycle, the baton read, the adapter and the outcome), so
-    // this row now measures all eight: the flag-gated family is what the docs
-    // describe, and a ninth tool appearing behind this flag without a docs
-    // change fails here.
+  it('FOCUSED_IMAGINATION adds exactly the ten catalogued tools it owns', async () => {
+    // ITER-6 added the imagination pair behind the SAME flag, ITER-7 added four
+    // more (the cycle, the baton read, the adapter and the outcome) and ITER-9
+    // added the observability pair (the metrics read and the ONE gated
+    // experiment-observation write), so this row now measures all ten: the
+    // flag-gated family is what the docs describe, and an eleventh tool
+    // appearing behind this flag without a docs change fails here.
     const withoutFlag = await registeredSurface();
     const withFlag = await registeredSurface({ FOCUSED_IMAGINATION: '1' });
     const added = withFlag.filter((name) => !withoutFlag.includes(name));
 
-    expect(withFlag.length - withoutFlag.length).toBe(8);
+    expect(withFlag.length - withoutFlag.length).toBe(10);
     expect(added.sort()).toEqual([
       'baton_candidates_to_work_items',
       'generate_imagination_seeds',
       'get_creative_baton',
       'get_idea_archive',
+      'get_imagination_metrics',
       'get_salience_trace',
       'record_candidate_outcome',
+      'record_experiment_observation',
       'run_focused_consolidation',
       'run_imagination_cycle',
     ]);
@@ -387,7 +390,7 @@ describe('MCP surface — the docs state the measured flag-gated additions', () 
       FOCUSED_IMAGINATION: '1',
       CREATIVE_BATON_PROMOTION: '1',
     });
-    expect(combined.length).toBe(withoutFlag.length + 9);
+    expect(combined.length).toBe(withoutFlag.length + 11);
     expect(combinedPromoted.length).toBe(combined.length + 1);
     expect(withCognitive.length).toBe(withPromotion.length + 25);
     expect(withScheduler.length).toBe(withPromotion.length + 38);
@@ -463,11 +466,12 @@ describe('MCP surface — the docs state the measured flag-gated additions', () 
       COGNITIVE_TEAM_ALLOCATION: '1',
     });
     expect(withPersonality.length).toBe(withoutFlag.length + 1 + 6);
-    expect(withImagination.length).toBe(withTeam.length + 8);
-    expect(withPromotion.length).toBe(withTeam.length + 9);
+    // ITER-9 grew the imagination family from 8+1 to 10+1 tools.
+    expect(withImagination.length).toBe(withTeam.length + 10);
+    expect(withPromotion.length).toBe(withTeam.length + 11);
     expect(withCognitive.length).toBe(withTeam.length + 25);
     expect(withScheduler.length).toBe(withTeam.length + 38);
-    expect(everything.length).toBe(withScheduler.length + 10); // +1 personality, +9 imagination family
+    expect(everything.length).toBe(withScheduler.length + 12); // +1 personality, +11 imagination family
     for (const total of [
       withTeam.length,
       withPersonality.length,
@@ -482,10 +486,10 @@ describe('MCP surface — the docs state the measured flag-gated additions', () 
     // The number the prose states for the family on its own must be measured.
     expect(MCP_TOOLS).toContain(`**${withTeam.length}**`);
 
-    // FOCUSED_IMAGINATION on its own still adds exactly its eight: the ITER-8
+    // FOCUSED_IMAGINATION on its own still adds exactly its ten: the ITER-8
     // family is NOT reachable through it.
     const imaginationOnly = await registeredSurface({ FOCUSED_IMAGINATION: '1' });
-    expect(imaginationOnly.length - withoutFlag.length).toBe(8);
+    expect(imaginationOnly.length - withoutFlag.length).toBe(10);
     for (const name of added) expect(imaginationOnly).not.toContain(name);
   });
 });
