@@ -158,6 +158,14 @@ export function defaultResponder(system: string, prompt: string): Record<string,
 export interface SeedOptions {
   graph?: boolean;
   /**
+   * A prefix for the seeded GRAPH ids (`node_a`…`edge_da`). Defaults to none:
+   * the ids are the frozen fixture's own. A caller seeding a SHARED store must
+   * pass one (its run token), because `knowledge_relationships` carries a GLOBAL
+   * unique index on (from_id, to_id, relationship_type), so two seedings of the
+   * same scenario against one store collide on `node_a -> node_b`.
+   */
+  idPrefix?: string;
+  /**
    * The mission to build. Defaults to `SCENARIO_MISSION`; a suite that needs a
    * SECOND mission over the same store (the ITER-7 cycle-id collision, which
    * needs two missions sharing a mission version and a cycle ordinal) passes its
@@ -412,20 +420,27 @@ export async function seedMission(
   });
 
   if (options.graph !== false) {
+    // The graph's node/edge ids are scenarios ids, not mission-scoped ones, and
+    // the store's `from_to_type` index on `knowledge_relationships` is GLOBAL
+    // (from_id, to_id, relationship_type) — so two seedings against one shared
+    // store collide. A caller that seeds a REAL store passes `idPrefix` (its run
+    // token) so its graph is its own; the frozen fixture passes none and its
+    // bytes are unchanged.
+    const prefix = options.idPrefix ?? '';
     const nodes = [
-      { id: 'node_a', properties: { name: 'Queue health' } },
-      { id: 'node_b', properties: { name: 'Drain measurement' } },
-      { id: 'node_c', properties: { name: 'Plateau detector' } },
-      { id: 'node_d', properties: { name: 'Nightly compaction' } },
+      { id: `${prefix}node_a`, properties: { name: 'Queue health' } },
+      { id: `${prefix}node_b`, properties: { name: 'Drain measurement' } },
+      { id: `${prefix}node_c`, properties: { name: 'Plateau detector' } },
+      { id: `${prefix}node_d`, properties: { name: 'Nightly compaction' } },
     ];
     for (const node of nodes) {
       db.collection('knowledge_nodes').docs.push({ ...node, user_id: ownerId, node_type: 'concept' });
     }
     for (const edge of [
-      { id: 'edge_ab', from_id: 'node_a', to_id: 'node_b' },
-      { id: 'edge_bc', from_id: 'node_b', to_id: 'node_c' },
-      { id: 'edge_cd', from_id: 'node_c', to_id: 'node_d' },
-      { id: 'edge_da', from_id: 'node_d', to_id: 'node_a' },
+      { id: `${prefix}edge_ab`, from_id: `${prefix}node_a`, to_id: `${prefix}node_b` },
+      { id: `${prefix}edge_bc`, from_id: `${prefix}node_b`, to_id: `${prefix}node_c` },
+      { id: `${prefix}edge_cd`, from_id: `${prefix}node_c`, to_id: `${prefix}node_d` },
+      { id: `${prefix}edge_da`, from_id: `${prefix}node_d`, to_id: `${prefix}node_a` },
     ]) {
       db.collection('knowledge_relationships').docs.push({
         ...edge,

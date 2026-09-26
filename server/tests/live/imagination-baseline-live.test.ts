@@ -389,12 +389,24 @@ describe.skipIf(!LIVE)('imagination baseline — the bounded LIVE run (DoD #8)',
         //
         // Two scenarios, because the treatment arms run on their own missions
         // (as the fixture does): C's engine mission and D's team mission. Arms A
-        // and B are the pre-engine comparators — they have no cycle service and
-        // no mission state to read, they only write candidates through the
-        // archive — so they need none, and they walk the SAME material both
-        // treatment missions produced.
-        await seedScenario(store.asFakeDb(), { ownerId: engineIdentity, missionId: missions.C });
-        await seedScenario(store.asFakeDb(), { ownerId: engineIdentity, missionId: missions.D });
+        // The graph is seeded ONCE, under the run's own id prefix: the store's
+        // `from_to_type` index on knowledge_relationships is GLOBAL, so a second
+        // seeding of the scenario's fixed ids (`node_a -> node_b`) collides with
+        // this run's own first seeding, and with any earlier run's. The fixture
+        // seeds the same graph twice and de-duplicates by id; here the second
+        // seeding skips the graph (`graph: false`) so the material is the SAME
+        // four nodes and four edges the frozen checkpoint walks, under ids that
+        // belong to this run alone. Arms A and B are the pre-engine comparators —
+        // they have no cycle service and no mission state to read, they only
+        // write candidates through the archive — so the D mission needs none, and
+        // both treatment missions walk the ONE material the C mission produced.
+        const graphPrefix = `${config.run}-`;
+        await seedScenario(store.asFakeDb(), {
+          ownerId: engineIdentity,
+          missionId: missions.C,
+          idPrefix: graphPrefix,
+        });
+        await seedScenario(store.asFakeDb(), { ownerId: engineIdentity, missionId: missions.D, graph: false });
         await store.refresh([
           { collection: 'knowledge_nodes', filter: { user_id: { $in: runIdentities } } },
           { collection: 'knowledge_relationships', filter: { user_id: { $in: runIdentities } } },
