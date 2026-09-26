@@ -24,7 +24,7 @@ import type { GcmParts, VaultEnvelope } from '../../../src/services/vault/crypto
 
 const MK = generateMasterKey();
 const SCOPE = 'user:agent-c';
-const SECRET = 'agentmail-api-key: sk-live-4f9c2b7a1e8d3c5f6a0b9d8e7c6f5a4b3c2d1e0f';
+const SECRET = 'agentmail-api-key: sk-test-4f9c2b7a1e8d3c5f6a0b9d8e7c6f5a4b3c2d1e0f';
 
 function expectVaultError(fn: () => unknown): void {
   expect(fn).toThrow(expect.objectContaining({ message: expect.stringContaining('vault') }));

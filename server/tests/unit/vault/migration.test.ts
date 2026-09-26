@@ -68,7 +68,7 @@ describe.skipIf(!mongoAvailable)('Vault migration (F8) — contract criteria', (
   // appear in a report".
   const KEY_TOKEN = 'a9f8e7d6c5b4a39281706f5e4d3c2b1a0f9e8d7c6';
   const WIFI_TOKEN = 'WiFiTivat2026x9';
-  const KEY_FILE_VALUE = 'sk-live-agentmail-9f8e7d6c5b4a39281706f5e4d3c2b1a0f9e8d7c6b5a44';
+  const KEY_FILE_VALUE = 'sk-test-agentmail-9f8e7d6c5b4a39281706f5e4d3c2b1a0f9e8d7c6b5a44';
 
   let db: Db;
   let client: MongoClient;

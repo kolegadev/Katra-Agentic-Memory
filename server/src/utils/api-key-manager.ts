@@ -332,6 +332,42 @@ export function isLoopbackAddress(remoteAddress?: string | null): boolean {
  * Extract the presented API key from request headers / query string:
  * `x-mcp-auth` header, `Authorization: Bearer ...`, or `?token=...`.
  */
+/** Where a presented key came from. The query string is not a safe carrier. */
+export type PresentedKeySource = 'header' | 'query';
+
+/**
+ * Same as extractPresentedKey(), but reports which carrier supplied the key.
+ *
+ * `resolveCallerIdentity()` uses this to refuse the admin key when it arrives in
+ * the URL: query strings leak into access logs, proxies, browser history and
+ * Referer headers, so a trusted-identity key must only travel in a header.
+ */
+export function extractPresentedKeyWithSource(
+  headers: Record<string, string | string[] | undefined>,
+  url?: string,
+): { token: string; source: PresentedKeySource } | undefined {
+  const xMcpAuth = headers['x-mcp-auth'];
+  const x = Array.isArray(xMcpAuth) ? xMcpAuth[0] : xMcpAuth;
+  if (typeof x === 'string' && x.trim()) return { token: x.trim(), source: 'header' };
+
+  const authorization = headers['authorization'];
+  const auth = Array.isArray(authorization) ? authorization[0] : authorization;
+  if (typeof auth === 'string' && auth.startsWith('Bearer ')) {
+    const token = auth.slice(7).trim();
+    if (token) return { token, source: 'header' };
+  }
+
+  if (url) {
+    try {
+      const token = new URL(url, 'http://localhost').searchParams.get('token');
+      if (token && token.trim()) return { token: token.trim(), source: 'query' };
+    } catch {
+      /* malformed URL — no token */
+    }
+  }
+  return undefined;
+}
+
 export function extractPresentedKey(
   headers: Record<string, string | string[] | undefined>,
   url?: string,
@@ -555,14 +591,22 @@ export async function resolveCallerIdentity(
     return { user_id: LOCAL_IDENTITY_ID, trusted: true };
   }
 
-  const token = extractPresentedKey(req.headers ?? {}, req.url ?? undefined);
-  if (!token) return null;
+  const presented = extractPresentedKeyWithSource(req.headers ?? {}, req.url ?? undefined);
+  if (!presented) return null;
 
+  const token = presented.token;
   const tokenHash = hashApiKey(token);
 
-  // Admin key = trusted local identity.
-  if (validateKatraKey(token)) {
+  // Admin key = trusted local identity — header only. The same key in a query
+  // string is refused (and logged) because URLs leak; it then falls through to
+  // the client-key lookup and is rejected unless separately mapped.
+  if (presented.source === 'header' && validateKatraKey(token)) {
     return { user_id: LOCAL_IDENTITY_ID, trusted: true };
+  }
+  if (presented.source === 'query' && validateKatraKey(token)) {
+    console.warn(
+      '🔒 admin key presented in the query string — refused (use the Authorization header)',
+    );
   }
 
   // Key mapped in client_keys → that identity, untrusted.

@@ -243,7 +243,7 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
   let store: VaultStore;
   const MK = generateMasterKey();
   const runId = randomBytes(4).toString('hex');
-  const SECRET_VALUE = 'sk-live-capability-7a1f2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c';
+  const SECRET_VALUE = 'sk-test-capability-7a1f2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c';
   const AGENT_C: CallerIdentity = { user_id: 'agent-c', trusted: false };
   const AGENT_A: CallerIdentity = { user_id: 'agent-a', trusted: false };
   const KATRA: CallerIdentity = { user_id: 'katra', trusted: true };

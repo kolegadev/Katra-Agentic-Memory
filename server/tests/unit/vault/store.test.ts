@@ -59,7 +59,7 @@ describe.skipIf(!mongoAvailable)('Vault store (F2) — contract criteria', () =>
   let db: Db;
   let store: VaultStore;
   const MK = generateMasterKey();
-  const VALUE = 'sk-live-4f9c2b7a1e8d3c5f6a0b9d8e7c6f5a4b3c2d1e0f';
+  const VALUE = 'sk-test-4f9c2b7a1e8d3c5f6a0b9d8e7c6f5a4b3c2d1e0f';
   const AGENT_C: CallerIdentity = { user_id: 'agent-c', trusted: false };
   const AGENT_A: CallerIdentity = { user_id: 'agent-a', trusted: false };
   const TRUSTED: CallerIdentity = { user_id: 'katra', trusted: true };

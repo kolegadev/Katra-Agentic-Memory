@@ -423,7 +423,7 @@ describe.skipIf(!mongoAvailable)('F5 vault denylist — behavioral containment (
         f5_vault_marker: marker,
         f5vault_seed: true,
         name: marker,
-        content: `super-secret-value-${marker}-sk-live-deadbeef`,
+        content: `super-secret-value-${marker}-sk-test-deadbeef`,
         created_at: new Date(),
       });
     }

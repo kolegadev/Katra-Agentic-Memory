@@ -5,7 +5,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 
 const MCP_URL = process.env.KATRA_MCP_URL || 'http://localhost:3112/mcp';
-const MCP_KEY = process.env.MCP_API_KEY || 'katra-mcp-key-2026';
+const MCP_KEY = process.env.MCP_API_KEY || 'test-mcp-key-not-a-secret';
 const KATRA_KEY = process.env.KATRA_API_KEY || 'katra-admin-key-2026';
 
 let _initialized = false;

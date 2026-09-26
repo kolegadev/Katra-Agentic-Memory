@@ -20,7 +20,7 @@ async function mcpHealth(): Promise<number> {
     headers: {
       'Content-Type': 'application/json',
       'Accept': 'application/json, text/event-stream',
-      'X-MCP-Auth': 'katra-mcp-key-2026',
+      'X-MCP-Auth': 'test-mcp-key-not-a-secret',
     },
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }),
   });
