@@ -64,6 +64,16 @@ export const PERSONAL_KINDS: readonly string[] = [
   'thinking_mode_assignments',
   'inheritance_envelopes',
   'cognitive_portfolios',
+  // ITER-11 (verification + learning): the failure signatures a mission's
+  // candidates leave behind, the bounded delta PROPOSALS the personality
+  // service computes and the deprecation-telemetry counters of the legacy
+  // personality path are all identity-owned records about one identity's own
+  // work — none of them is ever shared, and none may carry a `shared_id` even
+  // against an explicit shared request.
+  'idea_failure_signatures',
+  'personality_delta_proposals',
+  'personality_deprecation_events',
+  'salience_inputs',
 ];
 
 /** Default shared scope for every non-personal write. */

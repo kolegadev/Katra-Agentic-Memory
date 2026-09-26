@@ -1428,7 +1428,9 @@ derived id, and the brief's §7.4 shape (control arms A/B, treatment arms C/D) i
 a label plus a configuration object, never code. The comparison this feeds
 (`GET /api/v1/imagination/experiments/compare`) applies the brief's named target — **"≥30% better
 useful novelty"**, overridable per call — and returns `improved` / `not_improved` /
-`insufficient_data` with the `n` of each side and the threshold it used. A side may pool several
+`equal` / `insufficient_data` with the `n` of each side and the threshold it used. `equal` is a
+measured outcome, not a missing one: two readings that are the same number at the reported
+precision are reported as EQUAL — no delta, no relative gain, no improvement claimed. A side may pool several
 arms (`?baseline=A,B&treatment=C,D`), which is the brief's §7.4 shape — Control A/B against
 Treatment C/D — and the pooled rows are weighted by their own `n`. **Write.**
 

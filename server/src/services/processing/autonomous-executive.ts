@@ -25,6 +25,10 @@ import { autonomousActionPipeline } from '../orchestration/autonomous-action-pip
 // allocate_internal, the mission is opted in, the evidence gate is open, and
 // the hard bound is not breached. No other scheduler state is read here.
 import { maybeGetSchedulerInfluence, persistAllocationCounterfactual } from '../mission-cognition/activation-bridge.js';
+// ITER-11 (§6.1 item 4 / WS-1): the plateau trigger that hangs off THIS tick —
+// flag-gated, identity-scoped and bounded to one cycle per tick, with every
+// failure caught (see `executive-imagination-bridge.ts`).
+import { runExecutiveImaginationSweep } from './executive-imagination-bridge.js';
 
 // Adaptive cadence — like a biological heart:
 //   Survival threat (adrenaline):  2 min  — fastest, existential urgency
@@ -431,6 +435,33 @@ export class AutonomousExecutive {
         await autonomousActionPipeline.evaluateAll(entity, '', USER_ID);
       } catch (evalErr) {
         console.error('Pipeline evaluation failed:', evalErr);
+      }
+
+      // ITER-11 (§6.1 item 4 / WS-1): the PLATEAU TRIGGER inside this existing
+      // tick. Flag-gated (FOCUSED_IMAGINATION, fail-closed), scoped to the
+      // identities this executive already serves, and bounded to at most one
+      // imagination cycle per tick — the sweep evaluates the plateau first and
+      // the cycle's own gates (single-flight → cooldown → window budget →
+      // plateau → claim) still gate every run. It adds no authority of its own
+      // and removes none of this loop's: it runs inside the `ticking`
+      // single-flight guard, after the action/mind-wander path, and any failure
+      // is caught and logged so the tick always continues.
+      try {
+        const sweep = await runExecutiveImaginationSweep({
+          db: get_database(),
+          userIds: [...ALLOCATION_CANDIDATES, LOCAL_AGENT_ID],
+        });
+        if (sweep.enabled) {
+          console.log(
+            `   🎨 Imagination sweep: ${sweep.cycles_run} cycle(s) over ${sweep.missions_evaluated} mission(s)` +
+              (sweep.skipped.length > 0 ? ` (${sweep.skipped.map((row) => row.reason).join(', ')})` : ''),
+          );
+        }
+        for (const failure of sweep.failures) {
+          console.error(`   ⚠️ Imagination sweep failure (${failure.mission_id ?? 'no mission'}): ${failure.error}`);
+        }
+      } catch (sweepErr) {
+        console.error('Executive imagination sweep failed:', sweepErr);
       }
     } finally {
       this.ticking = false;

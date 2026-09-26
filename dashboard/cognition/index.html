@@ -494,7 +494,14 @@ function imgViewHtml(view, b){
       + imgTable(rows, ['Trace','#','Kind','Intensity','Confidence','Valence','Low confidence','Evidence refs'], s => [s.trace_id, s.index, s.kind, s.intensity, s.confidence, s.valence, s.low_confidence ? 'yes' : 'no', s.evidence_ref_count])
       + '<h3>Evidence counts</h3>'
       + imgTable((b.traces || []).map(t => ({ trace_id: t.trace_id, ...(t.evidence || {}) })), ['Trace','Total refs','Resolved','Unresolved refs','Unresolved signals'], e => [e.trace_id, e.total_refs, e.resolved_refs, e.unresolved_ref_count, e.unresolved_evidence_count])
-      + imgBasis(b.basis || 'salience_traces — own identity only; signal statement and why-text are never projected') + (b.reason ? imgEmpty(b.reason) : '') + imgPrivacy(b.privacy);
+      // ITER-10: /traces carries a view-level basis OBJECT (window, n, sources,
+      // minimum, measurement); it is rendered as one sentence, and the string
+      // form older payloads used still renders as itself.
+      + imgBasis(typeof b.basis === 'object' && b.basis !== null
+        ? String(b.basis.measurement || 'salience_traces') + ' — ' + ((b.basis.sources || []).join(', ') || 'sources not stated')
+          + ' · n=' + String(b.basis.n) + ' · window=' + (b.basis.window && b.basis.window.days != null ? b.basis.window.days + 'd' : 'not windowed')
+        : (b.basis || 'salience_traces — own identity only; signal statement and why-text are never projected'))
+      + (b.reason ? imgEmpty(b.reason) : '') + imgPrivacy(b.privacy);
   }
   if (view === 'archive') {
     const cov = b.coverage || {};
@@ -541,7 +548,7 @@ function imgViewHtml(view, b){
       + '<table><tr><th>Metric</th><th>Status</th><th>Value</th><th>Basis</th><th>Why no value</th></tr>'
       + IMG_METRIC_KEYS.map(([key, label]) => imgMetric(label, m[key])).join('')
       + '</table>'
-      + '<h3>Did value improve versus baseline? — ' + imgTag(cmp.verdict || 'no comparison', cmp.verdict === 'improved' ? 'agree' : cmp.verdict === 'not_improved' ? 'diverge' : '') + '</h3>'
+      + '<h3>Did value improve versus baseline? — ' + imgTag(cmp.verdict || 'no comparison', cmp.verdict === 'improved' ? 'agree' : cmp.verdict === 'not_improved' ? 'diverge' : cmp.verdict === 'equal' ? 'equal' : '') + '</h3>'
       + imgTable(cmp.metrics, ['Metric','Direction','Target','Baseline','This window','Delta','Relative gain','Verdict','Why'], row => [row.metric, row.direction, row.target ? row.target.min_relative_gain + ' (' + row.target.source + ')' : '—', (row.baseline.value === null ? 'no value' : row.baseline.value) + ', n=' + row.baseline.n, (row.treatment.value === null ? 'no value' : row.treatment.value) + ', n=' + row.treatment.n, row.delta, row.relative_gain, row.verdict, row.reason])
       + imgBasis(cmp.basis)
       + '<h3>Privacy leakage — an audit count, with the rows it scanned</h3>'
@@ -561,7 +568,7 @@ function imgViewHtml(view, b){
   if (view === 'compare') {
     const cmp = b.comparison || {};
     if (!cmp.metrics) return imgEmpty((b && b.reason) || 'No comparison was returned.');
-    return imgKv([['Experiment', cmp.experiment_id], ['Verdict', cmp.verdict], ['Baseline arm(s)', (cmp.baseline_arms || [cmp.baseline_arm]).join(' + ')], ['Treatment arm(s)', (cmp.treatment_arms || [cmp.treatment_arm]).join(' + ')], ['Improved', cmp.counts ? cmp.counts.improved : '—'], ['Not improved', cmp.counts ? cmp.counts.not_improved : '—'], ['Insufficient data', cmp.counts ? cmp.counts.insufficient_data : '—']])
+    return imgKv([['Experiment', cmp.experiment_id], ['Verdict', cmp.verdict], ['Baseline arm(s)', (cmp.baseline_arms || [cmp.baseline_arm]).join(' + ')], ['Treatment arm(s)', (cmp.treatment_arms || [cmp.treatment_arm]).join(' + ')], ['Improved', cmp.counts ? cmp.counts.improved : '—'], ['Not improved', cmp.counts ? cmp.counts.not_improved : '—'], ['Equal', cmp.counts && cmp.counts.equal !== undefined ? cmp.counts.equal : '—'], ['Insufficient data', cmp.counts ? cmp.counts.insufficient_data : '—']])
       + '<h3>Per metric: baseline vs treatment</h3>'
       + imgTable(cmp.metrics, ['Metric','Direction','Target','Baseline (mean, n)','Treatment (mean, n)','Delta','Relative gain','Verdict','Why'], m => [m.metric, m.direction, (m.target ? m.target.min_relative_gain + ' (' + m.target.source + ')' : '—'), m.baseline.weighted_mean + ', n=' + m.baseline.n, m.treatment.weighted_mean + ', n=' + m.treatment.n, m.delta, m.relative_gain, m.verdict, m.reason])
       + imgBasis(cmp.basis) + imgPrivacy(cmp.privacy);

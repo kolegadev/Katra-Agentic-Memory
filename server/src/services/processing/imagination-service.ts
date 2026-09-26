@@ -86,10 +86,13 @@ import {
   traceSignalId,
   type OperatorFamily,
   type OperatorPlanEntry,
+  type OperatorPriorInput,
   type TraceSignalForPlan,
 } from './imagination-operators.js';
 import {
   IdeaArchiveService,
+  activeDescriptorBins,
+  activeDescriptorDimensions,
   normalizeBins,
   privateDoc,
   qualityOf,
@@ -619,7 +622,8 @@ RULES (binding):
 6. For an operator that requires a bridge (distant_analogy, random_semantic_bridge) you MUST state the bridge: copy one of the candidate paths verbatim into bridge_path and say in bridge what the two ends share and why that carries the mechanism onto this mission.
 7. changed_premise: include it ONLY when you are deliberately re-opening a previously rejected or excluded idea. It must be a complete sentence naming what has CHANGED since it was ruled out. Never include it otherwise.
 8. Extra keys are ignored; a seed without a hypothesis, a mechanism, a cheapest test or evidence is discarded.
-9. Respond with JSON only — no prose, no markdown.`;
+9. descriptor_bins must name one bin per dimension from the ACTIVE DESCRIPTOR SPACE block of the request — the deployment may have extended the dimensions and their bins. A dimension you omit, and any bin not listed there, is recorded as "unclassified" (never invented).
+10. Respond with JSON only — no prose, no markdown.`;
 
 export interface GenerateContext {
   trace: SalienceTrace;
@@ -653,6 +657,12 @@ export function buildImaginationPrompt(
     );
     lines.push(`    why: ${truncate(signal.why_operationally_relevant, 300)}`);
     if (signal.low_confidence) lines.push('    note: below the confidence floor — treat as an excluded region');
+  }
+
+  lines.push('');
+  lines.push('ACTIVE DESCRIPTOR SPACE — choose exactly one bin per dimension for descriptor_bins');
+  for (const dimension of activeDescriptorDimensions()) {
+    lines.push(`- ${dimension}: ${(activeDescriptorBins()[dimension] ?? []).join('|')}`);
   }
 
   lines.push('');
@@ -952,6 +962,13 @@ export interface GenerateArgs {
   /** 'explore' spreads the plan; 'exploit' follows the trace's score order. */
   mode?: 'explore' | 'exploit' | 'balanced' | null;
   budget?: Partial<ImaginationBudget>;
+  /**
+   * The LEARN step's bounded operator priors (ITER-11, WS-5): recorded failure
+   * signatures and useful outcomes for this mission, read by
+   * `loadOperatorPriors`. They move the plan's scores by a clamped amount and
+   * are documented on the affected plan entries; omitted ⇒ no adjustment.
+   */
+  priors?: OperatorPriorInput | null;
   seed: string | number;
 }
 
@@ -1001,11 +1018,14 @@ export async function generateImaginationSeeds(
   }
 
   // 2. Plan. Deterministic: the walk consumed a fixed number of draws, then
-  //    the plan's shuffles consume theirs.
+  //    the plan's shuffles consume theirs. The LEARN step's priors (ITER-11,
+  //    WS-5) adjust the scores by a bounded amount and are recorded on the plan
+  //    entry's `reason_text`/`prior`; absent priors ⇒ the plan is unchanged.
   const planned = planOperators(planSignals, rng, {
     maxOperators: budget.max_operators,
     mode: args.mode ?? 'balanced',
     unavailable,
+    priors: args.priors ?? null,
   });
 
   // 3. The LLM-call budget is a hard cap on how many operators can run at all
@@ -1372,6 +1392,13 @@ export interface ImaginationArgs {
   disposition?: string | null;
   mode?: 'explore' | 'exploit' | 'balanced' | null;
   budget?: Partial<ImaginationBudget>;
+  /**
+   * The LEARN step's bounded operator priors (ITER-11, WS-5) — read from the
+   * persisted failure signatures and useful outcomes of this mission by
+   * `loadOperatorPriors`. They move the plan's scores by a clamped amount,
+   * documented on the affected plan entries; omitted ⇒ no adjustment.
+   */
+  priors?: OperatorPriorInput | null;
   /** Test seam: the current time, so a run never reads the clock twice. */
   now?: () => string;
 }
@@ -1494,6 +1521,7 @@ export class ImaginationService {
       disposition: nonEmpty(args.disposition),
       mode: args.mode ?? 'balanced',
       budget: args.budget ?? {},
+      priors: args.priors ?? null,
       now,
     });
     inFlight.set(idempotencyKey, work);
@@ -1577,6 +1605,7 @@ export class ImaginationService {
     disposition: string | null;
     mode: 'explore' | 'exploit' | 'balanced';
     budget: Partial<ImaginationBudget>;
+    priors: OperatorPriorInput | null;
     now: () => string;
   }): Promise<ImaginationResult> {
     const startedMs = Date.now();
@@ -1676,6 +1705,7 @@ export class ImaginationService {
         disposition: args.disposition,
         mode: args.mode,
         budget,
+        priors: args.priors ?? null,
         seed: args.seedSource,
       });
     } catch (error) {

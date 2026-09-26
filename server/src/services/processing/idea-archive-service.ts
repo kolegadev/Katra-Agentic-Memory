@@ -128,47 +128,48 @@ import {
   IDEA_SEED_KIND,
   ensureImaginationIndexes,
 } from './imagination-collections.js';
+import {
+  DEFAULT_DESCRIPTOR_BINS,
+  DEFAULT_DESCRIPTOR_DIMENSIONS,
+  UNCLASSIFIED_BIN_NAME,
+  descriptorSpace,
+} from './descriptor-space.js';
 import type { OperatorFamily } from './imagination-operators.js';
 
 // ── Descriptor space ────────────────────────────────────────────────────────
 
-export const DESCRIPTOR_DIMENSIONS = [
-  'mechanism',
-  'representation',
-  'violated_assumption',
-  'evidence_family',
-  'test_strategy',
-] as const;
-
-export type DescriptorDimension = (typeof DESCRIPTOR_DIMENSIONS)[number];
-
 /**
- * The closed bin vocabulary per dimension. `unclassified` is always available
- * (and is the fallback for anything the model did not choose from the list):
- * an unclassified seed is still archived, in a cell of its own, and counted in
- * the coverage view's occupancy denominator.
+ * The DEFAULT dimensions of the descriptor space (ITER-11, WS-2). The ACTIVE
+ * space is `activeDescriptorDimensions()` / `activeDescriptorBins()`, which
+ * resolve `IMAGINATION_BINS` (see `descriptor-space.ts`): unset ⇒ exactly these
+ * five, a valid config ⇒ the configured space, a hostile config ⇒ these five
+ * plus a named refusal. The constants are kept exported because they are the
+ * defaults every stored row was written against.
  */
-export const DESCRIPTOR_BINS: Record<DescriptorDimension, readonly string[]> = {
-  mechanism: ['removal', 'substitution', 'reversal', 'amplification', 'relocation', 'composition'],
-  representation: ['prose', 'list', 'table', 'graph', 'numeric', 'protocol'],
-  violated_assumption: ['necessity', 'sufficiency', 'independence', 'stability', 'scarcity', 'identity'],
-  evidence_family: [
-    'operational_state',
-    'epistemic_ledger',
-    'work_queue',
-    'temporal_series',
-    'external_observation',
-    'trace_absence',
-  ],
-  test_strategy: ['cheapest_probe', 'ab_test', 'simulation', 'instrumentation', 'observation_study', 'kill_criterion'],
-};
+export const DESCRIPTOR_DIMENSIONS = DEFAULT_DESCRIPTOR_DIMENSIONS;
 
-export const UNCLASSIFIED_BIN = 'unclassified';
+/** A dimension name. The space is configurable, so this is a string, not a union. */
+export type DescriptorDimension = string;
 
-export type DescriptorBins = Record<DescriptorDimension, string>;
+/** The DEFAULT bin vocabulary per dimension (the active one may differ). */
+export const DESCRIPTOR_BINS: Record<string, readonly string[]> = DEFAULT_DESCRIPTOR_BINS;
+
+/** The dimensions of the ACTIVE space, in cell-key order. */
+export function activeDescriptorDimensions(): readonly string[] {
+  return descriptorSpace().dimensions;
+}
+
+/** The ACTIVE bin vocabulary per dimension. */
+export function activeDescriptorBins(): Record<string, readonly string[]> {
+  return descriptorSpace().bins;
+}
+
+export const UNCLASSIFIED_BIN = UNCLASSIFIED_BIN_NAME;
+
+export type DescriptorBins = Record<string, string>;
 
 export function emptyBins(): DescriptorBins {
-  return DESCRIPTOR_DIMENSIONS.reduce((acc, dimension) => {
+  return activeDescriptorDimensions().reduce((acc, dimension) => {
     acc[dimension] = UNCLASSIFIED_BIN;
     return acc;
   }, {} as DescriptorBins);
@@ -187,40 +188,62 @@ function binCandidate(value: unknown): string | null {
 /**
  * Normalise the model's descriptor assignment. Accepts the record form
  * (`{mechanism: 'removal', …}`) and the ordered-array form
- * (`['removal', …, …]` in `DESCRIPTOR_DIMENSIONS` order), because a hostile
+ * (`['removal', …, …]` in the ACTIVE dimensions' order), because a hostile
  * model emits either. Anything not in the vocabulary becomes `unclassified`
  * and is counted — never silently invented, never allowed to widen the space.
+ * A dimension the model names that is NOT in the active space is dropped and
+ * counted in `unknown_dimensions` (by name): a config change can never smuggle
+ * a stray dimension into a cell key.
  */
-export function normalizeBins(raw: unknown): { bins: DescriptorBins; descriptor_bins: string[]; unclassified: number } {
+export function normalizeBins(raw: unknown): {
+  bins: DescriptorBins;
+  descriptor_bins: string[];
+  unclassified: number;
+  unknown_dimensions: string[];
+} {
   const bins = emptyBins();
+  const vocabulary = activeDescriptorBins();
   let unclassified = 0;
-  const record = (dimension: DescriptorDimension, value: unknown): void => {
+  const record = (dimension: string, value: unknown): void => {
     const candidate = binCandidate(value);
-    const chosen = candidate && DESCRIPTOR_BINS[dimension].includes(candidate) ? candidate : UNCLASSIFIED_BIN;
+    const chosen = candidate && (vocabulary[dimension] ?? []).includes(candidate) ? candidate : UNCLASSIFIED_BIN;
     bins[dimension] = chosen;
     if (chosen === UNCLASSIFIED_BIN) unclassified += 1;
   };
 
+  let unknownDimensions: string[] = [];
   if (Array.isArray(raw)) {
-    DESCRIPTOR_DIMENSIONS.forEach((dimension, index) => record(dimension, raw[index]));
+    activeDescriptorDimensions().forEach((dimension, index) => record(dimension, raw[index]));
   } else if (raw && typeof raw === 'object') {
     const source = raw as Record<string, unknown>;
-    for (const dimension of DESCRIPTOR_DIMENSIONS) record(dimension, source[dimension]);
+    for (const dimension of activeDescriptorDimensions()) record(dimension, source[dimension]);
+    unknownDimensions = Object.keys(source)
+      .filter((dimension) => !activeDescriptorDimensions().includes(dimension))
+      .sort();
   } else {
-    for (const dimension of DESCRIPTOR_DIMENSIONS) record(dimension, null);
+    for (const dimension of activeDescriptorDimensions()) record(dimension, null);
   }
 
-  return { bins, descriptor_bins: DESCRIPTOR_DIMENSIONS.map((dimension) => bins[dimension]), unclassified };
+  return {
+    bins,
+    descriptor_bins: activeDescriptorDimensions().map((dimension) => bins[dimension]),
+    unclassified,
+    unknown_dimensions: unknownDimensions,
+  };
 }
 
 /** The cell key: the tuple of bins, in dimension order, as one storable string. */
 export function cellKeyFor(bins: DescriptorBins): string {
-  return DESCRIPTOR_DIMENSIONS.map((dimension) => `${dimension}=${bins[dimension]}`).join('|');
+  return activeDescriptorDimensions().map((dimension) => `${dimension}=${bins[dimension] ?? UNCLASSIFIED_BIN}`).join('|');
 }
 
 /** Every cell the space can address (used for `occupancy.possible`). */
 export function possibleCellCount(): number {
-  return DESCRIPTOR_DIMENSIONS.reduce((product, dimension) => product * (DESCRIPTOR_BINS[dimension].length + 1), 1);
+  const vocabulary = activeDescriptorBins();
+  return activeDescriptorDimensions().reduce(
+    (product, dimension) => product * ((vocabulary[dimension]?.length ?? 0) + 1),
+    1,
+  );
 }
 
 // ── Quality ─────────────────────────────────────────────────────────────────
@@ -611,6 +634,14 @@ export interface CoverageScan {
   seeds_truncated: boolean;
   /** Any bound bit at all. */
   truncated: boolean;
+  /**
+   * Cells written under a DIFFERENT descriptor space than the one now
+   * configured (ITER-11, WS-2): they cannot be mapped onto this space's
+   * dimensions, so they are counted here and left out of the occupancy maps.
+   * Never silent, always zero for a deployment that never sets
+   * `IMAGINATION_BINS`.
+   */
+  cells_unknown_dimension: number;
 }
 
 export interface SeedOutcome {
@@ -1393,16 +1424,29 @@ export class IdeaArchiveService {
       .toArray()) as unknown as IdeaArchiveCell[];
     const seedCount = await this.seeds().countDocuments({ user_id: userId, mission_id: missionId });
 
-    const cellsByDimension = DESCRIPTOR_DIMENSIONS.reduce((acc, dimension) => {
-      acc[dimension] = {};
-      return acc;
-    }, {} as Record<DescriptorDimension, Record<string, number>>);
+    const dimensions = activeDescriptorDimensions();
+    const vocabulary = activeDescriptorBins();
+    const cellsByDimension: Record<string, Record<string, number>> = {};
+    for (const dimension of dimensions) cellsByDimension[dimension] = {};
+    // Cells written under ANOTHER space (a configured space replaced the
+    // defaults after they were archived) cannot be mapped onto this one: they
+    // are COUNTED and left out of the occupancy maps rather than folded into a
+    // dimension that happens to share a name, so a config change can never make
+    // one space's occupancy read as another's.
+    let cellsUnknownDimension = 0;
     for (const cell of cells) {
-      for (const dimension of DESCRIPTOR_DIMENSIONS) {
+      const cellDimensions = Object.keys(cell.bins ?? {});
+      const unknown = cellDimensions.filter((dimension) => !dimensions.includes(dimension));
+      if (unknown.length > 0 || cellDimensions.length !== dimensions.length) {
+        cellsUnknownDimension += 1;
+        continue;
+      }
+      for (const dimension of dimensions) {
         const bin = cell.bins?.[dimension] ?? UNCLASSIFIED_BIN;
         cellsByDimension[dimension][bin] = (cellsByDimension[dimension][bin] ?? 0) + 1;
       }
     }
+    const mappedCells = cells.length - cellsUnknownDimension;
 
     const cycleId = nonEmpty(opts.cycleId) ?? (await this.latestCycle(userId, missionId));
     const newCells = cycleId ? cells.filter((cell) => cell.created_cycle_id === cycleId).length : 0;
@@ -1416,18 +1460,18 @@ export class IdeaArchiveService {
       new_cells_this_cycle: newCells,
       cycle_id: cycleId,
       occupancy: {
-        occupied: cells.length,
+        occupied: mappedCells,
         possible,
         // Occupancy is the fraction of the descriptor space that is addressed.
-        ratio: Number((cells.length / possible).toFixed(9)),
+        ratio: Number((mappedCells / possible).toFixed(9)),
       },
-      gaps: DESCRIPTOR_DIMENSIONS.map((dimension) => ({
+      gaps: dimensions.map((dimension) => ({
         dimension,
-        unoccupied_bins: DESCRIPTOR_BINS[dimension].filter(
+        unoccupied_bins: (vocabulary[dimension] ?? []).filter(
           (bin) => (cellsByDimension[dimension][bin] ?? 0) === 0,
         ),
       })),
-      descriptor_dimensions: [...DESCRIPTOR_DIMENSIONS],
+      descriptor_dimensions: [...dimensions],
       coverage_date: coverageDate(),
       scan: {
         cells_limit: MAX_COVERAGE_CELLS,
@@ -1437,6 +1481,7 @@ export class IdeaArchiveService {
         seeds_scanned: seedCount,
         seeds_truncated: seedCount >= MAX_DEDUPE_SCAN,
         truncated: cells.length >= MAX_COVERAGE_CELLS || seedCount >= MAX_DEDUPE_SCAN,
+        cells_unknown_dimension: cellsUnknownDimension,
       },
     };
   }

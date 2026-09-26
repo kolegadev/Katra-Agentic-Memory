@@ -1,0 +1,606 @@
+{
+  "fixture_version": "1.0",
+  "frozen_at": "2026-09-26T12:00:00.000Z",
+  "mission": {
+    "mission_id": "mission_creative_baton_team",
+    "title": "Prove the creative baton invariants",
+    "intent": "Turn a stalled mission into exactly one cycle, a sanitised baton and controller work.",
+    "version": 3,
+    "authority_class": "B",
+    "owner_id": "agent-a",
+    "success_criteria": [
+      {
+        "id": "c1",
+        "description": "one cycle per plateau",
+        "status": "unmet"
+      },
+      {
+        "id": "c2",
+        "description": "no private text crosses",
+        "status": "unmet"
+      }
+    ]
+  },
+  "checkpoint": {
+    "scenario": "tests/helpers/imagination-scenario.ts (the frozen scripted-model scenario)",
+    "cycle_id": "imagination_cycle_8c0b39bbedcd5e39_v3_c1",
+    "pass_id": "cpass_a9853683edde7c2fa34e5b3a30a64b3f",
+    "trace_id": "00000000-0000-4000-8000-000000000014"
+  },
+  "baseline_material": {
+    "concepts": [
+      {
+        "id": "node_a",
+        "name": "Queue health",
+        "degree": 2,
+        "prominence": 1
+      },
+      {
+        "id": "node_b",
+        "name": "Drain measurement",
+        "degree": 2,
+        "prominence": 1
+      },
+      {
+        "id": "node_c",
+        "name": "Plateau detector",
+        "degree": 2,
+        "prominence": 1
+      },
+      {
+        "id": "node_d",
+        "name": "Nightly compaction",
+        "degree": 2,
+        "prominence": 1
+      }
+    ],
+    "edges": [
+      [
+        "node_a",
+        "node_b"
+      ],
+      [
+        "node_b",
+        "node_c"
+      ],
+      [
+        "node_c",
+        "node_d"
+      ],
+      [
+        "node_d",
+        "node_a"
+      ]
+    ],
+    "basis": "knowledge_nodes + knowledge_relationships of the frozen scenario mission; prominence is the node degree divided by the maximum degree (a deterministic, text-free measure the harness re-derives itself)"
+  },
+  "task_checker": {
+    "criteria": [
+      {
+        "id": "c1",
+        "description": "one cycle per plateau",
+        "predicate": "cycles_per_plateau_within_limit",
+        "basis": "counts the runs the engine recorded for the plateau window (creative_baton_cycles for the one-identity arm, cognitive_portfolios (kind=first_pass) for the team arm) and requires at most 1 — the mission’s own wording is \"one cycle per plateau\"",
+        "plateau_cycle_limit": 1
+      },
+      {
+        "id": "c2",
+        "description": "no private text crosses",
+        "predicate": "no_private_text_in_shared_artefacts",
+        "basis": "reads the taint scan the metrics view runs (privacy_leakage: the shared-scope artefacts scanned for the forbidden private keys and for markers lifted verbatim from this identity’s private stores) and requires zero flags"
+      }
+    ],
+    "basis": "the frozen mission’s own success criteria, each mapped to a DISTINCT documented predicate over evidence the arm has to carry (a plateau run count for \"one cycle per plateau\", the taint scan for \"no private text crosses\"); the task-quality check evaluates every arm with the predicate its criterion names, records the evidence, and refuses a verdict when an evaluation is missing"
+  },
+  "arms": [
+    {
+      "label": "C",
+      "name": "focused_engine_balanced",
+      "kind": "treatment",
+      "config": {
+        "flag": "FOCUSED_IMAGINATION=1",
+        "identities": [
+          "agent-a"
+        ],
+        "mode": "balanced",
+        "candidate_promotion": "CREATIVE_BATON_PROMOTION=1",
+        "cycle_trigger": "manual (the frozen checkpoint)"
+      },
+      "generation": {
+        "path": "real_services",
+        "captured_from": "runImaginationCycle + recordCandidateOutcome on the frozen scenario",
+        "determination": "store_measured",
+        "note": "idea TEXT is the scripted stub model’s; the bins, the archive decision, the cell keys, the cost and the outcomes are the real services’ own rows"
+      },
+      "trigger_at": "2026-09-26T07:00:20.528Z",
+      "cycle_id": "imagination_cycle_8c0b39bbedcd5e39_v3_c1",
+      "tokens": 0,
+      "counts": {
+        "generated": 6,
+        "admitted": 4,
+        "rejected": 2,
+        "below_incumbent": 0
+      },
+      "coverage": {
+        "cells_total": 4,
+        "new_cells_this_cycle": 4,
+        "possible_cells": 16807,
+        "occupancy_ratio": 0.000237996
+      },
+      "rows": [
+        {
+          "seed_id": "seed_502388742bb8948f1c90960ccc3ef629",
+          "agent": "agent-a",
+          "operator": "tool_invention",
+          "hypothesis": "The plateau causes the missing claims rather than the missing claims causing the plateau.",
+          "mechanism": "Reversing the arrow predicts claims stop BEFORE lengths rise, not after.",
+          "descriptor_bins": {
+            "mechanism": "reversal",
+            "representation": "protocol",
+            "violated_assumption": "identity",
+            "evidence_family": "trace_absence",
+            "test_strategy": "cheapest_probe"
+          },
+          "cell_key": "mechanism=reversal|representation=protocol|violated_assumption=identity|evidence_family=trace_absence|test_strategy=cheapest_probe",
+          "novelty_score": 0.8,
+          "coherence_score": 0.7,
+          "testability_score": 0.6,
+          "expected_information_gain": 0.5,
+          "cheapest_test": "Order the two event streams by timestamp and check which one leads.",
+          "quality": 0.68,
+          "state": "admitted",
+          "rejection_reason": null,
+          "created_at": "2026-09-26T07:00:20.538Z",
+          "privacy_safe": true
+        },
+        {
+          "seed_id": "seed_5312cbb4291ad3ccdf93cf1742ef0c46",
+          "agent": "agent-a",
+          "operator": "distant_analogy",
+          "hypothesis": "The plateau behaves like a reservoir whose outflow was never measured.",
+          "mechanism": "Reservoir dynamics say an unmeasured outflow is indistinguishable from a stalled inflow while the level holds.",
+          "descriptor_bins": {
+            "mechanism": "composition",
+            "representation": "graph",
+            "violated_assumption": "independence",
+            "evidence_family": "external_observation",
+            "test_strategy": "observation_study"
+          },
+          "cell_key": "mechanism=composition|representation=graph|violated_assumption=independence|evidence_family=external_observation|test_strategy=observation_study",
+          "novelty_score": 0.8,
+          "coherence_score": 0.7,
+          "testability_score": 0.6,
+          "expected_information_gain": 0.5,
+          "cheapest_test": "Fit the level series to a two-parameter reservoir and see whether the outflow is non-zero.",
+          "quality": 0.68,
+          "state": "admitted",
+          "rejection_reason": null,
+          "created_at": "2026-09-26T07:00:20.545Z",
+          "privacy_safe": true
+        },
+        {
+          "seed_id": "seed_7da095e87f95e8fe6f023210138243e9",
+          "agent": "agent-a",
+          "operator": "constraint_mutation",
+          "hypothesis": "Loosening the manual-approval constraint removes the plateau entirely.",
+          "mechanism": "Approval latency, not the queue itself, is what accumulates during the plateau window.",
+          "descriptor_bins": {
+            "mechanism": "substitution",
+            "representation": "list",
+            "violated_assumption": "scarcity",
+            "evidence_family": "work_queue",
+            "test_strategy": "ab_test"
+          },
+          "cell_key": "mechanism=substitution|representation=list|violated_assumption=scarcity|evidence_family=work_queue|test_strategy=ab_test",
+          "novelty_score": 0.8,
+          "coherence_score": 0.7,
+          "testability_score": 0.6,
+          "expected_information_gain": 0.5,
+          "cheapest_test": "Raise the approval concurrency for one cycle and measure the plateau length.",
+          "quality": 0.68,
+          "state": "admitted",
+          "rejection_reason": null,
+          "created_at": "2026-09-26T07:00:20.546Z",
+          "privacy_safe": true
+        },
+        {
+          "seed_id": "seed_a9dce251e3c5d2bc6cf1c2bf0c85383c",
+          "agent": "agent-a",
+          "operator": "counterfactual_world",
+          "hypothesis": "The plateau causes the missing claims rather than the missing claims causing the plateau.",
+          "mechanism": "Reversing the arrow predicts claims stop BEFORE lengths rise, not after.",
+          "descriptor_bins": {
+            "mechanism": "reversal",
+            "representation": "protocol",
+            "violated_assumption": "identity",
+            "evidence_family": "trace_absence",
+            "test_strategy": "cheapest_probe"
+          },
+          "cell_key": "mechanism=reversal|representation=protocol|violated_assumption=identity|evidence_family=trace_absence|test_strategy=cheapest_probe",
+          "novelty_score": 0.8,
+          "coherence_score": 0.7,
+          "testability_score": 0.6,
+          "expected_information_gain": 0.5,
+          "cheapest_test": "Order the two event streams by timestamp and check which one leads.",
+          "quality": 0.68,
+          "state": "rejected",
+          "rejection_reason": "duplicate_of",
+          "created_at": "2026-09-26T07:00:20.547Z",
+          "privacy_safe": true
+        },
+        {
+          "seed_id": "seed_b00592032e50f449c4a43e1b93580a84",
+          "agent": "agent-a",
+          "operator": "assumption_inversion",
+          "hypothesis": "The trigger is not what ends the plateau: the plateau clears once the drain is measured.",
+          "mechanism": "Inverting \"the trigger is necessary\" predicts the plateau clears without it as soon as the drain becomes visible.",
+          "descriptor_bins": {
+            "mechanism": "removal",
+            "representation": "prose",
+            "violated_assumption": "necessity",
+            "evidence_family": "epistemic_ledger",
+            "test_strategy": "kill_criterion"
+          },
+          "cell_key": "mechanism=removal|representation=prose|violated_assumption=necessity|evidence_family=epistemic_ledger|test_strategy=kill_criterion",
+          "novelty_score": 0.8,
+          "coherence_score": 0.7,
+          "testability_score": 0.6,
+          "expected_information_gain": 0.5,
+          "cheapest_test": "Disable the trigger for one cycle with the drain measured and compare the plateau length.",
+          "quality": 0.68,
+          "state": "admitted",
+          "rejection_reason": null,
+          "created_at": "2026-09-26T07:00:20.549Z",
+          "privacy_safe": true
+        },
+        {
+          "seed_id": "seed_fb5f8fb3860d8a54e587460a026ec5e7",
+          "agent": "agent-a",
+          "operator": "random_semantic_bridge",
+          "hypothesis": "The plateau causes the missing claims rather than the missing claims causing the plateau.",
+          "mechanism": "Reversing the arrow predicts claims stop BEFORE lengths rise, not after.",
+          "descriptor_bins": {
+            "mechanism": "reversal",
+            "representation": "protocol",
+            "violated_assumption": "identity",
+            "evidence_family": "trace_absence",
+            "test_strategy": "cheapest_probe"
+          },
+          "cell_key": "mechanism=reversal|representation=protocol|violated_assumption=identity|evidence_family=trace_absence|test_strategy=cheapest_probe",
+          "novelty_score": 0.8,
+          "coherence_score": 0.7,
+          "testability_score": 0.6,
+          "expected_information_gain": 0.5,
+          "cheapest_test": "Order the two event streams by timestamp and check which one leads.",
+          "quality": 0.68,
+          "state": "rejected",
+          "rejection_reason": "duplicate_of",
+          "created_at": "2026-09-26T07:00:20.550Z",
+          "privacy_safe": true
+        }
+      ],
+      "outcomes": {
+        "recorded": 3,
+        "useful_information": 2,
+        "mere_variance": 0,
+        "unnecessary_cost": 1,
+        "decisions": [
+          {
+            "seed_id": "seed_502388742bb8948f1c90960ccc3ef629",
+            "outcome": "useful_information"
+          },
+          {
+            "seed_id": "seed_5312cbb4291ad3ccdf93cf1742ef0c46",
+            "outcome": "useful_information"
+          },
+          {
+            "seed_id": "seed_7da095e87f95e8fe6f023210138243e9",
+            "outcome": "unnecessary_cost"
+          }
+        ]
+      },
+      "plateau": {
+        "window_id": "mission_creative_baton@2026-09-26T00:00:00.000Z..2026-09-26T12:00:00.000Z",
+        "window": {
+          "from": "2026-09-26T00:00:00.000Z",
+          "to": "2026-09-26T12:00:00.000Z"
+        },
+        "cycles_in_window": 1,
+        "run_ids": [
+          "imagination_cycle_8c0b39bbedcd5e39_v3_c1"
+        ],
+        "measured_from": "imagination_cycles rows for {user_id: 'agent-a', mission_id: 'mission_creative_baton'} inside the plateau window",
+        "determination": "store_measured"
+      },
+      "taint": {
+        "shared_artefacts_scanned": 2,
+        "flagged": 1,
+        "private_text_crossed": 0,
+        "markers_checked": 14,
+        "keys_checked": [
+          "statement",
+          "evidence_refs",
+          "changed_premise",
+          "parent_seed_ids",
+          "bridge_path",
+          "cell_key",
+          "raw_reflections",
+          "reflection_text",
+          "journal_text",
+          "emotional_tags"
+        ],
+        "flags": [
+          {
+            "artefact": "creative_batons",
+            "id": "cbaton_0b686c762200b0417b1c38bfe08b7064",
+            "field": "candidate_portfolio[0].hypothesis",
+            "reason": "marker_reproduced",
+            "marker_sha256": "d25646217e70660cc503824e728becef",
+            "marker_length": 89,
+            "allowed_field_reproduction": true
+          },
+          {
+            "artefact": "creative_batons",
+            "id": "cbaton_0b686c762200b0417b1c38bfe08b7064",
+            "field": "candidate_portfolio[0].mechanism",
+            "reason": "marker_reproduced",
+            "marker_sha256": "0d1a638ecc9e33fcf3744faa7a79eb7b",
+            "marker_length": 72,
+            "allowed_field_reproduction": true
+          }
+        ],
+        "attributed_by": "this fixture test, over the same artefacts and markers the audit uses: a flag is an allowed-field reproduction only when the reproducing field is one of the baton’s candidate fields (candidate_portfolio[i].hypothesis|mechanism|cheapest_test) AND the text is the text this arm’s own admitted candidates produced",
+        "measured_from": "computeImaginationMetrics({ user_id: 'agent-a', mission_id: 'mission_creative_baton' }).privacy_leakage — the same audit the metrics view runs over the shared-scope artefacts",
+        "determination": "store_measured"
+      }
+    },
+    {
+      "label": "D",
+      "name": "engine_plus_heterogeneous_team",
+      "kind": "treatment",
+      "config": {
+        "flag": "FOCUSED_IMAGINATION=1 + COGNITIVE_TEAM_ALLOCATION=1",
+        "identities": [
+          "team-philosopher",
+          "team-analyst",
+          "team-strategist"
+        ],
+        "modes": {
+          "team-philosopher": "philosopher",
+          "team-analyst": "analyst",
+          "team-strategist": "strategist"
+        },
+        "pass_id": "cpass_a9853683edde7c2fa34e5b3a30a64b3f"
+      },
+      "generation": {
+        "path": "real_services",
+        "captured_from": "planFirstPass + runFirstPass over the frozen scenario with three modes",
+        "determination": "store_measured",
+        "note": "per-agent portfolios with their own modes; idea TEXT is the scripted stub model’s"
+      },
+      "trigger_at": "2026-09-26T12:00:00.000Z",
+      "cycle_id": "cpass_a9853683edde7c2fa34e5b3a30a64b3f",
+      "tokens": 0,
+      "counts": {
+        "generated": 9,
+        "admitted": 6,
+        "rejected": 3,
+        "below_incumbent": 0
+      },
+      "coverage": {
+        "cells_total": 4,
+        "new_cells_this_cycle": 4,
+        "possible_cells": 16807,
+        "occupancy_ratio": 0.000237996
+      },
+      "rows": [
+        {
+          "seed_id": "seed_0cda08ac98d0a4eabe01c4bc4bc50c67",
+          "agent": "team-philosopher",
+          "operator": "causal_reversal",
+          "hypothesis": "The plateau causes the missing claims rather than the missing claims causing the plateau.",
+          "descriptor_bins": {
+            "0": "reversal",
+            "1": "protocol",
+            "2": "identity",
+            "3": "trace_absence",
+            "4": "cheapest_probe"
+          },
+          "cell_key": "mechanism=reversal|representation=protocol|violated_assumption=identity|evidence_family=trace_absence|test_strategy=cheapest_probe",
+          "novelty_score": 0.8,
+          "coherence_score": 0.7,
+          "testability_score": 0.6,
+          "expected_information_gain": 0.5,
+          "cheapest_test": "Order the two event streams by timestamp and check which one leads.",
+          "quality": 0.68,
+          "state": "admitted",
+          "rejection_reason": null,
+          "created_at": "2026-09-26T12:00:00.000Z",
+          "privacy_safe": true
+        },
+        {
+          "seed_id": "seed_33d77f4689fd9558e36f1b34da346f3b",
+          "agent": "team-strategist",
+          "operator": "counterfactual_world",
+          "hypothesis": "The plateau causes the missing claims rather than the missing claims causing the plateau.",
+          "descriptor_bins": {
+            "0": "reversal",
+            "1": "protocol",
+            "2": "identity",
+            "3": "trace_absence",
+            "4": "cheapest_probe"
+          },
+          "cell_key": "mechanism=reversal|representation=protocol|violated_assumption=identity|evidence_family=trace_absence|test_strategy=cheapest_probe",
+          "novelty_score": 0.8,
+          "coherence_score": 0.7,
+          "testability_score": 0.6,
+          "expected_information_gain": 0.5,
+          "cheapest_test": "Order the two event streams by timestamp and check which one leads.",
+          "quality": 0.68,
+          "state": "admitted",
+          "rejection_reason": null,
+          "created_at": "2026-09-26T12:00:00.000Z",
+          "privacy_safe": true
+        },
+        {
+          "seed_id": "seed_5606d2c230b6dfb24651ffbb7b1bea00",
+          "agent": "team-strategist",
+          "operator": "constraint_mutation",
+          "hypothesis": "Loosening the manual-approval constraint removes the plateau entirely.",
+          "descriptor_bins": {
+            "0": "substitution",
+            "1": "list",
+            "2": "scarcity",
+            "3": "work_queue",
+            "4": "ab_test"
+          },
+          "cell_key": "mechanism=substitution|representation=list|violated_assumption=scarcity|evidence_family=work_queue|test_strategy=ab_test",
+          "novelty_score": 0.8,
+          "coherence_score": 0.7,
+          "testability_score": 0.6,
+          "expected_information_gain": 0.5,
+          "cheapest_test": "Raise the approval concurrency for one cycle and measure the plateau length.",
+          "quality": 0.68,
+          "state": "admitted",
+          "rejection_reason": null,
+          "created_at": "2026-09-26T12:00:00.000Z",
+          "privacy_safe": true
+        },
+        {
+          "seed_id": "seed_68b0d98b55c76e0836c5e684e4b797a5",
+          "agent": "team-analyst",
+          "operator": "counterfactual_world",
+          "hypothesis": "The plateau causes the missing claims rather than the missing claims causing the plateau.",
+          "descriptor_bins": {
+            "0": "reversal",
+            "1": "protocol",
+            "2": "identity",
+            "3": "trace_absence",
+            "4": "cheapest_probe"
+          },
+          "cell_key": "mechanism=reversal|representation=protocol|violated_assumption=identity|evidence_family=trace_absence|test_strategy=cheapest_probe",
+          "novelty_score": 0.8,
+          "coherence_score": 0.7,
+          "testability_score": 0.6,
+          "expected_information_gain": 0.5,
+          "cheapest_test": "Order the two event streams by timestamp and check which one leads.",
+          "quality": 0.68,
+          "state": "admitted",
+          "rejection_reason": null,
+          "created_at": "2026-09-26T12:00:00.000Z",
+          "privacy_safe": true
+        },
+        {
+          "seed_id": "seed_87f328f59a4963d23af02d7fcb1314d4",
+          "agent": "team-philosopher",
+          "operator": "assumption_inversion",
+          "hypothesis": "The trigger is not what ends the plateau: the plateau clears once the drain is measured.",
+          "descriptor_bins": {
+            "0": "removal",
+            "1": "prose",
+            "2": "necessity",
+            "3": "epistemic_ledger",
+            "4": "kill_criterion"
+          },
+          "cell_key": "mechanism=removal|representation=prose|violated_assumption=necessity|evidence_family=epistemic_ledger|test_strategy=kill_criterion",
+          "novelty_score": 0.8,
+          "coherence_score": 0.7,
+          "testability_score": 0.6,
+          "expected_information_gain": 0.5,
+          "cheapest_test": "Disable the trigger for one cycle with the drain measured and compare the plateau length.",
+          "quality": 0.68,
+          "state": "admitted",
+          "rejection_reason": null,
+          "created_at": "2026-09-26T12:00:00.000Z",
+          "privacy_safe": true
+        },
+        {
+          "seed_id": "seed_9c8120365f391abcb4f1951ca986b389",
+          "agent": "team-philosopher",
+          "operator": "boundary_extreme",
+          "hypothesis": "At zero drain capacity the queue never recovers, and at one drain per cycle it never plateaus.",
+          "descriptor_bins": {
+            "0": "amplification",
+            "1": "numeric",
+            "2": "stability",
+            "3": "temporal_series",
+            "4": "simulation"
+          },
+          "cell_key": "mechanism=amplification|representation=numeric|violated_assumption=stability|evidence_family=temporal_series|test_strategy=simulation",
+          "novelty_score": 0.8,
+          "coherence_score": 0.7,
+          "testability_score": 0.6,
+          "expected_information_gain": 0.5,
+          "cheapest_test": "Run one cycle at the boundary value and record whether the queue recovers.",
+          "quality": 0.68,
+          "state": "admitted",
+          "rejection_reason": null,
+          "created_at": "2026-09-26T12:00:00.000Z",
+          "privacy_safe": true
+        }
+      ],
+      "rejections": [
+        {
+          "seed_id": "seed_60128c45afc553acab549d4df878bdd3",
+          "reason": "duplicate_of"
+        },
+        {
+          "seed_id": "seed_60220c2f2246802a25e58c9a39d4b8a6",
+          "reason": "duplicate_of"
+        },
+        {
+          "seed_id": "seed_cdd6aba25926ba7f065ca1e70ef94d5f",
+          "reason": "duplicate_of"
+        }
+      ],
+      "outcomes": {
+        "recorded": 0,
+        "useful_information": 0,
+        "mere_variance": 0,
+        "unnecessary_cost": 0,
+        "decisions": []
+      },
+      "plateau": {
+        "window_id": "mission_creative_baton_team@2026-09-26T00:00:00.000Z..2026-09-26T12:00:00.000Z",
+        "window": {
+          "from": "2026-09-26T00:00:00.000Z",
+          "to": "2026-09-26T12:00:00.000Z"
+        },
+        "cycles_in_window": 1,
+        "run_ids": [
+          "cpass_a9853683edde7c2fa34e5b3a30a64b3f"
+        ],
+        "measured_from": "cognitive_portfolios rows of kind 'first_pass' for {user_id: 'agent-a', mission_id: 'mission_creative_baton_team'} inside the plateau window",
+        "determination": "store_measured"
+      },
+      "taint": {
+        "shared_artefacts_scanned": 0,
+        "flagged": 0,
+        "private_text_crossed": 0,
+        "markers_checked": 12,
+        "keys_checked": [
+          "statement",
+          "evidence_refs",
+          "changed_premise",
+          "parent_seed_ids",
+          "bridge_path",
+          "cell_key",
+          "raw_reflections",
+          "reflection_text",
+          "journal_text",
+          "emotional_tags"
+        ],
+        "flags": [],
+        "attributed_by": "this fixture test, over the same artefacts and markers the audit uses: a flag is an allowed-field reproduction only when the reproducing field is one of the baton’s candidate fields (candidate_portfolio[i].hypothesis|mechanism|cheapest_test) AND the text is the text this arm’s own admitted candidates produced",
+        "measured_from": "computeImaginationMetrics({ user_id: 'agent-a', mission_id: 'mission_creative_baton_team' }).privacy_leakage — the same audit the metrics view runs over the shared-scope artefacts",
+        "determination": "store_measured"
+      }
+    }
+  ],
+  "provenance": {
+    "generator": "server/tests/unit/imagination-baseline-fixture.test.ts",
+    "regenerate": "IMAGINATION_BASELINE_FIXTURE_WRITE=1 npx vitest run tests/unit/imagination-baseline-fixture.test.ts",
+    "services": "runImaginationCycle, recordCandidateOutcome, planFirstPass/runFirstPass, createInheritanceEnvelope, runFocusedConsolidation — on tests/helpers/imagination-scenario.ts (FakeDb + a scripted model)",
+    "not_verified": "no live MongoDB, no real model, no real mission: every row here comes from the frozen fixture"
+  }
+}

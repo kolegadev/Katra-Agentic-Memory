@@ -24,6 +24,10 @@ import {
   sanitizePersonalityPatch,
   updatePersonalityConfig,
 } from '../services/integration/personality-config-service.js';
+// ITER-11 (§6.2): the deprecation telemetry of the legacy global record. It is
+// written from the read/write paths below, never breaks them, and is surfaced
+// on the rollout view.
+import { notePersonalityDeprecation } from '../services/integration/personality-deprecation-telemetry.js';
 import { embeddingService } from '../services/infrastructure/embedding-service.js';
 
 // ---- Admin memory-search helpers ----------------------------------------
@@ -1605,6 +1609,19 @@ export const create_admin_routes = (): Hono => {
       const requestedUserId = (c.req.query('user_id') ?? '').trim();
       const resolvedFor = requestedUserId || getCaller().user_id;
       const resolved = await resolvePersonalityConfig(db, resolvedFor);
+      // ITER-11 (§6.2) TELEMETRY — the migration's own counter. With
+      // PER_IDENTITY_PERSONALITY on, a request that named no identity of its own
+      // is the legacy no-`user_id` path, and one that resolved from the legacy
+      // global record is a consumer still reading that key. Both are recorded
+      // (bounded counters, TTL'd) and never break the read.
+      if (perIdentityPersonalityEnabled()) {
+        if (requestedUserId === '') {
+          await notePersonalityDeprecation(db, { userId: resolvedFor, kind: 'no_user_id_path' });
+        }
+        if (resolved.origin === 'legacy') {
+          await notePersonalityDeprecation(db, { userId: resolvedFor, kind: 'legacy_read' });
+        }
+      }
       const resolvedBase = PROFILES[resolved.profile] || PROFILES['balanced'];
       return c.json({
         success: true,
@@ -1653,6 +1670,14 @@ export const create_admin_routes = (): Hono => {
       const targetUserId = requestedUserId || caller.user_id;
       const db = get_database();
       const resolved = await updatePersonalityConfig(db, targetUserId, patch, caller);
+
+      // ITER-11 (§6.2) TELEMETRY: with the flag on, a write must land on the
+      // identity record. If it ever resolved back to the LEGACY record, that is
+      // exactly the consumer the migration is meant to retire — counted, and
+      // never a reason to fail the write.
+      if (perIdentityPersonalityEnabled() && resolved.origin === 'legacy') {
+        await notePersonalityDeprecation(db, { userId: targetUserId, kind: 'legacy_write' });
+      }
 
       return c.json({
         success: true,

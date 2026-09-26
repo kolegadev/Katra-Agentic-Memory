@@ -3,8 +3,19 @@
 // state store only (Mission State + checkpoint + accepted deltas + ledger).
 // No conversation history is consulted anywhere in this path.
 // Part of the no-publish branch feat/cognitive-control-local.
+//
+// ITER-11 (WS-1, DoD bullet 5): the report is BATON-AWARE. When the mission
+// holds an active, promoted Creative Baton whose version is still current, the
+// report carries the baton's attention targets, a sanitised candidate-portfolio
+// summary and the candidates that already became controller work items. A
+// stale, revoked, tampered, private or foreign baton is refused BY NAME and
+// excluded (`creative_baton.code`), never silently dropped. No private content
+// crosses: the section is built from the allow-listed baton packet, the work
+// queue rows its provenance points at, and counts (see
+// `processing/creative-baton-resume.ts`).
 import type { Db } from 'mongodb';
 import { COLLECTIONS } from './collections.js';
+import { buildBatonResumeSection, type BatonResumeSection } from '../processing/creative-baton-resume.js';
 import type { MissionState, StateDelta } from '../../types/cognitive-control.js';
 
 export interface ResumeReport {
@@ -26,6 +37,14 @@ export interface ResumeReport {
     summary: string;
   }>;
   active_uncertainties: Array<{ entry_id: string; statement: string; status: string }>;
+  /**
+   * The mission's Creative Baton, as the controller resumes from it (ITER-11):
+   * `included` with the baton's targets/portfolio/work items, `absent` when the
+   * mission holds none, or `refused` with the NAME of the check that refused it
+   * (`stale_version`, `tampered`, `invalid`, `not_promoted`, `revoked`,
+   * `foreign_identity`).
+   */
+  creative_baton: BatonResumeSection;
   next_action: { kind: 'objective' | 'blocked' | 'complete'; objective_id?: string; description?: string; rationale: string };
   reconstruction_source: string[]; // proves no-transcript-replay: names the stores used
 }
@@ -157,13 +176,68 @@ export async function buildResumeReport(db: Db, missionId: string): Promise<Resu
       summary: d.rationale.slice(0, 200),
     })),
     active_uncertainties: uncertainties,
+    creative_baton: await readBatonSection(db, state),
     next_action: computeNextAction(state),
     reconstruction_source: [
       'mission_states (current materialized state)',
       'mission_state_versions (checkpoint snapshot)',
       'state_deltas (accepted deltas)',
       'epistemic_entries (open uncertainties)',
+      'creative_batons (the active promoted baton, re-verified before use)',
+      'cognitive_work_items (rows whose provenance points at that baton)',
       'NO conversation history / transcript consulted',
     ],
   };
+}
+
+/**
+ * The baton section. The read is bounded, verified and total: any failure is a
+ * NAMED refusal inside the report (`creative_baton.code`) — a broken read can
+ * never make `buildResumeReport` itself fail, because a mission whose state is
+ * intact must still resume with the rest of its reconstruction.
+ */
+async function readBatonSection(
+  db: Db,
+  state: MissionState,
+): Promise<BatonResumeSection> {
+  try {
+    return await buildBatonResumeSection(db, {
+      missionId: state.mission_id,
+      userId: state.owner_id,
+      missionStatus: state.status,
+      // Least privilege: the resume reads the mission OWNER's batons plus any
+      // PROMOTED (shared) artefact. It is not a trusted-caller read — a foreign
+      // private portfolio is refused by name rather than served.
+      callerTrusted: false,
+    });
+  } catch (error) {
+    return {
+      status: 'refused',
+      code: 'no_baton',
+      reason: `the baton read failed (${String((error as Error)?.message ?? error)}) — the rest of the resume report is unaffected`,
+      baton_id: null,
+      creative_baton_version: null,
+      mission_version: null,
+      cycle_id: null,
+      promoted: false,
+      attention_targets: [],
+      candidate_portfolio: [],
+      work_items: [],
+      counts: {
+        rows_scanned: 0,
+        superseded_batons: 0,
+        attention_targets: 0,
+        candidates: 0,
+        candidates_with_work_item: 0,
+        work_items: 0,
+        prose_fields_omitted: 0,
+      },
+      privacy: {
+        raw_reflections_included: false,
+        private_text_included: false,
+        basis: 'nothing was read: the baton read failed before it returned material',
+      },
+      basis: 'baton read failed; the failure is reported by name rather than raised',
+    };
+  }
 }

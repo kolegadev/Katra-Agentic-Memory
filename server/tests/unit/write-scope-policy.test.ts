@@ -56,6 +56,11 @@ describe('resolveWriteScope — personal kinds are forced private', () => {
     // portfolio (allocation / first pass / synthesis) names which of ITS
     // candidates an evaluator will look at. Nothing in that iteration writes a
     // shared scope at all.
+    // ITER-11 added three more, all identity-owned records about one identity's
+    // own work: the failure signatures a mission's candidates leave behind (the
+    // input of the Learn step), the bounded personality delta PROPOSALS, and
+    // the deprecation-telemetry counters of the legacy personality path. None of
+    // them is ever shared.
     expect(PERSONAL_KINDS).toEqual([
       'journal',
       'reflection',
@@ -72,6 +77,10 @@ describe('resolveWriteScope — personal kinds are forced private', () => {
       'thinking_mode_assignments',
       'inheritance_envelopes',
       'cognitive_portfolios',
+      'idea_failure_signatures',
+      'personality_delta_proposals',
+      'personality_deprecation_events',
+      'salience_inputs',
     ]);
     expect(PERSONAL_KINDS).not.toContain('idea_archive_cells');
     expect(PERSONAL_KINDS).not.toContain('creative_batons');

@@ -177,9 +177,10 @@
             "maxLength": 2000
           },
           "descriptor_bins": {
+            "description": "The candidate's descriptor tuple, ordered by the ACTIVE descriptor space's dimensions (configurable via IMAGINATION_BINS). The shape is bounded here; `validateCoverageGaps` enforces the space's vocabulary on the gaps.",
             "type": "array",
-            "minItems": 5,
-            "maxItems": 5,
+            "minItems": 1,
+            "maxItems": 16,
             "items": {
               "type": "string",
               "minLength": 1
@@ -216,7 +217,7 @@
       }
     },
     "coverage_gaps": {
-      "description": "The descriptor bins no cell addresses yet — vocabulary strings and counts only. The compiler RE-VALIDATES every entry against the archive's closed DESCRIPTOR_BINS vocabulary and drops (counting) anything outside it, so a marker injected into a gap cannot ride into a shared packet.",
+      "description": "The descriptor bins no cell addresses yet — vocabulary strings and counts only. The compiler RE-VALIDATES every entry against the archive's descriptor vocabulary (the closed defaults, or the space IMAGINATION_BINS configures) and drops (counting) anything outside it, so a marker injected into a gap cannot ride into a shared packet.",
       "type": "array",
       "maxItems": 10,
       "items": {

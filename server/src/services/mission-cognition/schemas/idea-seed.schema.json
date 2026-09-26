@@ -92,38 +92,29 @@
       "maxLength": 2000
     },
     "descriptor_bins": {
-      "description": "The descriptor tuple, ordered by DESCRIPTOR_DIMENSIONS: mechanism, representation, violated_assumption, evidence_family, test_strategy.",
+      "description": "The descriptor tuple, ordered by the ACTIVE descriptor space's dimensions (the closed defaults unless IMAGINATION_BINS configures otherwise; see descriptor-space.ts). One bin per dimension, so the length follows the configured space — the schema bounds the SHAPE, the archive enforces the vocabulary.",
       "type": "array",
-      "minItems": 5,
-      "maxItems": 5,
+      "minItems": 1,
+      "maxItems": 16,
       "items": {
         "type": "string",
         "minLength": 1
       }
     },
     "bins": {
-      "description": "The same tuple keyed by dimension — one normalisation feeds both, so they can never disagree.",
+      "description": "The same tuple keyed by dimension — one normalisation feeds both, so they can never disagree. The dimension set is the ACTIVE descriptor space (configurable via IMAGINATION_BINS): the schema enforces the shape (a map of non-empty strings), the archive enforces the vocabulary.",
       "type": "object",
-      "required": [
-        "mechanism",
-        "representation",
-        "violated_assumption",
-        "evidence_family",
-        "test_strategy"
-      ],
-      "properties": {
-        "mechanism": { "type": "string", "minLength": 1 },
-        "representation": { "type": "string", "minLength": 1 },
-        "violated_assumption": { "type": "string", "minLength": 1 },
-        "evidence_family": { "type": "string", "minLength": 1 },
-        "test_strategy": { "type": "string", "minLength": 1 }
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1
       }
     },
     "cell_key": {
-      "description": "The archive cell: the tuple of bins, in dimension order.",
+      "description": "The archive cell: the tuple of bins, in the ACTIVE space's dimension order.",
       "type": "string",
       "minLength": 1,
-      "pattern": "^mechanism=.*\\|representation=.*\\|violated_assumption=.*\\|evidence_family=.*\\|test_strategy=.*$"
+      "pattern": "^[a-z][a-z0-9_]*=[^|]+(\\|[a-z][a-z0-9_]*=[^|]+)*$"
     },
     "evidence_refs": {
       "description": "Trace signal ids (derived from the trace id) and mission ledger/delta/work-item/baton ids. Each ref is validated before store: an unresolvable ref is dropped and counted, never kept and never invented.",
