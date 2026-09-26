@@ -339,7 +339,10 @@ describe.skipIf(!LIVE)('imagination baseline — the bounded LIVE run (DoD #8)',
       const engineIdentity = `${user}-${run}-engine`;
       const teamIdentities = [1, 2, 3].map((index) => `${user}-${run}-team-${index}`);
       const teamModes = ['philosopher', 'analyst', 'strategist'];
-      const runIdentities = [controlIdentity, engineIdentity, ...teamIdentities];
+      // Arm E: the SAME-MODE team. Three more identities, one mode for all three —
+      // the record `agent_divergence_same_mode_control` is computed from.
+      const sameModeIdentities = [1, 2, 3].map((index) => `${user}-${run}-same-mode-${index}`);
+      const runIdentities = [controlIdentity, engineIdentity, ...teamIdentities, ...sameModeIdentities];
       const caller = { user_id: user, trusted: true };
 
       const startedAt = new Date().toISOString();
@@ -387,6 +390,7 @@ describe.skipIf(!LIVE)('imagination baseline — the bounded LIVE run (DoD #8)',
         B: `${CONTROL_MISSION_B}_${run}`,
         C: `${SCENARIO_MISSION}_${run}`,
         D: `${SCENARIO_MISSION}_${run}_team`,
+        E: `${SCENARIO_MISSION}_${run}_same_mode`,
       };
       const allMissions = Object.values(missions);
 
@@ -480,12 +484,13 @@ describe.skipIf(!LIVE)('imagination baseline — the bounded LIVE run (DoD #8)',
           idPrefix: graphPrefix,
         });
         await seedScenario(store.asFakeDb(), { ownerId: engineIdentity, missionId: missions.D, graph: false });
+        await seedScenario(store.asFakeDb(), { ownerId: engineIdentity, missionId: missions.E, graph: false });
         await store.refresh([
           { collection: 'knowledge_nodes', filter: { user_id: { $in: runIdentities } } },
           { collection: 'knowledge_relationships', filter: { user_id: { $in: runIdentities } } },
         ]);
         const material = baselineMaterial();
-        mark('scenarios seeded', `missions ${missions.C} + ${missions.D} (owner ${engineIdentity}); graph rows read back for the run's identities only`);
+        mark('scenarios seeded', `missions ${missions.C} + ${missions.D} + ${missions.E} (owner ${engineIdentity}); graph rows read back for the run's identities only`);
 
         // The archive's `is_seed_unique` index is on `seed_id` ALONE — a GLOBAL
         // key, not per identity and not per mission — and the comparators'
@@ -685,6 +690,85 @@ describe.skipIf(!LIVE)('imagination baseline — the bounded LIVE run (DoD #8)',
         );
         mark('arm D first pass ran', `pass ${ran.pass.pass_id}, 3 identities, trigger stamped at ${triggerAtD} (before the pass)`);
 
+        // ── arm E: the SAME-MODE team — the divergence metric's own control ──
+        //
+        // The brief's divergence target is read as `agent_divergence` ABOVE
+        // `agent_divergence_same_mode_control`, and the shipped metrics service
+        // computes both from `cognitive_portfolios` first-pass records, the control
+        // being the records whose agents ALL took one mode. No recorded experiment
+        // carried such a record (the reviewer's N9), so arm D's divergence had
+        // nothing to be read against. This arm is that record: the same three-agent
+        // shape, the same single pass, the same one-material walk — with ONE mode
+        // for all three instead of three. Its candidates are judged like every
+        // other arm's (the judged-set claim stays true for five arms), but the
+        // harness's own pools are `A+B` vs `C+D`, so arm E takes no part in the
+        // four-row comparison: it exists to be the control.
+        const controlMode = 'analyst';
+        const sameModeTeam: Array<{ identity: string; mode: string; envelope_id: string }> = [];
+        for (const identity of sameModeIdentities) {
+          const focused = await runFocusedConsolidation(db, {
+            userId: identity,
+            missionId: missions.E,
+            cycleId: `live_same_mode_trace:${missions.E}:${identity}`,
+            actorId: identity,
+          });
+          if (focused.status !== 'completed') {
+            throw new Error(`arm E is REFUSED: the focused run for ${identity} returned '${focused.status}'`);
+          }
+          const envelope = await createInheritanceEnvelope(db, {
+            parentUserId: engineIdentity,
+            missionId: missions.E,
+            childLabel: identity,
+            mode: controlMode,
+            caller,
+          });
+          sameModeTeam.push({ identity, mode: controlMode, envelope_id: envelope.envelope.envelope_id });
+        }
+        const triggerAtE = new Date().toISOString();
+        const controlPassUsageBefore = usageSnapshot();
+        const plannedE = await planFirstPass(db, { userId: engineIdentity, missionId: missions.E, team: sameModeTeam, caller });
+        if (!plannedE.pass.requests.every((request) => request.status === 'ready')) {
+          throw new Error(
+            `arm E is REFUSED: ${plannedE.pass.requests.filter((request) => request.status !== 'ready').length} of ` +
+              `${plannedE.pass.requests.length} request(s) were not ready — ` +
+              plannedE.pass.requests
+                .map((request) => `${request.agent.identity}:${request.status}${request.blocked_reason ? `(${request.blocked_reason})` : ''}`)
+                .join(', '),
+          );
+        }
+        const ranE = await runFirstPass(db, { userId: engineIdentity, missionId: missions.E, team: sameModeTeam, caller });
+        const controlPassUsage = usageDeltaSince(controlPassUsageBefore);
+        await store.refresh([{ collection: 'idea_seeds', filter: { mission_id: missions.E } }]);
+        const rowsE = store
+          .collection('idea_seeds')
+          .docs.filter((row) => row.state === 'admitted')
+          .sort((left, right) => String(left.seed_id).localeCompare(String(right.seed_id)))
+          .map((row) => ({
+            seed_id: String(row.seed_id),
+            agent: String(row.user_id),
+            operator: String(row.operator),
+            hypothesis: String(row.hypothesis),
+            descriptor_bins: normalizeBins(row.descriptor_bins ?? []).bins,
+            cell_key: String(row.cell_key),
+            novelty_score: Number(row.novelty_score),
+            coherence_score: Number(row.coherence_score),
+            testability_score: Number(row.testability_score),
+            expected_information_gain: Number(row.expected_information_gain),
+            cheapest_test: String(row.cheapest_test),
+            quality: Number(row.quality),
+            state: 'admitted',
+            rejection_reason: null,
+            created_at: String(row.created_at),
+            privacy_safe: true,
+          }));
+        const controlRejections = ranE.results.flatMap((result) =>
+          result.rejections.map((rejection) => ({ seed_id: String(rejection.seed_id), reason: String(rejection.reason) })),
+        );
+        mark(
+          'arm E (same-mode control) first pass ran',
+          `pass ${ranE.pass.pass_id}, 3 identities ALL in '${controlMode}', ${rowsE.length} admitted, trigger stamped at ${triggerAtE}`,
+        );
+
         // ── the four arms, in the capture's shape ──────────────────────────
         const armC: Row = {
           label: 'C',
@@ -798,7 +882,65 @@ describe.skipIf(!LIVE)('imagination baseline — the bounded LIVE run (DoD #8)',
           taint: null as unknown,
         };
 
-        const arms: Row[] = [armA as Row, armB as Row, armC, armD];
+        const armE: Row = {
+          label: 'E',
+          name: 'same_mode_control_team',
+          kind: 'control',
+          config: {
+            flag: 'FOCUSED_IMAGINATION=1 + COGNITIVE_TEAM_ALLOCATION=1 — set IN THIS PROCESS ONLY by the live instrument',
+            identities: [...sameModeIdentities],
+            modes: Object.fromEntries(sameModeTeam.map((member) => [member.identity, member.mode])),
+            mode_under_control: controlMode,
+            pass_id: ranE.pass.pass_id,
+            caller: `${user} (trusted)`,
+            excluded_from: [
+              'the four-row comparison — the harness pools baseline A+B against treatment C+D by its own named lists, so this arm takes no part in it',
+            ],
+            exists_for:
+              'agent_divergence_same_mode_control: the shipped metrics service computes that control from first-pass records whose agents ALL took one mode, and no recorded experiment carried one (the reviewer N9)',
+          },
+          admission_rule: {
+            path: 'shipped_archive',
+            service: 'IdeaArchiveService.admitOrReplace',
+            decided_by: 'the imagination engine, inside runFirstPass on the live store (one run per agent, on that agent’s own identity)',
+            identity: sameModeIdentities.join(' | '),
+            mission_id: missions.E,
+            same_rule_as: ['A', 'B', 'C', 'D', 'E'],
+            text_is_scripted: false,
+            text_basis: `the real model (${model.provider}/${model.model}) generated every candidate's text`,
+          },
+          generation: {
+            path: 'real_services',
+            captured_from: 'planFirstPass + runFirstPass over the live store with ONE mode for all three agents',
+            determination: 'store_measured',
+            note:
+              'per-agent portfolios that all took one mode; the rows are the store’s own admitted seeds, with the store’s own timestamps',
+          },
+          trigger_at: triggerAtE,
+          cycle_id: ranE.pass.pass_id,
+          tokens: Number(controlPassUsage.input_tokens + controlPassUsage.output_tokens),
+          counts: {
+            generated: ranE.results.reduce((sum, result) => sum + result.seeds_generated, 0),
+            admitted: rowsE.length,
+            rejected: controlRejections.length,
+            below_incumbent: 0,
+          },
+          coverage: {
+            cells_total: new Set(rowsE.map((row) => row.cell_key)).size,
+            new_cells_this_cycle: new Set(rowsE.map((row) => row.cell_key)).size,
+            possible_cells: possibleCellCount(),
+            occupancy_ratio: Number(
+              (new Set(rowsE.map((row) => row.cell_key)).size / Math.max(1, possibleCellCount())).toFixed(9),
+            ),
+          },
+          rows: rowsE,
+          rejections: controlRejections,
+          outcomes: null as unknown,
+          plateau: null as unknown,
+          taint: null as unknown,
+        };
+
+        const arms: Row[] = [armA as Row, armB as Row, armC, armD, armE];
 
         // ── the judged set: EVERY candidate each arm GENERATED ─────────────
         const candidateOwners = new Map<string, string>();
@@ -831,6 +973,12 @@ describe.skipIf(!LIVE)('imagination baseline — the bounded LIVE run (DoD #8)',
             label: 'D',
             candidates: (
               await Promise.all(teamIdentities.map((identity) => collect(identity, missions.D)))
+            ).flat(),
+          },
+          {
+            label: 'E',
+            candidates: (
+              await Promise.all(sameModeIdentities.map((identity) => collect(identity, missions.E)))
             ).flat(),
           },
         ];
@@ -1013,6 +1161,21 @@ describe.skipIf(!LIVE)('imagination baseline — the bounded LIVE run (DoD #8)',
           rows: rowsD,
           now: () => finishedAt,
         });
+        armE.plateau = plateauEvidence({
+          collection: COGNITIVE_TEAM_COLLECTIONS.cognitivePortfolios,
+          idField: 'portfolio_id',
+          kind: 'first_pass',
+          userId: engineIdentity,
+          missionId: missions.E,
+          measured_from: `${COGNITIVE_TEAM_COLLECTIONS.cognitivePortfolios} rows of kind 'first_pass' for {user_id: '${engineIdentity}', mission_id: '${missions.E}'} inside THIS RUN's own window (start → finish), read back from the live store`,
+          window,
+        });
+        armE.taint = await taintEvidence({
+          userId: engineIdentity,
+          missionId: missions.E,
+          rows: rowsE,
+          now: () => finishedAt,
+        });
         mark('evidence read back', `outcomes ${arms.map((arm) => `${arm.label}=${(arm.outcomes as Row).recorded}`).join(', ')}`);
 
         // ── the mission the checkpoint is fixed at ─────────────────────────
@@ -1140,7 +1303,7 @@ describe.skipIf(!LIVE)('imagination baseline — the bounded LIVE run (DoD #8)',
           capture: {
             kind: 'live_run',
             summary:
-              `one bounded live run of the four baseline arms (A ${armA.name}, B ${armB.name}, C ${armC.name}, D ${armD.name}) over the frozen ` +
+              `one bounded live run of the experiment's arms (A ${armA.name}, B ${armB.name}, C ${armC.name}, D ${armD.name}, plus the divergence control E ${armE.name}) over the frozen ` +
               `scenario re-seeded into the live store under run token '${run}', with every candidate of every arm judged blind by ${judgeModel} ` +
               `(${verdicts.length} verdict(s) in ${judgeCalls.length} call(s))`,
             disclosure: [
@@ -1150,6 +1313,7 @@ describe.skipIf(!LIVE)('imagination baseline — the bounded LIVE run (DoD #8)',
               `FLAGS IN THIS PROCESS ONLY: FOCUSED_IMAGINATION=1, CREATIVE_BATON_PROMOTION=1 and COGNITIVE_TEAM_ALLOCATION=1 were set by this instrument before the services were imported. The deployment runs with all four flags OFF; this process is the instrument, and nothing it writes changes any process's configuration.`,
               'BOUNDED EVALUATION: arm C ran with RunCycleArgs.force=true — the plateau gate is bypassed by an explicit caller override, recorded in the arm’s config.cycle_trigger. The gate is what normally bounds the engine to one cycle per plateau; here the bound is this run.',
               `JUDGED SET: EVERY candidate each arm generated was judged — admitted AND rejected — so each side's denominator is its generated set, not its admitted set (candidate counts: ${armInputs.map((arm) => `${arm.label}=${arm.candidates.length}`).join(', ')}).`,
+              `ARM E, THE SAME-MODE CONTROL: three identities, ONE mode ('${controlMode}') for all three, one first pass — the record the shipped metrics service needs for agent_divergence_same_mode_control, which no earlier experiment carried (the reviewer's N9). Its candidates are judged like every other arm's, but it takes NO part in the four-row comparison: the harness pools baseline A+B against treatment C+D by its own named lists, and this capture's arm E declares that in config.excluded_from. Arm D and arm E share the engine identity, so the identity's own metrics view now computes BOTH agent_divergence (from D's mixed-mode record) and its same-mode control (from E's).`,
               `BLIND JUDGE: the judge saw only {hypothesis, mechanism, cheapest_test, evidence_refs, descriptor_bins} under opaque case ids from a seeded shuffle (seed ${config.shuffleSeed}); no case carries an arm label, an identity or a seed id and the CASES ARE INTERLEAVED across arms. The blinding is STRUCTURAL, not textual: a candidate's own text is judged as written, and ${missionMentionsInText} of ${cases.length} case(s) mention one of this run's mission ids inside their own text (a real candidate can name its mission). The prompt is frozen and recorded with its sha256; the raw replies, the mapping and every call's token usage are in the transcript.`,
               `SELF-PREFERENCE RISK, DISCLOSED, AND REDUCED BY CONSTRUCTION: the judge is a language model, and ALL FOUR ARMS' text is now written by the same model (${model.model}) — the comparators answer it through the pre-engine path, the treatment arms through the engine — so the reading is no longer "template prose vs model prose". What remains is that the treatment arms' text is shaped by the engine (salience traces, operator families, archive-aware novelty) while the comparators' is not, which is the treatment itself, not a confound; a judge may still prefer one style. The comparator prompts are pure functions of the recorded baseline_material (their sha256 is in comparator_text), and the shuffle seed and every raw reply are recorded, so this reading can be re-scored by another judge, or by a person.`,
               'NOT DONE HERE: no container executed the engine (the services ran in this process); nothing was promoted beyond what the shipped promotion step does inside arm C’s cycle; no experiments row was written (that is the harness’s job, and it is what turns this capture into the recorded baseline); no row was deleted.',
