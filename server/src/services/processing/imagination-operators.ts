@@ -226,14 +226,47 @@ export const OPERATOR_SPECS: Record<OperatorFamily, OperatorSpec> = {
 
 export type PlanReason = 'trace_triggered' | 'seeded_fill' | 'mode_explore';
 
+/**
+ * The bounded, deterministic adjustment the LEARN step applies to an operator's
+ * plan score (ITER-11, WS-5): recorded outcomes and failure signatures feed
+ * back into operator selection, within a hard bound, and the adjustment is
+ * documented on the plan entry.
+ */
+export interface OperatorPriorAdjustment {
+  operator: string;
+  /** Recorded failure signatures for this operator (counted, never quoted). */
+  failures: number;
+  /** Recorded useful outcomes for the mission. */
+  useful: number;
+  adjustment: number;
+  note: string;
+}
+
+/** Everything the planner may know about operator priors (all optional). */
+export interface OperatorPriorInput {
+  adjustments: Record<string, number>;
+  priors: OperatorPriorAdjustment[];
+  basis: string;
+}
+
 export interface OperatorPlanEntry {
   operator: OperatorFamily;
   /** Σ intensity of the trace signals whose kind maps to this family. */
   score: number;
+  /** Σ intensity adjusted by the LEARN prior — what the ordering used. */
+  adjusted_score: number;
   /** The trace signal ids that drove this family (empty for a seeded fill). */
   triggered_by: string[];
   signal_kinds: SalienceSignalKind[];
   reason: PlanReason;
+  /**
+   * The DOCUMENTED reason: the base `reason` plus, when the LEARN step moved
+   * this operator, the bounded adjustment's own note. `reason` stays the
+   * machine-readable slug.
+   */
+  reason_text: string;
+  /** Present only when a prior adjustment applied to this operator. */
+  prior?: OperatorPriorAdjustment;
   /** Seeded tie-break rank: lower runs first among equal scores. */
   tie_break: number;
   /** Set when the operator cannot run (e.g. no bridge path); it is not executed. */
@@ -280,6 +313,13 @@ export interface PlanOptions {
   mode?: 'explore' | 'exploit' | 'balanced' | null;
   /** Families that cannot run in this cycle (e.g. no bridge path available). */
   unavailable?: Partial<Record<OperatorFamily, string>>;
+  /**
+   * The LEARN step's bounded priors (ITER-11, WS-5). An operator with recorded
+   * failures is demoted by its (clamped) adjustment and one with useful
+   * outcomes is lifted; nothing else changes. Absent ⇒ the plan is exactly the
+   * pre-iteration plan, score for score.
+   */
+  priors?: OperatorPriorInput | null;
 }
 
 /**
@@ -314,9 +354,20 @@ export function planOperators(
   const tieBreak = new Map<OperatorFamily, number>();
   for (const [rank, family] of rng.shuffle(OPERATOR_FAMILIES).entries()) tieBreak.set(family, rank);
 
+  // The LEARN step (ITER-11): a bounded, deterministic adjustment per operator,
+  // fixed BEFORE the ordering (a prior never depends on the order it is applied
+  // in) and reported on every entry it moved.
+  const priorByOperator = new Map<string, OperatorPriorAdjustment>(
+    (options.priors?.priors ?? []).map((prior) => [prior.operator, prior]),
+  );
+  const adjustmentFor = (family: OperatorFamily): number =>
+    Number(options.priors?.adjustments?.[family] ?? priorByOperator.get(family)?.adjustment ?? 0);
+  const adjustedScore = (family: OperatorFamily): number =>
+    (byFamily.get(family)?.score ?? 0) + adjustmentFor(family);
+
   const compare = (a: OperatorFamily, b: OperatorFamily): number => {
-    const sa = byFamily.get(a)?.score ?? 0;
-    const sb = byFamily.get(b)?.score ?? 0;
+    const sa = adjustedScore(a);
+    const sb = adjustedScore(b);
     if (sb !== sa) return sb - sa;
     const ta = tieBreak.get(a) ?? 0;
     const tb = tieBreak.get(b) ?? 0;
@@ -344,12 +395,17 @@ export function planOperators(
   for (const { family, reason } of ordered.slice(0, maxOperators)) {
     const entry = byFamily.get(family)!;
     const skipReason = options.unavailable?.[family];
+    const prior = priorByOperator.get(family);
+    const adjustment = adjustmentFor(family);
     plan.push({
       operator: family,
       score: Number(entry.score.toFixed(6)),
+      adjusted_score: Number((entry.score + adjustment).toFixed(6)),
       triggered_by: [...entry.signals.map((s) => s.signal_id)].sort(),
       signal_kinds: [...new Set(entry.signals.map((s) => s.kind))].sort(),
       reason,
+      reason_text: prior && adjustment !== 0 ? `${reason}; ${prior.note}` : reason,
+      ...(prior && adjustment !== 0 ? { prior } : {}),
       tie_break: tieBreak.get(family) ?? 0,
       ...(skipReason ? { skipped: true, skip_reason: skipReason } : {}),
     });

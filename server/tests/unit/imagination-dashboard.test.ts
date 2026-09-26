@@ -1186,6 +1186,76 @@ describe('experiments — comparison verdicts and the gated write', () => {
 // ── The rollout view ───────────────────────────────────────────────────────
 
 describe('rollout view and the runbook it points at', () => {
+  /**
+   * Plant one deprecation counter row per identity (the shape the telemetry
+   * service writes: one row per {identity, kind, UTC day}, TTL'd 30 days).
+   */
+  function plantDeprecationCounters(): void {
+    const rows = [
+      { user_id: OWNER, kind: 'legacy_read', count: 3 },
+      { user_id: INTRUDER, kind: 'legacy_read', count: 1 },
+    ];
+    for (const row of rows) {
+      db.collection('personality_deprecation_events').docs.push({
+        event_key: `deprecation:${row.kind}:${row.user_id}:2026-09-26`,
+        user_id: row.user_id,
+        kind: row.kind,
+        count: row.count,
+        first_seen_at: '2026-09-26T10:00:00.000Z',
+        last_seen_at: '2026-09-26T10:00:00.000Z',
+        expires_at: '2026-10-26T10:00:00.000Z',
+      });
+    }
+  }
+
+  it('pins the deprecation counters to the caller, and only a trusted caller can widen that read', async () => {
+    plantDeprecationCounters();
+
+    // An UNTRUSTED caller sees its OWN counts — and cannot reach the other
+    // identity's, not even by naming it or asking for everything.
+    const own = await get('/rollout', UNTRUSTED);
+    expect(own.body.deprecation_telemetry.events).toBe(1);
+    expect(own.body.deprecation_telemetry.identities).toEqual([INTRUDER]);
+    expect(own.body.scope).toEqual({ kind: 'caller', identities: 1 });
+    expect(own.body.deprecation_telemetry.scope).toEqual({ kind: 'caller', identities: 1 });
+
+    const named = await get(`/rollout?user_id=${OWNER}`, UNTRUSTED);
+    expect(named.body.deprecation_telemetry.events).toBe(1);
+    expect(named.body.deprecation_telemetry.identities).toEqual([INTRUDER]);
+    expect(named.body.scope).toEqual({ kind: 'caller', identities: 1 });
+
+    const greedy = await get('/rollout?all_identities=1', UNTRUSTED);
+    expect(greedy.body.deprecation_telemetry.events).toBe(1);
+    expect(greedy.body.deprecation_telemetry.identities).toEqual([INTRUDER]);
+    expect(greedy.body.scope.kind).toBe('caller');
+
+    // A TRUSTED caller's default is still its own identity…
+    const trusted = await get('/rollout');
+    expect(trusted.body.deprecation_telemetry.events).toBe(0);
+    expect(trusted.body.deprecation_telemetry.identities).toEqual([TRUSTED.user_id]);
+    expect(trusted.body.scope).toEqual({ kind: 'caller', identities: 1 });
+
+    // …it may name ONE identity…
+    const one = await get(`/rollout?user_id=${OWNER}`);
+    expect(one.body.deprecation_telemetry.events).toBe(3);
+    expect(one.body.deprecation_telemetry.identities).toEqual([OWNER]);
+    expect(one.body.scope).toEqual({ kind: 'named', identities: 1 });
+
+    // …and it may OPT IN to the cross-identity view, which says so.
+    const all = await get('/rollout?all_identities=1');
+    expect(all.body.deprecation_telemetry.events).toBe(4);
+    expect(all.body.deprecation_telemetry.identities).toEqual([INTRUDER, OWNER].sort());
+    expect(all.body.scope).toEqual({ kind: 'all', identities: 2 });
+    expect(all.body.deprecation_telemetry.basis).toContain('across every identity');
+
+    // `user_id` wins over `all_identities`: a read never widens by accident.
+    const both = await get(`/rollout?all_identities=1&user_id=${INTRUDER}`);
+    expect(both.body.deprecation_telemetry.events).toBe(1);
+    expect(both.body.scope).toEqual({ kind: 'named', identities: 1 });
+    // The payload's basis states the pinning rule.
+    expect(trusted.body.basis).toContain('SCOPED LIKE EVERY OTHER VIEW');
+  });
+
   it('derives every flag and kill-switch state from the environment', async () => {
     delete process.env.FOCUSED_IMAGINATION;
     const off = await get('/rollout');

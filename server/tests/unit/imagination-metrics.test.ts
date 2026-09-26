@@ -43,7 +43,7 @@ import {
   registerExperiment,
 } from '../../src/services/processing/imagination-experiments.js';
 import { focusedImaginationEnabled } from '../../src/services/processing/focused-consolidation-service.js';
-import { IMAGINATION_EXPERIMENTS_COLLECTION } from '../../src/services/processing/imagination-experiments.js';
+import { IMAGINATION_EXPERIMENTS_COLLECTION, compareMeasuredValues } from '../../src/services/processing/imagination-experiments.js';
 import type { CallerIdentity } from '../../src/utils/caller-identity.js';
 
 const USER = 'metric-owner';
@@ -862,7 +862,10 @@ describe('imagination experiments — the gated write and the comparison', () =>
     expect(cost.direction).toBe('lower');
     expect(cost.relative_gain).toBe(0.4);
     expect(improved!.verdict).toBe('improved');
-    expect(improved!.counts).toEqual({ improved: 2, not_improved: 0, insufficient_data: 0 });
+    // `equal` is part of the counts (ITER-11 refinement): a measured EQUAL
+    // reading is a fourth outcome, counted rather than folded into
+    // `insufficient_data` or into "not improved".
+    expect(improved!.counts).toEqual({ improved: 2, not_improved: 0, equal: 0, insufficient_data: 0 });
     expect(improved!.basis).toContain('observation');
 
     // 2. not_improved — the treatment is WORSE than the baseline.
@@ -892,6 +895,62 @@ describe('imagination experiments — the gated write and the comparison', () =>
     // An unknown experiment is null, not a fabricated comparison.
     expect(await compareExperiment(db.asDb(), USER, 'impexp_absent')).toBeNull();
     expect(await compareExperiment(db.asDb(), OTHER, id)).toBeNull(); // another identity's experiment
+    delete process.env.FOCUSED_IMAGINATION;
+  });
+
+  it('reports EQUAL readings as equal — no delta, no relative gain, no verdict of "not improved"', async () => {
+    // ITER-11 refinement: two sides that read the same number at the reported
+    // precision are EQUAL. Reporting `delta: 0` with a 0 relative gain would
+    // read as "measured, no improvement" for two readings nothing distinguishes.
+    process.env.FOCUSED_IMAGINATION = '1';
+    const { experiment } = await registerExperiment(db.asDb(), EXPERIMENT);
+    const id = experiment.experiment_id;
+    const observe = (arm: string, metric: string, value: number, n: number) =>
+      recordExperimentObservation(db.asDb(), { experiment_id: id, arm, metric, value, n }, TRUSTED);
+
+    await observe('control', 'useful_novelty_rate', 0.5, 10);
+    await observe('treatment', 'useful_novelty_rate', 0.5, 10);
+    const equal = await compareExperiment(db.asDb(), USER, id);
+    const novelty = equal!.metrics.find((row) => row.metric === 'useful_novelty_rate')!;
+    expect(novelty.verdict).toBe('equal');
+    expect(novelty.delta).toBeNull();
+    expect(novelty.relative_gain).toBeNull();
+    expect(novelty.reason).toContain('EXACTLY equal');
+    expect(equal!.counts.equal).toBe(1);
+    // The roll-up does not claim an improvement (or a regression) either.
+    expect(equal!.verdict).toBe('equal');
+
+    // A difference BELOW the reported precision is equality too: the delta is
+    // not reported and the relative gain is not formed. (The observation channel
+    // rounds to the same precision, so this case is asserted on the shared rule
+    // itself; a POOLED mean is where a sub-precision difference really arrives.)
+    const subPrecision = compareMeasuredValues({
+      metric: 'useful_novelty_rate',
+      baseline: { value: 0.5, n: 10 },
+      treatment: { value: 0.5 + 1e-8, n: 10 },
+    });
+    expect(subPrecision.verdict).toBe('equal');
+    expect(subPrecision.delta).toBeNull();
+    expect(subPrecision.relative_gain).toBeNull();
+    expect(subPrecision.reason).toContain('below the reported precision');
+
+    // A difference at the precision IS reported, in the metric's own direction.
+    await observe('treatment', 'useful_novelty_rate', 0.75, 10);
+    const differs = await compareExperiment(db.asDb(), USER, id);
+    const improved = differs!.metrics.find((row) => row.metric === 'useful_novelty_rate')!;
+    expect(improved.verdict).toBe('improved');
+    expect(improved.delta).toBe(0.25);
+    expect(improved.relative_gain).toBe(0.5);
+
+    // The sample guard still wins: an equal reading on too thin a sample is
+    // insufficient_data (the equality is stated in the reason, not scored).
+    await observe('control', 'median_plateau_length', 4, 2);
+    await observe('treatment', 'median_plateau_length', 4, 2);
+    const thin = await compareExperiment(db.asDb(), USER, id);
+    const plateau = thin!.metrics.find((row) => row.metric === 'median_plateau_length')!;
+    expect(plateau.verdict).toBe('insufficient_data');
+    expect(plateau.delta).toBeNull();
+    expect(plateau.reason).toContain('equal at the reported precision');
     delete process.env.FOCUSED_IMAGINATION;
   });
 

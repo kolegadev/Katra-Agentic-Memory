@@ -39,9 +39,13 @@
  *     `scope.identities` counts the identities the payload's rows span: the one
  *     identity a pinned read covers (minimum 1), and for `all` the number of
  *     distinct identities actually found. An untrusted caller's `user_id` and
- *     `all_identities` are IGNORED, never honoured. `/rollout` is the one view
- *     that reads no identity rows at all (it reports the running process's flag
- *     and kill-switch state), so it states no scope.
+ *     `all_identities` are IGNORED, never honoured. `/rollout` reports the
+ *     running process's flag and kill-switch state, which spans no identity —
+ *     but since ITER-11 it also carries the deprecation counters, which ARE
+ *     identity rows, so it states the scope of THAT block (`scope` at the top
+ *     level and inside `deprecation_telemetry`): the caller's own identity by
+ *     default, one named identity or every identity only for a trusted caller
+ *     that asked.
  *   - NO PRIVATE TEXT ACROSS IDENTITIES. Traces, seeds, lineages and portfolios
  *     are identity-private: an untrusted caller is pinned to its own identity
  *     and a non-owner read returns NOTHING — no rows, no marker text, and no
@@ -63,6 +67,11 @@ import type { CallerIdentity } from '../utils/caller-identity.js';
 import { cognitiveControlMode } from '../services/mission-cognition/index.js';
 import { killSwitchActive, schedulerMode } from '../services/mission-cognition/scheduler-mode.js';
 import { perIdentityPersonalityEnabled } from '../services/integration/personality-config-service.js';
+// ITER-11 (WS-3): the deprecation counters of the legacy personality record.
+import { countPersonalityDeprecationEvents } from '../services/integration/personality-deprecation-telemetry.js';
+// ITER-11 (WS-2): the ACTIVE descriptor space, so a refused IMAGINATION_BINS
+// is visible to an operator instead of silently ignored.
+import { descriptorSpaceReport } from '../services/processing/descriptor-space.js';
 import { focusedImaginationEnabled } from '../services/processing/focused-consolidation-service.js';
 import { creativeBatonPromotionEnabled, verifyStoredBaton } from '../services/processing/creative-baton-compiler.js';
 import { cognitiveTeamAllocationEnabled, verifyAssignment } from '../services/processing/cognitive-mode-service.js';
@@ -1162,7 +1171,13 @@ export const createImaginationDashboardRoutes = (): Hono => {
   // Always reachable (like /status): the operator has to be able to see that a
   // stage is off. Every value is derived from the environment the running
   // process actually reads — no hardcoded claim about what is enabled.
+  //
+  // The view carries ONE identity-scoped block since ITER-11 closes DoD #7: the
+  // deprecation counters. That block obeys the same rule every other view obeys
+  // — the caller's OWN identity by default, a wider read only when a TRUSTED
+  // caller asks for it — and the payload states the scope it was read at.
   router.get('/rollout', async (c) => {
+    const scope = resolveViewScope(getCaller(), c.req.query('user_id'), c.req.query('all_identities'));
     const flags = [
       {
         name: 'PER_IDENTITY_PERSONALITY',
@@ -1232,10 +1247,23 @@ export const createImaginationDashboardRoutes = (): Hono => {
       },
     ];
     const stateFor = (flag: string) => flags.find((entry) => entry.name === flag)?.on ?? false;
+    // The deprecation counters are identity rows: read them PINNED unless a
+    // trusted caller explicitly asked for the cross-identity view. An untrusted
+    // caller's `user_id` / `all_identities` were already ignored by
+    // `resolveViewScope`, so this is the only place the scope is decided.
+    const deprecationTelemetry = await countPersonalityDeprecationEvents(get_database(), {
+      now: () => new Date().toISOString(),
+      userId: scope.kind === 'all' ? null : scope.userId,
+    });
+    const telemetryScope = scopeStatement(scope, deprecationTelemetry.identities?.length ?? 0);
     return c.json({
       plane: cognitiveControlMode(),
       scheduler_mode: schedulerMode(),
       kill_switch_active: killSwitchActive(),
+      // The identity scope THIS payload carries (the deprecation counters); the
+      // flag/kill-switch/stage blocks above are process state and span no
+      // identity at all.
+      scope: telemetryScope,
       flags,
       kill_switches: killSwitches,
       stages: stages.map((stage) => ({
@@ -1251,11 +1279,25 @@ export const createImaginationDashboardRoutes = (): Hono => {
           "echo 'COGNITIVE_ACTIVATION_KILL_SWITCH=1' >> .env && docker compose up -d --force-recreate --wait server",
         flag_off_command:
           "sed -i.bak 's/^FOCUSED_IMAGINATION=.*/FOCUSED_IMAGINATION=/' .env && docker compose up -d --force-recreate --wait server",
+        // ITER-11 (WS-3): the stage-1 flag has its own documented command. It is
+        // the one the executed rollback test runs (against a temporary .env),
+        // so stage 1 can be rolled back without touching stage 2.
+        personality_flag_off_command:
+          "sed -i.bak 's/^PER_IDENTITY_PERSONALITY=.*/PER_IDENTITY_PERSONALITY=/' .env && docker compose up -d --force-recreate --wait server",
         code_rollback_command: 'git revert --no-edit <ITER-9 commit> && docker compose up -d --build --wait server',
         note: 'the imagination views are read-only, so disabling the flags removes the surface without touching stored data; imagination_experiments is additive and droppable',
       },
+      // ITER-11 (WS-3 / WS-2): the two new process-and-store observations an
+      // operator needs here — how many requests are still being served by the
+      // LEGACY personality record (bounded, TTL'd counters, PINNED to the
+      // caller's own identity unless a trusted caller asked for the
+      // cross-identity view), and which descriptor space the engine is actually
+      // running with (a refused IMAGINATION_BINS is reported by name, never
+      // silently ignored).
+      deprecation_telemetry: { ...deprecationTelemetry, scope: telemetryScope },
+      descriptor_space: descriptorSpaceReport(),
       basis:
-        'read at request time from the very functions the deployment uses (perIdentityPersonalityEnabled, focusedImaginationEnabled, creativeBatonPromotionEnabled, cognitiveTeamAllocationEnabled, killSwitchActive, cognitiveControlMode, schedulerMode) — never from constants',
+        'read at request time from the very functions the deployment uses (perIdentityPersonalityEnabled, focusedImaginationEnabled, creativeBatonPromotionEnabled, cognitiveTeamAllocationEnabled, killSwitchActive, cognitiveControlMode, schedulerMode) — never from constants; the deprecation counters are read from the store SCOPED LIKE EVERY OTHER VIEW (the caller’s own identity by default, one named identity or every identity only for a trusted caller that asked: `scope` states which) and the descriptor space from the environment the same way',
     });
   });
 

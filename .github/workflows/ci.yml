@@ -60,6 +60,22 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      # ── Unit + security tests (ITER-11, WS-5 item 4) ────────────────────
+      # These are the commands the imagination feature's own success criteria
+      # are stated against, and they run WITHOUT a MongoDB server or a model
+      # provider: every suite builds its state on `tests/helpers/fake-mongo.ts`
+      # (an in-memory fake) and stubs `llmService.extractJson`. Suites that
+      # genuinely need a live Mongo or a live model SKIP themselves and report
+      # as SKIPPED rather than passing — a green run with skips is not evidence
+      # about them, which is what the iteration contracts record as
+      # "NOT VERIFIED" (the branch's reported counts: unit 0 failures,
+      # security 0 failures, with the live-only suites skipped).
+      - name: Unit tests (no Mongo: the in-memory fake + a stubbed model)
+        run: npx vitest run tests/unit/
+
+      - name: Security tests (identity scoping, taint, caller pinning)
+        run: npx vitest run tests/security/
+
       - name: Build
         run: npm run build
 

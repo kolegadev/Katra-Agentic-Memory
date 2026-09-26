@@ -60,7 +60,8 @@ import {
 } from './imagination-cycle-config.js';
 import { OPERATOR_TRACE_MAP, derivedId, hashSeed, sha256Hex, stableStringify } from './imagination-operators.js';
 import {
-  DESCRIPTOR_BINS,
+  activeDescriptorBins,
+  activeDescriptorDimensions,
   type CoverageView,
   type ExclusionRegion,
   type IdeaSeed,
@@ -377,22 +378,36 @@ export interface CoverageGapValidation {
 
 /**
  * `coverage_gaps[].unoccupied_bins` are BORROWED from the archive's coverage
- * view, and the archive's bins are a CLOSED vocabulary (`DESCRIPTOR_BINS`). A
- * baton is a packet a controller acts on, so the compiler re-checks every entry
+ * view, and the archive's bins are a CLOSED vocabulary — the ACTIVE descriptor
+ * space (`activeDescriptorBins()`, the closed defaults unless
+ * `IMAGINATION_BINS` configures otherwise; see `descriptor-space.ts`). A baton
+ * is a packet a controller acts on, so the compiler re-checks every entry
  * against that vocabulary instead of copying the view verbatim: a marker (or an
  * invented bin) is DROPPED and COUNTED, and a gap whose dimension is not a
- * descriptor dimension at all is dropped whole (its bins cannot be validated
- * against a vocabulary that dimension does not have).
+ * dimension of the ACTIVE space is dropped whole (its bins cannot be validated
+ * against a vocabulary that dimension does not have). A configuration change
+ * therefore cannot widen this gate — it moves it with the space the operator
+ * configured, which is exactly what "configurable bins" has to mean.
+ *
+ * The lookup is an OWN-property lookup on purpose: a gap naming
+ * `constructor`/`toString`/`__proto__` resolves through `Object.prototype` in a
+ * plain `vocabularyOf[dimension]` read, and every such value is a truthy
+ * function — it would pass the "unknown dimension" test and then THROW on
+ * `.includes`. A prototype key is therefore not a dimension here either: it is
+ * dropped and counted like any other dimension the ACTIVE space does not have.
  */
 export function validateCoverageGaps(
   gaps: ReadonlyArray<{ dimension?: unknown; unoccupied_bins?: unknown }>,
 ): CoverageGapValidation {
+  const vocabularyOf = activeDescriptorBins();
   const kept: Array<{ dimension: string; unoccupied_bins: string[] }> = [];
   let droppedDimensions = 0;
   let droppedBins = 0;
   for (const gap of gaps) {
     const dimension = typeof gap?.dimension === 'string' ? gap.dimension : '';
-    const vocabulary = (DESCRIPTOR_BINS as Record<string, readonly string[] | undefined>)[dimension];
+    const vocabulary = Object.prototype.hasOwnProperty.call(vocabularyOf, dimension)
+      ? vocabularyOf[dimension]
+      : undefined;
     if (!vocabulary) {
       droppedDimensions += 1;
       continue;
@@ -406,6 +421,11 @@ export function validateCoverageGaps(
     }
     kept.push({ dimension, unoccupied_bins: bins });
   }
+  // The gaps are reported in the ACTIVE space's order (a gap the caller omitted
+  // is dropped, not invented) so a compiled baton's coverage_gaps reads as the
+  // space it was compiled against.
+  const order = activeDescriptorDimensions();
+  kept.sort((left, right) => order.indexOf(left.dimension) - order.indexOf(right.dimension));
   return {
     gaps: kept,
     considered: gaps.length,

@@ -508,7 +508,7 @@ export interface MetricComparison {
   delta: number | null;
   /** Improvement in the target's direction, relative to |baseline|. */
   relative_gain: number | null;
-  verdict: 'improved' | 'not_improved' | 'insufficient_data';
+  verdict: ValueVerdict;
   reason: string;
   n: { baseline: number; treatment: number; minimum: number };
   basis: string;
@@ -524,8 +524,8 @@ export interface ExperimentComparison {
   baseline_arms: string[];
   treatment_arms: string[];
   metrics: MetricComparison[];
-  verdict: 'improved' | 'not_improved' | 'insufficient_data';
-  counts: { improved: number; not_improved: number; insufficient_data: number };
+  verdict: ValueVerdict;
+  counts: { improved: number; not_improved: number; equal: number; insufficient_data: number };
   basis: string;
   privacy: {
     scope: 'private';
@@ -570,15 +570,27 @@ export interface MeasuredValue {
   n: number;
 }
 
+/**
+ * The verdict of ONE comparison. `equal` is a real outcome, not a missing one:
+ * when the two readings are the same number at the reported precision there is
+ * no delta to divide, and reporting a 0 relative gain would read as "measured,
+ * no improvement" instead of "measured, no difference".
+ */
+export type ValueVerdict = 'improved' | 'not_improved' | 'equal' | 'insufficient_data';
+
 export interface ValueComparison {
   direction: 'higher' | 'lower';
   target: { min_relative_gain: number; min_samples: number; source: 'named-target' | 'default-target' | 'override' };
+  /** `null` when no delta can be reported — including the EQUAL case, where there is none. */
   delta: number | null;
   relative_gain: number | null;
-  verdict: 'improved' | 'not_improved' | 'insufficient_data';
+  verdict: ValueVerdict;
   reason: string;
   n: { baseline: number; treatment: number; minimum: number };
 }
+
+/** The precision every value comparison reports at. */
+export const COMPARISON_PRECISION = 6;
 
 /**
  * The ONE verdict rule, shared by the experiment comparison and by the metrics
@@ -588,10 +600,15 @@ export interface ValueComparison {
  *   - `insufficient_data` when either side has no value, either side's `n` is
  *     below the target's `min_samples`, or the baseline is 0 (a RELATIVE gain
  *     cannot be formed from it);
+ *   - `equal` when the two readings are the same number at the reported
+ *     precision — EXACTLY equal, or differing by less than 1e-6. No delta is
+ *     reported in that case (there is none to report) and no improvement is
+ *     claimed: "0 relative gain" would read as a measurement when the two sides
+ *     are indistinguishable at the precision the comparison uses;
  *   - `improved` when the relative gain in the metric's own direction reaches
  *     the target's `min_relative_gain`;
- *   - `not_improved` otherwise — a regression and a flat reading are both
- *     reported as not improved, never smoothed into one number.
+ *   - `not_improved` otherwise — a regression and a flat-but-different reading
+ *     are both reported as not improved, never smoothed into one number.
  */
 export function compareMeasuredValues(args: {
   metric: string;
@@ -618,14 +635,34 @@ export function compareMeasuredValues(args: {
       reason: `${!base || base.value === null ? baselineLabel : treatmentLabel} has no measured value for ${args.metric} — no comparison can be formed`,
     };
   }
-  const delta = Number((next.value - base.value).toFixed(6));
+  // Equality is decided from the READINGS, not from a rounded delta: two values
+  // that differ by less than the reported precision are EQUAL here, and the
+  // delta is not reported for them. The sample guard still comes FIRST — an
+  // equal reading on too small a sample is still not a verdict.
+  const rawDelta = next.value - base.value;
+  const delta = Number(rawDelta.toFixed(COMPARISON_PRECISION));
+  const equal = delta === 0;
   if (n.baseline < target.min_samples || n.treatment < target.min_samples) {
     return {
       ...core,
-      delta,
+      delta: equal ? null : delta,
       relative_gain: null,
       verdict: 'insufficient_data',
-      reason: `n is ${n.baseline} (${baselineLabel}) / ${n.treatment} (${treatmentLabel}), below the minimum ${target.min_samples} — no verdict is formed`,
+      reason:
+        `n is ${n.baseline} (${baselineLabel}) / ${n.treatment} (${treatmentLabel}), below the minimum ${target.min_samples} — no verdict is formed` +
+        (equal ? ` (the two readings are equal at the reported precision, which is not a verdict either)` : ''),
+    };
+  }
+  if (equal) {
+    return {
+      ...core,
+      delta: null,
+      relative_gain: null,
+      verdict: 'equal',
+      reason:
+        rawDelta === 0
+          ? `both sides read ${base.value} — the readings are EXACTLY equal (n ${n.baseline}/${n.treatment}), so there is no delta, no relative gain and no improvement to claim`
+          : `the readings differ by ${rawDelta}, below the reported precision (1e-${COMPARISON_PRECISION}): reported as EQUAL (${base.value} vs ${next.value}, n ${n.baseline}/${n.treatment}) rather than as a 0 relative gain`,
     };
   }
   if (base.value === 0) {
@@ -641,7 +678,7 @@ export function compareMeasuredValues(args: {
     target.direction === 'higher'
       ? (next.value - base.value) / Math.abs(base.value)
       : (base.value - next.value) / Math.abs(base.value);
-  const relativeGain = Number(relative.toFixed(6));
+  const relativeGain = Number(relative.toFixed(COMPARISON_PRECISION));
   const improved = relativeGain >= target.min_relative_gain;
   return {
     ...core,
@@ -744,14 +781,18 @@ export async function compareExperiment(
   const counts = {
     improved: comparisons.filter((row) => row.verdict === 'improved').length,
     not_improved: comparisons.filter((row) => row.verdict === 'not_improved').length,
+    equal: comparisons.filter((row) => row.verdict === 'equal').length,
     insufficient_data: comparisons.filter((row) => row.verdict === 'insufficient_data').length,
   };
-  const overall: ExperimentComparison['verdict'] =
-    comparisons.length === 0 || counts.improved + counts.not_improved === 0
+  const judged = counts.improved + counts.not_improved + counts.equal;
+  const overall: ValueVerdict =
+    comparisons.length === 0 || judged === 0
       ? 'insufficient_data'
       : counts.not_improved > 0
         ? 'not_improved'
-        : 'improved';
+        : counts.improved > 0
+          ? 'improved'
+          : 'equal';
 
   return {
     experiment_id: experimentId,
@@ -765,7 +806,7 @@ export async function compareExperiment(
     counts,
     basis:
       `${observations.length} observation(s) across ${metrics.length} metric(s); the overall verdict is "improved" only when at least one metric improved and none regressed, ` +
-      '"not_improved" when any metric regressed or fell short of its target, and "insufficient_data" when no metric had enough samples to form a verdict',
+      '"not_improved" when any metric regressed or fell short of its target, "equal" when every judged metric read the same on both sides, and "insufficient_data" when no metric had enough samples to form a verdict',
     privacy: {
       scope: 'private',
       private_rows: observations.length + 1,

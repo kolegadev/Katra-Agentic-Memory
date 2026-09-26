@@ -26,7 +26,7 @@ import { IMAGINATION_COLLECTIONS } from './imagination-collections.js';
 import { comparableText, statementSimilarity } from './idea-archive-service.js';
 import { ENVELOPE_VERSION, invariantViolation, verifyEnvelope } from './inheritance-envelope.js';
 import { verifyAssignment } from './cognitive-mode-service.js';
-import { compareMeasuredValues, type ImprovementTarget } from './imagination-experiments.js';
+import { compareMeasuredValues, type ImprovementTarget, type ValueVerdict } from './imagination-experiments.js';
 
 // ── Documented minimums (a metric below its minimum is `insufficient_data`) ──
 
@@ -174,13 +174,13 @@ export interface ImaginationMetrics {
       target: { min_relative_gain: number; min_samples: number; source: string };
       delta: number | null;
       relative_gain: number | null;
-      verdict: 'improved' | 'not_improved' | 'insufficient_data';
+      verdict: ValueVerdict;
       reason: string;
       n: { baseline: number; treatment: number; minimum: number };
       basis: string;
     }>;
-    verdict: 'improved' | 'not_improved' | 'insufficient_data';
-    counts: { improved: number; not_improved: number; insufficient_data: number };
+    verdict: ValueVerdict;
+    counts: { improved: number; not_improved: number; equal: number; insufficient_data: number };
     baseline_window: MetricWindow;
     current_window: MetricWindow;
     basis: string;
@@ -715,12 +715,23 @@ function buildWindowComparison(
   const counts = {
     improved: metrics.filter((row) => row.verdict === 'improved').length,
     not_improved: metrics.filter((row) => row.verdict === 'not_improved').length,
+    equal: metrics.filter((row) => row.verdict === 'equal').length,
     insufficient_data: metrics.filter((row) => row.verdict === 'insufficient_data').length,
   };
   return {
     metrics,
+    // The same roll-up rule the experiment comparison uses: a regression
+    // anywhere makes it `not_improved`, "improved" needs at least one
+    // improvement and none short of its target, and every judged metric reading
+    // equal is `equal` — never smoothed into an improvement.
     verdict:
-      counts.improved + counts.not_improved === 0 ? 'insufficient_data' : counts.not_improved > 0 ? 'not_improved' : 'improved',
+      counts.improved + counts.not_improved + counts.equal === 0
+        ? 'insufficient_data'
+        : counts.not_improved > 0
+          ? 'not_improved'
+          : counts.improved > 0
+            ? 'improved'
+            : 'equal',
     counts,
     baseline_window: baseline.window,
     current_window: current.window,

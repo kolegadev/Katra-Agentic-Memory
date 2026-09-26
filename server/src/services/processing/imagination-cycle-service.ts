@@ -83,6 +83,8 @@ import {
   ensureCreativeBatonIndexes,
 } from './creative-baton-collections.js';
 import { sha256Hex } from './imagination-operators.js';
+import type { OperatorPriorInput } from './imagination-operators.js';
+import { loadOperatorPriors } from './idea-verification-service.js';
 import {
   CreativeBatonError,
   CreativeBatonService,
@@ -1016,6 +1018,18 @@ async function executeCycle(
   const trace: SalienceTrace = focused.trace;
 
   // ── Step 2: seed generation + archive admission (ITER-6) ─────────────────
+  // The LEARN step (ITER-11, WS-5): the plan is adjusted by the mission's own
+  // persisted failure signatures and useful outcomes, within a hard bound. The
+  // read is total (a failure yields NO priors, never a broken cycle) and the
+  // adjustment is recorded on the affected plan entries (`reason_text`/`prior`),
+  // which are stored on the run row below.
+  let priors: OperatorPriorInput | null = null;
+  try {
+    priors = await loadOperatorPriors(db, { userId, missionId });
+  } catch (error) {
+    priors = null;
+    console.warn(`   ⚠️ operator priors unavailable (${errorMessage(error)}) — planning unadjusted`);
+  }
   let imagination: ImaginationResult;
   try {
     imagination = await runImaginationEngineCycle(db, {
@@ -1027,6 +1041,7 @@ async function executeCycle(
       // The run's PRNG seed is the cycle id: the cycle is the unit a replay
       // restarts, so the same cycle over the same mission is reproducible.
       seed: cycleId,
+      priors,
     });
   } catch (error) {
     const tokensSpent = spent();

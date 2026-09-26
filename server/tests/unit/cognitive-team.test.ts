@@ -1774,14 +1774,29 @@ describe('exit criterion — same model, different modes', () => {
       'agent-ana-b': 'analyst',
       'agent-ana-c': 'analyst',
     };
+    // ITER-11 (WS-4 item 5, the reviewer's de-artifacting finding): a SECOND
+    // same-mode control at a DIFFERENT frozen checkpoint — i.e. the same three
+    // identities and the same mode under a different trace id, a different cycle
+    // id and therefore a different PRNG seed. If the treatment's divergence were
+    // seed noise, this control would drift away from the first one; if the
+    // collapse is what a single mode does, the two controls are identical.
+    const CONTROL_SEEDED_MODES = {
+      'agent-ana-a': 'analyst',
+      'agent-ana-b': 'analyst',
+      'agent-ana-c': 'analyst',
+    };
 
     const treatment: FirstPassAgentResult[][] = [];
     const controlExplore: FirstPassAgentResult[][] = [];
     const controlBalanced: FirstPassAgentResult[][] = [];
+    const controlSeeded: FirstPassAgentResult[][] = [];
     for (const checkpoint of CHECKPOINTS) {
       treatment.push((await buildTeam(`exit_treatment_${checkpoint}`, TREATMENT_MODES)).results);
       controlExplore.push((await buildTeam(`exit_control_explore_${checkpoint}`, CONTROL_EXPLORE_MODES)).results);
       controlBalanced.push((await buildTeam(`exit_control_balanced_${checkpoint}`, CONTROL_BALANCED_MODES)).results);
+      // A different family of checkpoint names (and therefore a different seed
+      // stream) for the same-mode control.
+      controlSeeded.push((await buildTeam(`exit_seeded_control_${checkpoint}`, CONTROL_SEEDED_MODES)).results);
     }
 
     // (a) the modes — and the dispositions they resolve to — actually differed.
@@ -1819,19 +1834,60 @@ describe('exit criterion — same model, different modes', () => {
     const measured = aggregate(treatment);
     const controlA = aggregate(controlExplore);
     const controlB = aggregate(controlBalanced);
+    const controlSeed = aggregate(controlSeeded);
+
+    /**
+     * ITER-11 (WS-4 item 5): divergence of the OPERATOR PLAN, reported beside
+     * the statement similarity. For each agent the plan is the set of operators
+     * it actually ran; two agents "agree" on the plan when their operator sets
+     * are equal. This number does NOT depend on the model's prose at all — it is
+     * the mechanism the modes are supposed to move — so it is the honest
+     * counterweight to the statement-level magnitudes, which are
+     * stub-determined.
+     */
+    const operatorPlans = (group: FirstPassAgentResult[]): Set<string>[] =>
+      group.map((result) => new Set(result.seeds.map((seed) => seed.operator)));
+    const planDivergence = (checkpoints: FirstPassAgentResult[][]): { mean_plan_jaccard: number; unique_operator_share: number } => {
+      const jaccards: number[] = [];
+      const unique: number[] = [];
+      for (const group of checkpoints) {
+        const plans = operatorPlans(group);
+        for (let i = 0; i < plans.length; i += 1) {
+          for (let j = i + 1; j < plans.length; j += 1) {
+            const shared = [...plans[i]].filter((operator) => plans[j].has(operator)).length;
+            const union = new Set([...plans[i], ...plans[j]]).size;
+            jaccards.push(shared / Math.max(1, union));
+          }
+          const peers = new Set(plans.filter((_entry, index) => index !== i).flatMap((plan) => [...plan]));
+          unique.push([...plans[i]].filter((operator) => !peers.has(operator)).length / Math.max(1, plans[i].size));
+        }
+      }
+      const mean = (values: number[]): number =>
+        Number((values.reduce((total, value) => total + value, 0) / Math.max(1, values.length)).toFixed(4));
+      return { mean_plan_jaccard: mean(jaccards), unique_operator_share: mean(unique) };
+    };
+    const treatmentPlan = planDivergence(treatment);
+    const controlAPlan = planDivergence(controlExplore);
+    const controlBPlan = planDivergence(controlBalanced);
+    const controlSeedPlan = planDivergence(controlSeeded);
 
     // eslint-disable-next-line no-console
     console.log(
       [
         'EXIT CRITERION — pairwise statement similarity between agent portfolios',
+        '  STATEMENT-LEVEL MAGNITUDES ARE STUB-DETERMINED: the model is a scripted stub whose',
+        '  text depends only on the operator family, so these numbers show the PLUMBING (modes ⇒',
+        '  different operators ⇒ different text) and are NOT evidence that a real model diverges.',
         `  treatment (philosopher/analyst/strategist, ${CHECKPOINTS.length} frozen checkpoints):`,
         `    jaccard ${JSON.stringify(measured.jaccard)} mean ${measured.jaccard_mean}`,
         `    closest ${JSON.stringify(measured.closest)} mean ${measured.closest_mean}`,
         `    mean per checkpoint ${JSON.stringify(measured.per_checkpoint)}`,
         `    unique-to-one-agent share ${measured.unique_share}`,
+        `    OPERATOR PLAN divergence: jaccard ${treatmentPlan.mean_plan_jaccard} · operators unique to one agent ${treatmentPlan.unique_operator_share}`,
         `    portfolio sizes ${JSON.stringify(treatment.flat().map((result) => result.seeds.length))}`,
-        `  control A (all philosopher): jaccard mean ${controlA.jaccard_mean} ${JSON.stringify(controlA.jaccard)} · closest mean ${controlA.closest_mean} · unique share ${controlA.unique_share}`,
-        `  control B (all analyst):     jaccard mean ${controlB.jaccard_mean} ${JSON.stringify(controlB.jaccard)} · closest mean ${controlB.closest_mean} · unique share ${controlB.unique_share}`,
+        `  control A (all philosopher): jaccard mean ${controlA.jaccard_mean} ${JSON.stringify(controlA.jaccard)} · closest mean ${controlA.closest_mean} · unique share ${controlA.unique_share} · plan jaccard ${controlAPlan.mean_plan_jaccard}`,
+        `  control B (all analyst):     jaccard mean ${controlB.jaccard_mean} ${JSON.stringify(controlB.jaccard)} · closest mean ${controlB.closest_mean} · unique share ${controlB.unique_share} · plan jaccard ${controlBPlan.mean_plan_jaccard}`,
+        `  control C (all analyst, SEED VARIED): jaccard mean ${controlSeed.jaccard_mean} ${JSON.stringify(controlSeed.jaccard)} · closest mean ${controlSeed.closest_mean} · unique share ${controlSeed.unique_share} · plan jaccard ${controlSeedPlan.mean_plan_jaccard}`,
       ].join('\n'),
     );
 
@@ -1847,6 +1903,41 @@ describe('exit criterion — same model, different modes', () => {
     expect(controlB.unique_share).toBe(0);
     expect(measured.unique_share).toBeGreaterThan(0);
     expect(measured.jaccard_mean).toBeLessThan(1);
+
+    // (b2) THE SEED IS NOT THE EXPLANATION. The second same-mode control runs
+    //      the same identities and mode under different checkpoints (different
+    //      trace ids, cycle ids and PRNG seeds) and collapses EXACTLY as the
+    //      first one did — so the treatment's divergence is not seed noise. Its
+    //      portfolios are also statement-for-statement identical to control B's,
+    //      which is the stub's own signature: with one mode the seed changes
+    //      nothing.
+    expect(controlSeed.jaccard).toEqual(controlB.jaccard);
+    expect(controlSeed.closest).toEqual(controlB.closest);
+    expect(controlSeed.unique_share).toEqual(controlB.unique_share);
+    expect(controlSeed.jaccard.every((entry) => entry === 1)).toBe(true);
+    // …and SEED VARIATION ALONE leaves the portfolios nearly identical: the two
+    // same-mode controls pooled together (six analyst agents across six
+    // checkpoints, six different seeds) still agree far more than the three-mode
+    // treatment does. (Not exactly 1.0: the identity-seeded bridge walk can find
+    // a path for one agent and not its peer, which changes which operators RUN —
+    // an operator-plan effect, not a text effect.)
+    const crossControl = pairwiseMeasurements([...controlBalanced.flat(), ...controlSeeded.flat()]);
+    // eslint-disable-next-line no-console
+    console.log(
+      `  cross-control (same mode, SEED VARIED, pooled): jaccard mean ${crossControl.jaccard_mean} ${JSON.stringify(crossControl.jaccard)} · closest mean ${crossControl.closest_mean}`,
+    );
+    expect(crossControl.jaccard_mean).toBeGreaterThan(measured.jaccard_mean);
+    expect(crossControl.jaccard_mean).toBeGreaterThanOrEqual(0.8);
+
+    // (b3) THE OPERATOR PLAN carries the divergence independently of the text:
+    //      same-mode agents run plans that largely coincide (their modes fix the
+    //      spread), while the three-mode treatment's plans diverge far more —
+    //      and this number owes nothing to the stub's prose.
+    expect(treatmentPlan.mean_plan_jaccard).toBeLessThan(controlAPlan.mean_plan_jaccard);
+    expect(treatmentPlan.mean_plan_jaccard).toBeLessThan(controlBPlan.mean_plan_jaccard);
+    expect(treatmentPlan.mean_plan_jaccard).toBeLessThan(controlSeedPlan.mean_plan_jaccard);
+    expect(treatmentPlan.mean_plan_jaccard).toBeLessThan(1);
+    expect(treatmentPlan.unique_operator_share).toBeGreaterThan(0);
 
     // (c) no private content crossed: markers in every private store, planted
     //     once the generation is done, are absent from every surface the runs

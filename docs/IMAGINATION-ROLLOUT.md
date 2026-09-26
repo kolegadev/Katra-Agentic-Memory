@@ -40,13 +40,17 @@ be mistaken for a wider or narrower read than it is:
   stays pinned to the caller and a non-owner sees no row, no marker text and no existence leak.
 - `user_id` wins when both are supplied: the narrower instruction is the one honoured, so a read can
   never widen by accident.
-- The views that can span identities are `/overview`, `/cycles`, `/cycles/:cycleId`, `/traces` and
+- The views that can span identities are `/overview`, `/cycles`, `/cycles/:cycleId`, `/traces`,
   `/batons` (whose default is the caller's own batons plus the **promoted** — shared — artefact, the
-  one surface this feature shares). `/archive`, `/team`, `/metrics`, `/experiments` and
-  `/experiments/compare` are measured for exactly ONE identity, so `all_identities` is not offered
-  there and their payload states `caller` or `named`.
-- `GET /api/v1/imagination/rollout` reads no identity rows at all (it reports the running process's
-  flags and kill switches), so it is the one view that carries no `scope`.
+  one surface this feature shares) and `/rollout` (only for its deprecation-counter block: the flag
+  and kill-switch blocks it reports are process state and span no identity). `/archive`, `/team`,
+  `/metrics`, `/experiments` and `/experiments/compare` are measured for exactly ONE identity, so
+  `all_identities` is not offered there and their payload states `caller` or `named`.
+- `GET /api/v1/imagination/rollout` reports the running process's flags and kill switches, which span
+  no identity — but since ITER-11 it also carries the deprecation counters, which ARE identity rows,
+  so it states the scope of THAT block: the caller's own identity by default, one named identity or
+  every identity only for a trusted caller that asked (`scope` at the top level and inside
+  `deprecation_telemetry`).
 - The one write (`POST /experiments/observations`) is **caller-owned by construction** — the row's
   `user_id` is the caller's own — and its payload states `scope: { kind: "caller", identities: 1 }`.
   A `note` is capped at 2000 characters by `EXPERIMENT_NOTE_MAX_LENGTH` (the same constant the MCP
@@ -94,9 +98,32 @@ minimum — a gate that cannot be measured is not a gate that passed.
 | # | Stage | Flag (default off) | Gates to pass | What to watch |
 | --- | --- | --- | --- | --- |
 | 1 | Per-identity personality | `PER_IDENTITY_PERSONALITY` | `personality_stability.violations = 0`; the bridge fetches with its own key and reports no rejection | `personality_stability`, inheritance-envelope refusals |
-| 2 | Focused imagination (private) | `FOCUSED_IMAGINATION` | `useful_novelty_rate.status = ok` (n ≥ 5 recorded outcomes); `false_novelty` at or below the recorded baseline; `cost_of_novelty.status = ok` (denominator > 0) | `useful_novelty_rate`, `false_novelty`, `cost_of_novelty`, `time_to_next_viable_direction` |
+| 2 | Focused imagination (private) | `FOCUSED_IMAGINATION` | `useful_novelty_rate.status = ok` (n ≥ 5 recorded outcomes); `false_novelty` at or below the **recorded baseline** — experiment `impexp_c4bbc105e90760b919a5b28f46eb225b`, arms `A+B` (control, pooled) vs `C+D` (treatment), metrics **`false_novelty`** and **`useful_novelty_rate`** as recorded in `docs/IMAGINATION-BASELINE.json` and reported in `docs/IMAGINATION-BASELINE.md`; `cost_of_novelty.status = ok` (denominator > 0) | `useful_novelty_rate`, `false_novelty`, `cost_of_novelty`, `time_to_next_viable_direction` |
 | 3 | Baton promotion (shared scope) | `CREATIVE_BATON_PROMOTION` | `privacy_leakage.flagged = 0` across every shared artefact scanned; no promotion refusal other than `flag_off` | `privacy_leakage`, `idea_survival`, `archive_coverage_gain` |
 | 4 | Cognitive team allocation | `COGNITIVE_TEAM_ALLOCATION` | `agent_divergence` above `agent_divergence_same_mode_control` (the team must diverge more than one mode does); `personality_stability.violations = 0` | `agent_divergence` vs its same-mode control, `personality_stability` |
+
+**Stage 2's baseline is RECORDED, not deferred** (ITER-11, WS-4). The number the gate compares
+against comes from the harness in `server/scripts/imagination-baseline.mjs`, run over the frozen
+checkpoint and stored as an experiment in `imagination_experiments` form:
+
+| | |
+| --- | --- |
+| experiment | `impexp_c4bbc105e90760b919a5b28f46eb225b` (`imagination-baseline-vs-engine (ITER-11 WS-4)`) |
+| store | `docs/IMAGINATION-BASELINE.json` · report: `docs/IMAGINATION-BASELINE.md` |
+| arms | `A` dreamer retrieval · `B` mind-wander (controls) · `C` focused engine, balanced · `D` engine + heterogeneous team |
+| metric keys the gate uses | `false_novelty` (lower is better, target 0.3), `useful_novelty_rate` (higher is better, target 0.3 — the brief's "≥30% better useful novelty"), plus `task_quality_regression` and `time_to_next_viable_direction` |
+| recorded verdict | `false_novelty` **not_improved** (0.416667 vs 0.333333 — 5/12 against 5/15 — a 0.200001 relative gain against the 0.3 target, n 12/15); `useful_novelty_rate` **insufficient_data** (the control arms recorded no outcomes); task-quality **equal** (2/2 counted criteria on every arm — the two sides are exactly equal, so the row reports equality and no delta) |
+| honest reading | the recorded baseline is a STUB measurement in one deliberate sense — the idea text is a scripted model's — so the gate is a shape the deployment must fill with its own live numbers; the harness marks every number `store_measured` / `stub_determined` / `insufficient_data` and never reports a stub as evidence. The task-quality check evaluates each of the mission's success criteria with its OWN predicate (`c1` = at most one run for the plateau window, `c2` = the taint scan crossing nothing) and REFUSES a verdict it cannot form. Arm `C`'s taint scan flags 1 of 2 shared artefacts — the promoted baton reproducing the candidates' own allow-listed text, which the scripted stub also emitted for two rejected duplicates — and the evidence records the audit's raw count beside the attributed crossing count (0) instead of hiding either |
+
+Re-measure at any time (dependency-free Node, no Mongo, no provider):
+
+```bash
+cd server && node scripts/imagination-baseline.mjs --help
+cd server && node scripts/imagination-baseline.mjs          # rewrites docs/IMAGINATION-BASELINE.json
+```
+
+Its rows are the collection's own shape with the same derived ids, so `compareExperiment` (and the
+`/experiments/compare` view) reads the recorded baseline unchanged.
 
 Stages 2–4 are independent flags, but the **gates are not**: promotion (3) only means anything once
 2 has run and written something to promote, and the team (4) is measured over first-pass portfolio
@@ -148,6 +175,66 @@ docker compose up -d --force-recreate --wait server
 A flag that is missing, empty or not `1|true|yes` (case-insensitive) is **off** — the flags fail
 closed, so removing the line is a rollback too.
 
+## The descriptor space is configuration — `IMAGINATION_BINS` (ITER-11, WS-2)
+
+The diversity bins the archive files cells in are **configurable**, and the default is exactly the
+closed five-dimension space every stored row was written against:
+
+```bash
+# unset (or empty) ⇒ the closed defaults, byte for byte
+# plain form: EXTEND/OVERRIDE — a default dimension's bins are replaced, a new key is APPENDED
+IMAGINATION_BINS={"mechanism":["a","b"],"risk":["low","high"]}
+# structured form: REPLACE the default dimensions entirely
+IMAGINATION_BINS={"dimensions":{"mechanism":["a"],"risk":["low"]},"replace":true}
+```
+
+Fail-closed, and never silent:
+
+- a config that is not JSON, not an object, over 8192 characters, with a malformed or reserved
+  dimension name (`unclassified`, `dimensions`, `replace`), with a name that resolves through
+  `Object.prototype` (`constructor`, `toString`, `__proto__` — refused as `prototype_dimension` /
+  `prototype_bin` for the same reason: a lookup for such a name reads the prototype, not the space),
+  with bins that are not lowercase slugs, with an empty/duplicated list, with the reserved
+  `unclassified` bin, with more than 64 bins per dimension or more than 16 dimensions is **refused by
+  name** and the DEFAULTS STAY IN FORCE — a refused config can never narrow the space (which would
+  strand stored cells) or widen it;
+- the refusal is visible on this view: `descriptor_space.refused` (code + reason), beside the active
+  `dimensions`, `bins_per_dimension` and `possible_cells`;
+- a stored cell whose dimensions are not in the ACTIVE space is **counted**
+  (`archive` view → `coverage.scan.cells_unknown_dimension`) and left out of the occupancy maps
+  instead of being folded into a lookalike dimension, and the baton compiler drops such a gap as
+  `dropped_unknown_dimension`. Changing the space therefore never rewrites history — it moves which
+  cells the engine can address from here on.
+
+## Deprecation telemetry of the legacy personality record (ITER-11, WS-3)
+
+The brief's §6.2 asks the changed personality path to "emit deprecation telemetry, not hard
+failures". With `PER_IDENTITY_PERSONALITY` **on**, the server counts the requests that are still
+served by the **legacy global record**: `legacy_read` (the identity has no record, so resolution fell
+back), `no_user_id_path` (a request that named no identity of its own) and `legacy_write` (a write
+that resolved back to the legacy key). The counters are:
+
+- **bounded by construction** — one row per `{identity, kind, UTC day}` in
+  `personality_deprecation_events`, so a flood adds no rows at all;
+- **TTL'd** — `expires_at` is stamped 30 days out and a TTL index is installed, and reads filter
+  expired rows in code as well, so the count is right on a store without TTL enforcement;
+- **rate-limited** — at most one write per `{identity, kind}` per minute, so a hot read path pays
+  almost nothing;
+- **surfaced here**: `deprecation_telemetry` (`events`, `by_kind`, `rows`, `identities`, `ttl_days`,
+  `basis`). A non-zero `legacy_read` means a consumer has not moved to its identity record yet — the
+  flag-off path itself is NOT a deprecation and counts nothing.
+- **Pinned like every other view** (ITER-11 refinement): the counters are PER IDENTITY, so the read
+  is the caller's own identity by default — an untrusted caller's `user_id` and `all_identities` are
+  ignored, and it never sees another identity's counts. A **trusted** caller may read exactly one
+  identity with `?user_id=<identity>` or, with `?all_identities=1`, the cross-identity total; the
+  payload states which with `scope` (`caller` / `named` / `all`, and `scope.identities`), both at the
+  top level and inside `deprecation_telemetry`. `/rollout` is the only view whose flag and
+  kill-switch blocks span no identity at all — the `scope` it reports is the scope of its
+  deprecation-count block.
+
+They are written by the same read/write paths that serve the bridge, so the number answers "is
+anything still reading the old key?" with evidence rather than with a promise.
+
 ## Rollback commands
 
 These are the same three commands the dashboard's Rollout view (`GET /api/v1/imagination/rollout`,
@@ -159,6 +246,17 @@ disabling the flags removes the surface without touching stored data:
 
 ```bash
 echo 'FOCUSED_IMAGINATION=' >> .env && docker compose up -d --force-recreate --wait server
+```
+
+**1a. Roll back STAGE 1 only (per-identity personality).** The stage-1 flag has its own documented
+command — the Rollout view hands it out as
+`rollback.personality_flag_off_command`, and the executed rollback test
+(`tests/unit/personality-rollback.test.ts`) runs exactly this command against a temporary `.env`
+before proving the legacy read/write path is byte-identical to the pre-feature shape. Removing the
+flag returns resolution and writes to the legacy global record and leaves stage 2 alone:
+
+```bash
+sed -i.bak 's/^PER_IDENTITY_PERSONALITY=.*/PER_IDENTITY_PERSONALITY=/' .env && docker compose up -d --force-recreate --wait server
 ```
 
 To clear a flag that was explicitly enabled rather than append an empty line:
@@ -223,6 +321,13 @@ The Rollout view is the single place to read all of this at once:
 5. **`time_to_next_viable_direction`** — the plateau trigger working as designed: the gap between the
    trigger and the first admitted candidate.
 6. **`agent_divergence` vs `agent_divergence_same_mode_control`** — a team that agrees as much as one
-   mode would is not a team; this is the stage-4 gate.
+   mode would is not a team; this is the stage-4 gate. The exit-criterion measurement in
+   `server/tests/unit/cognitive-team.test.ts` reports three same-mode controls (all philosopher, all
+   analyst, and all analyst under a **varied seed**) beside the three-mode treatment, plus the
+   OPERATOR-plan divergence of each. **Statement-level magnitudes there are stub-determined**: the
+   model is a scripted stub whose text depends only on the operator family, so the numbers show the
+   plumbing (modes ⇒ different operators ⇒ different text) and are not evidence that a real model's
+   ideas diverge. The operator-plan numbers and the recorded baseline in
+   `docs/IMAGINATION-BASELINE.md` carry the same warning.
 7. **`personality_stability.violations`** — expected 0. A non-zero value is a finding: an envelope or
    mode assignment no longer re-verifies (the `by_code` breakdown names which check refused it).

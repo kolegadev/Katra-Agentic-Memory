@@ -443,3 +443,242 @@ export interface DistillationResult {
   candidates: CandidateSkillSpec[];
   errors: string[];
 }
+
+// ── ITER-11: the verification, learning and telemetry artifacts ─────────────
+//
+// The brief's §6.1 item 5 asks for the new artifacts to exist as TYPES with
+// validation, not only as module-local shapes. Everything below is one of the
+// artifacts ITER-11 introduces; each carries its bounds so a reader (and a
+// validator) can see what "bounded" means for that row. None of them is ever
+// shared: all five are personal kinds (see `write-scope-policy.ts`).
+
+/** The bounds every new artifact is validated against. */
+export const ITER11_ARTIFACT_BOUNDS = {
+  /** How many failure-signature rows one {identity, mission} keeps. */
+  max_failure_signatures: 48,
+  /** How many trace-ready salience inputs one identity keeps. */
+  max_trace_ready_inputs: 100,
+  /** How many personality delta proposals one identity keeps. */
+  max_delta_proposals: 50,
+  /** The note/detail bound shared by the new rows. */
+  max_detail_chars: 500,
+} as const;
+
+/** Why a candidate's test failed — a slug, never free text. */
+export interface IdeaFailureSignature {
+  schema_version: '1.0';
+  kind: 'failure_signature';
+  signature_id: string;
+  user_id: string;
+  mission_id: string;
+  seed_id: string | null;
+  operator: string | null;
+  signature: string;
+  detail: string | null;
+  count: number;
+  first_seen_at: string;
+  last_seen_at: string;
+}
+
+/** The test-run tally behind a signature. */
+export interface IdeaTestVerdict {
+  seed_id: string;
+  operator: string | null;
+  rank: number;
+  cheapest_test: string;
+  expected_information_gain: number;
+  cost: number;
+  outcome: 'useful_information' | 'mere_variance' | 'unnecessary_cost';
+  recorded_at: string;
+}
+
+/** One bounded personality delta PROPOSAL (never applied autonomously). */
+export interface PersonalityDeltaProposalRow {
+  proposal_id: string;
+  user_id: string;
+  status: 'proposed' | 'refused';
+  dimension: string | null;
+  direction: 'increase' | 'decrease' | null;
+  applied: false;
+  autonomous_application: 'forbidden';
+  created_at: string;
+}
+
+/** One counted read of the legacy global personality record. */
+export interface PersonalityDeprecationEventRow {
+  event_key: string;
+  user_id: string;
+  kind: 'legacy_read' | 'no_user_id_path' | 'legacy_write';
+  count: number;
+  first_seen_at: string;
+  last_seen_at: string;
+  expires_at: string;
+}
+
+/**
+ * A salience computation stamped for one identity and persisted so the trace
+ * producer can cite it WITHOUT the fast ingestion gate changing: numbers only,
+ * no statement text, no journal or reflection material.
+ */
+export interface TraceReadySalienceInput {
+  schema_version: '1.0';
+  kind: 'salience_input';
+  input_id: string;
+  user_id: string;
+  mission_id: string | null;
+  meta_state: string;
+  signals: Record<string, number>;
+  weights: Record<string, number>;
+  score: number;
+  tier: 'high' | 'medium' | 'low';
+  threshold: number;
+  created_at: string;
+}
+
+/** One bounded novelty-drive adjustment derived from coverage and outcomes. */
+export interface NoveltyReplenishment {
+  user_id: string;
+  mission_id: string | null;
+  before: number;
+  after: number;
+  applied: number;
+  coverage_component: number;
+  waste_component: number;
+  useful_component: number;
+  bound: number;
+  basis: string;
+}
+
+export interface ValidationResult {
+  valid: boolean;
+  errors: string[];
+}
+
+function isNonEmptyString(value: unknown): boolean {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function checkKeys(
+  row: Record<string, unknown>,
+  required: ReadonlyArray<[string, (value: unknown) => boolean, string]>,
+): string[] {
+  const errors: string[] = [];
+  for (const [key, test, expectation] of required) {
+    if (!test(row[key])) errors.push(`${key} ${expectation}`);
+  }
+  return errors;
+}
+
+const isStringOrNull = (value: unknown): boolean => value === null || typeof value === 'string';
+const isCount = (value: unknown): boolean => Number.isInteger(value) && Number(value) >= 0;
+const isSlug = (value: unknown): boolean => typeof value === 'string' && /^[a-z][a-z0-9_]{0,63}$/.test(value);
+const isIsoish = (value: unknown): boolean => typeof value === 'string' && Number.isFinite(Date.parse(value));
+
+/** Validate one persisted failure signature (bounds included). */
+export function validateFailureSignature(row: unknown): ValidationResult {
+  if (!row || typeof row !== 'object') return { valid: false, errors: ['row is not an object'] };
+  const record = row as Record<string, unknown>;
+  const errors = checkKeys(record, [
+    ['signature_id', isNonEmptyString, 'must be a non-empty string'],
+    ['user_id', isNonEmptyString, 'must be a non-empty string'],
+    ['mission_id', isNonEmptyString, 'must be a non-empty string'],
+    ['signature', isSlug, 'must be a lowercase slug'],
+    ['seed_id', isStringOrNull, 'must be a string or null'],
+    ['operator', isStringOrNull, 'must be a string or null'],
+    ['count', isCount, 'must be a non-negative integer'],
+    ['first_seen_at', isIsoish, 'must be an ISO timestamp'],
+    ['last_seen_at', isIsoish, 'must be an ISO timestamp'],
+  ]);
+  if (Number(record.count) > ITER11_ARTIFACT_BOUNDS.max_failure_signatures * 1000) {
+    errors.push(`count ${record.count} exceeds the documented sanity bound`);
+  }
+  if (record.detail !== null && record.detail !== undefined && String(record.detail).length > ITER11_ARTIFACT_BOUNDS.max_detail_chars) {
+    errors.push(`detail exceeds ${ITER11_ARTIFACT_BOUNDS.max_detail_chars} characters`);
+  }
+  return { valid: errors.length === 0, errors };
+}
+
+/** Validate one trace-ready salience input (numbers only, never text). */
+export function validateTraceReadySalienceInput(row: unknown): ValidationResult {
+  if (!row || typeof row !== 'object') return { valid: false, errors: ['row is not an object'] };
+  const record = row as Record<string, unknown>;
+  const errors = checkKeys(record, [
+    ['input_id', isNonEmptyString, 'must be a non-empty string'],
+    ['user_id', isNonEmptyString, 'must be a non-empty string'],
+    ['mission_id', isStringOrNull, 'must be a string or null'],
+    ['meta_state', isNonEmptyString, 'must be a non-empty string'],
+    ['score', (value) => Number.isFinite(Number(value)), 'must be a finite number'],
+    ['threshold', (value) => Number.isFinite(Number(value)), 'must be a finite number'],
+    ['tier', (value) => value === 'high' || value === 'medium' || value === 'low', 'must be high|medium|low'],
+    ['created_at', isIsoish, 'must be an ISO timestamp'],
+  ]);
+  for (const key of ['signals', 'weights'] as const) {
+    const value = record[key];
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      errors.push(`${key} must be an object of numbers`);
+      continue;
+    }
+    for (const [name, amount] of Object.entries(value as Record<string, unknown>)) {
+      if (!Number.isFinite(Number(amount))) errors.push(`${key}.${name} is not a number`);
+    }
+  }
+  // Numbers only: a statement or narrative field would make this row a carrier
+  // for private text, which is exactly what "trace-ready inputs" must not be.
+  for (const forbidden of ['statement', 'narrative', 'text', 'reflection', 'journal']) {
+    if (forbidden in record) errors.push(`row carries a '${forbidden}' field — trace-ready inputs are numbers only`);
+  }
+  return { valid: errors.length === 0, errors };
+}
+
+/** Validate one novelty-drive adjustment record. */
+export function validateNoveltyReplenishment(row: unknown): ValidationResult {
+  if (!row || typeof row !== 'object') return { valid: false, errors: ['row is not an object'] };
+  const record = row as Record<string, unknown>;
+  const errors = checkKeys(record, [
+    ['user_id', isNonEmptyString, 'must be a non-empty string'],
+    ['mission_id', isStringOrNull, 'must be a string or null'],
+    ['before', (value) => Number.isFinite(Number(value)), 'must be a finite number'],
+    ['after', (value) => Number.isFinite(Number(value)), 'must be a finite number'],
+    ['applied', (value) => Number.isFinite(Number(value)), 'must be a finite number'],
+    ['bound', (value) => Number.isFinite(Number(value)) && Number(value) > 0, 'must be a positive number'],
+  ]);
+  if (Math.abs(Number(record.applied)) > Number(record.bound) + 1e-9) {
+    errors.push(`applied ${record.applied} exceeds its own bound ${record.bound}`);
+  }
+  return { valid: errors.length === 0, errors };
+}
+
+/** Validate one personality delta proposal row. */
+export function validateDeltaProposalRow(row: unknown): ValidationResult {
+  if (!row || typeof row !== 'object') return { valid: false, errors: ['row is not an object'] };
+  const record = row as Record<string, unknown>;
+  const errors = checkKeys(record, [
+    ['proposal_id', isNonEmptyString, 'must be a non-empty string'],
+    ['user_id', isNonEmptyString, 'must be a non-empty string'],
+    ['status', (value) => value === 'proposed' || value === 'refused', 'must be proposed|refused'],
+    ['dimension', isStringOrNull, 'must be a string or null'],
+    ['applied', (value) => value === false, 'must be false (a proposal is never applied autonomously)'],
+    ['autonomous_application', (value) => value === 'forbidden', "must be 'forbidden'"],
+    ['created_at', isIsoish, 'must be an ISO timestamp'],
+  ]);
+  return { valid: errors.length === 0, errors };
+}
+
+/** Validate one counted deprecation-telemetry row. */
+export function validateDeprecationEventRow(row: unknown): ValidationResult {
+  if (!row || typeof row !== 'object') return { valid: false, errors: ['row is not an object'] };
+  const record = row as Record<string, unknown>;
+  const errors = checkKeys(record, [
+    ['event_key', isNonEmptyString, 'must be a non-empty string'],
+    ['user_id', isNonEmptyString, 'must be a non-empty string'],
+    ['kind', (value) => value === 'legacy_read' || value === 'no_user_id_path' || value === 'legacy_write', 'must be a known kind'],
+    ['count', (value) => Number.isInteger(value) && Number(value) >= 1, 'must be an integer ≥ 1'],
+    ['first_seen_at', isIsoish, 'must be an ISO timestamp'],
+    ['last_seen_at', isIsoish, 'must be an ISO timestamp'],
+    ['expires_at', isIsoish, 'must be an ISO timestamp (the row is TTL-able)'],
+  ]);
+  if (isIsoish(record.first_seen_at) && isIsoish(record.expires_at) && Date.parse(String(record.expires_at)) <= Date.parse(String(record.first_seen_at))) {
+    errors.push('expires_at must be after first_seen_at');
+  }
+  return { valid: errors.length === 0, errors };
+}

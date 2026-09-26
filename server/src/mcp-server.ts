@@ -95,6 +95,8 @@ import {
   perIdentityPersonalityEnabled,
   resolvePersonalityConfig,
 } from './services/integration/personality-config-service.js';
+// ITER-11 (§6.2): the deprecation telemetry of the legacy global record.
+import { notePersonalityDeprecation } from './services/integration/personality-deprecation-telemetry.js';
 
 const SCHEDULER_TOOL_NAMES = ['create_cognitive_work_item', 'get_cognitive_queue', 'explain_scheduler_decision'];
 const UNCERTAINTY_TOOL_NAMES = [
@@ -1312,6 +1314,17 @@ export async function handleGetMyPersonality(args: unknown): Promise<TextContent
   const userId = resolveUserId(input.user_id);
   const db = get_database();
   const resolved = await resolvePersonalityConfig(db, userId);
+  // ITER-11 (§6.2) TELEMETRY: the MCP surface is the other consumer of the
+  // legacy key. A call that named no identity, or one served by the legacy
+  // global record, is counted (bounded, TTL'd) — never a failure.
+  if (perIdentityPersonalityEnabled()) {
+    if (!input.user_id) {
+      await notePersonalityDeprecation(db, { userId, kind: 'no_user_id_path' });
+    }
+    if (resolved.origin === 'legacy') {
+      await notePersonalityDeprecation(db, { userId, kind: 'legacy_read' });
+    }
+  }
   const effective = effectivePersonalityConfig(resolved);
   const activeMode = await readNewestLiveMode(db, userId);
   return [{

@@ -610,6 +610,132 @@ describe('Security: imagination observability scoping (ITER-9)', () => {
     expect(source).not.toMatch(/recordExperimentObservation\([\s\S]{0,400}user_id:\s*(args|raw)/);
   });
 
+  it('the ITER-11 stores are private by construction and refuse a foreign writer', async () => {
+    // ITER-11 adds three small stores — the failure signatures, the bounded
+    // delta proposals and the deprecation counters — plus the trace-ready
+    // salience inputs. None of them may carry a shared scope, and a foreign
+    // caller may not write into another identity's rows.
+    securityStore.db = new FakeDb();
+    const { resolveWriteScope, PERSONAL_KINDS } = await import('../../src/services/memory/write-scope-policy.js');
+
+    for (const kind of [
+      'idea_failure_signatures',
+      'personality_delta_proposals',
+      'personality_deprecation_events',
+      'salience_inputs',
+    ]) {
+      expect(PERSONAL_KINDS, `${kind} must stay a personal kind`).toContain(kind);
+      // An EXPLICIT shared request still resolves private: the policy is the
+      // authority, not the caller's wish.
+      const shared = resolveWriteScope({
+        caller: { user_id: OWNER, trusted: true },
+        kind,
+        requested: { shared_id: 'my-team' },
+      });
+      expect(shared.shared_id).toBeNull();
+      expect(shared.user_id).toBe(OWNER);
+    }
+
+    const { recordFailureSignature } = await import(
+      '../../src/services/processing/idea-verification-service.js'
+    );
+    const { proposeBoundedDelta } = await import(
+      '../../src/services/integration/personality-config-service.js'
+    );
+    const { notePersonalityDeprecation } = await import(
+      '../../src/services/integration/personality-deprecation-telemetry.js'
+    );
+
+    // A foreign caller is refused BY NAME on each write path…
+    const signature = await recordFailureSignature(securityStore.db.asDb(), {
+      userId: OWNER,
+      missionId: 'mission_security',
+      signature: 'unnecessary_cost_assumption_inversion',
+      caller: { user_id: INTRUDER, trusted: false },
+    });
+    expect(signature.recorded).toBe(false);
+    expect(signature.code).toBe('untrusted_caller');
+
+    const proposal = await proposeBoundedDelta(
+      securityStore.db.asDb(),
+      OWNER,
+      [
+        { dimension: 'relevance_multiplier', direction: 'increase' },
+        { dimension: 'relevance_multiplier', direction: 'increase' },
+      ],
+      { caller: { user_id: INTRUDER, trusted: false } },
+    );
+    expect(proposal.status).toBe('refused');
+    expect(proposal.code).toBe('untrusted_caller');
+
+    // The signature store holds nothing (the refusal is not recorded there),
+    // and the proposal store holds the AUDIT row of the refusal — owned by the
+    // identity the proposal was for, never by the caller who tried to write it.
+    expect(securityStore.db.collection('idea_failure_signatures').docs).toHaveLength(0);
+    const proposalRows = securityStore.db.collection('personality_delta_proposals').docs as Array<Record<string, unknown>>;
+    expect(proposalRows).toHaveLength(1);
+    expect(proposalRows[0]).toMatchObject({ user_id: OWNER, status: 'refused', code: 'untrusted_caller' });
+    expect('shared_id' in proposalRows[0]).toBe(false);
+
+    // The telemetry counts by the identity it is GIVEN (an operator passes the
+    // identity explicitly at the call site), so the assertion is about the row's
+    // scope rather than about a caller: no shared_id, ever.
+    const noted = await notePersonalityDeprecation(securityStore.db.asDb(), {
+      userId: OWNER,
+      kind: 'legacy_read',
+      now: () => '2026-09-26T10:00:00.000Z',
+    });
+    expect(noted.recorded).toBe(true);
+    const telemetry = securityStore.db.collection('personality_deprecation_events').docs as Array<Record<string, unknown>>;
+    expect(telemetry).toHaveLength(1);
+    expect(telemetry[0].user_id).toBe(OWNER);
+    expect('shared_id' in telemetry[0]).toBe(false);
+  });
+
+  it('the rollout view pins the deprecation counters — an untrusted caller cannot read another identity’s', async () => {
+    // ITER-11 closes DoD #7 by surfacing the legacy-personality deprecation
+    // counters on /rollout. Those counters are PER IDENTITY, so the view is no
+    // longer an identity-free read: an untrusted caller sees only its own counts
+    // (never the owner's — not by naming it, not by asking for everything), and
+    // only a trusted caller can widen the read.
+    securityStore.db = new FakeDb();
+    const counters = [
+      { user_id: OWNER, kind: 'legacy_read', count: 5 },
+      { user_id: INTRUDER, kind: 'legacy_read', count: 1 },
+      { user_id: 'operator', kind: 'no_user_id_path', count: 2 },
+    ];
+    for (const row of counters) {
+      securityStore.db.collection('personality_deprecation_events').docs.push({
+        event_key: `deprecation:${row.kind}:${row.user_id}:2026-09-26`,
+        ...row,
+        first_seen_at: '2026-09-26T10:00:00.000Z',
+        last_seen_at: '2026-09-26T10:00:00.000Z',
+        expires_at: '2026-10-26T10:00:00.000Z',
+      });
+    }
+
+    // Untrusted: own counts only, and the payload SAYS so.
+    for (const query of ['', `?user_id=${OWNER}`, '?all_identities=1', `?user_id=${OWNER}&all_identities=1`]) {
+      const { body } = await get(`/rollout${query}`, { user_id: INTRUDER, trusted: false });
+      expect(body.deprecation_telemetry.events, query).toBe(1);
+      expect(body.deprecation_telemetry.identities, query).toEqual([INTRUDER]);
+      expect(body.scope, query).toEqual({ kind: 'caller', identities: 1 });
+      expect(body.deprecation_telemetry.by_kind, query).toEqual({ legacy_read: 1 });
+      expect(JSON.stringify(body), `${query} leaked another identity`).not.toContain(OWNER);
+    }
+
+    // A trusted caller's DEFAULT is still its own identity, not everything…
+    const trustedOwn = await get('/rollout', { user_id: 'operator', trusted: true });
+    expect(trustedOwn.body.deprecation_telemetry.events).toBe(2);
+    expect(trustedOwn.body.scope).toEqual({ kind: 'caller', identities: 1 });
+
+    // …and the explicit opt-in gets the cross-identity view, which names its scope.
+    const all = await get('/rollout?all_identities=1', { user_id: 'operator', trusted: true });
+    expect(all.body.deprecation_telemetry.events).toBe(8);
+    expect(all.body.deprecation_telemetry.identities).toEqual([OWNER, INTRUDER, 'operator'].sort());
+    expect(all.body.scope).toEqual({ kind: 'all', identities: 3 });
+  });
+
   it('the metrics tool pins an untrusted caller to its own identity', async () => {
     const { resolveMetricsUserId } = await import(
       '../../src/services/processing/imagination-observability-tools.js'
