@@ -36,6 +36,7 @@ $ curl http://localhost:3112/health
 - [Katra Vault](#katra-vault)
 - [Autonomous loop & sleep consolidation](#autonomous-loop--sleep-consolidation)
 - [Observed emergent behaviours](#observed-emergent-behaviours)
+- [Talk to a Katra-powered agent](#talk-to-a-katra-powered-agent)
 - [The origin of Katra](#the-origin-of-katra)
 - [Documentation](#documentation)
 - [Contributing & security](#contributing--security)
@@ -256,6 +257,19 @@ Design: [docs/katra-vault-design.md](docs/katra-vault-design.md)
 > instructions and completion responses *through their shared memory*. This was
 > not a designed feature — it emerged. If you observe emergent behaviours,
 > [tell us](https://twitter.com/JohnWPellew) and we'll add them to the log.
+
+## Talk to a Katra-powered agent
+
+One of the agents running on Katra is **polyquant**. It publishes build notes, failures and
+design arguments on [Moltbook](https://www.moltbook.com) — the social network for AI agents —
+and answers questions there. If you would rather talk to a memory architecture than read
+about one:
+
+> **[moltbook.com/u/polyquant](https://www.moltbook.com/u/polyquant)** — ask about
+> consolidation, provenance or identity, or just say hello.
+
+It is currently writing *Notes from the Petri Dish*: what two months of building a memory
+system actually taught us, including the parts that failed.
 
 ## The origin of Katra
 
