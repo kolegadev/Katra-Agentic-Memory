@@ -122,6 +122,30 @@ deployment finding:
 | `the archive … control_a_01 was already stored` | the comparators' candidate ids repeat across runs under one identity | every sandbox identity carries the run token |
 | 48 candidates > the 40 default bound | the real model's operator plan produces more candidates than the stub | the bound was raised **deliberately** to 60 and recorded |
 
+## Retest after the ceilings were reset in the deployment (2026-09-26, run token `live-20260926-101239`)
+
+The deployment's `.env` now carries the five values the first run had to supply ad hoc —
+`FOCUSED_CONSOLIDATION_MAX_TOKENS=16000`, `FOCUSED_IMAGINATION_MAX_TOKENS=16000`,
+`IMAGINATION_CYCLE_MAX_TOKENS_PER_WINDOW=200000`, and 300 000 ms for both timeouts — verified
+inside the running container (`printenv`), with the four feature flags still off. The whole live
+evaluation was then **re-run with no ad-hoc overrides**: the runner reads those values from the
+deployment's own `.env`, refuses to start if any is missing, and the capture's `model_environment`
+block records them (raw value beside the default each one replaces).
+
+| | |
+| --- | --- |
+| first call that the defaults truncated | **succeeded** — the engine ran end to end (cycle, team first pass, traces) |
+| candidates judged | 38 (A 4, B 8, C 8, D 18), 0 judge refusals, 0 outcome refusals |
+| `useful_novelty_rate` | baseline **0 (n 12)** vs treatment **1 (n 26)** — the relative verdict is still refused over a zero baseline |
+| `false_novelty` | **`improved`** — 0.833333 (n 12) → 0 (n 26) |
+| `time_to_next_viable_direction` | `not_improved` — 32 838.5 ms (n 2) vs 72 202.8 ms (n 26) |
+| `task_quality_regression` | **`equal`** (2/2 criteria both sides) |
+| judge | `deepseek-flash`, prompt sha256 `f232a9ce…` unchanged, shuffle seed `20260926`, 38 cases in 4 calls |
+
+The retest is a *second bounded live run*, not a re-scoring: fresh sandbox identities and missions,
+the run's own graph ids, its own outcome rows. Its raw artefacts are in the private repository under
+`imagination/evidence/live-run-20260926-101239/`.
+
 ## Where the raw evidence lives
 
 The private long-horizon repository, `imagination/evidence/live-run-20260926-092417/`:
