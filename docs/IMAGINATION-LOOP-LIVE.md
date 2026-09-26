@@ -65,6 +65,36 @@ and failed-read cases use), so a reader branching on the code alone read "there 
 section that had just included one. `BatonResumeCode` gained `'included'`, the success path sets it,
 and the resume test pins it.
 
+## The queued hypotheses, tested (2026-09-26)
+
+The run left eight hypotheses queued. They were taken to the mission's own artifacts by three independent readers and recorded:
+three refused as stated, three undecidable from the record as it stands, two carrying real signal — one confirming a proposed enforcement mechanism *and* naming the case it cannot see, one
+narrowing a closure mechanism to "supported in mechanism, refuted in locating" — plus one genuine finding from an otherwise undecidable pair: provenance the mission cites is absent from its
+own archive, and its weight-bearing witnesses call out-of-tree binaries with no recipe, i.e. a preservation debt rather than a growth-boundary effect. Divergence is cheap to test and mostly
+wrong; refutations are recorded rather than tuned. The results carry project content, so they are filed in the private run record and not here.
+
+## Stage 2 switched on, and what the tick did on its own (2026-09-26)
+
+Stage 2 of `docs/IMAGINATION-ROLLOUT.md` was then opened as a **canary**: `FOCUSED_IMAGINATION=1` in
+the deployment (the other three flags still off), with `KATRA_ALLOCATION_CANDIDATES` scoped to the
+mission's owner — the only knob that decides which identities the executive serves, set so no cycle
+can land on another project's or a scratch mission. The ceilings the gate requires were already set.
+
+Two ticks later the deployment had run **two cycles by itself**, both `trigger: executive_tick`, one
+per tick, on the real mission: stops `coverage_target_reached` (8/8 seeds, +8 cells, 83 788 tokens)
+then `budget_exhausted` (8/8, +8 cells, 92 431) — after which the window budget refused anything
+further until it rolls. No other mission was touched, and with `CREATIVE_BATON_PROMOTION` off the
+new batons stayed private to the owner (the promoted one remains the live run's).
+
+The deployment's own views then read stage 2's gate: `useful_novelty_rate` **ok** (8 useful of 8
+recorded, n 8), `false_novelty` **ok** (0 of 24), `cost_of_novelty` **ok**, `time_to_next_viable_direction`
+**ok** (median 111 615 ms, n 3), with the rollout view showing the flag on and the others off.
+
+Two honest notes: the tick does not judge what it generates (16 candidates from those cycles await a
+verdict, which is why `cost_of_novelty` reads high), and the canary's scoped identity list is also
+the executive's task-allocation candidate set — restoring the default is one line, recorded in the
+private run record.
+
 ## What this run does and does not establish
 
 - It establishes that the **loop's own path works on a real mission with real history**: consolidation
