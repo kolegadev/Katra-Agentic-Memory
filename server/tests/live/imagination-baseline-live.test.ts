@@ -48,7 +48,8 @@
  * IT IS BOUNDED. `IMAGINATION_BASELINE_MAX_CANDIDATES` (default 40) caps how many
  * candidates may be judged: the driver counts them BEFORE the first judge call
  * and refuses by name if the run would exceed the bound. The judge's calls are
- * batched (`JUDGE_BATCH_SIZE` cases per call) and every call's token usage is
+ * batched (`JUDGE_BATCH_SIZE` cases per call unless `IMAGINATION_BASELINE_JUDGE_BATCH_SIZE`
+ * overrides it; the resolved size and every call's per-batch verdict/refusal counts and
  * recorded. Nothing is deleted — the capture carries a `written` summary
  * (collection → count) so the rows can be cleaned up afterwards, deliberately,
  * by a person.
@@ -858,15 +859,30 @@ describe.skipIf(!LIVE)('imagination baseline — the bounded LIVE run (DoD #8)',
         );
 
         // ── the judge: the REAL model, in bounded batches ──────────────────
+        //
+        // The batch size is an EXPERIMENT PARAMETER, recorded in the capture. It
+        // became configurable because of a measured failure: with every candidate
+        // model-written (the comparators included, after the control fix) a
+        // ten-case batch of this reasoning model spent its whole output ceiling on
+        // reasoning and returned nothing usable, so the whole batch was refused by
+        // name (live-20260926-140241: 2 of 4 batches, 22 of 35 cases). A smaller
+        // batch leaves each case more room; the ceiling override
+        // (IMAGINATION_BASELINE_JUDGE_MAX_TOKENS) raises it further.
+        const judgeBatchSize = (): number => {
+          const override = Number(process.env.IMAGINATION_BASELINE_JUDGE_BATCH_SIZE);
+          if (Number.isFinite(override) && override >= 1) return Math.min(20, Math.floor(override));
+          return JUDGE_BATCH_SIZE;
+        };
+        const batchSize = judgeBatchSize();
         const batches: BlindCase[][] = [];
-        for (let index = 0; index < cases.length; index += JUDGE_BATCH_SIZE) {
-          batches.push(cases.slice(index, index + JUDGE_BATCH_SIZE));
+        for (let index = 0; index < cases.length; index += batchSize) {
+          batches.push(cases.slice(index, index + batchSize));
         }
         const judgeModel = config.judge ?? model.model;
         const judgeCalls: Row[] = [];
         const verdicts: ReturnType<typeof parseJudgeReply>['verdicts'] = [];
         const judgeRefusals: string[] = [];
-        mark('judge started', `${batches.length} batch(es) of at most ${JUDGE_BATCH_SIZE} case(s) with ${judgeModel}`);
+        mark('judge started', `${batches.length} batch(es) of at most ${batchSize} case(s) with ${judgeModel}`);
         for (const [index, batch] of batches.entries()) {
           const prompt = judgePrompt(batch);
           const usageBefore = usageSnapshot();
@@ -889,11 +905,14 @@ describe.skipIf(!LIVE)('imagination baseline — the bounded LIVE run (DoD #8)',
             batch: index + 1,
             model: judgeModel,
             case_ids: batch.map((item) => item.case_id),
+            max_tokens: judgeMaxTokens(batch.length),
             usage: {
               input_tokens: callUsage.input_tokens,
               output_tokens: callUsage.output_tokens,
               requests: callUsage.requests,
             },
+            verdicts: parsed.verdicts.length,
+            refusals: parsed.refusals.length,
             refused: parsed.refusals,
             reply: raw,
           });
@@ -1043,7 +1062,7 @@ describe.skipIf(!LIVE)('imagination baseline — the bounded LIVE run (DoD #8)',
           system_prompt: JUDGE_SYSTEM_PROMPT,
           prompt_sha256: judgePromptSha256(),
           shuffle_seed: config.shuffleSeed,
-          batch_size: JUDGE_BATCH_SIZE,
+          batch_size: batchSize,
           model: judgeModel,
           model_override: config.judge,
           run_token: run,
@@ -1144,7 +1163,7 @@ describe.skipIf(!LIVE)('imagination baseline — the bounded LIVE run (DoD #8)',
               model_override: config.judge,
               prompt_sha256: judgePromptSha256(),
               shuffle_seed: config.shuffleSeed,
-              batch_size: JUDGE_BATCH_SIZE,
+              batch_size: batchSize,
               cases: cases.length,
               judged: verdicts.length,
               refused: judgeRefusals.length,
