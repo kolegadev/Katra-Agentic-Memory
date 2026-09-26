@@ -245,7 +245,7 @@ interface LLMProvider {
 }
 
 // Built-in providers:
-// - DeepSeek      (default model: deepseek-v4-flash)
+// - DeepSeek      (default model: deepseek-flash)
 // - OpenAI        (gpt-4o)
 // - Moonshot      (moonshot-v1-8k)
 // - Ollama        (local, qwen2.5:3b)

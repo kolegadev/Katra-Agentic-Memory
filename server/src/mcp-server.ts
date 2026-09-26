@@ -3092,7 +3092,7 @@ async function handleConfigureLLM(args: unknown): Promise<TextContent[]> {
 
   // Apply defaults for known providers
   const defaults: Record<string, { base_url: string; model: string }> = {
-    deepseek: { base_url: 'https://api.deepseek.com/v1', model: 'deepseek-v4-flash' },
+    deepseek: { base_url: 'https://api.deepseek.com/v1', model: 'deepseek-flash' },
     openai:   { base_url: 'https://api.openai.com/v1',   model: 'gpt-4o' },
     moonshot: { base_url: 'https://api.moonshot.cn/v1',   model: 'moonshot-v1-8k' },
     ollama:   { base_url: 'http://host.docker.internal:11434/v1', model: 'llama3.2' },

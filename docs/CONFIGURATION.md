@@ -80,7 +80,7 @@ Katra supports any OpenAI-compatible LLM provider: **DeepSeek, OpenAI, Moonshot,
 
 | Variable | Description |
 |---|---|
-| `DEEPSEEK_API_KEY` | DeepSeek API key (`DEEPSEEK_BASE_URL`, `DEEPSEEK_MODEL` default `deepseek-v4-flash`) |
+| `DEEPSEEK_API_KEY` | DeepSeek API key (`DEEPSEEK_BASE_URL`, `DEEPSEEK_MODEL` default `deepseek-flash`) |
 | `OPENAI_API_KEY` | OpenAI API key (`OPENAI_BASE_URL`, `OPENAI_MODEL` default `gpt-4o`) |
 | `MOONSHOT_API_KEY` | Moonshot/Kimi API key (`MOONSHOT_BASE_URL`, `MOONSHOT_MODEL` default `moonshot-v1-8k`) |
 | `OLLAMA_API_KEY` | Ollama (value doesn't matter, e.g. `ollama-no-key`); `OLLAMA_BASE_URL` default `http://host.docker.internal:11434/v1`, `OLLAMA_MODEL` default `qwen2.5:3b` |

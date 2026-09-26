@@ -211,7 +211,7 @@ configure_llm(
   provider: "deepseek",
   api_key: "sk-your-key-here",
   base_url: "https://api.deepseek.com/v1",
-  model: "deepseek-v4-flash"
+  model: "deepseek-flash"
 )
 ```
 

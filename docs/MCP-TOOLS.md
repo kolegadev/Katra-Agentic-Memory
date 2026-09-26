@@ -372,7 +372,7 @@ Configure the LLM provider for semantic extraction, auto-journaling, and summari
 
 **Example:**
 ```json
-{"name":"configure_llm","arguments":{"provider":"deepseek","api_key":"sk-...","base_url":"https://api.deepseek.com/v1","model":"deepseek-v4-flash"}}
+{"name":"configure_llm","arguments":{"provider":"deepseek","api_key":"sk-...","base_url":"https://api.deepseek.com/v1","model":"deepseek-flash"}}
 ```
 
 ---

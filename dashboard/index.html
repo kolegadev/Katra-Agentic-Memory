@@ -172,7 +172,7 @@ button{padding:8px 16px;border-radius:var(--radius-sm);border:none;font-size:0.8
       <div class="form-group"><label>Provider</label><select id="llm-provider" onchange="updateLLMDefaults()"><option value="deepseek">DeepSeek</option><option value="openai">OpenAI</option><option value="moonshot">Moonshot / Kimi</option><option value="ollama">Ollama (local)</option><option value="custom">Custom OpenAI-compatible</option></select></div>
       <div class="form-group"><label>API Key</label><input type="password" id="llm-key" placeholder="sk-…"><div class="hint">Stored as SHA-256 hash in MongoDB</div></div>
       <div class="form-group"><label>Base URL</label><input type="text" id="llm-base" placeholder="https://api.deepseek.com/v1"></div>
-      <div class="form-group"><label>Model</label><input type="text" id="llm-model" placeholder="deepseek-chat"></div>
+      <div class="form-group"><label>Model</label><input type="text" id="llm-model" placeholder="deepseek-flash"></div>
       <div class="input-row"><button class="btn btn-primary" onclick="saveLLMConfig()">Save LLM Config</button><button class="btn btn-secondary" onclick="testLLM()">Test Connection</button></div>
       <div id="llm-status" style="margin-top:8px;font-size:0.78rem"></div>
     </div>
@@ -632,7 +632,7 @@ async function rejectTask(taskId) {
 function updateLLMDefaults() {
   const p = document.getElementById('llm-provider').value;
   const defaults = {
-    deepseek: {base:'https://api.deepseek.com/v1', model:'deepseek-chat'},
+    deepseek: {base:'https://api.deepseek.com/v1', model:'deepseek-flash'},
     openai: {base:'https://api.openai.com/v1', model:'gpt-4o-mini'},
     moonshot: {base:'https://api.moonshot.cn/v1', model:'moonshot-v1-8k'},
     ollama: {base:'http://localhost:11434/v1', model:'llama3'},

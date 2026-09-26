@@ -126,7 +126,7 @@ A conversation turn enters through one of:
 - Config stored in `system_settings` collection (key: `llm_config`)
 - Chunks input >6000 chars on paragraph boundaries
 - Uses `response_format: json_object` (falls back to manual JSON extraction)
-- Model: `deepseek-v4-flash` (default), temperature 0.1, max_tokens 1500
+- Model: `deepseek-flash` (default), temperature 0.1, max_tokens 1500
 
 ### 2c. Entity Resolution
 
