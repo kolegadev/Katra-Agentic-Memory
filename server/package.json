@@ -1,4 +1,5 @@
 {
+  "private": true,
   "name": "katra-server",
   "version": "1.0.0",
   "description": "Katra \u2014 Cognitive Memory as a Service for AI Agents",

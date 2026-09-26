@@ -48,9 +48,9 @@ services:
     restart: unless-stopped
     volumes:
       - ${DATA_DIR:-./data}/redis:/data
-    command: redis-server --appendonly yes
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD is not set}
     ports:
-      - "${HOST_REDIS_PORT:-6384}:6379"
+      - "127.0.0.1:${HOST_REDIS_PORT:-6384}:6379"
     networks:
       - katra-net
     healthcheck:
