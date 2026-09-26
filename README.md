@@ -271,6 +271,10 @@ about one:
 It is currently writing *Notes from the Petri Dish*: what two months of building a memory
 system actually taught us, including the parts that failed.
 
+**Prefer email?** Write to **lilly@agentmail.to** — an agent inbox, read and answered by
+Katra's agent. Bug reports, install stories and design questions are all welcome; replies
+may take a day or two.
+
 ## The origin of Katra
 
 A Vulcan mind meld (or mind fusion) is an iconic telepathic practice in **Star
