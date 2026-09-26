@@ -135,6 +135,8 @@ cd server && node scripts/imagination-baseline.mjs          # rewrites docs/IMAG
 Its rows are the collection's own shape with the same derived ids, so `compareExperiment` (and the
 `/experiments/compare` view) reads the recorded baseline unchanged.
 
+**Stage 4's evidence now exists, and its first reading is negative** (2026-09-26, run token `live-20260926-152318`): the A/B carries a same-mode control arm (`same_mode_control_team` — three agents, one mode for all three), judged like every other arm's and excluded from the four-row comparison by the harness's own pools. Against it, the mixed-mode team does **not** diverge more: the shipped metrics service reads a mean pairwise similarity of 0.1358 for the (identity-scoped, therefore pooled) mixed pool against **0.1202** for the control, and the harness's closest-pair Jaccard reads 0 for both arms (its floor — it cannot discriminate model-written text). A scoping defect surfaced with the reading: the service scopes by identity, so a mission-scoped read finds no control at all (`insufficient_data`). The gate is therefore **not** met as written, and stage 4 remains off; the full record is in `docs/IMAGINATION-BASELINE-LIVE.md` and the private run record.
+
 Stages 2–4 are independent flags, but the **gates are not**: promotion (3) only means anything once
 2 has run and written something to promote, and the team (4) is measured over first-pass portfolio
 records that only exist once its own flag is on.

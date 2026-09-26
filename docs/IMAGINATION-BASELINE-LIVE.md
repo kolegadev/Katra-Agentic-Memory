@@ -206,6 +206,56 @@ is the finding that made the judge's batch size an experiment parameter (with ev
 model-written, two ten-case batches spent their whole output ceiling on reasoning and returned nothing
 usable, so 22 of 35 cases were refused by name: recorded, not papered over).
 
+## The same-mode control arm, and a repeat that flips the letter (2026-09-26, run token `live-20260926-152318`)
+
+Two things were added to the instrument and one was learned from running it.
+
+**Arm `E` — the same-mode control.** The brief reads the divergence target as
+`agent_divergence` above `agent_divergence_same_mode_control`, and the shipped metrics service
+computes that control from first-pass records whose agents ALL took one mode. No recorded
+experiment carried one, so the mixed-mode team's divergence had nothing to be read against. Arm `E`
+is three identities with **one mode ('analyst') for all three**, one first pass, judged like every
+other arm's; it takes no part in the four-row comparison (the harness pools A+B vs C+D by its own
+named lists, and the capture records that under `config.excluded_from`). The harness now pairs the
+mixed-mode team arm with it and labels the divergence with the arm's own
+`admission_rule.text_is_scripted` rather than the fixture's hardcoded `stub_determined`.
+
+| reading | mixed-mode team (`D`) | same-mode control (`E`) |
+| --- | --- | --- |
+| harness, closest-pair Jaccard (min over agent pairs) | 0 | 0 — the metric's floor, so it cannot discriminate model-written text |
+| shipped service, mean pairwise similarity, identity-scoped (the two records pooled) | 0.1358 (6 comparisons) | 0.1202 (3) |
+| shipped service, mission-scoped | 0.1513 | `insufficient_data` — the control is recorded on another mission and the service scopes by identity |
+
+So the gate — "the team must diverge more than one mode does" — is **not met** on this reading, and
+the mission-scoped row surfaces a scoping defect worth naming: the pairing the gate assumes
+(arm against its control in one scope) is not how the metric is scoped today. Stage 4 is off; this
+is pre-evidence, recorded rather than assumed.
+
+**The repeat, and the letter.** The same five-arm run also re-ran the comparison itself, with the
+same code as the run above it:
+
+| metric | `live-20260926-141331` | `live-20260926-152318` |
+| --- | --- | --- |
+| `useful_novelty_rate` | **`improved`** — baseline 0.333333 (n 12) vs treatment 1 (n 22) | **`insufficient_data`** — baseline **0** (n 12) vs treatment 1 (n 25) |
+| `false_novelty` | `equal` (0/0) | `equal` (0/0) |
+| `time_to_next_viable_direction` | `not_improved` (53.9 s vs 67.6 s) | `not_improved` (61.9 s vs 65.9 s) |
+| `task_quality_regression` | `equal` | `equal` |
+
+The engine's side is stable — **100% useful in both runs** (22/22, then 25/25). The comparators' is
+not: 4 useful of 12 in one run, 0 of 12 in the other. The decisive row's *verdict* therefore flips
+on the control's variance, because a relative gain cannot be formed over a zero baseline: the bullet
+is met by one run and not by another with identical code. That is a property of the metric and of a
+single bounded run — the absolute contrast (0–33% against 100%) is clear and stable — and it is
+recorded here rather than smoothed. A reader should treat any single run's `improved`/`insufficient_data`
+verdict as one sample of a variable comparison, and the repeats as the thing to commission before
+the letter is relied on.
+
+**Both instruments gained something from the attempt.** The canary judge waited for nothing on its
+first run and refused correctly (`llmService` availability is probed asynchronously — it now waits,
+bounded, like this instrument); and the concurrency instrument's first attempt failed at seeding on
+the *default* consolidation ceiling (2 000 → truncated JSON → refused), which is the ceilings clause
+of the rollout being load-bearing for every instrument, not just this one.
+
 ## Where the raw evidence lives
 
 The private long-horizon repository, `imagination/evidence/live-run-20260926-092417/`:
