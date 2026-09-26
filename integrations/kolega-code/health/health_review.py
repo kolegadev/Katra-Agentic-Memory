@@ -169,6 +169,16 @@ def assess(events: list[dict], window_hours: int) -> dict:
             for h, r in (((e.get("content") or {}).get("checks") or {}).get("dns_probes") or {}).items()
             if not r.get("ok")
         ]
+        # Reason attribution (2026-09-26, Zefir's correction): the problem line
+        # used to show only `dns fails` — a machine degraded by katra
+        # unreachability or bridge alarms then read as a DNS story whenever any
+        # probe in the window had failed. Record the samples' OWN reasons.
+        reason_counts: dict[str, int] = defaultdict(int)
+        for e in evs:
+            for r in (((e.get("content") or {}).get("checks") or {}).get("_reasons") or []):
+                reason_counts[str(r)[:90]] += 1
+        top_reasons = sorted(reason_counts.items(), key=lambda kv: (-kv[1], kv[0]))[:3]
+        reasons_digest = ("; ".join(f"{r} x{n}" for r, n in top_reasons))[:240] or "none"
         # Recovered inside the window? (a resolution we must close with a card)
         recovered = status == "ok" and any(s in ("degraded", "down") for s in statuses[:-1])
         machines[machine] = {
@@ -180,6 +190,7 @@ def assess(events: list[dict], window_hours: int) -> dict:
             "statuses": statuses,
             "degraded_hits": degraded_hits,
             "dns_fails": sorted(set(dns_fails)),
+            "reasons": reasons_digest,
             "kolega_version": (checks.get("kolega") or {}).get("version"),
             "tailscale": (checks.get("tailscale") or {}).get("backend_state"),
             "bridge_user": (checks.get("bridge") or {}).get("config_user"),
@@ -215,7 +226,8 @@ def main() -> int:
         if m["latest_status"] in ("degraded", "down"):
             flag += f" {m['latest_status'].upper()}"
             problems.append(f"{m['machine']}: {m['latest_status']} "
-                            f"({m['degraded_hits']}/{m['samples']} bad samples; dns fails: {m['dns_fails'] or 'none'})")
+                            f"({m['degraded_hits']}/{m['samples']} bad samples; "
+                            f"reasons: {m['reasons']}; dns fails: {m['dns_fails'] or 'none'})")
         if m["recovered"]:
             flag += " RECOVERED"
             card_due.append(m["machine"])

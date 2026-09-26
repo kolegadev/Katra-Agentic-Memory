@@ -149,10 +149,13 @@ def dns_resolvers() -> list[str]:
 def dns_probes() -> dict:
     probes: dict = {}
     for host in DNS_PROBE_HOSTS:
-        t0 = time.time()
+        # 2026-09-26 (Zefir's 872908b, ported): time.monotonic() — time.time() let a
+        # clock jump (sleep/NTP) fabricate the probe latency (a 53-min DNS "value"
+        # in natasha's 13:10Z report was a clock artifact, not a network event).
+        t0 = time.monotonic()
         try:
             socket.getaddrinfo(host, 443, proto=socket.IPPROTO_TCP)
-            probes[host] = {"ok": True, "ms": round((time.time() - t0) * 1000)}
+            probes[host] = {"ok": True, "ms": round((time.monotonic() - t0) * 1000)}
         except Exception as exc:
             probes[host] = {"ok": False, "error": str(exc)[:120]}
     return probes
