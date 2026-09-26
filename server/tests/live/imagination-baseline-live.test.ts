@@ -976,6 +976,11 @@ describe.skipIf(!LIVE)('imagination baseline — the bounded LIVE run (DoD #8)',
           ...(KNOB_DEFAULTS[name] ? { default: KNOB_DEFAULTS[name] } : {}),
         });
         const modelEnvironment = Object.fromEntries(Object.keys(KNOB_DEFAULTS).map((name) => [name, knob(name)]));
+        const overrideSummary =
+          Object.entries(modelEnvironment)
+            .filter(([, entry]) => entry.value !== null)
+            .map(([name, entry]) => `${name}=${entry.value}`)
+            .join(', ') || 'every knob was UNSET — the documented defaults were in force';
         const missionMentionsInText = cases.filter((item) =>
           allMissions.some((missionId) =>
             [item.hypothesis, item.mechanism, item.cheapest_test].some((field) => String(field ?? '').includes(missionId)),
@@ -1036,7 +1041,7 @@ describe.skipIf(!LIVE)('imagination baseline — the bounded LIVE run (DoD #8)',
               `SELF-PREFERENCE RISK, DISCLOSED: the judge is a language model, and the treatment arms' text was written by a model of the same family while the comparators' text is a fixed template. A judge may prefer one style over another for reasons unrelated to the ideas. The prompt, the shuffle seed and every raw reply are recorded precisely so this reading can be re-scored from the transcript by another judge, or by a person.`,
               'NOT DONE HERE: no container executed the engine (the services ran in this process); nothing was promoted beyond what the shipped promotion step does inside arm C’s cycle; no experiments row was written (that is the harness’s job, and it is what turns this capture into the recorded baseline); no row was deleted.',
               `OUTCOME CHANNEL: ${recordedCount} of ${verdicts.length} verdict(s) were recorded through recordCandidateOutcome into the store; ${outcomeRefusals.length} refusal(s) are reported verbatim in this block.${judgeRefusals.length > 0 ? ` The judge itself refused ${judgeRefusals.length} case(s) by name (recorded in the transcript and this block).` : ''}`,
-              `RUN CONFIGURATION (recorded, not assumed): the engine's knobs as THIS process read them are in this capture's `model_environment` block — raw value, plus the default its accessor documents when the value is null. ${Object.entries(modelEnvironment).filter(([, k]) => k.value !== null).map(([n, k]) => `${n}=${k.value}`).join(', ') || 'every knob unset — the documented defaults were in force'}.`,
+              `RUN CONFIGURATION (recorded, not assumed): the engine's knobs as THIS process read them are in this capture's model_environment block — raw value, plus the default its accessor documents when the value is null. ${overrideSummary}.`,
               `TRANSCRIPT: ${transcriptPath} (system prompt verbatim, mapping, raw replies, per-call tokens); GRADES: ${config.grades} (the harness's --grade file, built from the store-recorded verdicts).`,
             ],
             judge: {

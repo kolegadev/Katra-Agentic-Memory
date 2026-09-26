@@ -76,6 +76,15 @@ jobs:
       - name: Security tests (identity scoping, taint, caller pinning)
         run: npx vitest run tests/security/
 
+      # The live/instrument suites need a real store and a real model, so they
+      # SKIP here — but they must still PARSE. `tsc --noEmit` does not cover
+      # tests/ (tsconfig includes src/** only) and the unit run never loads these
+      # files, so without this step a syntax error in
+      # tests/live/imagination-baseline-live.test.ts passed every local check and
+      # surfaced only in a full `npm test` on a deployment host.
+      - name: Live suite parses and skips cleanly (no store, no provider)
+        run: npx vitest run tests/live/
+
       - name: Build
         run: npm run build
 
