@@ -173,6 +173,15 @@ async function armC(): Promise<Record<string, unknown>> {
     missionId: SCENARIO_MISSION,
     actorId: OPERATOR_USER,
     caller: OPERATOR,
+    // THE CLOCK IS INJECTED, like every other service call in this generator.
+    // The cycle row carries its completion instant, and the plateau evidence
+    // reads cycle rows inside the FROZEN window [PLATEAU_WINDOW.from, FIXED_AT].
+    // Without this injection the row is stamped with the wall clock, so the
+    // frozen capture changes with the time of day the generator runs: the
+    // freshness gate below stays green only while the real clock happens to sit
+    // inside the frozen window, and goes red permanently afterwards. A fixture
+    // that byte-compares must be a function of its inputs, not of when it ran.
+    now: () => FIXED_AT,
   });
   if (cycle.status !== 'ran') throw new Error(`arm C cycle did not run: ${cycle.status}/${cycle.reason}`);
   const usage = usageDeltaSince(usageBefore);

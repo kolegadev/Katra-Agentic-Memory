@@ -454,6 +454,211 @@ export function controlCandidatesB(material: Record<string, any>): ControlCandid
   return out;
 }
 
+// ── the comparators, answering the REAL MODEL (the control fix) ─────────────
+//
+// The two builders above are what the FIXTURE generator calls, and their output
+// is frozen: nothing here changes them. A live driver calls the builders below
+// instead — the SAME items (same ids, operators, bins, evidence refs and
+// structure) with the two prose fields written by the real model. That is what
+// closes the confound a template comparator opens: with template text on one
+// side and model text on the other, a blind judge measures template prose
+// against model prose at least as much as it measures pre-engine against engine.
+//
+// The prompt hands the model the graph material the pre-engine path reads and
+// NOTHING else — no salience traces, no operator families, no archive, no
+// novelty instruction, no plateau history — and asks for exactly what the
+// template builder used to state: one candidate per item, in the item's terms.
+// Items come from `controlItems`, which the prompt and the builders share, so a
+// hypothesis is always written for the item its candidate cites. The prompts are
+// pure functions of the recorded `baseline_material`, whose sha256 the runner
+// records, so the reading can be re-scored or re-run from the record.
+
+/** The comparators' system prompt; the capture records its sha256 and every user prompt's. */
+export const CONTROL_DIRECTION_SYSTEM_PROMPT = `You write one candidate research direction per item you are given.
+
+You are the pre-engine path of a research mission that has plateaued: the mission keeps producing work that does not advance it. You are shown items read out of the mission's own knowledge graph — nothing else. You have no operator list, no archive, no record of earlier candidates and no novelty check: you write what each item suggests to you, and that is the whole method.
+
+Rules:
+- Exactly one candidate per item, in the order given: none skipped, none merged, none added.
+- Write each candidate in the item's own terms; name the concept or the step you were given.
+- A candidate is a hypothesis (the direction) and a mechanism (why that direction follows from the item).
+- Reply with JSON only, in the shape the instruction asks for.`;
+
+export type ControlArm = 'A' | 'B';
+
+export interface ControlItem {
+  /** 1-based position, as the prompt numbers it. */
+  index: number;
+  /** The item as the prompt states it. */
+  line: string;
+  /** The id the candidate built from this item carries (the template builder's own id). */
+  seed_id: string;
+  /** The graph node/edge ids the candidate cites, exactly as the template builder cites them. */
+  evidence_refs: string[];
+  /** Arm B only: the walk step's stored edge, for the candidate's bridge fields. */
+  bridge_path?: string[];
+  bridge?: string;
+}
+
+/**
+ * The comparator's items, in the exact order the template builders emit them —
+ * arm A: one per concept; arm B: both directions of every edge, undeduped, with
+ * an edge whose endpoint is missing from the graph skipped exactly as the
+ * template builder skips it. `imagination-control-directions.test.ts` pins this
+ * correspondence against the template builders themselves.
+ */
+export function controlItems(material: Record<string, any>, arm: ControlArm): ControlItem[] {
+  if (arm === 'A') {
+    return (material.concepts as Array<Record<string, any>>).map((concept, index) => ({
+      index: index + 1,
+      line: `concept "${String(concept.name)}" \u2014 degree ${String(concept.degree)} in the mission's graph`,
+      seed_id: `control_a_${String(index + 1).padStart(2, '0')}`,
+      evidence_refs: [String(concept.id)],
+    }));
+  }
+  const byId = new Map(
+    (material.concepts as Array<Record<string, any>>).map((concept) => [String(concept.id), concept]),
+  );
+  const items: ControlItem[] = [];
+  for (const [from, to] of material.edges as Array<[string, string]>) {
+    const a = byId.get(String(from));
+    const b = byId.get(String(to));
+    if (!a || !b) continue;
+    for (const [first, second] of [
+      [a, b],
+      [b, a],
+    ] as Array<[Record<string, any>, Record<string, any>]>) {
+      items.push({
+        index: items.length + 1,
+        line: `walk step ${String(first.name)} \u2192 ${String(second.name)}`,
+        seed_id: `control_b_${String(items.length + 1).padStart(2, '0')}`,
+        evidence_refs: [String(from), String(to)],
+        bridge_path: [String(from), String(to)],
+        bridge: 'Both ends are the mission\u2019s own concepts and the walk stepped between them.',
+      });
+    }
+  }
+  return items;
+}
+
+/** The arm's user prompt: the plateau frame, the items, and the exact reply shape. */
+export function controlDirectionPrompt(material: Record<string, any>, arm: ControlArm): string {
+  const items = controlItems(material, arm);
+  const list = items.map((item) => `${item.index}. ${item.line}`).join('\n');
+  const frame =
+    arm === 'A'
+      ? 'Items \u2014 concepts read out of the mission\u2019s knowledge graph, ranked by how central they are:'
+      : 'Items \u2014 the steps of a mind-wander over the mission\u2019s knowledge graph, in walk order (the walk is not de-duplicated: a step and its reverse can both appear):';
+  return [
+    'The mission has plateaued: it keeps producing work that does not advance it.',
+    '',
+    frame,
+    list,
+    '',
+    `Write exactly ${items.length} candidate(s): one per item, in this order. For each, give`,
+    '- "hypothesis": the direction this item suggests for the mission, in one or two sentences;',
+    '- "mechanism": why that direction follows from THIS item \u2014 say what the item is and what it connects.',
+    '',
+    `JSON only: {"candidates":[{"hypothesis":"\u2026","mechanism":"\u2026"}]} with exactly ${items.length} entries.`,
+  ].join('\n');
+}
+
+/** The hash of a prompt actually sent, for the capture's record. */
+export function controlPromptSha256(system: string, user: string): string {
+  return createHash('sha256').update(`${system}\n\n${user}`).digest('hex');
+}
+
+export interface ControlDirection {
+  hypothesis: string;
+  mechanism: string;
+}
+
+/**
+ * Parse a comparator reply. ALL-OR-NOTHING per arm: a reply that comes back short
+ * (or long) is refused BY NAME rather than padded, trimmed or partially accepted,
+ * because the arm's denominator is "one candidate per item" and a partial arm
+ * would silently change what the rate is a rate of. Both reply shapes the judge's
+ * parser accepts are accepted here: a wrapper object or a bare array.
+ */
+export function parseControlDirections(
+  raw: unknown,
+  expected: number,
+): { directions: ControlDirection[]; refusal: string | null } {
+  const fail = (reason: string) => ({ directions: [] as ControlDirection[], refusal: reason });
+  let list: unknown = raw;
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    const wrapper = raw as Record<string, unknown>;
+    list = wrapper.candidates ?? wrapper.directions ?? wrapper.items ?? null;
+  }
+  if (!Array.isArray(list)) {
+    return fail(
+      `the reply carries no array of candidates (${raw === null ? 'got null' : Array.isArray(raw) ? 'the payload itself is a bare array of the wrong shape' : `got ${typeof raw}`})`,
+    );
+  }
+  if (list.length !== expected) {
+    return fail(
+      `the reply carries ${list.length} candidate(s), the arm has ${expected} item(s) \u2014 a short or padded array is refused, not trimmed`,
+    );
+  }
+  const directions: ControlDirection[] = [];
+  for (const [index, entry] of list.entries()) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      return fail(`entry ${index + 1} is not an object`);
+    }
+    const row = entry as Record<string, unknown>;
+    const hypothesis = typeof row.hypothesis === 'string' ? row.hypothesis.trim() : '';
+    const mechanism = typeof row.mechanism === 'string' ? row.mechanism.trim() : '';
+    if (!hypothesis) return fail(`entry ${index + 1} carries no hypothesis`);
+    if (!mechanism) return fail(`entry ${index + 1} carries no mechanism`);
+    directions.push({ hypothesis, mechanism });
+  }
+  return { directions, refusal: null };
+}
+
+/** Arm A with the model's prose: same ids, operator, bins and evidence as the template builder. */
+export function modelControlCandidatesA(
+  material: Record<string, any>,
+  directions: ControlDirection[],
+): ControlCandidate[] {
+  const items = controlItems(material, 'A');
+  if (directions.length !== items.length) {
+    throw new Error(
+      `arm A: ${directions.length} direction(s) for ${items.length} item(s) \u2014 a mismatched reply must be refused by the caller, not built from`,
+    );
+  }
+  return items.map((item, index) => ({
+    seed_id: item.seed_id,
+    operator: 'representation_shift',
+    hypothesis: directions[index].hypothesis,
+    mechanism: directions[index].mechanism,
+    bins: CONTROL_BINS,
+    evidence_refs: item.evidence_refs,
+  }));
+}
+
+/** Arm B with the model's prose: same ids, operator, bins, evidence and bridge fields as the template builder. */
+export function modelControlCandidatesB(
+  material: Record<string, any>,
+  directions: ControlDirection[],
+): ControlCandidate[] {
+  const items = controlItems(material, 'B');
+  if (directions.length !== items.length) {
+    throw new Error(
+      `arm B: ${directions.length} direction(s) for ${items.length} item(s) \u2014 a mismatched reply must be refused by the caller, not built from`,
+    );
+  }
+  return items.map((item, index) => ({
+    seed_id: item.seed_id,
+    operator: 'distant_analogy',
+    hypothesis: directions[index].hypothesis,
+    mechanism: directions[index].mechanism,
+    bins: WANDER_BINS,
+    evidence_refs: item.evidence_refs,
+    bridge_path: item.bridge_path,
+    bridge: item.bridge,
+  }));
+}
+
 /**
  * The comparators' task-quality evidence — DECLARED, and labelled as such. The
  * pre-engine path has no cycle service and no archive in production, so it ran
@@ -521,6 +726,15 @@ export async function captureControlArm(args: {
   decidedBy?: string;
   /** Who DECLARED the comparator's task-quality blocks; default: the fixture generator. */
   declaredBy?: string;
+  /**
+   * How the comparator's TEXT was produced. Default: the fixture's scripted
+   * templates, which is what the frozen fixture records. A live driver whose
+   * comparators answered the real model passes `{ is_scripted: false, ... }` so
+   * the arm's own blocks say so instead of claiming scripted text.
+   */
+  text?: { is_scripted: boolean; basis: string; determination: string; note: string };
+  /** Tokens the comparator's own generation spent; default 0 (the fixture's templates cost nothing). */
+  tokens?: number;
 }): Promise<Record<string, unknown>> {
   const identity = args.identity ?? CONTROL_IDENTITY;
   const decidedBy = args.decidedBy ?? 'server/tests/unit/imagination-baseline-fixture.test.ts (the fixture generator)';
@@ -602,8 +816,8 @@ export async function captureControlArm(args: {
       identity,
       mission_id: args.missionId,
       same_rule_as: ['A', 'B', 'C', 'D'],
-      text_is_scripted: true,
-      text_basis: `the comparator's own templates (${args.name}) — the pre-engine path's text`,
+      text_is_scripted: args.text?.is_scripted ?? true,
+      text_basis: args.text?.basis ?? `the comparator's own templates (${args.name}) — the pre-engine path's text`,
       schema_necessary_fields:
         'operator (a catalogue family, because the shipped seed schema requires one and the pre-engine path had no operator plan), ' +
         'evidence_refs (the graph node/edge the comparator retrieved) and lineage_ref (derived from the seed id)',
@@ -614,10 +828,11 @@ export async function captureControlArm(args: {
         args.decidedBy === undefined
           ? 'the real IdeaArchiveService.admitOrReplace over the comparator’s candidates, in the fixture generator'
           : `the real IdeaArchiveService.admitOrReplace over the comparator’s candidates, run by ${decidedBy}`,
-      determination: 'stub_determined',
+      determination: args.text?.determination ?? 'stub_determined',
       note:
+        args.text?.note ??
         'idea TEXT is the pre-engine comparator’s scripted template, so every text-derived magnitude is stub-determined; the DECISIONS ' +
-        '(admitted/rejected + reason, duplicate_of, cell key, quality) are the shipped archive’s own rows — the same rule the treatment arms ran',
+          '(admitted/rejected + reason, duplicate_of, cell key, quality) are the shipped archive’s own rows — the same rule the treatment arms ran',
     },
     rows,
     rejections,
@@ -628,7 +843,7 @@ export async function captureControlArm(args: {
       below_incumbent: 0,
     },
     coverage: null,
-    tokens: 0,
+    tokens: args.tokens ?? 0,
     trigger_at: args.triggerAt ?? null,
     // The empty block, spelled exactly as the fixture generator has always
     // written it: a caller that passes `outcomes` replaces it wholesale.

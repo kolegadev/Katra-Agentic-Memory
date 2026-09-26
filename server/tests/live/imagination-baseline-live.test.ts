@@ -56,10 +56,23 @@
  * THE JUDGE IS BLIND, AND ITS BLINDNESS IS DISCLOSED. Cases are the payloads
  * `blindCases` builds (five fields, opaque ids, seeded shuffle) and the judge
  * only ever sees those. The residual risk — a model judging model-written text
- * more kindly than template text — is a property of the instrument, not a bug:
- * the prompt is exported verbatim and hashed, the shuffle seed is recorded, and
- * every raw reply is written to the transcript next to the mapping, so a reader
- * can re-score the run from the transcript alone. The capture says exactly that.
+ * more kindly than text written another way — is a property of the instrument,
+ * not a bug: the prompt is exported verbatim and hashed, the shuffle seed is
+ * recorded, and every raw reply is written to the transcript next to the mapping,
+ * so a reader can re-score the run from the transcript alone. The capture says
+ * exactly that.
+ *
+ * ALL FOUR ARMS ANSWER THE SAME MODEL (the control fix). The comparators used to
+ * emit the fixture's scripted template sentences, so the judge compared template
+ * prose against model prose; they now answer the run's own model through the
+ * pre-engine path (one call per arm, from the graph material and nothing else —
+ * see `answerComparator` and the helper's `controlItems`/`controlDirectionPrompt`).
+ * The items, ids, operators, bins, evidence refs and structure are the template
+ * builders' own, unchanged, and each arm's `admission_rule.text_is_scripted` says
+ * what its text actually is. The prompts are pure functions of the recorded
+ * `baseline_material`, and their sha256 rides in the capture's `comparator_text`
+ * block. The fixture path still uses the scripted builders — its output is frozen
+ * and its freshness gate byte-compares it.
  *
  * WHAT IT DOES NOT DO. It does not execute the engine in a container (the
  * services run in THIS process), it promotes nothing beyond what the shipped
@@ -274,6 +287,18 @@ const KNOB_DEFAULTS: Record<string, string> = {
   return Math.min(16000, 3000 + 1000 * cases);
 }
 
+/**
+ * The comparators' max_tokens: one candidate per item, plus headroom — same
+ * arithmetic and the same reasoning as the judge's (the model reasons before its
+ * JSON, and a truncated array is refused by the parser rather than trimmed).
+ * `IMAGINATION_BASELINE_CONTROL_MAX_TOKENS` overrides it for an experiment.
+ */
+function controlMaxTokens(items: number): number {
+  const override = Number(process.env.IMAGINATION_BASELINE_CONTROL_MAX_TOKENS);
+  if (Number.isFinite(override) && override > 0) return Math.floor(override);
+  return Math.min(16000, 3000 + 1000 * items);
+}
+
 function messageOf(error: unknown): string {
   return String((error as { message?: unknown })?.message ?? error);
 }
@@ -336,13 +361,18 @@ describe.skipIf(!LIVE)('imagination baseline — the bounded LIVE run (DoD #8)',
       );
       const { COLLECTIONS } = await import('../../src/services/mission-cognition/collections.js');
       const {
+        CONTROL_DIRECTION_SYSTEM_PROMPT,
         CONTROL_MISSION_A,
         CONTROL_MISSION_B,
         baselineMaterial,
         captureControlArm,
-        controlCandidatesA,
-        controlCandidatesB,
+        controlDirectionPrompt,
+        controlItems,
+        controlPromptSha256,
+        modelControlCandidatesA,
+        modelControlCandidatesB,
         outcomesFor,
+        parseControlDirections,
         plateauEvidence,
         seedRows,
         setCaptureDb,
@@ -466,18 +496,80 @@ describe.skipIf(!LIVE)('imagination baseline — the bounded LIVE run (DoD #8)',
         const runScoped = (candidates: ControlCandidate[]): ControlCandidate[] =>
           candidates.map((candidate) => ({ ...candidate, seed_id: `${config.run}:${candidate.seed_id}` }));
 
-        // ── arm A and arm B: the pre-engine comparators, through the archive ─
+        // ── arm A and arm B: the pre-engine comparators, answering the REAL
+        // model ────────────────────────────────────────────────────────────────
+        //
+        // THE CONTROL FIX (disclosed in this capture's `comparator_text` block):
+        // the comparators used to emit the fixture's scripted template sentences,
+        // which made the blind comparison measure template-vs-model prose at least
+        // as much as pre-engine-vs-engine. They now answer the same real model the
+        // treatment arms use, one call per arm, from the same graph material and
+        // nothing else (no traces, no operators, no archive, no novelty check), and
+        // the arm's own blocks say so (`text_is_scripted: false`). The items, ids,
+        // operators, bins, evidence refs and structure are UNCHANGED from the
+        // template builders — the only variable that moved is who wrote the text.
+        // A reply that is short, long or malformed refuses the WHOLE arm by name
+        // (`parseControlDirections`), because a partial arm would change what the
+        // rate is a rate of.
+        const comparatorCalls: Row[] = [];
+        const comparatorRefusals: string[] = [];
+        const comparatorText = (arm: 'A' | 'B', count: number) => ({
+          is_scripted: false,
+          basis:
+            `the real model (${model.provider}/${model.model}) wrote every comparator candidate's text from the mission's own graph ` +
+            `material, through the pre-engine path — no operator plan, no archive, no novelty check (prompt sha256 in the capture's comparator_text block)`,
+          determination: 'store_measured',
+          note:
+            `idea TEXT is the real model's, written for items read out of the graph (${count} item(s)); the DECISIONS ` +
+            '(admitted/rejected + reason, duplicate_of, cell key, quality) are the shipped archive’s own rows — the same rule the treatment arms ran',
+        });
+        const answerComparator = async (arm: 'A' | 'B') => {
+          const items = controlItems(material, arm);
+          const prompt = controlDirectionPrompt(material, arm);
+          const usageBefore = usageSnapshot();
+          const raw = await llmService.extractJson(
+            CONTROL_DIRECTION_SYSTEM_PROMPT,
+            prompt,
+            controlMaxTokens(items.length),
+          );
+          const callUsage = usageDeltaSince(usageBefore);
+          const parsed = parseControlDirections(raw, items.length);
+          comparatorCalls.push({
+            arm,
+            items: items.length,
+            prompt_sha256: controlPromptSha256(CONTROL_DIRECTION_SYSTEM_PROMPT, prompt),
+            usage: { input_tokens: callUsage.input_tokens, output_tokens: callUsage.output_tokens },
+            refused: parsed.refusal,
+          });
+          if (parsed.refusal) {
+            comparatorRefusals.push(`arm ${arm}: ${parsed.refusal}`);
+            throw new Error(`comparator arm ${arm} is REFUSED: ${parsed.refusal}`);
+          }
+          mark(
+            `comparator ${arm} answered`,
+            `${items.length} model-written candidate(s), ${callUsage.input_tokens} input / ${callUsage.output_tokens} output token(s)`,
+          );
+          return {
+            directions: parsed.directions,
+            tokens: callUsage.input_tokens + callUsage.output_tokens,
+            text: comparatorText(arm, items.length),
+          };
+        };
+        const answeredA = await answerComparator('A');
+        const answeredB = await answerComparator('B');
         const armA = await captureControlArm({
           label: 'A',
           name: 'control_dreamer_retrieval',
           path: 'pre-engine dreamer-style retrieval',
           retrieval: 'concepts ranked by graph degree (prominence)',
           missionId: missions.A,
-          candidates: runScoped(controlCandidatesA(material)),
+          candidates: runScoped(modelControlCandidatesA(material, answeredA.directions)),
           triggerAt: startedAt,
           identity: controlIdentity,
           decidedBy: DRIVER,
           declaredBy: DRIVER,
+          text: answeredA.text,
+          tokens: answeredA.tokens,
         });
         const armB = await captureControlArm({
           label: 'B',
@@ -486,13 +578,15 @@ describe.skipIf(!LIVE)('imagination baseline — the bounded LIVE run (DoD #8)',
           retrieval:
             'walk steps from the mission’s edges; both directions of every step are emitted, exactly as an undeduped wander does',
           missionId: missions.B,
-          candidates: runScoped(controlCandidatesB(material)),
+          candidates: runScoped(modelControlCandidatesB(material, answeredB.directions)),
           triggerAt: startedAt,
           identity: controlIdentity,
           decidedBy: DRIVER,
           declaredBy: DRIVER,
+          text: answeredB.text,
+          tokens: answeredB.tokens,
         });
-        mark('arms A/B admitted', `${missions.A} + ${missions.B} under ${controlIdentity}`);
+        mark('arms A/B admitted', `${missions.A} + ${missions.B} under ${controlIdentity} — model-written comparator text`);
 
         // ── arm C: the focused engine, ONE identity, plateau gate bypassed ──
         const cycleUsageBefore = usageSnapshot();
@@ -1033,12 +1127,12 @@ describe.skipIf(!LIVE)('imagination baseline — the bounded LIVE run (DoD #8)',
             disclosure: [
               `LIVE STORE: a real MongoDB (database '${db.databaseName}') on host ${hostname()}; this run's rows are private to the run's identities and missions, and NOTHING was deleted or overwritten (the clean-up summary is in this block).`,
               `LIVE MODEL: ${model.provider}/${model.model} (providers: ${model.providers.join(', ')}) generated every treatment candidate and produced the scenario's salience traces.`,
-              `FROZEN MATERIAL: the checkpoint is the scripted SCENARIO (tests/helpers/imagination-scenario.ts) — its mission state, ledger, work queue, graph and the comparator templates — re-seeded into the live store. This is not a real mission's history; it is the same checkpoint the frozen fixture measures, so the two readings are comparable.`,
+              `FROZEN MATERIAL: the checkpoint is the scripted SCENARIO (tests/helpers/imagination-scenario.ts) — its mission state, ledger, work queue and graph — re-seeded into the live store. This is not a real mission's history; it is the same checkpoint the frozen fixture measures, so the two readings are comparable. The comparators' ITEMS come from that re-seeded graph; their TEXT is this run's model's, not the fixture's, and the capture's comparator_text block records what moved.`,
               `FLAGS IN THIS PROCESS ONLY: FOCUSED_IMAGINATION=1, CREATIVE_BATON_PROMOTION=1 and COGNITIVE_TEAM_ALLOCATION=1 were set by this instrument before the services were imported. The deployment runs with all four flags OFF; this process is the instrument, and nothing it writes changes any process's configuration.`,
               'BOUNDED EVALUATION: arm C ran with RunCycleArgs.force=true — the plateau gate is bypassed by an explicit caller override, recorded in the arm’s config.cycle_trigger. The gate is what normally bounds the engine to one cycle per plateau; here the bound is this run.',
               `JUDGED SET: EVERY candidate each arm generated was judged — admitted AND rejected — so each side's denominator is its generated set, not its admitted set (candidate counts: ${armInputs.map((arm) => `${arm.label}=${arm.candidates.length}`).join(', ')}).`,
               `BLIND JUDGE: the judge saw only {hypothesis, mechanism, cheapest_test, evidence_refs, descriptor_bins} under opaque case ids from a seeded shuffle (seed ${config.shuffleSeed}); no case carries an arm label, an identity or a seed id and the CASES ARE INTERLEAVED across arms. The blinding is STRUCTURAL, not textual: a candidate's own text is judged as written, and ${missionMentionsInText} of ${cases.length} case(s) mention one of this run's mission ids inside their own text (a real candidate can name its mission). The prompt is frozen and recorded with its sha256; the raw replies, the mapping and every call's token usage are in the transcript.`,
-              `SELF-PREFERENCE RISK, DISCLOSED: the judge is a language model, and the treatment arms' text was written by a model of the same family while the comparators' text is a fixed template. A judge may prefer one style over another for reasons unrelated to the ideas. The prompt, the shuffle seed and every raw reply are recorded precisely so this reading can be re-scored from the transcript by another judge, or by a person.`,
+              `SELF-PREFERENCE RISK, DISCLOSED, AND REDUCED BY CONSTRUCTION: the judge is a language model, and ALL FOUR ARMS' text is now written by the same model (${model.model}) — the comparators answer it through the pre-engine path, the treatment arms through the engine — so the reading is no longer "template prose vs model prose". What remains is that the treatment arms' text is shaped by the engine (salience traces, operator families, archive-aware novelty) while the comparators' is not, which is the treatment itself, not a confound; a judge may still prefer one style. The comparator prompts are pure functions of the recorded baseline_material (their sha256 is in comparator_text), and the shuffle seed and every raw reply are recorded, so this reading can be re-scored by another judge, or by a person.`,
               'NOT DONE HERE: no container executed the engine (the services ran in this process); nothing was promoted beyond what the shipped promotion step does inside arm C’s cycle; no experiments row was written (that is the harness’s job, and it is what turns this capture into the recorded baseline); no row was deleted.',
               `OUTCOME CHANNEL: ${recordedCount} of ${verdicts.length} verdict(s) were recorded through recordCandidateOutcome into the store; ${outcomeRefusals.length} refusal(s) are reported verbatim in this block.${judgeRefusals.length > 0 ? ` The judge itself refused ${judgeRefusals.length} case(s) by name (recorded in the transcript and this block).` : ''}`,
               `RUN CONFIGURATION (recorded, not assumed): the engine's knobs as THIS process read them are in this capture's model_environment block — raw value, plus the default its accessor documents when the value is null. ${overrideSummary}.`,
@@ -1058,6 +1152,18 @@ describe.skipIf(!LIVE)('imagination baseline — the bounded LIVE run (DoD #8)',
               refusals: judgeRefusals,
               transcript: transcriptPath,
             },
+            comparator_text: {
+              instrument:
+                'server/tests/helpers/imagination-baseline-capture.ts (controlItems + controlDirectionPrompt + parseControlDirections + modelControlCandidatesA/B)',
+              model: model.model,
+              system_prompt: CONTROL_DIRECTION_SYSTEM_PROMPT,
+              user_prompt_basis:
+                'each comparator arm’s user prompt is a pure function of this capture’s baseline_material and the arm; its sha256 is recorded per call below, so the prompts can be re-derived and checked from this record',
+              what_moved:
+                'the comparator items, ids, operators, bins, evidence refs and structure are the template builders’ own — UNCHANGED; the hypothesis and mechanism are now written by the model instead of drawn from the fixture’s scripted templates, and each arm’s admission_rule.text_is_scripted says false',
+              calls: comparatorCalls,
+              refusals: comparatorRefusals,
+            },
             environment: {
               store: { kind: 'mongodb', database: db.databaseName, connection: 'src/database/connection.ts connect_to_mongodb()' },
               model: { provider: model.provider, model: model.model, providers: model.providers, availability_waited_ms: model.waited_ms },
@@ -1070,7 +1176,7 @@ describe.skipIf(!LIVE)('imagination baseline — the bounded LIVE run (DoD #8)',
               host: hostname(),
               pipeline,
             },
-            refusals: { judge: judgeRefusals, outcomes: outcomeRefusals },
+            refusals: { judge: judgeRefusals, outcomes: outcomeRefusals, comparators: comparatorRefusals },
             written: {
               counted_by: `mission_id ∈ [${allMissions.join(', ')}] OR user_id ∈ [${runIdentities.join(', ')}]`,
               note:
