@@ -328,6 +328,7 @@ describe.skipIf(!LIVE)('imagination baseline — the bounded LIVE run (DoD #8)',
         setCaptureDb,
         taintEvidence,
       } = await import('../helpers/imagination-baseline-capture.js');
+      type ControlCandidate = import('../helpers/imagination-baseline-capture.js').ControlCandidate;
       const { SCENARIO_MISSION, seedScenario } = await import('../helpers/imagination-scenario.js');
 
       const missions = {
@@ -421,6 +422,16 @@ describe.skipIf(!LIVE)('imagination baseline — the bounded LIVE run (DoD #8)',
         const material = baselineMaterial();
         mark('scenarios seeded', `missions ${missions.C} + ${missions.D} (owner ${engineIdentity}); graph rows read back for the run's identities only`);
 
+        // The archive's `is_seed_unique` index is on `seed_id` ALONE — a GLOBAL
+        // key, not per identity and not per mission — and the comparators'
+        // candidate ids are the frozen scenario's own (`control_a_01`…), so two
+        // runs would collide on the second run's first candidate. Each run
+        // namespaces its comparator ids with its run token; the treatment arms'
+        // seed ids already derive from the run's mission id, so the whole run is
+        // unique under every index the store enforces.
+        const runScoped = (candidates: ControlCandidate[]): ControlCandidate[] =>
+          candidates.map((candidate) => ({ ...candidate, seed_id: `${config.run}:${candidate.seed_id}` }));
+
         // ── arm A and arm B: the pre-engine comparators, through the archive ─
         const armA = await captureControlArm({
           label: 'A',
@@ -428,7 +439,7 @@ describe.skipIf(!LIVE)('imagination baseline — the bounded LIVE run (DoD #8)',
           path: 'pre-engine dreamer-style retrieval',
           retrieval: 'concepts ranked by graph degree (prominence)',
           missionId: missions.A,
-          candidates: controlCandidatesA(material),
+          candidates: runScoped(controlCandidatesA(material)),
           triggerAt: startedAt,
           identity: controlIdentity,
           decidedBy: DRIVER,
@@ -441,7 +452,7 @@ describe.skipIf(!LIVE)('imagination baseline — the bounded LIVE run (DoD #8)',
           retrieval:
             'walk steps from the mission’s edges; both directions of every step are emitted, exactly as an undeduped wander does',
           missionId: missions.B,
-          candidates: controlCandidatesB(material),
+          candidates: runScoped(controlCandidatesB(material)),
           triggerAt: startedAt,
           identity: controlIdentity,
           decidedBy: DRIVER,
