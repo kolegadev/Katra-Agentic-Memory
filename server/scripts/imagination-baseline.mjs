@@ -514,50 +514,98 @@ function metricsFor(arm, fixture) {
     );
   }
 
-  // agent_divergence — needs ≥2 agents (the same-mode control is a separate arm).
-  const agents = new Map();
-  for (const row of rows) {
-    const agent = String(row.agent ?? 'unknown');
-    agents.set(agent, [...(agents.get(agent) ?? []), row]);
-  }
-  if (agents.size < 2) {
-    metrics.push(
-      insufficient(
-        'agent_divergence',
-        `only ${agents.size} agent(s) in this arm — divergence needs at least 2`,
-        `${agents.size} distinct agent(s)`,
-      ),
-    );
-  } else {
+  // agent_divergence — needs ≥2 agents, and its SAME-MODE CONTROL is a real arm
+  // when the capture carries one (the live driver's arm E). The label follows the
+  // arm's own generation block: the fixture's agents answer a scripted model, a
+  // live run's answer the real one, and a magnitude derived from the text is only
+  // `stub_determined` in the first case.
+  const divergenceOf = (target) => {
+    const byAgent = new Map();
+    for (const row of target.rows ?? []) {
+      const agent = String(row.agent ?? 'unknown');
+      byAgent.set(agent, [...(byAgent.get(agent) ?? []), row]);
+    }
+    if (byAgent.size < 2) return null;
     const pairs = [];
-    const identities = [...agents.keys()].sort();
+    const identities = [...byAgent.keys()].sort();
     for (let i = 0; i < identities.length; i += 1) {
       for (let j = i + 1; j < identities.length; j += 1) {
-        const left = agents.get(identities[i]).map((row) => row.hypothesis);
-        const right = agents.get(identities[j]).map((row) => row.hypothesis);
+        const left = byAgent.get(identities[i]).map((row) => row.hypothesis);
+        const right = byAgent.get(identities[j]).map((row) => row.hypothesis);
         let best = 1;
         for (const a of left) for (const b of right) best = Math.min(best, jaccard(a, b));
         pairs.push(Number(best.toFixed(6)));
       }
     }
-    metrics.push(
-      metric(
-        'agent_divergence',
-        Number((pairs.reduce((sum, value) => sum + value, 0) / pairs.length).toFixed(6)),
-        pairs.length,
-        'stub_determined',
-        `closest-pair Jaccard over content tokens for ${pairs.length} agent pair(s): ${JSON.stringify(pairs)} — the TEXT is the ` +
-          'scripted model’s, so the magnitude is stub-determined (the plumbing it measures is real)',
-        { fields: { comparisons: pairs.length, agents: agents.size } },
-      ),
-    );
+    return {
+      value: Number((pairs.reduce((sum, value) => sum + value, 0) / pairs.length).toFixed(6)),
+      pairs,
+      agents: byAgent.size,
+      modes: target.config?.modes ?? null,
+    };
+  };
+
+  const divergence = divergenceOf(arm);
+  if (!divergence) {
     metrics.push(
       insufficient(
-        'agent_divergence_same_mode_control',
-        'the same-mode control is not part of this baseline experiment (it lives in the Phase-6 exit-criterion test)',
-        'no same-mode control arm in the fixture',
+        'agent_divergence',
+        `only ${Object.keys(arm.rows ?? {}).length === 0 ? 0 : 1} agent(s) in this arm — divergence needs at least 2`,
+        `${(arm.rows ?? []).length === 0 ? 0 : 1} distinct agent(s)`,
       ),
     );
+  } else {
+    // The TEXT's own declaration decides the label: the fixture's arms say
+    // `text_is_scripted: true` (their model is a stub), a live arm says false.
+    const scripted = arm.admission_rule?.text_is_scripted !== false;
+    const determination = scripted ? 'stub_determined' : 'store_measured';
+    const basis = scripted
+      ? `closest-pair Jaccard over content tokens for ${divergence.pairs.length} agent pair(s): ${JSON.stringify(divergence.pairs)} — the TEXT is the ` +
+        'scripted model\u2019s, so the magnitude is stub-determined (the plumbing it measures is real)'
+      : `closest-pair Jaccard over content tokens for ${divergence.pairs.length} agent pair(s): ${JSON.stringify(divergence.pairs)} — the TEXT is the real ` +
+        'model\u2019s (this arm\u2019s generation block says so), so the magnitude is store_measured';
+    metrics.push(
+      metric('agent_divergence', divergence.value, divergence.pairs.length, determination, basis, {
+        fields: { comparisons: divergence.pairs.length, agents: divergence.agents },
+      }),
+    );
+    const controlArm = (fixture.arms ?? []).find(
+      (candidate) =>
+        candidate !== arm &&
+        candidate.config?.mode_under_control !== undefined &&
+        new Set(Object.values(candidate.config?.modes ?? {})).size === 1,
+    );
+    const control = controlArm ? divergenceOf(controlArm) : null;
+    if (!control) {
+      metrics.push(
+        insufficient(
+          'agent_divergence_same_mode_control',
+          'the same-mode control is not part of this baseline experiment (it lives in the Phase-6 exit-criterion test)',
+          'no same-mode control arm in the capture',
+        ),
+      );
+    } else {
+      metrics.push(
+        metric(
+          'agent_divergence_same_mode_control',
+          control.value,
+          control.pairs.length,
+          determination,
+          `the SAME-MODE control arm ${controlArm.label} (${controlArm.name}): ${control.agents} agents, every one in mode ` +
+            `'${Object.values(controlArm.config.modes)[0]}', closest-pair Jaccard ${JSON.stringify(control.pairs)} — the gate reads ` +
+            `this arm\u2019s agent_divergence (${arm.label}, mixed modes: ${divergence.value}) ABOVE it, and reads insufficient_data ` +
+            'when no control arm is present',
+          {
+            fields: {
+              comparisons: control.pairs.length,
+              agents: control.agents,
+              same_mode_control_arm: controlArm.label,
+              mixed_mode_arm: arm.label,
+            },
+          },
+        ),
+      );
+    }
   }
 
   return { arm: arm.label, metrics };

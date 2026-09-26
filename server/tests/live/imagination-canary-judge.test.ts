@@ -209,10 +209,24 @@ describe.skipIf(!LIVE)('imagination canary judge — the operator step, over can
       }
 
       // ── the model, named and required ─────────────────────────────────────
-      const status = llmService.getServiceStatus();
+      //
+      // The provider probes itself asynchronously at import time, so an immediate
+      // availability read can refuse a run that is seconds away from being ready.
+      // This waits, exactly as the A/B instrument does, and records how long it
+      // waited (a refusal names the status it saw).
+      const waitForModel = async (timeoutMs: number) => {
+        const startedMs = Date.now();
+        let probe = llmService.getServiceStatus();
+        while (!probe.available && Date.now() - startedMs < timeoutMs) {
+          await new Promise((resolve) => setTimeout(resolve, 1500));
+          probe = llmService.getServiceStatus();
+        }
+        return { ...probe, waited_ms: Date.now() - startedMs };
+      };
+      const status = await waitForModel(120_000);
       if (!status.available) {
         throw new Error(
-          `the canary judge is REFUSED: llmService.getServiceStatus().available is false — ${JSON.stringify(status)}. The judge needs the real provider.`,
+          `the canary judge is REFUSED: llmService.getServiceStatus().available is false after waiting ${status.waited_ms} ms — ${JSON.stringify(status)}. The judge needs the real provider.`,
         );
       }
       const judgeModel = status.model;
