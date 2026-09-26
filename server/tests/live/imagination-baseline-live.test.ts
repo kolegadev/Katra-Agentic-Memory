@@ -243,7 +243,14 @@ const WRITTEN_COLLECTIONS = [
 
 /** The judge's max_tokens for a batch: the shape it must return, plus headroom. */
 function judgeMaxTokens(cases: number): number {
-  return Math.min(8000, 600 + 260 * cases);
+  const override = Number(process.env.IMAGINATION_BASELINE_JUDGE_MAX_TOKENS);
+  if (Number.isFinite(override) && override > 0) return Math.floor(override);
+  // The estate's canonical model is a REASONING model: it spends output tokens
+  // on its own reasoning before the JSON, so a ceiling sized for the JSON alone
+  // truncates the batch (observed live: a truncated array is a malformed reply,
+  // which the parser refuses rather than partially accepting). The ceiling is
+  // therefore per case and generous; 16 000 is the provider's accepted maximum.
+  return Math.min(16000, 3000 + 1000 * cases);
 }
 
 function messageOf(error: unknown): string {
