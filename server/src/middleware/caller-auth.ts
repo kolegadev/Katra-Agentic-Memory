@@ -81,9 +81,9 @@ export function createCallerAuthMiddleware(): (c: Context, next: Next) => Promis
     // Skip auth for health checks / read-only dashboard data (identity is
     // still resolved and set for these paths).
     //
-    // Read methods only: a mutating request on an exempt path (e.g.
-    // PUT /api/v1/admin/personality) must still present a key.  Without the
-    // method check the exemption is a write hole, not just a read shortcut.
+    // Read methods only: a mutating request on an exempt path must still
+    // present a key.  Without the method check the exemption is a write hole,
+    // not just a read shortcut.
     const isReadMethod = c.req.method === 'GET' || c.req.method === 'HEAD';
     if (isReadMethod && AUTH_SKIP_PATHS.has(c.req.path)) {
       return proceed();
