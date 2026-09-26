@@ -37,8 +37,9 @@
  *
  *   missions   `${CONTROL_MISSION_A}_<run>`, `${CONTROL_MISSION_B}_<run>`,
  *              `${SCENARIO_MISSION}_<run>` (arm C), `${SCENARIO_MISSION}_<run>_team` (arm D)
- *   identities `<user>-control` (A/B), `<user>-engine` (C, and D's parent),
- *              `<user>-team-1..3` (D's three agents)
+ *   identities `<user>-<run>-control` (A/B), `<user>-<run>-engine` (C, and D's
+ *              parent), `<user>-<run>-team-1..3` (D's three agents) — every one
+ *              carries the run token, so no two runs share a unique key
  *
  * A run token that already has a mission in the store is REFUSED by name — this
  * instrument never reuses or overwrites a run — so the same token cannot
@@ -282,9 +283,15 @@ describe.skipIf(!LIVE)('imagination baseline — the bounded LIVE run (DoD #8)',
 
       const run = config.run;
       const user = config.user;
-      const controlIdentity = `${user}-control`;
-      const engineIdentity = `${user}-engine`;
-      const teamIdentities = [1, 2, 3].map((index) => `${user}-team-${index}`);
+      // Every sandbox identity carries the RUN TOKEN, not just the missions: the
+      // archive keys its seeds by identity (a comparator's candidate ids are the
+      // scenario's own, `control_a_01`…), so two runs sharing an identity collide
+      // on `admitOrReplace`'s "already stored" rule and the second run cannot
+      // even start its control arms. A run-scoped identity keeps each run's rows
+      // its own, and makes the clean-up summary exact.
+      const controlIdentity = `${user}-${run}-control`;
+      const engineIdentity = `${user}-${run}-engine`;
+      const teamIdentities = [1, 2, 3].map((index) => `${user}-${run}-team-${index}`);
       const teamModes = ['philosopher', 'analyst', 'strategist'];
       const runIdentities = [controlIdentity, engineIdentity, ...teamIdentities];
       const caller = { user_id: user, trusted: true };
