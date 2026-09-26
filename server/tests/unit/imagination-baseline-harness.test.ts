@@ -101,12 +101,26 @@ describe('the baseline harness — the four arms, every number with its basis', 
     expect(report.arms[1].name).toBe('control_mind_wander');
     expect(report.arms[2].name).toBe('focused_engine_balanced');
     expect(report.arms[3].name).toBe('engine_plus_heterogeneous_team');
-    // The control arms are the harness's own comparator; the treatment arms are
-    // the real services' captured rows.
+    // ITER-11 refinement: ALL FOUR arms are captured in the fixture, and the two
+    // comparators' candidates were admitted through the SHIPPED archive there
+    // (the fixture generator is the only place that can import the services), so
+    // the harness holds no rule of its own.
     const generation = report.arms.map((arm) => (arm.config as any).generation?.path ?? (arm as any).generation?.path);
     expect(report.arms.every((arm) => arm.rows > 0)).toBe(true);
-    expect(generation[0]).toBe('harness_comparator');
+    expect(generation[0]).toBe('fixture_capture');
+    expect(generation[1]).toBe('fixture_capture');
     expect(generation[3]).toBe('real_services');
+    // Every arm names the rule that decided its candidates, and it is ONE rule.
+    for (const arm of report.arms) {
+      expect((arm as any).admission_rule.path).toBe('shipped_archive');
+      expect((arm as any).admission_rule.service).toBe('IdeaArchiveService.admitOrReplace');
+      expect((arm as any).admission_rule.same_rule_as).toEqual(['A', 'B', 'C', 'D']);
+    }
+    // No arm DECIDES anything here: the harness re-implements no admission rule
+    // (source-level, so a future edit cannot quietly put one back).
+    expect(readFileSync(HARNESS, 'utf8')).not.toContain('isParaphrase');
+    expect(readFileSync(HARNESS, 'utf8')).not.toContain('PARAPHRASE_THRESHOLD');
+    expect(readFileSync(HARNESS, 'utf8')).not.toContain('CONTROL_BINS');
     // The frozen checkpoint really produced rows on both treatment arms.
     expect(report.arms[2].rows).toBeGreaterThan(0);
     expect(report.arms[3].rows).toBeGreaterThan(0);
@@ -143,9 +157,19 @@ describe('the baseline harness — the four arms, every number with its basis', 
     // …and the arms without outcomes say so rather than reporting a rate.
     expect(metricsOf(report, 'A').useful_novelty_rate.status).toBe('insufficient_data');
     expect(metricsOf(report, 'A').useful_novelty_rate.reason).toContain('no candidate outcome was ever recorded');
-    // The control arms' numbers are STUB-determined, and their basis says why.
+    // The control arms' numbers remain STUB-determined (the candidate text is
+    // the comparator's scripted template), but the BASIS now names the rule that
+    // produced the decisions — the shipped archive, the same one the treatment
+    // arms ran — instead of this harness's own dedupe.
     expect(metricsOf(report, 'B').false_novelty.determination).toBe('stub_determined');
-    expect(metricsOf(report, 'B').false_novelty.basis).toContain('this harness’s own dedupe');
+    expect(metricsOf(report, 'B').false_novelty.basis).toContain('SHIPPED archive');
+    expect(metricsOf(report, 'B').false_novelty.basis).toContain('IdeaArchiveService.admitOrReplace');
+    expect(metricsOf(report, 'B').false_novelty.basis).toContain('SAME rule every arm in this experiment ran through');
+    expect(metricsOf(report, 'B').false_novelty.rejection_rule).toBe('shipped_archive');
+    // …and the treatment arms say the same thing about their own rule, so the
+    // two sides are described in one vocabulary.
+    expect(metricsOf(report, 'C').false_novelty.basis).toContain('SHIPPED archive');
+    expect(metricsOf(report, 'D').false_novelty.basis).toContain('SHIPPED archive');
     // Arm D carries three agents, so divergence is measurable there.
     expect(metricsOf(report, 'D').agent_divergence.value).not.toBeNull();
     expect(metricsOf(report, 'D').agent_divergence.determination).toBe('stub_determined');
@@ -185,15 +209,31 @@ describe('the baseline harness — the four arms, every number with its basis', 
     expect(d.rejections.length).toBe(3);
     rederived['D.generated'] = d.rows.length + d.rejections.length;
     rederived['D.false_novelty'] = Number((d.rejections.length / rederived['D.generated']).toFixed(6));
-    // 4. the pooled baseline: (1/4 × 4 + 4/8 × 8) ÷ 12 = 5/12, from the two
-    //    comparators' own per-arm numbers (the comparators are computed in the
-    //    harness, so the fixture cannot supply them) combined by hand rather
-    //    than read from the comparison block under test.
+    // 4. the pooled baseline: (3/4 × 4 + 7/8 × 8) ÷ 12 = 10/12, re-derived from
+    //    the FIXTURE (ITER-11 refinement): the comparators are captured there
+    //    now, admitted through the shipped archive, so their decisions are rows
+    //    a verifier can read rather than numbers this harness produced.
+    const a = arm('A');
+    const b = arm('B');
+    const seenRows = (fixtureArm: Record<string, any>): number =>
+      fixtureArm.rows.filter(
+        (row: any) => row.state === 'rejected' && ['duplicate_of', 'paraphrase_of', 'excluded_region'].includes(row.rejection_reason),
+      ).length;
+    expect(a.rows).toHaveLength(4);
+    expect(b.rows).toHaveLength(8);
+    rederived['A.false_novelty'] = Number((seenRows(a) / a.counts.generated).toFixed(6));
+    rederived['B.false_novelty'] = Number((seenRows(b) / b.counts.generated).toFixed(6));
+    expect(metricsOf(report, 'A').false_novelty.value).toBe(rederived['A.false_novelty']);
+    expect(metricsOf(report, 'B').false_novelty.value).toBe(rederived['B.false_novelty']);
     const seenA = metricsOf(report, 'A').false_novelty.rejected_as_seen;
     const seenB = metricsOf(report, 'B').false_novelty.rejected_as_seen;
     const genA = metricsOf(report, 'A').arm_generated_candidates.value;
     const genB = metricsOf(report, 'B').arm_generated_candidates.value;
-    expect([seenA, genA, seenB, genB]).toEqual([1, 4, 4, 8]);
+    // The archive's own decisions, on this fixture: the retrieval comparator
+    // restates ONE template four times and the wander emits both directions of
+    // every edge, so almost every candidate is a restatement of one already
+    // stored. (The values are re-derived below, not asserted here.)
+    expect([seenA, genA, seenB, genB]).toEqual([seenRows(a), a.counts.generated, seenRows(b), b.counts.generated]);
     const pooledBaseline = Number(((seenA + seenB) / (genA + genB)).toFixed(6));
     rederived['pooled_baseline.false_novelty'] = pooledBaseline;
     // 5. the pooled treatment, with the CORRECTED denominators: (2/6 × 6 + 3/9 × 9) ÷ 15 = 5/15.
@@ -209,6 +249,10 @@ describe('the baseline harness — the four arms, every number with its basis', 
     expect(d.rows.filter((row: any) => row.state === 'admitted')).toHaveLength(d.counts.admitted);
     expect(d.counts.generated).toBe(d.rows.length + d.rejections.length);
     expect(rederived['D.generated']).toBe(d.counts.generated);
+    // …and every arm's counts reconcile, comparators included.
+    for (const fixtureArm of [a, b, c, d]) {
+      expect(fixtureArm.counts.generated).toBe(fixtureArm.counts.admitted + fixtureArm.counts.rejected);
+    }
 
     expect(metricsOf(report, 'C').false_novelty.value).toBe(rederived['C.false_novelty']);
     expect(metricsOf(report, 'C').useful_novelty_rate.value).toBe(rederived['C.useful_novelty_rate']);
@@ -224,7 +268,14 @@ describe('the baseline harness — the four arms, every number with its basis', 
     expect(byMetric.false_novelty.relative_gain).toBe(
       Number(((pooledBaseline - pooledTreatment) / Math.abs(pooledBaseline)).toFixed(6)),
     );
-    expect(byMetric.false_novelty.relative_gain).toBeCloseTo(0.2, 5);
+    // With ONE rule on both sides the gain is 0.6 (ten of the comparators'
+    // twelve candidates are restatements against five of the treatment's
+    // fifteen), which clears the brief's 0.3 target. That is a statement about
+    // the archive's rule applied to SCRIPTED text on both sides — the magnitude
+    // stays stub_determined and both arms say so.
+    expect(byMetric.false_novelty.relative_gain).toBeCloseTo(0.6, 5);
+    expect(byMetric.false_novelty.verdict).toBe('improved');
+    expect(byMetric.false_novelty.comparability).toBe('like_for_like');
   });
 
   it('reports EQUAL as equal: no delta for two exactly-equal sides, and the reason says so', () => {
@@ -475,22 +526,30 @@ describe('the baseline harness — the four arms, every number with its basis', 
     });
     expect(byMetric.false_novelty.target).toMatchObject({ direction: 'lower', min_relative_gain: 0.3 });
     for (const row of report.comparisons) {
-      expect(['improved', 'not_improved', 'equal', 'insufficient_data']).toContain(row.verdict);
+      expect(['improved', 'not_improved', 'equal', 'insufficient_data', 'not_comparable']).toContain(row.verdict);
       expect(row.reason).toBeTruthy();
       expect(row.basis).toBeTruthy();
+      // Every comparison says what it is: the arms on each side, the rule that
+      // decided both, and whether they are comparable at all.
+      expect(['like_for_like', 'not_comparable']).toContain(row.comparability);
+      expect(row.comparability_basis).toBeTruthy();
     }
     // The baseline side has no recorded outcomes, so useful novelty is
     // insufficient_data rather than an invented number.
     expect(byMetric.useful_novelty_rate.verdict).toBe('insufficient_data');
     expect(byMetric.useful_novelty_rate.reason).toContain('no measured value');
-    // `false_novelty` is a REAL reading on both sides now that the denominators
-    // are the generated counts: 5/12 (baseline) vs 5/15 (treatment) — a 20%
-    // relative gain, short of the 30% target, so `not_improved` and NOT a
-    // fabricated win.
-    expect(byMetric.false_novelty.verdict).toBe('not_improved');
-    expect(byMetric.false_novelty.baseline.value).toBe(0.416667);
-    expect(byMetric.false_novelty.treatment.value).toBe(0.333333);
-    expect(byMetric.false_novelty.relative_gain).toBeCloseTo(0.2, 5);
+    // `false_novelty` is a REAL reading on both sides, and — since the ITER-11
+    // refinement — it is decided by ONE rule on both sides: the comparators'
+    // candidates are admitted through the shipped archive in the fixture, so the
+    // baseline is 10/12 (the retrieval template restated four times and the
+    // wander's both-direction restatements), the treatment 5/15, and the 0.6
+    // relative gain clears the 0.3 target. The LABEL stays honest: the candidate
+    // text is scripted on both sides, so the magnitude is stub_determined.
+    expect(byMetric.false_novelty.verdict).toBe('improved');
+    expect(byMetric.false_novelty.baseline.value).toBe(Number((10 / 12).toFixed(6)));
+    expect(byMetric.false_novelty.treatment.value).toBe(Number((5 / 15).toFixed(6)));
+    expect(byMetric.false_novelty.relative_gain).toBeCloseTo(0.6, 5);
+    expect(byMetric.false_novelty.comparability).toBe('like_for_like');
     // The task-quality metric is EXACTLY equal on both sides, so it states
     // equality rather than reporting a 0 delta as "not improved".
     expect(byMetric.task_quality_regression.verdict).toBe('equal');
@@ -500,6 +559,90 @@ describe('the baseline harness — the four arms, every number with its basis', 
     const overridden = runHarness(['--target', 'false_novelty=0.05']).report;
     const target = overridden.comparisons.find((row) => row.metric === 'false_novelty')!.target;
     expect(target).toMatchObject({ source: 'override', min_relative_gain: 0.05 });
+  });
+
+  it('REFUSES a cross-arm verdict when the sides did not run one rule (not_comparable)', () => {
+    // The reviewer's finding in test form: an arm whose candidates were decided
+    // by something other than the shipped archive makes the cross-arm comparison
+    // incomparable — and then NO delta and NO relative gain are formed, whatever
+    // the two readings happen to be. The per-arm numbers are what remains.
+    const dir = mkdtempSync(path.join(tmpdir(), 'iter11-comparability-'));
+    try {
+      const fixture = JSON.parse(readFileSync(FIXTURE, 'utf8')) as Record<string, any>;
+      const baselineArm = fixture.arms.find((row: any) => row.label === 'A');
+      baselineArm.admission_rule = {
+        path: 'harness_reimplementation',
+        service: null,
+        decided_by: 'a copy of the rule inside whatever computed this arm',
+        same_rule_as: ['A', 'B'],
+        text_is_scripted: true,
+        text_basis: 'the comparator template',
+      };
+      const file = path.join(dir, 'reimplemented.json');
+      writeFileSync(file, JSON.stringify(fixture));
+      const stdout = execFileSync('node', [HARNESS, '--json', '--no-write', '--fixture', file], {
+        cwd: SERVER_ROOT,
+        encoding: 'utf8',
+        env: { ...process.env, KATRA_USER_ID: USER },
+      });
+      const report = JSON.parse(stdout) as Report;
+      const row = report.comparisons.find((entry) => entry.metric === 'false_novelty')!;
+      expect(row.verdict).toBe('not_comparable');
+      expect(row.comparability).toBe('not_comparable');
+      expect(row.comparability_basis).toContain('did not have its candidates decided by the shipped archive');
+      // No cross-arm number is formed…
+      expect(row.delta).toBeNull();
+      expect(row.relative_gain).toBeNull();
+      // …while the two sides' own readings stay visible.
+      expect(row.baseline.value).toBe(Number((10 / 12).toFixed(6)));
+      expect(row.treatment.value).toBe(Number((5 / 15).toFixed(6)));
+      // An arm that declares NO rule at all is refused the same way.
+      delete baselineArm.admission_rule;
+      const bare = path.join(dir, 'bare.json');
+      writeFileSync(bare, JSON.stringify(fixture));
+      const bareReport = JSON.parse(
+        execFileSync('node', [HARNESS, '--json', '--no-write', '--fixture', bare], {
+          cwd: SERVER_ROOT,
+          encoding: 'utf8',
+          env: { ...process.env, KATRA_USER_ID: USER },
+        }),
+      ) as Report;
+      const bareRow = bareReport.comparisons.find((entry) => entry.metric === 'false_novelty')!;
+      expect(bareRow.verdict).toBe('not_comparable');
+      expect(bareRow.comparability_basis).toContain('undeclared');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('records the comparison block in the artefact the rollout gate reads', () => {
+    const { report } = runHarness();
+    const store = JSON.parse(readFileSync(STORE, 'utf8')) as Record<string, any>;
+    expect(store.comparison, 'the artefact carries no comparison block').toBeTruthy();
+    expect(store.comparison.baseline_arms).toEqual(['A', 'B']);
+    expect(store.comparison.treatment_arms).toEqual(['C', 'D']);
+    expect(store.comparison.what_is_compared).toContain('pre-engine comparators');
+    expect(Object.keys(store.comparison.admission_rule_per_arm).sort()).toEqual(['A', 'B', 'C', 'D']);
+    for (const label of ['A', 'B', 'C', 'D']) {
+      expect(store.comparison.admission_rule_per_arm[label].path).toBe('shipped_archive');
+    }
+    // The verdict field, metric by metric — the same object the report prints.
+    expect(store.comparison.metrics.map((row: any) => row.metric)).toEqual([
+      'useful_novelty_rate',
+      'false_novelty',
+      'task_quality_regression',
+    ]);
+    for (const row of store.comparison.metrics) {
+      const printed = report.comparisons.find((entry) => entry.metric === row.metric)!;
+      expect(row.verdict, `${row.metric} verdict`).toBe(printed.verdict);
+      expect(row.comparability).toBe(printed.comparability);
+      expect(row.comparability_basis).toBeTruthy();
+      expect(row.relative_gain).toBe(printed.relative_gain);
+    }
+    const falseNovelty = store.comparison.metrics.find((row: any) => row.metric === 'false_novelty');
+    expect(falseNovelty.verdict).toBe('improved');
+    expect(falseNovelty.comparability).toBe('like_for_like');
+    expect(falseNovelty.relative_gain).toBeCloseTo(0.6, 5);
   });
 
   it('the store is in the collection’s own shape, and the REAL compareExperiment agrees with the harness', async () => {

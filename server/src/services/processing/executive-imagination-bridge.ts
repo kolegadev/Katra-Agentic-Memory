@@ -24,14 +24,23 @@
  *     caught, recorded in the returned report and logged. The tick continues.
  *
  * The cycle's own gates are untouched and still apply in their contract order
- * (single-flight → persisted cooldown → window budget → plateau → claim), so
- * the executive cannot make a mission cycle more often than a human caller
- * could.
+ * (single-flight → global concurrency cap → persisted cooldown → window budget →
+ * plateau → claim), so the executive cannot make a mission cycle more often than
+ * a human caller could, and cannot start more concurrent cycles than the cap
+ * allows. A refusal by the GLOBAL cap (`concurrency_cap`) STOPS the sweep for
+ * this tick — the cap is process-wide, so retrying the remaining missions would
+ * only be refused again — and the reading is reported (`capped: true`) instead
+ * of being retried or silently dropped.
  */
 import type { Db } from 'mongodb';
 import { COLLECTIONS } from '../mission-cognition/collections.js';
 import { focusedImaginationEnabled } from './focused-consolidation-service.js';
-import { evaluatePlateau, runImaginationCycle, type ImaginationCycleResult } from './imagination-cycle-service.js';
+import {
+  evaluatePlateau,
+  runImaginationCycle,
+  type CycleConcurrencyRecord,
+  type ImaginationCycleResult,
+} from './imagination-cycle-service.js';
 
 /** How many identities one tick may sweep. */
 export const MAX_SWEEP_IDENTITIES = 8;
@@ -39,6 +48,13 @@ export const MAX_SWEEP_IDENTITIES = 8;
 export const MAX_SWEEP_MISSIONS = 3;
 /** The trigger label the executive's cycles carry (never user input). */
 export const EXECUTIVE_TRIGGER = 'executive_tick';
+/**
+ * The cycle's reason when the GLOBAL concurrency cap refused the slot. The sweep
+ * treats it as a STOP: the cap is process-wide, so a refusal for one mission is
+ * a refusal for every mission in this tick — the sweep stops calling and reports
+ * the reading instead of re-asking the cap once per remaining mission.
+ */
+export const CONCURRENCY_CAP_REASON = 'concurrency_cap';
 
 export interface ExecutiveImaginationSweepResult {
   /** False when the family flag is off — then nothing at all was read. */
@@ -52,6 +68,14 @@ export interface ExecutiveImaginationSweepResult {
   skipped: Array<{ user_id: string; mission_id: string; reason: string }>;
   /** Failures, caught and named — the tick is never interrupted by them. */
   failures: Array<{ user_id: string; mission_id: string | null; error: string }>;
+  /**
+   * The GLOBAL concurrency reading this sweep ended on: the cap in force, the
+   * in-flight count and whether this sweep took a slot. It is the reading of the
+   * cycle the sweep ran, or of the refusal that stopped it (see `capped`).
+   */
+  concurrency: CycleConcurrencyRecord | null;
+  /** True when the global cap refused this sweep a slot: nothing was started. */
+  capped: boolean;
   basis: string;
 }
 
@@ -107,8 +131,10 @@ export async function runExecutiveImaginationSweep(
     cycles: [],
     skipped: [],
     failures: [],
+    concurrency: null,
+    capped: false,
     basis: enabled
-      ? 'FOCUSED_IMAGINATION is on: active missions of the identities the executive serves, plateau evaluated first, at most one cycle per tick'
+      ? 'FOCUSED_IMAGINATION is on: active missions of the identities the executive serves, plateau evaluated first, at most one cycle per tick, and the cycle’s own global concurrency cap respected (a refusal stops the sweep)'
       : 'FOCUSED_IMAGINATION is off — nothing was read, no mission was evaluated and no cycle was run',
   };
   if (!enabled) return report;
@@ -158,8 +184,17 @@ export async function runExecutiveImaginationSweep(
           caller: { user_id: userId, trusted: false },
           now,
         } as never);
+        if (result.concurrency) report.concurrency = result.concurrency;
         if (result.status === 'skipped') {
           report.skipped.push({ user_id: userId, mission_id: missionId, reason: result.reason });
+          if (result.reason === CONCURRENCY_CAP_REASON) {
+            // The cap is process-wide: every other mission would be refused too,
+            // so the sweep stops here rather than asking once per mission. The
+            // tick continues (this is a bound, not an error) and the reading is
+            // reported with `capped: true`.
+            report.capped = true;
+            return report;
+          }
           continue;
         }
         report.cycles_run += 1;

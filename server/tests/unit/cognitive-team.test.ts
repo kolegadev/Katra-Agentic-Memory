@@ -47,6 +47,34 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 process.env.REDIS_URL = 'redis://127.0.0.1:6399';
 
+/**
+ * REPRODUCIBILITY (ITER-11 refinement). The exit criterion prints operator-plan
+ * Jaccards, and those numbers were not reproducible: the trace id the ITER-5
+ * ledger mints is a `randomUUID()`, it is hashed into the signal ids and then
+ * into each agent's generation seed, so every run drew a different operator plan
+ * and printed a different number (0.3333 / 0.3519 / 0.2815 / 0.2778 …). A
+ * recorded number nobody can re-derive is not evidence, and the CHANGELOG quotes
+ * these ones.
+ *
+ * The fix is the one `imagination-baseline-fixture.test.ts` already uses: pin
+ * `randomUUID` to a counter, RESET before every test, so a run — of this file or
+ * of one test inside it — derives the same trace ids, the same seeds and the
+ * same plans. The ids keep the v4 shape the schemas validate, and never repeat
+ * within a test.
+ */
+const uuidCounter = vi.hoisted(() => ({ value: 0 }));
+
+vi.mock('node:crypto', async (importOriginal) => {
+  const actual = (await importOriginal()) as Record<string, unknown>;
+  return {
+    ...actual,
+    randomUUID: () => {
+      uuidCounter.value += 1;
+      return `00000000-0000-4000-8000-${String(uuidCounter.value).padStart(12, '0')}`;
+    },
+  };
+});
+
 const holder = vi.hoisted(() => ({ db: null as any }));
 
 vi.mock('../../src/database/connection.js', () => ({
@@ -200,6 +228,9 @@ beforeEach(() => {
   clock = '2026-09-25T00:00:00.000Z';
   prompts = [];
   respond = defaultResponder;
+  // The uuid stream restarts per test, so the ids — and therefore the seeds and
+  // the printed divergence numbers — do not depend on which tests ran before.
+  uuidCounter.value = 0;
   vi.spyOn(llmService, 'extractJson').mockImplementation((async (system: string, prompt: string) => {
     prompts.push({ system, prompt });
     return respond(system, prompt);
@@ -1888,6 +1919,9 @@ describe('exit criterion — same model, different modes', () => {
         `  control A (all philosopher): jaccard mean ${controlA.jaccard_mean} ${JSON.stringify(controlA.jaccard)} · closest mean ${controlA.closest_mean} · unique share ${controlA.unique_share} · plan jaccard ${controlAPlan.mean_plan_jaccard}`,
         `  control B (all analyst):     jaccard mean ${controlB.jaccard_mean} ${JSON.stringify(controlB.jaccard)} · closest mean ${controlB.closest_mean} · unique share ${controlB.unique_share} · plan jaccard ${controlBPlan.mean_plan_jaccard}`,
         `  control C (all analyst, SEED VARIED): jaccard mean ${controlSeed.jaccard_mean} ${JSON.stringify(controlSeed.jaccard)} · closest mean ${controlSeed.closest_mean} · unique share ${controlSeed.unique_share} · plan jaccard ${controlSeedPlan.mean_plan_jaccard}`,
+        '  REPRODUCIBLE: the trace ids come from the pinned stream (the `node:crypto` mock at the top of this',
+        '  file), so every number above is the same on every run — whole file or `-t` filtered. The CHANGELOG',
+        '  quotes THESE numbers; run this test to re-derive them.',
       ].join('\n'),
     );
 
@@ -1938,6 +1972,24 @@ describe('exit criterion — same model, different modes', () => {
     expect(treatmentPlan.mean_plan_jaccard).toBeLessThan(controlSeedPlan.mean_plan_jaccard);
     expect(treatmentPlan.mean_plan_jaccard).toBeLessThan(1);
     expect(treatmentPlan.unique_operator_share).toBeGreaterThan(0);
+
+    // (b3b) REPRODUCIBILITY — the ids every number above rests on come from the
+    //      PINNED uuid stream (see the `node:crypto` mock at the top of this
+    //      file), not from a real `randomUUID`. Without the pin the plan numbers
+    //      moved run to run (0.3519, 0.2815, 0.3519, 0.2778 across four runs of
+    //      the unchanged code, and 0.3333 in the reviewer's run), which is why
+    //      the CHANGELOG's ITER-8 entry could not reproduce its own figure: the
+    //      trace id is hashed into the signal ids and then into each agent's
+    //      generation seed. The assertion is on the MECHANISM rather than on the
+    //      digits, so a legitimate fixture change does not fail it for the wrong
+    //      reason — a real `randomUUID` does.
+    const traceIds = (db.collection('salience_traces').docs as Array<Record<string, any>>).map((row) => String(row.trace_id));
+    expect(traceIds.length).toBeGreaterThan(0);
+    for (const traceId of traceIds) {
+      expect(traceId, `unpinned trace id ${traceId} — the divergence numbers would not reproduce`).toMatch(
+        /^00000000-0000-4000-8000-\d{12}$/,
+      );
+    }
 
     // (c) no private content crossed: markers in every private store, planted
     //     once the generation is done, are absent from every surface the runs

@@ -10,12 +10,23 @@
  * (generated and freshness-gated by
  * `tests/unit/imagination-baseline-fixture.test.ts`):
  *
- *   A  control — dreamer-style retrieval (the pre-engine path), implemented HERE
- *   B  control — mind-wander over the mission graph, implemented HERE
- *   C  treatment — the focused engine, one balanced identity (rows captured from
- *      the real services in the fixture)
- *   D  treatment — the engine plus the heterogeneous team (rows captured from
- *      the real services in the fixture)
+ *   A  control — dreamer-style retrieval (the pre-engine path)
+ *   B  control — mind-wander over the mission graph
+ *   C  treatment — the focused engine, one balanced identity
+ *   D  treatment — the engine plus the heterogeneous team
+ *
+ * ALL FOUR ARMS COME FROM THE FIXTURE, AND ALL FOUR WERE DECIDED BY THE SAME
+ * SHIPPED RULE (ITER-11 refinement). Before this refinement the two comparators
+ * were implemented HERE, including their own re-implementation of the archive's
+ * containment rule (the constants duplicated), while the treatments ran the
+ * shipped archive — so the cross-arm `false_novelty` comparison was not
+ * like-for-like. It is now: every arm's candidates were admitted/rejected by
+ * `IdeaArchiveService.admitOrReplace` in the fixture generator (the comparators
+ * over a throwaway identity + mission), and the fixture records that rule's own
+ * decisions. Each arm carries an `admission_rule` block naming it, and every
+ * comparison row carries a `comparability` verdict derived from those blocks:
+ * `like_for_like` when both sides name one shipped rule, `not_comparable`
+ * otherwise (in which case NO cross-arm delta or relative gain is formed).
  *
  * WHAT IS MEASURED, AND HOW HONESTLY
  *
@@ -24,24 +35,15 @@
  *   store_measured  — arithmetic over the fixture's own captured rows: the
  *                     archive's rejections, the coverage counts, the recorded
  *                     outcomes, the cost, the timings.
- *   stub_determined — the value depends on the SCRIPTED model's text (the
- *                     comparators' idea text, and every similarity built on it).
- *                     The printed report says so; nothing here is evidence that
- *                     a real model's ideas diverge.
+ *   stub_determined — the value depends on SCRIPTED TEXT (the comparators'
+ *                     template sentences, the scripted model's seeds, and every
+ *                     similarity built on them). The printed report says so;
+ *                     nothing here is evidence that a real model's ideas
+ *                     diverge.
  *   insufficient_data — the metric cannot be measured from this fixture at all:
  *                     no recorded outcomes, no recorded spend, no cycle trigger
  *                     to time from, or fewer than the minimum samples. The
  *                     reason is always printed beside it.
- *
- * The two CONTROL arms are implemented in this file, because the pre-engine
- * path is not a service any more (ITER-4's operator-free comparator). Their
- * comparator is deliberately the documented pre-engine behaviour: retrieval
- * ranks the mission's concepts by graph degree and emits one idea per concept;
- * the wander emits BOTH directions of every walk step — an undeduped wander
- * produces exactly those restatements, which is the pathology the archive was
- * built to reject. Both are marked `stub_determined` and their dedupe is this
- * harness's own re-implementation of the archive's containment rule (labelled
- * as such), never presented as an archive measurement.
  *
  * WHAT IT WRITES
  *
@@ -51,7 +53,10 @@
  *                    the real `registerExperiment`/`recordExperimentObservation`
  *                    produce (sha256 over the same payloads), so the recorded
  *                    baseline can be compared by the real `compareExperiment`
- *                    and re-imported without translation.
+ *                    and re-imported without translation. The file ALSO carries
+ *                    a top-level `comparison` block — the verdicts, what each
+ *                    side is, and whether the two sides are comparable —
+ *                    because the rollout gate reads a verdict, not a row.
  *                    Default: docs/IMAGINATION-BASELINE.json
  *   --grade <path>   an operator's BLIND grades (novelty / coherence /
  *                    testability / information_gain per arm+checkpoint), which
@@ -71,10 +76,19 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SERVER_ROOT = path.resolve(HERE, '..');
 const REPO_ROOT = path.resolve(SERVER_ROOT, '..');
 
-// ── The archive's documented rules, re-implemented (and labelled) ───────────
+// ── Text similarity — for the DIVERGENCE metric ONLY ────────────────────────
+//
+// This harness no longer re-implements the archive's admission rule: every arm's
+// admission decision is made by the SHIPPED `IdeaArchiveService.admitOrReplace`
+// in the fixture generator, and this file only READS the recorded decisions
+// (see each arm's `admission_rule`). The tokeniser below is used for exactly one
+// thing — `agent_divergence`, the closest-pair Jaccard between agents' idea
+// text — and that metric is labelled `stub_determined`, because the text is a
+// scripted model's. Keeping the two apart is the point of the refinement: a
+// similarity used as a MEASUREMENT is not a rule used as a GATE.
 
-/** The archive's stopword list, copied verbatim (`idea-archive-service.ts`). */
-const CONTENT_STOPWORDS = new Set([
+/** Stopwords for the divergence tokeniser (the archive's list, as a reading aid). */
+const DIVERGENCE_STOPWORDS = new Set([
   'a', 'about', 'above', 'after', 'again', 'against', 'all', 'also', 'am', 'an', 'and', 'any', 'are', 'as', 'at',
   'be', 'because', 'been', 'before', 'being', 'below', 'between', 'both', 'but', 'by', 'can', 'could', 'did', 'do',
   'does', 'down', 'during', 'each', 'few', 'for', 'from', 'further', 'had', 'has', 'have', 'he', 'her', 'here',
@@ -85,9 +99,6 @@ const CONTENT_STOPWORDS = new Set([
   'under', 'until', 'up', 'upon', 'us', 'very', 'was', 'we', 'were', 'what', 'when', 'where', 'which', 'while',
   'who', 'whom', 'whose', 'why', 'will', 'with', 'within', 'without', 'would', 'you', 'your',
 ]);
-const PARAPHRASE_THRESHOLD = 0.72;
-const MIN_CONTAINMENT_OVERLAP = 2;
-const LENGTH_GUARD_RATIO = 0.5;
 
 function contentTokens(text) {
   const normalized = String(text ?? '')
@@ -98,7 +109,7 @@ function contentTokens(text) {
   const out = new Set();
   for (const token of normalized.length > 0 ? normalized.split(' ') : []) {
     if (token.length < 3) continue;
-    if (CONTENT_STOPWORDS.has(token)) continue;
+    if (DIVERGENCE_STOPWORDS.has(token)) continue;
     out.add(token);
   }
   return out;
@@ -113,225 +124,65 @@ function jaccard(left, right) {
   return shared / (a.size + b.size - shared);
 }
 
-function containment(left, right) {
-  const a = contentTokens(left);
-  const b = contentTokens(right);
-  if (a.size === 0 || b.size === 0) return 0;
-  let shared = 0;
-  for (const token of a) if (b.has(token)) shared += 1;
-  return { value: shared / Math.min(a.size, b.size), shared };
-}
-
-/** The archive's pair rule: a paraphrase is containment OR Jaccard ≥ 0.72. */
-function isParaphrase(left, right) {
-  const measured = containment(left, right);
-  if (measured.value >= PARAPHRASE_THRESHOLD && measured.shared >= MIN_CONTAINMENT_OVERLAP) return true;
-  const longer = Math.max(left.length, right.length);
-  const shorter = Math.min(left.length, right.length);
-  if (longer > 0 && shorter / longer < LENGTH_GUARD_RATIO) return false;
-  return jaccard(left, right) >= PARAPHRASE_THRESHOLD;
-}
-
-// ── The two CONTROL comparators (the pre-engine path) ──────────────────────
-
-/** The default descriptor tuple the comparators assign (one cell, by design). */
-const CONTROL_BINS = {
-  mechanism: 'relocation',
-  representation: 'prose',
-  violated_assumption: 'stability',
-  evidence_family: 'operational_state',
-  test_strategy: 'observation_study',
-};
-const WANDER_BINS = {
-  mechanism: 'composition',
-  representation: 'graph',
-  violated_assumption: 'independence',
-  evidence_family: 'external_observation',
-  test_strategy: 'simulation',
-};
-
-function controlRow(index, statement, mechanism, bins) {
-  return {
-    seed_id: `control_${String(index + 1).padStart(2, '0')}`,
-    agent: 'control',
-    operator: 'pre_engine',
-    hypothesis: statement,
-    mechanism,
-    descriptor_bins: { ...bins },
-    cell_key: Object.entries(bins)
-      .map(([dimension, bin]) => `${dimension}=${bin}`)
-      .join('|'),
-    novelty_score: 0.5,
-    coherence_score: 0.5,
-    testability_score: 0.4,
-    expected_information_gain: 0.2,
-    cheapest_test: 'Ask whether the concept still explains the plateau.',
-    quality: 0.48,
-    state: 'admitted',
-    rejection_reason: null,
-    created_at: null,
-    privacy_safe: true,
-    scripted: true,
-  };
-}
+// ── Arms ───────────────────────────────────────────────────────────────────
 
 /**
- * The comparators' task-quality evidence — DECLARED HERE, and labelled as such.
+ * The four arms, read from the fixture — A and B (the pre-engine comparators)
+ * as captured by the fixture generator through the SHIPPED archive, C and D
+ * (the treatments) as captured from the real services. Nothing about an arm is
+ * synthesised here: the harness reads the rows and the rule that produced them.
  *
- * The pre-engine path has no cycle service and no archive, so it ran zero
- * cycles for this plateau and produced nothing shared to scan. Both facts are
- * stated as declarations by the file that implements the comparator (there is
- * no store row to read), not as measurements, and each evaluation says so in
- * its basis. A zero-run count satisfies "one cycle per plateau" VACUOUSLY and a
- * scan with nothing to scan flags nothing VACUOUSLY: the task-quality report
- * marks both `vacuous` rather than reading them as evidence of quality.
+ * `admission_rule` is REQUIRED on every arm, because the comparison’s
+ * `comparability` verdict is derived from it: an arm that cannot name the rule
+ * that decided its candidates makes the comparison `not_comparable`.
  */
-function controlTaskQualityEvidence() {
-  return {
-    plateau: {
-      window_id: 'frozen_checkpoint_alpha',
-      cycles_in_window: 0,
-      run_ids: [],
-      measured_from:
-        'this harness (the comparator is implemented here): the pre-engine path has no cycle service — retrieval and mind-wander emit candidates directly — so ZERO cycle/pass runs exist for this window',
-      declared_by: 'server/scripts/imagination-baseline.mjs',
-      determination: 'stub_determined',
-    },
-    taint: {
-      shared_artefacts_scanned: 0,
-      flagged: 0,
-      markers_checked: 0,
-      measured_from:
-        'this harness: the pre-engine path produces no shared artefact at all (no baton, no promotion), so there is nothing to scan — a VACUOUS clean result, labelled as such',
-      declared_by: 'server/scripts/imagination-baseline.mjs',
-      determination: 'stub_determined',
-    },
-  };
-}
-
-/** Arm A — dreamer-style retrieval: one idea per concept, ranked by degree. */
-function controlArmA(fixture) {
-  const concepts = fixture.baseline_material.concepts;
-  const rows = concepts.map((concept, index) =>
-    controlRow(
-      index,
-      `Investigate ${concept.name} further: it is central to the mission's graph and may be the plateau.`,
-      `A concept with degree ${concept.degree} sits at the centre of the mission's own graph, so it is the most retrievable explanation the pre-engine path offers.`,
-      CONTROL_BINS,
-    ),
-  );
-  return {
-    label: 'A',
-    name: 'control_dreamer_retrieval',
-    kind: 'control',
-    config: {
-      path: 'pre-engine dreamer-style retrieval',
-      retrieval: 'concepts ranked by graph degree (prominence)',
-      operators: 'none (the pre-engine path had no operator plan)',
-      archive: 'none',
-    },
-    generation: {
-      path: 'harness_comparator',
-      captured_from: 'this script (controlArmA) over the fixture’s graph',
-      determination: 'stub_determined',
-      note:
-        'one idea per concept with a fixed descriptor tuple; the TEXT is this script’s, so every similarity built on it is ' +
-        'stub-determined too (the archive’s rule is re-implemented in this file for this arm and labelled as such)',
-    },
-    rows,
-    coverage: null,
-    tokens: 0,
-    trigger_at: null,
-    outcomes: { recorded: 0, useful_information: 0, mere_variance: 0, unnecessary_cost: 0, decisions: [] },
-    rejections: [],
-    ...controlTaskQualityEvidence(),
-  };
-}
-
-/** Arm B — mind-wander: both directions of every walk step, undeduped. */
-function controlArmB(fixture) {
-  const byId = new Map(fixture.baseline_material.concepts.map((concept) => [concept.id, concept]));
-  const rows = [];
-  for (const [from, to] of fixture.baseline_material.edges) {
-    const a = byId.get(from);
-    const b = byId.get(to);
-    if (!a || !b) continue;
-    rows.push(
-      controlRow(
-        rows.length,
-        `Explore the connection between ${a.name} and ${b.name}.`,
-        `The wander walked the edge ${a.name} → ${b.name}; the connection itself is the hypothesis.`,
-        WANDER_BINS,
-      ),
-    );
-    rows.push(
-      controlRow(
-        rows.length,
-        `Explore the connection between ${b.name} and ${a.name}.`,
-        `The same edge read backwards: an undeduped wander emits both directions.`,
-        WANDER_BINS,
-      ),
-    );
-  }
-  return {
-    label: 'B',
-    name: 'control_mind_wander',
-    kind: 'control',
-    config: {
-      path: 'pre-engine mind-wander over the graph',
-      retrieval: 'walk steps from the mission’s edges',
-      operators: 'none',
-      archive: 'none',
-      note: 'both directions of every step are emitted, exactly as an undeduped wander does',
-    },
-    generation: {
-      path: 'harness_comparator',
-      captured_from: 'this script (controlArmB) over the fixture’s graph',
-      determination: 'stub_determined',
-      note: 'the walk text and its restatements are this script’s; the dedupe it is measured against is also this file’s',
-    },
-    rows,
-    coverage: null,
-    tokens: 0,
-    trigger_at: null,
-    outcomes: { recorded: 0, useful_information: 0, mere_variance: 0, unnecessary_cost: 0, decisions: [] },
-    rejections: [],
-    ...controlTaskQualityEvidence(),
-  };
+function armsFromFixture(fixture) {
+  const arms = (fixture.arms ?? []).map((arm) => ({
+    ...arm,
+    generation: arm.generation ?? { path: "unknown", determination: "stub_determined", note: "the fixture declares no generation block" },
+    rejections: arm.rejections ?? (arm.rows ?? []).filter((row) => row.state === "rejected").map((row) => ({ seed_id: row.seed_id, reason: row.rejection_reason ?? "rejected" })),
+    outcomes: arm.outcomes ?? { recorded: 0, useful_information: 0, mere_variance: 0, unnecessary_cost: 0, decisions: [] },
+  }));
+  return arms.sort((left, right) => String(left.label).localeCompare(String(right.label)));
 }
 
 /**
- * Score a control arm the way the archive would have: pairwise, in order, so
- * the FIRST statement of a paraphrase pair is admitted and the later one is
- * rejected as `paraphrase_of` — the same discipline (and the same reasons) the
- * real archive reports.
+ * The rule an arm’s admission decisions came from — the fact the comparison’s
+ * comparability rests on. The block is read from the fixture exactly as it was
+ * recorded; this function never invents one.
  */
-function applyHarnessDedupe(arm) {
-  const admitted = [];
-  for (const row of arm.rows) {
-    let matched = null;
-    for (const prior of admitted) {
-      if (isParaphrase(row.hypothesis, prior.hypothesis)) {
-        matched = prior;
-        break;
-      }
-    }
-    if (matched) {
-      row.state = 'rejected';
-      row.rejection_reason = 'paraphrase_of';
-      arm.rejections.push({ seed_id: row.seed_id, reason: 'paraphrase_of' });
-      continue;
-    }
-    row.state = 'admitted';
-    row.rejection_reason = null;
-    admitted.push(row);
+function admissionRuleOf(arm) {
+  const rule = arm?.admission_rule;
+  if (!rule || typeof rule !== "object") {
+    return { path: "undeclared", service: null, decided_by: null, text_is_scripted: null };
   }
-  // The candidate accounting the metrics read: the comparator generated every
-  // row it emits (there is no separate rejected-rows list for it), so its
-  // declared count IS the row count — declared explicitly rather than inferred,
-  // so every arm's `counts` means the same thing.
-  arm.counts = { generated: arm.rows.length, admitted: admitted.length, rejected: arm.rejections.length, below_incumbent: 0 };
-  return arm;
+  return {
+    path: String(rule.path ?? "undeclared"),
+    service: rule.service ? String(rule.service) : null,
+    decided_by: rule.decided_by ? String(rule.decided_by) : null,
+    text_is_scripted: rule.text_is_scripted === true,
+    text_basis: rule.text_basis ? String(rule.text_basis) : null,
+    schema_necessary_fields: rule.schema_necessary_fields ? String(rule.schema_necessary_fields) : null,
+  };
+}
+
+/** One sentence naming the rule, shared by every basis that rests on it. */
+function ruleSentence(arm) {
+  const rule = admissionRuleOf(arm);
+  if (rule.path !== "shipped_archive") {
+    return (
+      "the rejection decisions for this arm were NOT produced by the shipped archive " +
+      `(admission_rule.path = "${rule.path}"), so they are not comparable with the arms that were`
+    );
+  }
+  const scripted = rule.text_is_scripted
+    ? `; the candidate TEXT is a scripted template (${rule.text_basis ?? "declared scripted"}), so the magnitude is stub_determined`
+    : "";
+  return (
+    `the rejection decisions are the SHIPPED archive’s own rows (${rule.service}, decided in ${rule.decided_by}) — ` +
+    "the SAME rule every arm in this experiment ran through" +
+    scripted
+  );
 }
 
 // ── The metrics ───────────────────────────────────────────────────────────
@@ -475,10 +326,8 @@ function metricsFor(arm, fixture) {
         determination,
         `${seen.length} rejection(s) with a seen-before reason (${[...SEEN_REASONS].join(', ')}) ÷ ${generated} generated candidate(s) ` +
           `(the denominator is the arm's own generated count — a treatment arm's rows hold only the seeds it ADMITTED, so a row count would be the wrong basis); ` +
-          (arm.generation.path === 'harness_comparator'
-            ? 'the rejection decisions are this harness’s own dedupe, so the number is stub-determined'
-            : 'the rejection decisions are the real archive’s recorded rows'),
-        { fields: { rejected_as_seen: seen.length, generated } },
+          ruleSentence(arm),
+        { fields: { rejected_as_seen: seen.length, generated, rejection_rule: admissionRuleOf(arm).path } },
       ),
     );
   } else {
@@ -1082,15 +931,99 @@ function aggregate(observations, arms, metricName) {
   return { arm: arms.join('+'), weighted_mean: Number(weighted.toFixed(6)), n: totalN, rows };
 }
 
+/**
+ * Is the cross-arm comparison LIKE-FOR-LIKE?
+ *
+ * A comparison is only meaningful when one RULE decided both sides' candidates.
+ * ITER-11 refinement: the reviewer found the baseline side's rejections were
+ * produced by this harness's own re-implementation of the archive rule while the
+ * treatment side ran the shipped archive — the 20 % false-novelty gain was
+ * therefore not like-for-like. The rule is now one (the shipped archive, in the
+ * fixture generator), and this function CHECKS that rather than assuming it:
+ *
+ *   like_for_like   — every arm on both sides declares `shipped_archive` and
+ *                     names the SAME service, so one rule decided both sides.
+ *   not_comparable  — anything else (an undeclared rule, a side that names a
+ *                     different rule, a side with no arms at all). NO cross-arm
+ *                     delta or relative gain is formed in that case, and the
+ *                     verdict is `not_comparable` — the per-arm numbers stand on
+ *                     their own, the difference between them does not.
+ */
+function comparabilityOf(arms, baselineArms, treatmentArms) {
+  const labels = [...baselineArms, ...treatmentArms];
+  const rows = labels.map((label) => ({ label, rule: admissionRuleOf(arms.find((arm) => arm.label === label) ?? {}) }));
+  const missing = rows.filter((row) => row.rule.path !== 'shipped_archive').map((row) => `${row.label} (${row.rule.path})`);
+  if (missing.length > 0) {
+    return {
+      verdict: 'not_comparable',
+      rule: null,
+      basis:
+        `arm ${missing.join(', ')} did not have its candidates decided by the shipped archive, so the two sides were not produced by one rule ` +
+        'and no cross-arm difference is formed',
+    };
+  }
+  const services = [...new Set(rows.map((row) => row.rule.service))];
+  if (services.length > 1) {
+    return {
+      verdict: 'not_comparable',
+      rule: null,
+      basis:
+        `the two sides name DIFFERENT admission services (${services.join(' vs ')}), so the difference between them would measure the rules as ` +
+        'much as the arms; no cross-arm difference is formed',
+    };
+  }
+  const decidedBy = [...new Set(rows.map((row) => row.rule.decided_by))];
+  const scriptedSides = rows.filter((row) => row.rule.text_is_scripted).map((row) => row.label);
+  return {
+    verdict: 'like_for_like',
+    rule: {
+      service: services[0],
+      decided_by: decidedBy,
+      arms: labels,
+      text_is_scripted_on: scriptedSides,
+    },
+    basis:
+      `every arm on both sides (${labels.join(', ')}) was admitted/rejected by the same shipped rule — ${services[0]} — so the difference between ` +
+      `the sides is the difference between the paths, not between two rules; the candidate TEXT is scripted on arm(s) ${scriptedSides.join(', ') || 'none'}, ` +
+      'so the magnitude is stub_determined while the rule is the deployment’s own',
+  };
+}
+
 /** The ONE verdict rule, mirroring `compareMeasuredValues`. */
-function compareMetric({ metricName, observations, baselineArms, treatmentArms, targets = {} }) {
+function compareMetric({ metricName, observations, arms, baselineArms, treatmentArms, targets = {} }) {
   const named = NAMED_TARGETS[metricName];
   const target = { ...(named ?? DEFAULT_TARGET), ...(targets[metricName] ?? {}) };
   const source = targets[metricName] ? 'override' : named ? 'named-target' : 'default-target';
   const baseline = aggregate(observations, baselineArms, metricName);
   const treatment = aggregate(observations, treatmentArms, metricName);
   const n = { baseline: baseline?.n ?? 0, treatment: treatment?.n ?? 0, minimum: target.min_samples };
-  const core = { metric: metricName, direction: target.direction, target: { ...target, source }, baseline, treatment, n };
+  const comparability = comparabilityOf(arms, baselineArms, treatmentArms);
+  const core = {
+    metric: metricName,
+    direction: target.direction,
+    target: { ...target, source },
+    baseline,
+    treatment,
+    n,
+    comparability: comparability.verdict,
+    comparability_basis: comparability.basis,
+    comparison_rule: comparability.rule,
+  };
+  if (comparability.verdict !== 'like_for_like') {
+    // NO cross-arm numbers on an incomparable pair: the per-arm readings above
+    // remain (they are each side's own), the difference between them is not
+    // formed, and the verdict says why.
+    return {
+      ...core,
+      delta: null,
+      relative_gain: null,
+      verdict: 'not_comparable',
+      reason: comparability.basis,
+      basis:
+        `${observations.filter((row) => row.metric === metricName).length} observation(s) for ${metricName}; the sides are NOT comparable ` +
+        `(${comparability.basis}), so the per-arm numbers are reported and no cross-arm verdict is claimed`,
+    };
+  }
   if (!baseline || !treatment) {
     return {
       ...core,
@@ -1098,7 +1031,7 @@ function compareMetric({ metricName, observations, baselineArms, treatmentArms, 
       relative_gain: null,
       verdict: 'insufficient_data',
       reason: `${!baseline ? 'the baseline side' : 'the treatment side'} has no measured value for ${metricName} — no comparison can be formed`,
-      basis: `${observations.filter((row) => row.metric === metricName).length} observation(s) for ${metricName}`,
+      basis: `${observations.filter((row) => row.metric === metricName).length} observation(s) for ${metricName}; both sides ran the same rule (${comparability.rule.service})`,
     };
   }
   const delta = Number((treatment.weighted_mean - baseline.weighted_mean).toFixed(6));
@@ -1162,13 +1095,37 @@ function compareMetric({ metricName, observations, baselineArms, treatmentArms, 
     basis:
       `observations for ${metricName}, baseline arms ${baselineArms.join('+')} (${baseline.weighted_mean}, n ${baseline.n}) vs ` +
       `treatment arms ${treatmentArms.join('+')} (${treatment.weighted_mean}, n ${treatment.n}), pooled and weighted by n; ` +
-      `target ${target.direction} is better by ${target.min_relative_gain} relative (${source})`,
+      `target ${target.direction} is better by ${target.min_relative_gain} relative (${source}); ` +
+      `comparability ${comparability.verdict} — ${comparability.basis}`,
   };
 }
 
 // ── Blind grading ─────────────────────────────────────────────────────────
 
 const GRADE_FIELDS = ['novelty', 'coherence', 'testability', 'information_gain'];
+
+/**
+ * The comparison, in the shape BOTH the report and the artefact carry — so the
+ * verdict field a reader or a rollout gate reads is the same object whether it
+ * came from stdout or from `docs/IMAGINATION-BASELINE.json`.
+ */
+function comparisonSummary(comparison) {
+  return {
+    metric: comparison.metric,
+    verdict: comparison.verdict,
+    comparability: comparison.comparability,
+    comparability_basis: comparison.comparability_basis,
+    comparison_rule: comparison.comparison_rule,
+    direction: comparison.target.direction,
+    baseline: comparison.baseline ? { value: comparison.baseline.weighted_mean, n: comparison.baseline.n } : null,
+    treatment: comparison.treatment ? { value: comparison.treatment.weighted_mean, n: comparison.treatment.n } : null,
+    delta: comparison.delta,
+    relative_gain: comparison.relative_gain,
+    target: comparison.target,
+    reason: comparison.reason,
+    basis: comparison.basis,
+  };
+}
 
 function readGrades(file) {
   if (!file) return { grades: [], path: null, error: null };
@@ -1227,8 +1184,18 @@ Options
 
 What is measured: every number carries its basis and a determination —
 store_measured (arithmetic over the fixture's captured rows), stub_determined
-(it depends on the scripted model's text), or insufficient_data (it cannot be
+(it depends on SCRIPTED TEXT on either side), or insufficient_data (it cannot be
 measured without a live model; the reason is printed).
+
+What is compared: baseline arms A+B (the pre-engine comparators) vs treatment
+arms C+D (the engine, and the engine with a heterogeneous team), metric by
+metric, each with a 'comparability' verdict derived from the arms' own
+'admission_rule' blocks — 'like_for_like' when ONE shipped rule decided both
+sides (every arm's candidates are admitted by IdeaArchiveService.admitOrReplace
+in the fixture generator), otherwise 'not_comparable', in which case no cross-arm
+delta or relative gain is formed and only the per-arm numbers are reported. The
+store file carries the same block under a top-level 'comparison' key, and the
+report's VERDICT section prints it.
 `;
 
 function parseArgs(argv) {
@@ -1296,6 +1263,10 @@ function buildReport({ fixture, arms, perArmMetrics, taskQualityCheck, compariso
     lines.push(`        counts: ${account.generated_source}${account.reconciled ? '' : ' — THE COUNTS DO NOT RECONCILE'}`);
     lines.push(`        config: ${JSON.stringify(arm.config)}`);
     lines.push(`        generation: ${arm.generation.path} (${arm.generation.determination}) — ${arm.generation.note}`);
+    lines.push(`        admission rule: ${admissionRuleOf(arm).path} — ${admissionRuleOf(arm).service ?? '(none declared)'} (decided in ${admissionRuleOf(arm).decided_by ?? 'an undeclared place'})`);
+    lines.push(
+      `        candidate text: ${admissionRuleOf(arm).text_is_scripted ? `scripted — ${admissionRuleOf(arm).text_basis}` : 'not declared scripted'}`,
+    );
   }
   lines.push('');
   lines.push('  PER-METRIC NUMBERS, EACH WITH ITS BASIS');
@@ -1360,17 +1331,34 @@ function buildReport({ fixture, arms, perArmMetrics, taskQualityCheck, compariso
   lines.push('');
   lines.push('  COMPARISON (baseline arms A+B vs treatment arms C+D; ≥30% better useful novelty is the named target)');
   for (const comparison of comparisons) {
-    lines.push(`    ${comparison.metric.padEnd(34)} ${comparison.verdict}`);
+    lines.push(`    ${comparison.metric.padEnd(34)} ${comparison.verdict}  [comparability: ${comparison.comparability}]`);
     lines.push(`        baseline ${JSON.stringify(comparison.baseline?.weighted_mean ?? null)} (n ${comparison.n.baseline}) vs treatment ${JSON.stringify(comparison.treatment?.weighted_mean ?? null)} (n ${comparison.n.treatment})`);
+    if (comparison.comparison_rule) {
+      lines.push(
+        `        one rule on both sides: ${comparison.comparison_rule.service} — decided in ${comparison.comparison_rule.decided_by.join(' / ')}`,
+      );
+    }
+    lines.push(`        why comparable: ${comparison.comparability_basis}`);
     lines.push(`        reason: ${comparison.reason}`);
     lines.push(`        basis:  ${comparison.basis}`);
   }
   lines.push('');
   lines.push('  VERDICT');
-  lines.push(`    ${comparisons.map((row) => `${row.metric}=${row.verdict}`).join(' · ')}`);
-  lines.push('    Nothing here is evidence about a real model: the idea TEXT is a scripted stub’s, so every text-derived');
-  lines.push('    magnitude is stub_determined; the store-measured numbers are the archive’s own decisions, the recorded');
-  lines.push('    outcomes, the cost and the timings. Re-run against a live deployment to turn the stubs into evidence.');
+  lines.push(
+    `    ${comparisons
+      .map(
+        (row) =>
+          `${row.metric}=${row.verdict}${row.verdict === 'not_comparable' ? ' (no cross-arm number formed)' : ` [${row.comparability}]`}`,
+      )
+      .join(' · ')}`,
+  );
+  lines.push('    What is compared: the pre-engine comparators (A/B) against the engine (C) and the engine with a');
+  lines.push('    heterogeneous team (D) over one frozen checkpoint. Every arm’s candidates were admitted by the SHIPPED');
+  lines.push('    archive (IdeaArchiveService.admitOrReplace, in the fixture generator), so one rule decided both sides.');
+  lines.push('    Nothing here is evidence about a real model: the candidate TEXT is a scripted template’s, so every');
+  lines.push('    text-derived magnitude is stub_determined; the store-measured numbers are the archive’s own decisions,');
+  lines.push('    the recorded outcomes, the cost and the timings. Re-run against a live deployment to turn the stubs into');
+  lines.push('    evidence.');
   return lines.join('\n');
 }
 
@@ -1387,18 +1375,11 @@ function main() {
   const at = options.at ?? fixture.frozen_at;
   if (!Number.isFinite(Date.parse(at))) throw new Error(`--at '${at}' is not an ISO timestamp`);
 
-  // A/B are computed here; C/D come from the fixture.
-  const captured = (fixture.arms ?? []).map((arm) => ({
-    ...arm,
-    generation: arm.generation ?? { path: 'real_services', determination: 'store_measured', note: 'captured rows' },
-    rejections: arm.rejections ?? (arm.rows ?? []).filter((row) => row.state === 'rejected').map((row) => ({ seed_id: row.seed_id, reason: row.rejection_reason ?? 'rejected' })),
-    outcomes: arm.outcomes ?? { recorded: 0, useful_information: 0, mere_variance: 0, unnecessary_cost: 0, decisions: [] },
-  }));
-  const arms = [
-    applyHarnessDedupe(controlArmA(fixture)),
-    applyHarnessDedupe(controlArmB(fixture)),
-    ...captured,
-  ].sort((left, right) => left.label.localeCompare(right.label));
+  // ALL FOUR arms come from the fixture: the comparators' candidates were
+  // admitted through the shipped archive by the fixture generator (which is the
+  // only place that can import the services), so the harness holds no rule of
+  // its own and cannot disagree with the side it is compared against.
+  const arms = armsFromFixture(fixture);
 
   const perArmMetrics = arms.map((arm) => metricsFor(arm, fixture));
   const taskQualityCheck = taskQuality(fixture, arms);
@@ -1473,6 +1454,7 @@ function main() {
     compareMetric({
       metricName,
       observations,
+      arms,
       baselineArms: ['A', 'B'],
       treatmentArms: ['C', 'D'],
       targets: options.targets,
@@ -1496,6 +1478,21 @@ function main() {
           note:
             'rows in the exact imagination_experiments shape (kind=experiment/observation, the same derived ids): the real ' +
             'compareExperiment reads them unchanged, and re-recording them through the gated write finds them unchanged',
+          // WHAT IS COMPARED, and whether the two sides are comparable — the
+          // verdict field a rollout gate reads. Every arm declares the rule that
+          // decided its candidates (`admission_rule`); the comparison is
+          // `like_for_like` only when one shipped rule decided both sides.
+          comparison: {
+            baseline_arms: ['A', 'B'],
+            treatment_arms: ['C', 'D'],
+            what_is_compared:
+              'the pre-engine comparators (A dreamer-style retrieval, B mind-wander) against the focused engine (C, one balanced ' +
+              'identity) and the engine plus the heterogeneous team (D) — over one frozen checkpoint, on the metrics below, each with its basis',
+            admission_rule_per_arm: Object.fromEntries(
+              arms.map((arm) => [arm.label, arm.admission_rule ?? { path: 'undeclared' }]),
+            ),
+            metrics: comparisons.map(comparisonSummary),
+          },
           rows,
         },
         null,
@@ -1516,6 +1513,7 @@ function main() {
       kind: arm.kind,
       config: arm.config,
       generation: arm.generation,
+      admission_rule: arm.admission_rule ?? null,
       rows: arm.rows.length,
       admitted: arm.rows.filter((row) => row.state === 'admitted').length,
       tokens: arm.tokens,
@@ -1523,17 +1521,7 @@ function main() {
     metrics: perArmMetrics,
     task_quality: taskQualityCheck,
     blind_grades: { supplied: grades.grades.length, error: grades.error, path: grades.path },
-    comparisons: comparisons.map((comparison) => ({
-      metric: comparison.metric,
-      verdict: comparison.verdict,
-      baseline: comparison.baseline ? { value: comparison.baseline.weighted_mean, n: comparison.baseline.n } : null,
-      treatment: comparison.treatment ? { value: comparison.treatment.weighted_mean, n: comparison.treatment.n } : null,
-      delta: comparison.delta,
-      relative_gain: comparison.relative_gain,
-      target: comparison.target,
-      reason: comparison.reason,
-      basis: comparison.basis,
-    })),
+    comparisons: comparisons.map(comparisonSummary),
     observations: observations.length,
     store: wrote ? options.store : null,
     at,

@@ -94,6 +94,486 @@
   },
   "arms": [
     {
+      "label": "A",
+      "name": "control_dreamer_retrieval",
+      "kind": "control",
+      "config": {
+        "path": "pre-engine dreamer-style retrieval",
+        "retrieval": "concepts ranked by graph degree (prominence)",
+        "operators": "none (the pre-engine path had no operator plan)",
+        "archive": "none in production: the comparator emits its candidates directly",
+        "admission": "every candidate was admitted through the SHIPPED archive in the fixture generator, so the rejection rule is the same one the treatment arms ran"
+      },
+      "admission_rule": {
+        "path": "shipped_archive",
+        "service": "IdeaArchiveService.admitOrReplace",
+        "decided_by": "server/tests/unit/imagination-baseline-fixture.test.ts (the fixture generator)",
+        "identity": "agent-control",
+        "mission_id": "mission_baseline_control_retrieval",
+        "same_rule_as": [
+          "A",
+          "B",
+          "C",
+          "D"
+        ],
+        "text_is_scripted": true,
+        "text_basis": "the comparator's own templates (control_dreamer_retrieval) — the pre-engine path's text",
+        "schema_necessary_fields": "operator (a catalogue family, because the shipped seed schema requires one and the pre-engine path had no operator plan), evidence_refs (the graph node/edge the comparator retrieved) and lineage_ref (derived from the seed id)"
+      },
+      "generation": {
+        "path": "fixture_capture",
+        "captured_from": "the real IdeaArchiveService.admitOrReplace over the comparator’s candidates, in the fixture generator",
+        "determination": "stub_determined",
+        "note": "idea TEXT is the pre-engine comparator’s scripted template, so every text-derived magnitude is stub-determined; the DECISIONS (admitted/rejected + reason, duplicate_of, cell key, quality) are the shipped archive’s own rows — the same rule the treatment arms ran"
+      },
+      "rows": [
+        {
+          "seed_id": "control_a_01",
+          "agent": "control",
+          "operator": "representation_shift",
+          "hypothesis": "Investigate Queue health further: it is central to the mission's graph and may be the plateau.",
+          "mechanism": "A concept with degree 2 sits at the centre of the mission's own graph, so it is the most retrievable explanation the pre-engine path offers.",
+          "descriptor_bins": {
+            "mechanism": "relocation",
+            "representation": "prose",
+            "violated_assumption": "stability",
+            "evidence_family": "operational_state",
+            "test_strategy": "observation_study"
+          },
+          "cell_key": "mechanism=relocation|representation=prose|violated_assumption=stability|evidence_family=operational_state|test_strategy=observation_study",
+          "novelty_score": 0.5,
+          "coherence_score": 0.5,
+          "testability_score": 0.4,
+          "expected_information_gain": 0.2,
+          "cheapest_test": "Ask whether the concept still explains the plateau.",
+          "quality": 0.43,
+          "state": "admitted",
+          "rejection_reason": null,
+          "created_at": "2026-09-26T07:30:43.949Z",
+          "privacy_safe": true
+        },
+        {
+          "seed_id": "control_a_02",
+          "agent": "control",
+          "operator": "representation_shift",
+          "hypothesis": "Investigate Drain measurement further: it is central to the mission's graph and may be the plateau.",
+          "mechanism": "A concept with degree 2 sits at the centre of the mission's own graph, so it is the most retrievable explanation the pre-engine path offers.",
+          "descriptor_bins": {
+            "mechanism": "relocation",
+            "representation": "prose",
+            "violated_assumption": "stability",
+            "evidence_family": "operational_state",
+            "test_strategy": "observation_study"
+          },
+          "cell_key": "mechanism=relocation|representation=prose|violated_assumption=stability|evidence_family=operational_state|test_strategy=observation_study",
+          "novelty_score": 0.5,
+          "coherence_score": 0.5,
+          "testability_score": 0.4,
+          "expected_information_gain": 0.2,
+          "cheapest_test": "Ask whether the concept still explains the plateau.",
+          "quality": 0.43,
+          "state": "rejected",
+          "rejection_reason": "paraphrase_of",
+          "created_at": "2026-09-26T07:30:43.950Z",
+          "privacy_safe": true
+        },
+        {
+          "seed_id": "control_a_03",
+          "agent": "control",
+          "operator": "representation_shift",
+          "hypothesis": "Investigate Plateau detector further: it is central to the mission's graph and may be the plateau.",
+          "mechanism": "A concept with degree 2 sits at the centre of the mission's own graph, so it is the most retrievable explanation the pre-engine path offers.",
+          "descriptor_bins": {
+            "mechanism": "relocation",
+            "representation": "prose",
+            "violated_assumption": "stability",
+            "evidence_family": "operational_state",
+            "test_strategy": "observation_study"
+          },
+          "cell_key": "mechanism=relocation|representation=prose|violated_assumption=stability|evidence_family=operational_state|test_strategy=observation_study",
+          "novelty_score": 0.5,
+          "coherence_score": 0.5,
+          "testability_score": 0.4,
+          "expected_information_gain": 0.2,
+          "cheapest_test": "Ask whether the concept still explains the plateau.",
+          "quality": 0.43,
+          "state": "rejected",
+          "rejection_reason": "paraphrase_of",
+          "created_at": "2026-09-26T07:30:43.950Z",
+          "privacy_safe": true
+        },
+        {
+          "seed_id": "control_a_04",
+          "agent": "control",
+          "operator": "representation_shift",
+          "hypothesis": "Investigate Nightly compaction further: it is central to the mission's graph and may be the plateau.",
+          "mechanism": "A concept with degree 2 sits at the centre of the mission's own graph, so it is the most retrievable explanation the pre-engine path offers.",
+          "descriptor_bins": {
+            "mechanism": "relocation",
+            "representation": "prose",
+            "violated_assumption": "stability",
+            "evidence_family": "operational_state",
+            "test_strategy": "observation_study"
+          },
+          "cell_key": "mechanism=relocation|representation=prose|violated_assumption=stability|evidence_family=operational_state|test_strategy=observation_study",
+          "novelty_score": 0.5,
+          "coherence_score": 0.5,
+          "testability_score": 0.4,
+          "expected_information_gain": 0.2,
+          "cheapest_test": "Ask whether the concept still explains the plateau.",
+          "quality": 0.43,
+          "state": "rejected",
+          "rejection_reason": "paraphrase_of",
+          "created_at": "2026-09-26T07:30:43.951Z",
+          "privacy_safe": true
+        }
+      ],
+      "rejections": [
+        {
+          "seed_id": "control_a_02",
+          "reason": "paraphrase_of"
+        },
+        {
+          "seed_id": "control_a_03",
+          "reason": "paraphrase_of"
+        },
+        {
+          "seed_id": "control_a_04",
+          "reason": "paraphrase_of"
+        }
+      ],
+      "counts": {
+        "generated": 4,
+        "admitted": 1,
+        "rejected": 3,
+        "below_incumbent": 0
+      },
+      "coverage": null,
+      "tokens": 0,
+      "trigger_at": null,
+      "outcomes": {
+        "recorded": 0,
+        "useful_information": 0,
+        "mere_variance": 0,
+        "unnecessary_cost": 0,
+        "decisions": []
+      },
+      "plateau": {
+        "window_id": "frozen_checkpoint_alpha",
+        "cycles_in_window": 0,
+        "run_ids": [],
+        "measured_from": "this fixture generator (the comparator is not a service): the pre-engine path has no cycle service — retrieval and mind-wander emit candidates directly — so ZERO cycle/pass runs exist for this window",
+        "declared_by": "server/tests/unit/imagination-baseline-fixture.test.ts",
+        "determination": "stub_determined"
+      },
+      "taint": {
+        "shared_artefacts_scanned": 0,
+        "flagged": 0,
+        "markers_checked": 0,
+        "measured_from": "this fixture generator: the pre-engine path produces no shared artefact at all (no baton, no promotion), so there is nothing to scan — a VACUOUS clean result, labelled as such",
+        "declared_by": "server/tests/unit/imagination-baseline-fixture.test.ts",
+        "determination": "stub_determined"
+      }
+    },
+    {
+      "label": "B",
+      "name": "control_mind_wander",
+      "kind": "control",
+      "config": {
+        "path": "pre-engine mind-wander over the graph",
+        "retrieval": "walk steps from the mission’s edges; both directions of every step are emitted, exactly as an undeduped wander does",
+        "operators": "none (the pre-engine path had no operator plan)",
+        "archive": "none in production: the comparator emits its candidates directly",
+        "admission": "every candidate was admitted through the SHIPPED archive in the fixture generator, so the rejection rule is the same one the treatment arms ran"
+      },
+      "admission_rule": {
+        "path": "shipped_archive",
+        "service": "IdeaArchiveService.admitOrReplace",
+        "decided_by": "server/tests/unit/imagination-baseline-fixture.test.ts (the fixture generator)",
+        "identity": "agent-control",
+        "mission_id": "mission_baseline_control_wander",
+        "same_rule_as": [
+          "A",
+          "B",
+          "C",
+          "D"
+        ],
+        "text_is_scripted": true,
+        "text_basis": "the comparator's own templates (control_mind_wander) — the pre-engine path's text",
+        "schema_necessary_fields": "operator (a catalogue family, because the shipped seed schema requires one and the pre-engine path had no operator plan), evidence_refs (the graph node/edge the comparator retrieved) and lineage_ref (derived from the seed id)"
+      },
+      "generation": {
+        "path": "fixture_capture",
+        "captured_from": "the real IdeaArchiveService.admitOrReplace over the comparator’s candidates, in the fixture generator",
+        "determination": "stub_determined",
+        "note": "idea TEXT is the pre-engine comparator’s scripted template, so every text-derived magnitude is stub-determined; the DECISIONS (admitted/rejected + reason, duplicate_of, cell key, quality) are the shipped archive’s own rows — the same rule the treatment arms ran"
+      },
+      "rows": [
+        {
+          "seed_id": "control_b_01",
+          "agent": "control",
+          "operator": "distant_analogy",
+          "hypothesis": "Explore the connection between Queue health and Drain measurement.",
+          "mechanism": "The wander walked the edge Queue health → Drain measurement; the connection itself is the hypothesis.",
+          "descriptor_bins": {
+            "mechanism": "composition",
+            "representation": "graph",
+            "violated_assumption": "independence",
+            "evidence_family": "external_observation",
+            "test_strategy": "simulation"
+          },
+          "cell_key": "mechanism=composition|representation=graph|violated_assumption=independence|evidence_family=external_observation|test_strategy=simulation",
+          "novelty_score": 0.5,
+          "coherence_score": 0.5,
+          "testability_score": 0.4,
+          "expected_information_gain": 0.2,
+          "cheapest_test": "Ask whether the concept still explains the plateau.",
+          "quality": 0.43,
+          "state": "admitted",
+          "rejection_reason": null,
+          "created_at": "2026-09-26T07:30:43.951Z",
+          "privacy_safe": true
+        },
+        {
+          "seed_id": "control_b_02",
+          "agent": "control",
+          "operator": "distant_analogy",
+          "hypothesis": "Explore the connection between Drain measurement and Queue health.",
+          "mechanism": "The same edge read backwards: an undeduped wander emits both directions.",
+          "descriptor_bins": {
+            "mechanism": "composition",
+            "representation": "graph",
+            "violated_assumption": "independence",
+            "evidence_family": "external_observation",
+            "test_strategy": "simulation"
+          },
+          "cell_key": "mechanism=composition|representation=graph|violated_assumption=independence|evidence_family=external_observation|test_strategy=simulation",
+          "novelty_score": 0.5,
+          "coherence_score": 0.5,
+          "testability_score": 0.4,
+          "expected_information_gain": 0.2,
+          "cheapest_test": "Ask whether the concept still explains the plateau.",
+          "quality": 0.43,
+          "state": "rejected",
+          "rejection_reason": "paraphrase_of",
+          "created_at": "2026-09-26T07:30:43.951Z",
+          "privacy_safe": true
+        },
+        {
+          "seed_id": "control_b_03",
+          "agent": "control",
+          "operator": "distant_analogy",
+          "hypothesis": "Explore the connection between Drain measurement and Plateau detector.",
+          "mechanism": "The wander walked the edge Drain measurement → Plateau detector; the connection itself is the hypothesis.",
+          "descriptor_bins": {
+            "mechanism": "composition",
+            "representation": "graph",
+            "violated_assumption": "independence",
+            "evidence_family": "external_observation",
+            "test_strategy": "simulation"
+          },
+          "cell_key": "mechanism=composition|representation=graph|violated_assumption=independence|evidence_family=external_observation|test_strategy=simulation",
+          "novelty_score": 0.5,
+          "coherence_score": 0.5,
+          "testability_score": 0.4,
+          "expected_information_gain": 0.2,
+          "cheapest_test": "Ask whether the concept still explains the plateau.",
+          "quality": 0.43,
+          "state": "rejected",
+          "rejection_reason": "paraphrase_of",
+          "created_at": "2026-09-26T07:30:43.951Z",
+          "privacy_safe": true
+        },
+        {
+          "seed_id": "control_b_04",
+          "agent": "control",
+          "operator": "distant_analogy",
+          "hypothesis": "Explore the connection between Plateau detector and Drain measurement.",
+          "mechanism": "The same edge read backwards: an undeduped wander emits both directions.",
+          "descriptor_bins": {
+            "mechanism": "composition",
+            "representation": "graph",
+            "violated_assumption": "independence",
+            "evidence_family": "external_observation",
+            "test_strategy": "simulation"
+          },
+          "cell_key": "mechanism=composition|representation=graph|violated_assumption=independence|evidence_family=external_observation|test_strategy=simulation",
+          "novelty_score": 0.5,
+          "coherence_score": 0.5,
+          "testability_score": 0.4,
+          "expected_information_gain": 0.2,
+          "cheapest_test": "Ask whether the concept still explains the plateau.",
+          "quality": 0.43,
+          "state": "rejected",
+          "rejection_reason": "excluded_region",
+          "created_at": "2026-09-26T07:30:43.951Z",
+          "privacy_safe": true
+        },
+        {
+          "seed_id": "control_b_05",
+          "agent": "control",
+          "operator": "distant_analogy",
+          "hypothesis": "Explore the connection between Plateau detector and Nightly compaction.",
+          "mechanism": "The wander walked the edge Plateau detector → Nightly compaction; the connection itself is the hypothesis.",
+          "descriptor_bins": {
+            "mechanism": "composition",
+            "representation": "graph",
+            "violated_assumption": "independence",
+            "evidence_family": "external_observation",
+            "test_strategy": "simulation"
+          },
+          "cell_key": "mechanism=composition|representation=graph|violated_assumption=independence|evidence_family=external_observation|test_strategy=simulation",
+          "novelty_score": 0.5,
+          "coherence_score": 0.5,
+          "testability_score": 0.4,
+          "expected_information_gain": 0.2,
+          "cheapest_test": "Ask whether the concept still explains the plateau.",
+          "quality": 0.43,
+          "state": "rejected",
+          "rejection_reason": "excluded_region",
+          "created_at": "2026-09-26T07:30:43.952Z",
+          "privacy_safe": true
+        },
+        {
+          "seed_id": "control_b_06",
+          "agent": "control",
+          "operator": "distant_analogy",
+          "hypothesis": "Explore the connection between Nightly compaction and Plateau detector.",
+          "mechanism": "The same edge read backwards: an undeduped wander emits both directions.",
+          "descriptor_bins": {
+            "mechanism": "composition",
+            "representation": "graph",
+            "violated_assumption": "independence",
+            "evidence_family": "external_observation",
+            "test_strategy": "simulation"
+          },
+          "cell_key": "mechanism=composition|representation=graph|violated_assumption=independence|evidence_family=external_observation|test_strategy=simulation",
+          "novelty_score": 0.5,
+          "coherence_score": 0.5,
+          "testability_score": 0.4,
+          "expected_information_gain": 0.2,
+          "cheapest_test": "Ask whether the concept still explains the plateau.",
+          "quality": 0.43,
+          "state": "rejected",
+          "rejection_reason": "excluded_region",
+          "created_at": "2026-09-26T07:30:43.952Z",
+          "privacy_safe": true
+        },
+        {
+          "seed_id": "control_b_07",
+          "agent": "control",
+          "operator": "distant_analogy",
+          "hypothesis": "Explore the connection between Nightly compaction and Queue health.",
+          "mechanism": "The wander walked the edge Nightly compaction → Queue health; the connection itself is the hypothesis.",
+          "descriptor_bins": {
+            "mechanism": "composition",
+            "representation": "graph",
+            "violated_assumption": "independence",
+            "evidence_family": "external_observation",
+            "test_strategy": "simulation"
+          },
+          "cell_key": "mechanism=composition|representation=graph|violated_assumption=independence|evidence_family=external_observation|test_strategy=simulation",
+          "novelty_score": 0.5,
+          "coherence_score": 0.5,
+          "testability_score": 0.4,
+          "expected_information_gain": 0.2,
+          "cheapest_test": "Ask whether the concept still explains the plateau.",
+          "quality": 0.43,
+          "state": "rejected",
+          "rejection_reason": "paraphrase_of",
+          "created_at": "2026-09-26T07:30:43.953Z",
+          "privacy_safe": true
+        },
+        {
+          "seed_id": "control_b_08",
+          "agent": "control",
+          "operator": "distant_analogy",
+          "hypothesis": "Explore the connection between Queue health and Nightly compaction.",
+          "mechanism": "The same edge read backwards: an undeduped wander emits both directions.",
+          "descriptor_bins": {
+            "mechanism": "composition",
+            "representation": "graph",
+            "violated_assumption": "independence",
+            "evidence_family": "external_observation",
+            "test_strategy": "simulation"
+          },
+          "cell_key": "mechanism=composition|representation=graph|violated_assumption=independence|evidence_family=external_observation|test_strategy=simulation",
+          "novelty_score": 0.5,
+          "coherence_score": 0.5,
+          "testability_score": 0.4,
+          "expected_information_gain": 0.2,
+          "cheapest_test": "Ask whether the concept still explains the plateau.",
+          "quality": 0.43,
+          "state": "rejected",
+          "rejection_reason": "excluded_region",
+          "created_at": "2026-09-26T07:30:43.954Z",
+          "privacy_safe": true
+        }
+      ],
+      "rejections": [
+        {
+          "seed_id": "control_b_02",
+          "reason": "paraphrase_of"
+        },
+        {
+          "seed_id": "control_b_03",
+          "reason": "paraphrase_of"
+        },
+        {
+          "seed_id": "control_b_04",
+          "reason": "excluded_region"
+        },
+        {
+          "seed_id": "control_b_05",
+          "reason": "excluded_region"
+        },
+        {
+          "seed_id": "control_b_06",
+          "reason": "excluded_region"
+        },
+        {
+          "seed_id": "control_b_07",
+          "reason": "paraphrase_of"
+        },
+        {
+          "seed_id": "control_b_08",
+          "reason": "excluded_region"
+        }
+      ],
+      "counts": {
+        "generated": 8,
+        "admitted": 1,
+        "rejected": 7,
+        "below_incumbent": 0
+      },
+      "coverage": null,
+      "tokens": 0,
+      "trigger_at": null,
+      "outcomes": {
+        "recorded": 0,
+        "useful_information": 0,
+        "mere_variance": 0,
+        "unnecessary_cost": 0,
+        "decisions": []
+      },
+      "plateau": {
+        "window_id": "frozen_checkpoint_alpha",
+        "cycles_in_window": 0,
+        "run_ids": [],
+        "measured_from": "this fixture generator (the comparator is not a service): the pre-engine path has no cycle service — retrieval and mind-wander emit candidates directly — so ZERO cycle/pass runs exist for this window",
+        "declared_by": "server/tests/unit/imagination-baseline-fixture.test.ts",
+        "determination": "stub_determined"
+      },
+      "taint": {
+        "shared_artefacts_scanned": 0,
+        "flagged": 0,
+        "markers_checked": 0,
+        "measured_from": "this fixture generator: the pre-engine path produces no shared artefact at all (no baton, no promotion), so there is nothing to scan — a VACUOUS clean result, labelled as such",
+        "declared_by": "server/tests/unit/imagination-baseline-fixture.test.ts",
+        "determination": "stub_determined"
+      }
+    },
+    {
       "label": "C",
       "name": "focused_engine_balanced",
       "kind": "treatment",
@@ -106,13 +586,28 @@
         "candidate_promotion": "CREATIVE_BATON_PROMOTION=1",
         "cycle_trigger": "manual (the frozen checkpoint)"
       },
+      "admission_rule": {
+        "path": "shipped_archive",
+        "service": "IdeaArchiveService.admitOrReplace",
+        "decided_by": "the imagination engine, inside runImaginationCycle on the frozen scenario",
+        "identity": "agent-a",
+        "mission_id": "mission_creative_baton",
+        "same_rule_as": [
+          "A",
+          "B",
+          "C",
+          "D"
+        ],
+        "text_is_scripted": true,
+        "text_basis": "the scripted stub model’s output (this fixture’s responder)"
+      },
       "generation": {
         "path": "real_services",
         "captured_from": "runImaginationCycle + recordCandidateOutcome on the frozen scenario",
         "determination": "store_measured",
         "note": "idea TEXT is the scripted stub model’s; the bins, the archive decision, the cell keys, the cost and the outcomes are the real services’ own rows"
       },
-      "trigger_at": "2026-09-26T07:00:20.528Z",
+      "trigger_at": "2026-09-26T07:30:43.864Z",
       "cycle_id": "imagination_cycle_8c0b39bbedcd5e39_v3_c1",
       "tokens": 0,
       "counts": {
@@ -150,7 +645,7 @@
           "quality": 0.68,
           "state": "admitted",
           "rejection_reason": null,
-          "created_at": "2026-09-26T07:00:20.538Z",
+          "created_at": "2026-09-26T07:30:43.873Z",
           "privacy_safe": true
         },
         {
@@ -175,7 +670,7 @@
           "quality": 0.68,
           "state": "admitted",
           "rejection_reason": null,
-          "created_at": "2026-09-26T07:00:20.545Z",
+          "created_at": "2026-09-26T07:30:43.886Z",
           "privacy_safe": true
         },
         {
@@ -200,7 +695,7 @@
           "quality": 0.68,
           "state": "admitted",
           "rejection_reason": null,
-          "created_at": "2026-09-26T07:00:20.546Z",
+          "created_at": "2026-09-26T07:30:43.887Z",
           "privacy_safe": true
         },
         {
@@ -225,7 +720,7 @@
           "quality": 0.68,
           "state": "rejected",
           "rejection_reason": "duplicate_of",
-          "created_at": "2026-09-26T07:00:20.547Z",
+          "created_at": "2026-09-26T07:30:43.888Z",
           "privacy_safe": true
         },
         {
@@ -250,7 +745,7 @@
           "quality": 0.68,
           "state": "admitted",
           "rejection_reason": null,
-          "created_at": "2026-09-26T07:00:20.549Z",
+          "created_at": "2026-09-26T07:30:43.890Z",
           "privacy_safe": true
         },
         {
@@ -275,7 +770,7 @@
           "quality": 0.68,
           "state": "rejected",
           "rejection_reason": "duplicate_of",
-          "created_at": "2026-09-26T07:00:20.550Z",
+          "created_at": "2026-09-26T07:30:43.891Z",
           "privacy_safe": true
         }
       ],
@@ -371,6 +866,21 @@
           "team-strategist": "strategist"
         },
         "pass_id": "cpass_a9853683edde7c2fa34e5b3a30a64b3f"
+      },
+      "admission_rule": {
+        "path": "shipped_archive",
+        "service": "IdeaArchiveService.admitOrReplace",
+        "decided_by": "the imagination engine, inside runFirstPass on the frozen scenario",
+        "identity": "agent-a",
+        "mission_id": "mission_creative_baton_team",
+        "same_rule_as": [
+          "A",
+          "B",
+          "C",
+          "D"
+        ],
+        "text_is_scripted": true,
+        "text_basis": "the scripted stub model’s output (this fixture’s responder)"
       },
       "generation": {
         "path": "real_services",
@@ -600,7 +1110,7 @@
   "provenance": {
     "generator": "server/tests/unit/imagination-baseline-fixture.test.ts",
     "regenerate": "IMAGINATION_BASELINE_FIXTURE_WRITE=1 npx vitest run tests/unit/imagination-baseline-fixture.test.ts",
-    "services": "runImaginationCycle, recordCandidateOutcome, planFirstPass/runFirstPass, createInheritanceEnvelope, runFocusedConsolidation — on tests/helpers/imagination-scenario.ts (FakeDb + a scripted model)",
+    "services": "runImaginationCycle, recordCandidateOutcome, planFirstPass/runFirstPass, createInheritanceEnvelope, runFocusedConsolidation, IdeaArchiveService.admitOrReplace (the two comparator arms’ admission) — on tests/helpers/imagination-scenario.ts (FakeDb + a scripted model)",
     "not_verified": "no live MongoDB, no real model, no real mission: every row here comes from the frozen fixture"
   }
 }

@@ -47,6 +47,23 @@ export const DEFAULT_MAX_BATON_CANDIDATES = 8;
 export const DEFAULT_MAX_ATTENTION_TARGETS = 6;
 /** How many excluded-region fingerprints a compiled baton may carry. */
 export const DEFAULT_MAX_EXCLUDED_REGIONS = 12;
+/**
+ * How many imagination cycles may be IN FLIGHT AT ONCE, across every identity
+ * and mission in this process (ITER-11 refinement, brief §8's global cap).
+ *
+ * The per-mission single-flight slot, the persisted cooldown and the per-mission
+ * window budget bound ONE mission; nothing bounded the process as a whole, and
+ * since the executive tick can now start cycles without a human caller, N
+ * missions could each run a cycle at once. This is that bound, and it is the
+ * only knob here that is deliberately SMALL: two cycles is the default because a
+ * cycle is a multi-call model workload, not a request — raising it trades
+ * model spend for latency.
+ *
+ * A value that is missing, non-numeric or not a positive integer falls back to
+ * this default (the same rule every knob here follows: a knob can never switch a
+ * rule off). `IMAGINATION_MAX_CONCURRENT_CYCLES=1` serialises everything.
+ */
+export const DEFAULT_MAX_CONCURRENT_CYCLES = 2;
 
 /**
  * The five plateau conditions of the brief's §4.1, in the order
@@ -153,4 +170,12 @@ export function maxAttentionTargets(): number {
 
 export function maxExcludedRegions(): number {
   return positiveInt(process.env.IMAGINATION_MAX_EXCLUDED_REGIONS, DEFAULT_MAX_EXCLUDED_REGIONS);
+}
+
+/**
+ * How many cycles may be in flight at once across identities (default 2, see
+ * `DEFAULT_MAX_CONCURRENT_CYCLES`).
+ */
+export function maxConcurrentCycles(): number {
+  return positiveInt(process.env.IMAGINATION_MAX_CONCURRENT_CYCLES, DEFAULT_MAX_CONCURRENT_CYCLES);
 }

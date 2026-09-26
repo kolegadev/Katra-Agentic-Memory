@@ -208,6 +208,14 @@ function renderCycleResult(result: ImaginationCycleResult): string {
         `(this cycle: ${budget.tokens_spent_this_cycle})`,
     );
   }
+  if (result.concurrency) {
+    const concurrency = result.concurrency;
+    lines.push(
+      `**Concurrency:** ${concurrency.in_flight_before} → ${concurrency.in_flight_after} of ` +
+        `${concurrency.max_concurrent_cycles} cycle slot(s) in flight across identities` +
+        (concurrency.capped ? ' — this call was REFUSED by the global cap and wrote nothing.' : ''),
+    );
+  }
   if (result.stop_conditions.length > 0) {
     lines.push('');
     lines.push('**Stop conditions evaluated** (first met wins):');

@@ -20,7 +20,7 @@ and compared byte for byte, so the numbers below cannot drift away from the code
 
 | | |
 | --- | --- |
-| experiment id | **`impexp_c4bbc105e90760b919a5b28f46eb225b`** |
+| experiment id | **`impexp_daba0176f662f4776203fff7a2c5b4be`** |
 | store | `docs/IMAGINATION-BASELINE.json` (`imagination_experiments` rows: one experiment, 49 observations) |
 | arms | `A` `control_dreamer_retrieval` · `B` `control_mind_wander` · `C` `focused_engine_balanced` · `D` `engine_plus_heterogeneous_team` |
 | comparison | baseline arms `A+B` vs treatment arms `C+D`, per `compareExperiment` |
@@ -32,19 +32,52 @@ proves it by loading them into the in-memory store and running the REAL `compare
 them: its per-metric verdicts equal the harness's, and replaying any recorded observation through the
 gated write finds it **unchanged** (same `observation_key`, same numbers).
 
+The store ALSO carries a top-level `comparison` block — the verdict field a rollout gate reads:
+the two sides, the metric verdicts, each side's own reading, and `comparability` with the reason.
+The same object is what the printed report ends with.
+
 ## What each arm is
 
 | Arm | Path | Generation | Determination |
 | --- | --- | --- | --- |
-| `A` | pre-engine dreamer-style retrieval: one idea per concept, ranked by graph degree | implemented in the harness (`controlArmA`) | `stub_determined` |
-| `B` | pre-engine mind-wander over the graph; **both directions of every step**, undeduped — the restatements the archive was built to reject | implemented in the harness (`controlArmB`) | `stub_determined` |
+| `A` | pre-engine dreamer-style retrieval: one idea per concept, ranked by graph degree | the comparator's candidates, captured in the fixture through the **shipped archive** | `stub_determined` (the candidate text is the comparator's scripted template) |
+| `B` | pre-engine mind-wander over the graph; **both directions of every step**, undeduped — the restatements the archive was built to reject | the comparator's candidates, captured in the fixture through the **shipped archive** | `stub_determined` |
 | `C` | the focused engine, one balanced identity (`FOCUSED_IMAGINATION=1`), on the frozen checkpoint | captured from the real services in the fixture | `store_measured` |
 | `D` | the engine plus the heterogeneous team (philosopher / analyst / strategist) | captured from the real services in the fixture | `store_measured` |
 
-The two control arms are implemented IN the harness because the pre-engine path is not a service any
-more. Their idea text is the harness's own, so every text-derived magnitude attributed to them is
-`stub_determined` — including the dedupe they are measured against, which is the harness's own
-re-implementation of the archive's containment rule (labelled as such in the report's basis).
+**One rule decides all four arms (ITER-11 refinement).** The comparators are not a service any more,
+so their candidate TEXT is still the pre-engine path's (one idea per concept ranked by degree; both
+directions of every walk step). What changed is the ADMISSION: the fixture generator now runs every
+comparator candidate through `IdeaArchiveService.admitOrReplace` — the shipped rule, in-process, over
+a throwaway identity and mission — and records that rule's own decisions (`state`, `rejection_reason`,
+`duplicate_of`, `cell_key`, `quality`). Each arm declares it in `admission_rule`:
+
+```json
+{ "path": "shipped_archive", "service": "IdeaArchiveService.admitOrReplace",
+  "decided_by": "server/tests/unit/imagination-baseline-fixture.test.ts (the fixture generator)",
+  "identity": "agent-control", "mission_id": "mission_baseline_control_retrieval",
+  "same_rule_as": ["A", "B", "C", "D"], "text_is_scripted": true }
+```
+
+Before the refinement the harness **re-implemented** the archive's containment rule for the two
+comparators (the constants duplicated), so the cross-arm `false_novelty` difference measured two rules
+as well as two paths. It does not any more: the harness contains no `isParaphrase`, no threshold and no
+comparator, and the comparison says so in `comparability` — derived from the arms, not asserted:
+
+> `like_for_like` — every arm on both sides was admitted/rejected by the same shipped rule
+> (`IdeaArchiveService.admitOrReplace`) — so the difference between the sides is the difference between
+> the paths, not between two rules; the candidate TEXT is scripted on all four arms, so the magnitude
+> is `stub_determined` while the rule is the deployment's own.
+
+If an arm ever declares anything other than the one shipped rule, the verdict becomes
+`not_comparable`, the `delta` and `relative_gain` are **not formed**, and the per-arm numbers stand
+alone (a test drives exactly that by re-labelling arm `A`'s rule).
+
+Three fields on the comparator candidates are schema-necessary and declared, never dressed up as a
+claim about the pre-engine path: `operator` (the shipped seed schema requires a catalogue family; the
+pre-engine path had no operator plan, so `A` carries `representation_shift` and `B` `distant_analogy`),
+`evidence_refs` (the graph node/edge the comparator retrieved from) and `lineage_ref` (derived from the
+seed id, never random).
 
 ## What each count counts
 
@@ -67,22 +100,22 @@ re-run has to reproduce:
 
 First real run (`node scripts/imagination-baseline.mjs`, fixture frozen 2026-09-26T12:00:00.000Z).
 `n` is the sample behind each number; `determination` says whether the number is arithmetic over the
-fixture's captured rows (`store_measured`), depends on the scripted model's text
-(`stub_determined`), or cannot be measured from this fixture at all (`insufficient_data`).
+fixture's captured rows (`store_measured`), depends on scripted text (`stub_determined`), or cannot be
+measured from this fixture at all (`insufficient_data`).
 
 | Arm | metric | value | n | determination |
 | --- | --- | --- | --- | --- |
-| `A` | `arm_generated_candidates` / `arm_admitted_candidates` / `arm_rejected_candidates` | 4 / 3 / 1 | 4 | `stub_determined` |
-| `A` | `false_novelty` | 0.25 | 4 | `stub_determined` |
+| `A` | `arm_generated_candidates` / `arm_admitted_candidates` / `arm_rejected_candidates` | 4 / 1 / 3 | 4 | `stub_determined` |
+| `A` | `false_novelty` | 0.75 | 4 | `stub_determined` |
 | `A` | `useful_novelty_rate`, `idea_survival`, `cost_of_novelty`, `time_to_next_viable_direction`, `archive_coverage_gain`, `agent_divergence` | `insufficient_data` | 0 | `insufficient_data` |
-| `B` | `arm_generated_candidates` / `arm_admitted_candidates` / `arm_rejected_candidates` | 8 / 4 / 4 | 8 | `stub_determined` |
-| `B` | `false_novelty` | 0.5 | 8 | `stub_determined` |
+| `B` | `arm_generated_candidates` / `arm_admitted_candidates` / `arm_rejected_candidates` | 8 / 1 / 7 | 8 | `stub_determined` |
+| `B` | `false_novelty` | 0.875 | 8 | `stub_determined` |
 | `B` | (the same six as `A`) | `insufficient_data` | 0 | `insufficient_data` |
 | `C` | `arm_generated_candidates` / `arm_admitted_candidates` / `arm_rejected_candidates` | 6 / 4 / 2 | 6 | `store_measured` |
 | `C` | `false_novelty` | 0.333333 | 6 | `store_measured` |
 | `C` | `useful_novelty_rate` | 0.666667 | 3 | `store_measured` |
 | `C` | `idea_survival` (declared proxy) | 0.75 | 4 | `store_measured` |
-| `C` | `time_to_next_viable_direction` | 10 ms | 4 | `store_measured` |
+| `C` | `time_to_next_viable_direction` | 9 ms | 4 | `store_measured` |
 | `C` | `archive_coverage_gain` | 4 new cells (of 16 807 possible) | 4 | `store_measured` |
 | `C` | `cost_of_novelty` | `insufficient_data` — the recorded spend is 0 (the scripted model calls no provider), and an unrecorded/zero spend is **not** a cost of zero | 0 | `insufficient_data` |
 | `C` | `agent_divergence` | `insufficient_data` — one stream, not a team | 0 | `insufficient_data` |
@@ -96,11 +129,26 @@ fixture's captured rows (`store_measured`), depends on the scripted model's text
 
 ### The comparison (baseline `A+B` vs treatment `C+D`)
 
-| metric | baseline | treatment | delta | relative gain | verdict |
-| --- | --- | --- | --- | --- | --- |
-| `useful_novelty_rate` | *(none — the pre-engine arms recorded no outcomes)* | 0.666667 (n 3) | — | — | `insufficient_data` |
-| `false_novelty` (lower is better) | 0.416667 (n 12) | 0.333333 (n 15) | −0.083334 | 0.200001 | `not_improved` (the 30% target is not reached) |
-| `task_quality_regression` | 2 criteria met (n 4) | 2 criteria met (n 4) | **none — the sides are exactly equal** | — | `equal` |
+| metric | comparability | baseline | treatment | delta | relative gain | verdict |
+| --- | --- | --- | --- | --- | --- | --- |
+| `useful_novelty_rate` | `like_for_like` | *(none — the pre-engine arms recorded no outcomes)* | 0.666667 (n 3) | — | — | `insufficient_data` |
+| `false_novelty` (lower is better) | `like_for_like` | 0.833333 (n 12) | 0.333333 (n 15) | −0.5 | 0.6 | `improved` (the 30% target is reached) |
+| `task_quality_regression` | `like_for_like` | 2 criteria met (n 4) | 2 criteria met (n 4) | **none — the sides are exactly equal** | — | `equal` |
+
+**Why `false_novelty` reads 0.6 now and read 0.200001 before.** With ONE rule on both sides, the
+comparators' own redundancy is measured the way the treatments' is: ten of the twelve comparator
+candidates are restatements of one already stored (arm `A` restates ONE template four times — its
+mechanism sentence varies only with degree, and all four concepts have degree 2 — and arm `B` emits
+both directions of every edge), against five of the treatment's fifteen. The old `0.200001` came from
+a copy of the rule that compared **hypotheses only**: the shipped rule also compares the mechanism
+field (ITER-6's own residual F2 made that so), and that field is where the comparator template repeats
+itself verbatim. The refinement therefore made the comparison *worse for the pre-engine path*, not
+better — the previous number under-counted the baseline's redundancy.
+
+That reading is still bounded by the script: the candidate TEXT on both sides is scripted (the
+comparator's templates, the stub model's seeds), which is why both arms' `false_novelty` stays
+`stub_determined` and why a live run with a real pre-engine path may differ. What the number can carry
+is the RULE: one shipped rule, applied at once to both sides.
 
 **Equality is stated, not rounded into a verdict.** Two readings that are the same number at the
 reported precision (1e-6) are reported as `equal` by the ONE shared rule
@@ -111,18 +159,18 @@ reported the same way, with the reason saying so. The task-quality metric is the
 here: both sides meet 2 of 2 criteria, so the row reads `equal` instead of a `0` delta under a
 "not improved" verdict.
 
-**Overall verdict: `insufficient_data` for the decisive metric.** The brief's DoD bullet 8 asks for a
-demonstration that useful novelty improves without a material task-quality regression. This fixture
-cannot produce that demonstration, and it says so rather than inventing it:
+**Overall verdict: the decisive metric is still `insufficient_data`.** The brief's DoD bullet 8 asks
+for a demonstration that useful novelty improves without a material task-quality regression. This
+fixture cannot produce that demonstration, and it says so rather than inventing it:
 
 - the CONTROL arms recorded no outcomes, so `useful_novelty_rate` has no baseline side at all. The
   pre-engine path never *recorded* whether an idea was useful — that channel is part of what the
   engine adds;
 - the treatment's 0.666667 is two useful verdicts out of three recorded ones on a scripted model, so
   even that number is evidence about the *plumbing*, not about a real model's ideas;
-- `false_novelty` is measurable on both sides — 0.416667 (5/12, the controls) against 0.333333
-  (5/15, the treatments), a 20% relative gain, short of the brief's 30% target — which is the honest
-  reading of a stub whose ideas are equally redundant on both paths;
+- `false_novelty` is measurable on both sides and, with one rule on both, reads 0.833333 (10/12) against
+  0.333333 (5/15) — a 0.6 relative gain, past the brief's 0.3 target. It is the one two-sided number
+  the bullet can point at, and it is a statement about the archive's rule over *scripted* text;
 - the task-quality check shows **no regression** and **equal** readings on both sides, with the
   criterion-by-criterion evidence below.
 
@@ -190,12 +238,15 @@ rows with `n = 0`, so the shape never changes and a later grade overwrites nothi
 
 - No live MongoDB, no real model, no real mission. Every row comes from the frozen fixture
   (`tests/helpers/imagination-scenario.ts` + a scripted `llmService.extractJson`).
-- Idea text is the scripted model's, so `agent_divergence` and the control arms' `false_novelty` are
-  `stub_determined`: they show the plumbing differs (modes ⇒ different operators ⇒ different text),
-  not that a real model's ideas diverge.
-- The adversarial reading of both sides' `false_novelty` is the honest one: the fixture's stub cannot
-  show the engine's archive beating the pre-engine path (20% against a 30% target), and the harness
-  says `not_improved` rather than smoothing it into a win.
+- Idea text is scripted on all four arms, so `agent_divergence` and every arm's `false_novelty` are
+  `stub_determined`: they show the RULE and the plumbing (modes ⇒ different operators ⇒ different
+  text), not that a real model's ideas diverge. On the comparator side the text is even more
+  templated than a real pre-engine path would be — one sentence per concept, one per walk step — so
+  its 0.833333 is a property of that script as much as of the path.
+- The comparison is `like_for_like` in the RULE (one shipped `admitOrReplace` decided both sides) and
+  the `false_novelty` reading now clears the brief's 0.3 target — but it is still a measurement of
+  that rule over scripted text. The decisive metric (`useful_novelty_rate`) has no baseline side, so
+  DoD bullet 8 remains **undemonstrated** by this fixture.
 - The task-quality check's control-side evaluations are **vacuous** by construction (nothing ran,
   nothing was shared), and the treatment side's c2 flag is the duplicate-text artefact described
   above. Neither is evidence about a real deployment; both are labelled in the report and the store.

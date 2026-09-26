@@ -98,7 +98,7 @@ minimum — a gate that cannot be measured is not a gate that passed.
 | # | Stage | Flag (default off) | Gates to pass | What to watch |
 | --- | --- | --- | --- | --- |
 | 1 | Per-identity personality | `PER_IDENTITY_PERSONALITY` | `personality_stability.violations = 0`; the bridge fetches with its own key and reports no rejection | `personality_stability`, inheritance-envelope refusals |
-| 2 | Focused imagination (private) | `FOCUSED_IMAGINATION` | `useful_novelty_rate.status = ok` (n ≥ 5 recorded outcomes); `false_novelty` at or below the **recorded baseline** — experiment `impexp_c4bbc105e90760b919a5b28f46eb225b`, arms `A+B` (control, pooled) vs `C+D` (treatment), metrics **`false_novelty`** and **`useful_novelty_rate`** as recorded in `docs/IMAGINATION-BASELINE.json` and reported in `docs/IMAGINATION-BASELINE.md`; `cost_of_novelty.status = ok` (denominator > 0) | `useful_novelty_rate`, `false_novelty`, `cost_of_novelty`, `time_to_next_viable_direction` |
+| 2 | Focused imagination (private) | `FOCUSED_IMAGINATION` | `useful_novelty_rate.status = ok` (n ≥ 5 recorded outcomes); `false_novelty` at or below the **recorded baseline** — experiment `impexp_daba0176f662f4776203fff7a2c5b4be`, arms `A+B` (control, pooled) vs `C+D` (treatment), metrics **`false_novelty`** and **`useful_novelty_rate`** as recorded in `docs/IMAGINATION-BASELINE.json` (verdict block: `comparison.metrics[]`) and reported in `docs/IMAGINATION-BASELINE.md`; `cost_of_novelty.status = ok` (denominator > 0) | `useful_novelty_rate`, `false_novelty`, `cost_of_novelty`, `time_to_next_viable_direction` |
 | 3 | Baton promotion (shared scope) | `CREATIVE_BATON_PROMOTION` | `privacy_leakage.flagged = 0` across every shared artefact scanned; no promotion refusal other than `flag_off` | `privacy_leakage`, `idea_survival`, `archive_coverage_gain` |
 | 4 | Cognitive team allocation | `COGNITIVE_TEAM_ALLOCATION` | `agent_divergence` above `agent_divergence_same_mode_control` (the team must diverge more than one mode does); `personality_stability.violations = 0` | `agent_divergence` vs its same-mode control, `personality_stability` |
 
@@ -108,12 +108,13 @@ checkpoint and stored as an experiment in `imagination_experiments` form:
 
 | | |
 | --- | --- |
-| experiment | `impexp_c4bbc105e90760b919a5b28f46eb225b` (`imagination-baseline-vs-engine (ITER-11 WS-4)`) |
+| experiment | `impexp_daba0176f662f4776203fff7a2c5b4be` (`imagination-baseline-vs-engine (ITER-11 WS-4)`) |
 | store | `docs/IMAGINATION-BASELINE.json` · report: `docs/IMAGINATION-BASELINE.md` |
 | arms | `A` dreamer retrieval · `B` mind-wander (controls) · `C` focused engine, balanced · `D` engine + heterogeneous team |
 | metric keys the gate uses | `false_novelty` (lower is better, target 0.3), `useful_novelty_rate` (higher is better, target 0.3 — the brief's "≥30% better useful novelty"), plus `task_quality_regression` and `time_to_next_viable_direction` |
-| recorded verdict | `false_novelty` **not_improved** (0.416667 vs 0.333333 — 5/12 against 5/15 — a 0.200001 relative gain against the 0.3 target, n 12/15); `useful_novelty_rate` **insufficient_data** (the control arms recorded no outcomes); task-quality **equal** (2/2 counted criteria on every arm — the two sides are exactly equal, so the row reports equality and no delta) |
-| honest reading | the recorded baseline is a STUB measurement in one deliberate sense — the idea text is a scripted model's — so the gate is a shape the deployment must fill with its own live numbers; the harness marks every number `store_measured` / `stub_determined` / `insufficient_data` and never reports a stub as evidence. The task-quality check evaluates each of the mission's success criteria with its OWN predicate (`c1` = at most one run for the plateau window, `c2` = the taint scan crossing nothing) and REFUSES a verdict it cannot form. Arm `C`'s taint scan flags 1 of 2 shared artefacts — the promoted baton reproducing the candidates' own allow-listed text, which the scripted stub also emitted for two rejected duplicates — and the evidence records the audit's raw count beside the attributed crossing count (0) instead of hiding either |
+| **what is compared** | baseline arms `A+B` (the pre-engine comparators) vs treatment arms `C+D` (the engine, and the engine with a heterogeneous team) over ONE frozen checkpoint; **one rule decided both sides** — every arm's candidates were admitted/rejected by the shipped `IdeaArchiveService.admitOrReplace` (the comparators' in the fixture generator, the treatments' inside the engine), so the difference between the sides is the difference between the paths, not between two rules. The artefact records this per arm (`comparison.admission_rule_per_arm`) and derives `comparability` from it |
+| recorded verdict (`comparison.metrics[]` in the store) | `false_novelty` **improved** — baseline 0.833333 (10/12) vs treatment 0.333333 (5/15), delta −0.5, relative gain **0.6**, `comparability: like_for_like`; `useful_novelty_rate` **insufficient_data** (the control arms recorded no outcomes — no baseline side exists); `task_quality_regression` **equal** (2/2 counted criteria on every arm — the sides are exactly equal, so the row reports equality and no delta) |
+| honest reading | the recorded baseline is a STUB measurement in one deliberate sense — the candidate TEXT is scripted on all four arms (the comparators' templates, the stub model's seeds) — so the gate is a shape the deployment must fill with its own live numbers; the harness marks every number `store_measured` / `stub_determined` / `insufficient_data` and never reports a stub as evidence. The `false_novelty` gain is real and *like-for-like* (one shipped rule on both sides) but bounded by that script: the comparators restate one template (arm `A`'s mechanism sentence varies only with degree, and the fixture's four concepts share degree 2) and both directions of every wander step, which the shipped rule catches at 10 of 12. The task-quality check evaluates each of the mission's success criteria with its OWN predicate (`c1` = at most one run for the plateau window, `c2` = the taint scan crossing nothing) and REFUSES a verdict it cannot form. Arm `C`'s taint scan flags 1 of 2 shared artefacts — the promoted baton reproducing the candidates' own allow-listed text, which the scripted stub also emitted for two rejected duplicates — and the evidence records the audit's raw count beside the attributed crossing count (0) instead of hiding either. **Stage 2 is still not promotable on this baseline alone**: `useful_novelty_rate` has no baseline side, so the gate's first clause cannot be met by the fixture |
 
 Re-measure at any time (dependency-free Node, no Mongo, no provider):
 
@@ -174,6 +175,32 @@ docker compose up -d --force-recreate --wait server
 
 A flag that is missing, empty or not `1|true|yes` (case-insensitive) is **off** — the flags fail
 closed, so removing the line is a rollback too.
+
+## The global concurrency cap — `IMAGINATION_MAX_CONCURRENT_CYCLES` (ITER-11 refinement)
+
+The per-mission single-flight slot, the persisted cooldown and the per-mission window budget bound
+ONE mission. Nothing bounded the process — and since the executive tick can now start cycles with no
+human caller, N stalled missions could each run a cycle at once. The cap is that bound:
+
+| | |
+| --- | --- |
+| variable | `IMAGINATION_MAX_CONCURRENT_CYCLES` — cycles **in flight at once across every identity and mission in this process** |
+| default | **2** (a missing, non-numeric or non-positive value falls back to it, so the bound cannot be switched off; `1` serialises every cycle) |
+| enforced in | the cycle service's single-flight path, immediately after the per-mission join: a caller that finds the cap reached is refused with reason **`concurrency_cap`** |
+| what a refusal does | reads nothing, calls no model, claims no cycle and writes no row — the reading is returned and nothing else changes (a refused cycle leaves no partial state; a test asserts the whole store is byte-identical across the refusal) |
+| released | in a `finally`, on every exit path — a completed, failed, skipped or throwing cycle all release their slot; a same-mission caller still JOINS the running cycle instead of being refused |
+| surfaced | the cycle row and the tool result carry `concurrency` (`max_concurrent_cycles`, `in_flight_before`, `in_flight_after`, `capped`); the executive sweep's report carries the reading plus `capped: true` when the cap refused it |
+| the executive sweep | respects it: a refusal stops the sweep for that tick (the cap is process-wide, so retrying the remaining missions would only be refused again) and is recorded in the sweep's `skipped` list with reason `concurrency_cap` — `cycles_run` stays 0 |
+
+```bash
+# serialise every imagination cycle in the process (the conservative setting):
+echo 'IMAGINATION_MAX_CONCURRENT_CYCLES=1' >> .env
+docker compose up -d --force-recreate --wait server
+```
+
+Raising it trades model spend for latency: a cycle is a multi-call model workload (focused
+consolidation + one operator batch per spread), so the default of two keeps a stalled fleet from
+spending N cycles' worth of calls in one tick.
 
 ## The descriptor space is configuration — `IMAGINATION_BINS` (ITER-11, WS-2)
 

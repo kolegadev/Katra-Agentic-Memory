@@ -65,6 +65,7 @@ import {
   coverageTarget,
   cycleBudgetWindowMs,
   cycleCooldownMs,
+  maxConcurrentCycles,
   maxCyclesPerWindow,
   maxTokensPerWindow,
   plateauContradictionThreshold,
@@ -170,6 +171,23 @@ export interface CycleBudgetRecord {
   tokens_spent_this_cycle: number;
 }
 
+/**
+ * The GLOBAL concurrency reading (ITER-11 refinement): how many cycles were in
+ * flight when this caller looked, what the bound is, and whether this caller
+ * took a slot or was refused one. `in_flight_after` is the count INCLUDING this
+ * cycle for a caller that took a slot, and the unchanged count for a refusal.
+ */
+export interface CycleConcurrencyRecord {
+  /** `IMAGINATION_MAX_CONCURRENT_CYCLES` in force for this call (default 2). */
+  max_concurrent_cycles: number;
+  /** Cycles in flight across every identity/mission, seen before this call. */
+  in_flight_before: number;
+  /** Cycles in flight while this call holds (or holds no) slot. */
+  in_flight_after: number;
+  /** True when this caller was refused a slot by the cap. */
+  capped: boolean;
+}
+
 export interface ImaginationCycleRun {
   schema_version: '1.0';
   cycle_id: string;
@@ -205,6 +223,8 @@ export interface ImaginationCycleRun {
     cells_total: number;
   };
   budget: CycleBudgetRecord;
+  /** The GLOBAL concurrency reading this cycle ran (or was refused) under. */
+  concurrency: CycleConcurrencyRecord;
   novelty: { mean_this_cycle: number | null; previous_mean: number | null; gain: number };
   error: string | null;
   created_at: string;
@@ -256,6 +276,12 @@ export interface ImaginationCycleResult {
   promoted: boolean;
   promotion_skipped: string | null;
   budget: CycleBudgetRecord | null;
+  /**
+   * The GLOBAL concurrency reading for this call: the cap in force, the in-flight
+   * count seen, whether a slot was taken, and (for a refusal) `capped: true`.
+   * Null only on the pre-iteration paths that never reached the gate.
+   */
+  concurrency: CycleConcurrencyRecord | null;
   error: string | null;
 }
 
@@ -586,6 +612,32 @@ export async function evaluatePlateau(
 /** One in-process single-flight slot per `{user, mission}`. */
 const inFlight = new Map<string, Promise<ImaginationCycleResult>>();
 
+/**
+ * How many cycles are in flight ACROSS every identity and mission (ITER-11
+ * refinement, brief §8's global cap). Incremented by the caller that takes the
+ * slot, decremented in a `finally`, so no exit path — return, throw or an
+ * abandoned await — can leak a slot.
+ */
+let inFlightCycleCount = 0;
+
+/** The in-flight reading, for the report and for tests. */
+export function inFlightCycles(): number {
+  return inFlightCycleCount;
+}
+
+/**
+ * The global slot reading for a caller that has NOT taken a slot. `capped` says
+ * whether the cap refused it.
+ */
+function concurrencyReading(capped: boolean): CycleConcurrencyRecord {
+  return {
+    max_concurrent_cycles: maxConcurrentCycles(),
+    in_flight_before: inFlightCycleCount,
+    in_flight_after: capped ? inFlightCycleCount : inFlightCycleCount + 1,
+    capped,
+  };
+}
+
 function skippedResult(reason: string, extra: Partial<ImaginationCycleResult> = {}): ImaginationCycleResult {
   return {
     status: 'skipped',
@@ -602,6 +654,7 @@ function skippedResult(reason: string, extra: Partial<ImaginationCycleResult> = 
     promoted: false,
     promotion_skipped: null,
     budget: null,
+    concurrency: null,
     error: null,
     ...extra,
   };
@@ -645,6 +698,24 @@ export async function runImaginationCycle(db: Db, args: RunCycleArgs): Promise<I
     return { ...shared, status: 'replayed', reason: 'single_flight_join' };
   }
 
+  // Gate 1b — the GLOBAL concurrency cap (ITER-11 refinement, brief §8). The
+  // per-mission single-flight slot above bounds ONE mission; this bounds the
+  // PROCESS, which matters because the executive tick can now start cycles with
+  // no human caller. A caller that finds the cap reached is REFUSED — nothing
+  // is read, claimed or written (only the reading is returned) — so a third
+  // simultaneous cycle cannot start and cannot leave a partial row behind. It is
+  // a refusal, not a queue: the caller (the executive sweep, or a tool) decides
+  // whether to try again next tick.
+  if (inFlightCycleCount >= maxConcurrentCycles()) {
+    return skippedResult('concurrency_cap', { concurrency: concurrencyReading(true) });
+  }
+
+  const concurrency = concurrencyReading(false);
+  // The slot is taken BEFORE the first await of `executeCycle`, so a second
+  // caller in the same tick sees it, and released in the `finally` below, which
+  // every exit path — return, throw, or a caller that abandons the await — goes
+  // through.
+  inFlightCycleCount += 1;
   const work = executeCycle(db, {
     userId,
     missionId,
@@ -654,12 +725,14 @@ export async function runImaginationCycle(db: Db, args: RunCycleArgs): Promise<I
     actorId: nonEmpty(args.actorId) ?? userId,
     caller: args.caller ?? { user_id: userId, trusted: false },
     now: args.now ?? (() => new Date().toISOString()),
+    concurrency,
   });
   inFlight.set(key, work);
   try {
     return await work;
   } finally {
     inFlight.delete(key);
+    inFlightCycleCount = Math.max(0, inFlightCycleCount - 1);
   }
 }
 
@@ -674,6 +747,7 @@ async function executeCycle(
     actorId: string;
     caller: CallerIdentity;
     now: () => string;
+    concurrency: CycleConcurrencyRecord;
   },
 ): Promise<ImaginationCycleResult> {
   const { userId, missionId, force, trigger, actorId, caller } = args;
@@ -686,22 +760,34 @@ async function executeCycle(
   if (!mission) throw new ImaginationCycleError(`mission state not found: ${missionId}`, 'mission_not_found');
   const state = await readCycleState(db, userId, missionId);
 
-  // Gate 2 — the PERSISTED cooldown.
+  // Gate 2 — the PERSISTED cooldown. Every skip inside this function carries the
+  // GLOBAL concurrency reading this call held its slot under, so a reader can
+  // always see which bound refused it and how many cycles were in flight.
   const cooldown = cooldownRemainingMs(state, nowMs);
-  if (cooldown > 0) return skippedResult('cooldown', { cooldown_remaining_ms: cooldown });
+  if (cooldown > 0) {
+    return skippedResult('cooldown', { cooldown_remaining_ms: cooldown, concurrency: args.concurrency });
+  }
 
   // Gate 3 — the per-mission window budget (cycles first, then measured tokens).
   const window = windowAt(state, nowMs, startedIso);
   if (window.cycles >= maxCyclesPerWindow()) {
-    return skippedResult('budget_cycles', { budget: budgetRecord(window, window, 0) });
+    return skippedResult('budget_cycles', {
+      budget: budgetRecord(window, window, 0),
+      concurrency: args.concurrency,
+    });
   }
   if (window.tokens >= maxTokensPerWindow()) {
-    return skippedResult('budget_tokens', { budget: budgetRecord(window, window, 0) });
+    return skippedResult('budget_tokens', {
+      budget: budgetRecord(window, window, 0),
+      concurrency: args.concurrency,
+    });
   }
 
   // Gate 4 — the plateau (bypassed ONLY by an explicit `force`).
   const plateau = await evaluatePlateau(db, { userId, missionId, now: () => startedIso });
-  if (!plateau.plateau && !force) return skippedResult('no_plateau', { plateau });
+  if (!plateau.plateau && !force) {
+    return skippedResult('no_plateau', { plateau, concurrency: args.concurrency });
+  }
 
   // Claim the cycle. The id is derived from the mission version + ordinal, so a
   // concurrent caller computes the same id and the unique index decides;
@@ -719,8 +805,13 @@ async function executeCycle(
     plateau: plateau.conditions,
     cooldownRemainingMs: cooldown,
     startedIso,
+    concurrency: args.concurrency,
   });
-  if (!claim.claimed) return claim.result;
+  if (!claim.claimed) {
+    // The claim refused (a recorded row, an in-flight one, or an exhausted
+    // ordinal): the reading this caller held a slot under is reported with it.
+    return { ...claim.result, concurrency: args.concurrency };
+  }
   const cycleId = claim.cycleId;
 
   const record: ImaginationCycleRun = {
@@ -757,6 +848,7 @@ async function executeCycle(
       cells_total: 0,
     },
     budget: budgetRecord(window, window, 0),
+    concurrency: args.concurrency,
     novelty: { mean_this_cycle: null, previous_mean: null, gain: 0 },
     error: null,
     created_at: startedIso,
@@ -955,6 +1047,7 @@ async function executeCycle(
       promoted: final.promoted,
       promotion_skipped: final.promotion_skipped,
       budget,
+      concurrency: final.concurrency,
       error: final.error,
     };
   };
@@ -1264,6 +1357,8 @@ async function claimCycle(
     plateau: PlateauCondition[];
     cooldownRemainingMs: number;
     startedIso: string;
+    /** The GLOBAL concurrency reading this claim ran under (recorded on the row). */
+    concurrency: CycleConcurrencyRecord;
   },
 ): Promise<ClaimResult> {
   const cycles = cycleCollection(db);
@@ -1399,6 +1494,7 @@ async function claimCycle(
         cells_total: 0,
       },
       budget: budgetRecord({ cycles: 0, tokens: 0 }, { cycles: 0, tokens: 0 }, 0),
+      concurrency: args.concurrency,
       novelty: { mean_this_cycle: null, previous_mean: null, gain: 0 },
       error: null,
       created_at: args.startedIso,
