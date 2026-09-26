@@ -435,6 +435,30 @@ function metricsFor(arm, fixture) {
       metrics.push(
         insufficient('time_to_next_viable_direction', 'the arm carries no usable timestamps', 'missing trigger/admission timestamps'),
       );
+    } else if (firstAdmitted <= trigger) {
+      // N3: a trigger stamped at (or after) its own first admitted candidate is a
+      // SELF-STAMPED window — the "gap" is an artefact of where the arm put its
+      // own clock, not a measured response time, and printing it as
+      // `store_measured` (arm D's 0 ms) invited exactly the wrong reading. The
+      // metric is refused by name instead; a real window (trigger strictly before
+      // the first admitted candidate) is unaffected.
+      const window = `trigger ${new Date(trigger).toISOString()} vs first admitted ${new Date(firstAdmitted).toISOString()}`;
+      metrics.push(
+        insufficient(
+          'time_to_next_viable_direction',
+          firstAdmitted === trigger
+            ? 'the arm stamped its trigger and its first admitted candidate at the SAME instant, so the window is self-stamped and the 0 ms gap measures nothing'
+            : 'the first admitted candidate predates the arm’s trigger, so no response window can be measured from it',
+          window,
+        ),
+      );
+      metrics.push(
+        insufficient(
+          'time_to_next_viable_direction_ms',
+          'the same self-stamped window as `time_to_next_viable_direction`: no response gap was measured',
+          window,
+        ),
+      );
     } else {
       const gap = Math.max(0, firstAdmitted - trigger);
       metrics.push(
@@ -1167,9 +1191,15 @@ const USAGE = `imagination-baseline — the A/B baseline harness (ITER-11 WS-4)
   node scripts/imagination-baseline.mjs [options]
 
 Options
-  --fixture <path>     the frozen checkpoint (default: tests/fixtures/imagination-baseline-checkpoint.json)
+  --fixture <path>     the checkpoint to measure (default: tests/fixtures/imagination-baseline-checkpoint.json)
                        regenerate it with:
                          IMAGINATION_BASELINE_FIXTURE_WRITE=1 npx vitest run tests/unit/imagination-baseline-fixture.test.ts
+                       the SAME harness measures a LIVE capture (real store, real model, judge-recorded
+                       outcomes) by pointing --fixture at it:
+                         npx vitest run tests/live/imagination-baseline-live.test.ts   # writes the capture
+                         node scripts/imagination-baseline.mjs --fixture <capture.json> --store <out.json> --grade <grades.json>
+                       a live capture declares itself in its own capture block, and the report prints that
+                       disclosure instead of the frozen checkpoint's stub disclaimer
   --store <path>       where the imagination_experiments-shaped rows are written
                        (default: docs/IMAGINATION-BASELINE.json)
   --grade <path>       an operator's BLIND grades, recorded as observations:
@@ -1355,10 +1385,21 @@ function buildReport({ fixture, arms, perArmMetrics, taskQualityCheck, compariso
   lines.push('    What is compared: the pre-engine comparators (A/B) against the engine (C) and the engine with a');
   lines.push('    heterogeneous team (D) over one frozen checkpoint. Every arm’s candidates were admitted by the SHIPPED');
   lines.push('    archive (IdeaArchiveService.admitOrReplace, in the fixture generator), so one rule decided both sides.');
-  lines.push('    Nothing here is evidence about a real model: the candidate TEXT is a scripted template’s, so every');
-  lines.push('    text-derived magnitude is stub_determined; the store-measured numbers are the archive’s own decisions,');
-  lines.push('    the recorded outcomes, the cost and the timings. Re-run against a live deployment to turn the stubs into');
-  lines.push('    evidence.');
+  const capture = fixture.capture ?? null;
+  if (capture) {
+    // A LIVE capture declares itself and its own disclosure, so the report never
+    // carries the frozen checkpoint's "this is all stubs" disclaimer over a run
+    // that was measured against a real store and a real model — and never drops
+    // it when it applies.
+    lines.push(`    Capture: ${String(capture.kind ?? 'declared')}${capture.summary ? ` — ${String(capture.summary)}` : ''}`);
+    for (const line of [].concat(capture.disclosure ?? [])) lines.push(`      • ${String(line)}`);
+    if (capture.judge) lines.push(`      • judge: ${JSON.stringify(capture.judge)}`);
+  } else {
+    lines.push('    Nothing here is evidence about a real model: the candidate TEXT is a scripted template’s, so every');
+    lines.push('    text-derived magnitude is stub_determined; the store-measured numbers are the archive’s own decisions,');
+    lines.push('    the recorded outcomes, the cost and the timings. Re-run against a live deployment to turn the stubs into');
+    lines.push('    evidence.');
+  }
   return lines.join('\n');
 }
 
@@ -1450,7 +1491,7 @@ function main() {
     at,
   });
 
-  const comparisons = ['useful_novelty_rate', 'false_novelty', 'task_quality_regression'].map((metricName) =>
+  const comparisons = ['useful_novelty_rate', 'false_novelty', 'time_to_next_viable_direction', 'task_quality_regression'].map((metricName) =>
     compareMetric({
       metricName,
       observations,

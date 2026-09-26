@@ -910,11 +910,11 @@
           "operator": "causal_reversal",
           "hypothesis": "The plateau causes the missing claims rather than the missing claims causing the plateau.",
           "descriptor_bins": {
-            "0": "reversal",
-            "1": "protocol",
-            "2": "identity",
-            "3": "trace_absence",
-            "4": "cheapest_probe"
+            "mechanism": "reversal",
+            "representation": "protocol",
+            "violated_assumption": "identity",
+            "evidence_family": "trace_absence",
+            "test_strategy": "cheapest_probe"
           },
           "cell_key": "mechanism=reversal|representation=protocol|violated_assumption=identity|evidence_family=trace_absence|test_strategy=cheapest_probe",
           "novelty_score": 0.8,
@@ -934,11 +934,11 @@
           "operator": "counterfactual_world",
           "hypothesis": "The plateau causes the missing claims rather than the missing claims causing the plateau.",
           "descriptor_bins": {
-            "0": "reversal",
-            "1": "protocol",
-            "2": "identity",
-            "3": "trace_absence",
-            "4": "cheapest_probe"
+            "mechanism": "reversal",
+            "representation": "protocol",
+            "violated_assumption": "identity",
+            "evidence_family": "trace_absence",
+            "test_strategy": "cheapest_probe"
           },
           "cell_key": "mechanism=reversal|representation=protocol|violated_assumption=identity|evidence_family=trace_absence|test_strategy=cheapest_probe",
           "novelty_score": 0.8,
@@ -958,11 +958,11 @@
           "operator": "constraint_mutation",
           "hypothesis": "Loosening the manual-approval constraint removes the plateau entirely.",
           "descriptor_bins": {
-            "0": "substitution",
-            "1": "list",
-            "2": "scarcity",
-            "3": "work_queue",
-            "4": "ab_test"
+            "mechanism": "substitution",
+            "representation": "list",
+            "violated_assumption": "scarcity",
+            "evidence_family": "work_queue",
+            "test_strategy": "ab_test"
           },
           "cell_key": "mechanism=substitution|representation=list|violated_assumption=scarcity|evidence_family=work_queue|test_strategy=ab_test",
           "novelty_score": 0.8,
@@ -982,11 +982,11 @@
           "operator": "counterfactual_world",
           "hypothesis": "The plateau causes the missing claims rather than the missing claims causing the plateau.",
           "descriptor_bins": {
-            "0": "reversal",
-            "1": "protocol",
-            "2": "identity",
-            "3": "trace_absence",
-            "4": "cheapest_probe"
+            "mechanism": "reversal",
+            "representation": "protocol",
+            "violated_assumption": "identity",
+            "evidence_family": "trace_absence",
+            "test_strategy": "cheapest_probe"
           },
           "cell_key": "mechanism=reversal|representation=protocol|violated_assumption=identity|evidence_family=trace_absence|test_strategy=cheapest_probe",
           "novelty_score": 0.8,
@@ -1006,11 +1006,11 @@
           "operator": "assumption_inversion",
           "hypothesis": "The trigger is not what ends the plateau: the plateau clears once the drain is measured.",
           "descriptor_bins": {
-            "0": "removal",
-            "1": "prose",
-            "2": "necessity",
-            "3": "epistemic_ledger",
-            "4": "kill_criterion"
+            "mechanism": "removal",
+            "representation": "prose",
+            "violated_assumption": "necessity",
+            "evidence_family": "epistemic_ledger",
+            "test_strategy": "kill_criterion"
           },
           "cell_key": "mechanism=removal|representation=prose|violated_assumption=necessity|evidence_family=epistemic_ledger|test_strategy=kill_criterion",
           "novelty_score": 0.8,
@@ -1030,11 +1030,11 @@
           "operator": "boundary_extreme",
           "hypothesis": "At zero drain capacity the queue never recovers, and at one drain per cycle it never plateaus.",
           "descriptor_bins": {
-            "0": "amplification",
-            "1": "numeric",
-            "2": "stability",
-            "3": "temporal_series",
-            "4": "simulation"
+            "mechanism": "amplification",
+            "representation": "numeric",
+            "violated_assumption": "stability",
+            "evidence_family": "temporal_series",
+            "test_strategy": "simulation"
           },
           "cell_key": "mechanism=amplification|representation=numeric|violated_assumption=stability|evidence_family=temporal_series|test_strategy=simulation",
           "novelty_score": 0.8,

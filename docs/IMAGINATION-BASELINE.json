@@ -171,6 +171,48 @@
         "basis": "observations for false_novelty, baseline arms A+B (0.833333, n 12) vs treatment arms C+D (0.333333, n 15), pooled and weighted by n; target lower is better by 0.3 relative (named-target); comparability like_for_like — every arm on both sides (A, B, C, D) was admitted/rejected by the same shipped rule — IdeaArchiveService.admitOrReplace — so the difference between the sides is the difference between the paths, not between two rules; the candidate TEXT is scripted on arm(s) A, B, C, D, so the magnitude is stub_determined while the rule is the deployment’s own"
       },
       {
+        "metric": "time_to_next_viable_direction",
+        "verdict": "insufficient_data",
+        "comparability": "like_for_like",
+        "comparability_basis": "every arm on both sides (A, B, C, D) was admitted/rejected by the same shipped rule — IdeaArchiveService.admitOrReplace — so the difference between the sides is the difference between the paths, not between two rules; the candidate TEXT is scripted on arm(s) A, B, C, D, so the magnitude is stub_determined while the rule is the deployment’s own",
+        "comparison_rule": {
+          "service": "IdeaArchiveService.admitOrReplace",
+          "decided_by": [
+            "server/tests/unit/imagination-baseline-fixture.test.ts (the fixture generator)",
+            "the imagination engine, inside runImaginationCycle on the frozen scenario",
+            "the imagination engine, inside runFirstPass on the frozen scenario"
+          ],
+          "arms": [
+            "A",
+            "B",
+            "C",
+            "D"
+          ],
+          "text_is_scripted_on": [
+            "A",
+            "B",
+            "C",
+            "D"
+          ]
+        },
+        "direction": "lower",
+        "baseline": null,
+        "treatment": {
+          "value": 9,
+          "n": 4
+        },
+        "delta": null,
+        "relative_gain": null,
+        "target": {
+          "direction": "lower",
+          "min_relative_gain": 0.2,
+          "min_samples": 1,
+          "source": "named-target"
+        },
+        "reason": "the baseline side has no measured value for time_to_next_viable_direction — no comparison can be formed",
+        "basis": "1 observation(s) for time_to_next_viable_direction; both sides ran the same rule (IdeaArchiveService.admitOrReplace)"
+      },
+      {
         "metric": "task_quality_regression",
         "verdict": "equal",
         "comparability": "like_for_like",
@@ -702,38 +744,6 @@
       "value": 0.333333,
       "n": 9,
       "note": "[store_measured] 3 rejection(s) with a seen-before reason (duplicate_of, paraphrase_of, excluded_region) ÷ 9 generated candidate(s) (the denominator is the arm's own generated count — a treatment arm's rows hold only the seeds it ADMITTED, so a row count would be the wrong basis); the rejection decisions are the SHIPPED archive’s own rows (IdeaArchiveService.admitOrReplace, decided in the imagination engine, inside runFirstPass on the frozen scenario) — the SAME rule every arm in this experiment ran through; the candidate TEXT is a scripted template (the scripted stub model’s output (this fixture’s responder)), so the magnitude is stub_determined",
-      "recorded_at": "2026-09-26T12:00:00.000Z",
-      "updated_at": "2026-09-26T12:00:00.000Z"
-    },
-    {
-      "schema_version": "1.0",
-      "kind": "observation",
-      "observation_id": "impexp_obs_ba2cc9b7871a3d72d15217ca",
-      "observation_key": "impexp_obs_96945976fad0d7f7c42897339477e389",
-      "user_id": "katra",
-      "experiment_id": "impexp_daba0176f662f4776203fff7a2c5b4be",
-      "arm": "D",
-      "metric": "time_to_next_viable_direction",
-      "checkpoint": "frozen_checkpoint_alpha",
-      "value": 0,
-      "n": 6,
-      "note": "[store_measured] first admitted candidate at 2026-09-26T12:00:00.000Z − trigger 2026-09-26T12:00:00.000Z = 0 ms",
-      "recorded_at": "2026-09-26T12:00:00.000Z",
-      "updated_at": "2026-09-26T12:00:00.000Z"
-    },
-    {
-      "schema_version": "1.0",
-      "kind": "observation",
-      "observation_id": "impexp_obs_2c106913a41d6d37cb753eff",
-      "observation_key": "impexp_obs_b57e498453fc5849b361661ab2e78dc2",
-      "user_id": "katra",
-      "experiment_id": "impexp_daba0176f662f4776203fff7a2c5b4be",
-      "arm": "D",
-      "metric": "time_to_next_viable_direction_ms",
-      "checkpoint": "frozen_checkpoint_alpha",
-      "value": 0,
-      "n": 6,
-      "note": "[store_measured] the same gap in milliseconds (the key the experiment comparison’s “lower is better” target uses)",
       "recorded_at": "2026-09-26T12:00:00.000Z",
       "updated_at": "2026-09-26T12:00:00.000Z"
     },

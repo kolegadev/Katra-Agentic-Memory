@@ -122,7 +122,7 @@ measured from this fixture at all (`insufficient_data`).
 | `D` | `arm_generated_candidates` / `arm_admitted_candidates` / `arm_rejected_candidates` | **9** / 6 / 3 | 9 | `store_measured` |
 | `D` | `false_novelty` | **0.333333** (3/9, not 3/6) | 9 | `store_measured` |
 | `D` | `archive_coverage_gain` | 4 new cells (of 16 807 possible) | 4 | `store_measured` |
-| `D` | `time_to_next_viable_direction` | 0 ms (the team pass stamps its own window) | 6 | `store_measured` |
+| `D` | `time_to_next_viable_direction` | `insufficient_data` — the arm stamped its trigger and its first admitted candidate at the SAME instant, so the window is self-stamped and the 0 ms gap measures nothing | 0 | `insufficient_data` |
 | `D` | `agent_divergence` (closest-pair Jaccard, 3 agents) | 0.027778 | 3 | `stub_determined` |
 | `D` | `agent_divergence_same_mode_control` | `insufficient_data` — the same-mode control belongs to the Phase-6 exit-criterion test, not to this experiment | 0 | `insufficient_data` |
 | `D` | `useful_novelty_rate`, `idea_survival`, `cost_of_novelty` | `insufficient_data` — no outcome was ever recorded for the team arm | 0 | `insufficient_data` |
@@ -133,6 +133,7 @@ measured from this fixture at all (`insufficient_data`).
 | --- | --- | --- | --- | --- | --- | --- |
 | `useful_novelty_rate` | `like_for_like` | *(none — the pre-engine arms recorded no outcomes)* | 0.666667 (n 3) | — | — | `insufficient_data` |
 | `false_novelty` (lower is better) | `like_for_like` | 0.833333 (n 12) | 0.333333 (n 15) | −0.5 | 0.6 | `improved` (the 30% target is reached) |
+| `time_to_next_viable_direction` (lower is better) | `like_for_like` | *(none — the pre-engine arms have no cycle trigger to time from)* | 9 ms (n 4 — arm `C` only) | — | — | `insufficient_data` |
 | `task_quality_regression` | `like_for_like` | 2 criteria met (n 4) | 2 criteria met (n 4) | **none — the sides are exactly equal** | — | `equal` |
 
 **Why `false_novelty` reads 0.6 now and read 0.200001 before.** With ONE rule on both sides, the
@@ -171,6 +172,11 @@ fixture cannot produce that demonstration, and it says so rather than inventing 
 - `false_novelty` is measurable on both sides and, with one rule on both, reads 0.833333 (10/12) against
   0.333333 (5/15) — a 0.6 relative gain, past the brief's 0.3 target. It is the one two-sided number
   the bullet can point at, and it is a statement about the archive's rule over *scripted* text;
+- `time_to_next_viable_direction` — the bullet's OTHER named metric — is now part of the comparison and
+  is refused on BOTH sides, by name: the comparators have no cycle trigger to time from, and arm `D`'s
+  trigger and its first admitted candidate carry the same instant, so its "0 ms" is a self-stamped
+  window rather than a response time (the reviewer's N3). Only arm `C` carries a real, non-zero window
+  (9 ms), which is one side of a two-sided metric, so the comparison reads `insufficient_data`;
 - the task-quality check shows **no regression** and **equal** readings on both sides, with the
   criterion-by-criterion evidence below.
 

@@ -516,7 +516,12 @@ describe('the baseline harness — the four arms, every number with its basis', 
   it('the comparison applies the brief’s named target and reports a verdict per metric', () => {
     const { report } = runHarness();
     const byMetric = Object.fromEntries(report.comparisons.map((row) => [row.metric, row]));
-    expect(Object.keys(byMetric).sort()).toEqual(['false_novelty', 'task_quality_regression', 'useful_novelty_rate']);
+    expect(Object.keys(byMetric).sort()).toEqual([
+      'false_novelty',
+      'task_quality_regression',
+      'time_to_next_viable_direction',
+      'useful_novelty_rate',
+    ]);
     // The named target is the brief's "≥30% better useful novelty", and its
     // direction/source are stated.
     expect(byMetric.useful_novelty_rate.target).toMatchObject({
@@ -554,6 +559,21 @@ describe('the baseline harness — the four arms, every number with its basis', 
     // equality rather than reporting a 0 delta as "not improved".
     expect(byMetric.task_quality_regression.verdict).toBe('equal');
     expect(byMetric.task_quality_regression.delta).toBeNull();
+    // N3 (the reviewer's residual): arm D's "0 ms" was a SELF-STAMPED window —
+    // its trigger and its first admitted candidate carry the same instant — and
+    // reporting it as a measurement invited the wrong reading. The metric is now
+    // refused BY NAME on that arm while arm C's real (non-zero) window keeps its
+    // reading, and the comparison carries the metric so the refusal is visible
+    // where the rollout gate reads.
+    const armCTiming = metricsOf(report, 'C').time_to_next_viable_direction;
+    expect(armCTiming.status).toBe('ok');
+    expect(armCTiming.value).toBeGreaterThan(0);
+    const armDTiming = metricsOf(report, 'D').time_to_next_viable_direction;
+    expect(armDTiming.status).toBe('insufficient_data');
+    expect(armDTiming.reason).toContain('SAME instant');
+    expect(armDTiming.reason).toContain('self-stamped');
+    expect(byMetric.time_to_next_viable_direction.verdict).toBe('insufficient_data');
+    expect(byMetric.time_to_next_viable_direction.reason).toContain('no measured value');
 
     // An override is honoured and reported as such.
     const overridden = runHarness(['--target', 'false_novelty=0.05']).report;
@@ -627,9 +647,13 @@ describe('the baseline harness — the four arms, every number with its basis', 
       expect(store.comparison.admission_rule_per_arm[label].path).toBe('shipped_archive');
     }
     // The verdict field, metric by metric — the same object the report prints.
+    // The brief names useful novelty AND time-to-next-viable-direction, so the
+    // coverage residual (a comparison over three metrics while the brief names
+    // four) is pinned here: the timing metric is present even when it is refused.
     expect(store.comparison.metrics.map((row: any) => row.metric)).toEqual([
       'useful_novelty_rate',
       'false_novelty',
+      'time_to_next_viable_direction',
       'task_quality_regression',
     ]);
     for (const row of store.comparison.metrics) {
