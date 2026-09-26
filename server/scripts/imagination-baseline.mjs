@@ -1008,8 +1008,10 @@ function comparabilityOf(arms, baselineArms, treatmentArms) {
     },
     basis:
       `every arm on both sides (${labels.join(', ')}) was admitted/rejected by the same shipped rule — ${services[0]} — so the difference between ` +
-      `the sides is the difference between the paths, not between two rules; the candidate TEXT is scripted on arm(s) ${scriptedSides.join(', ') || 'none'}, ` +
-      'so the magnitude is stub_determined while the rule is the deployment’s own',
+      `the sides is the difference between the paths, not between two rules; ` +
+      (scriptedSides.length > 0
+        ? `the candidate TEXT is scripted on arm(s) ${scriptedSides.join(', ')}, so those arms' text-derived magnitudes are stub_determined while the rule is the deployment’s own`
+        : 'the candidate TEXT is model-written on EVERY arm (no arm declares scripted text), so the magnitudes are store_measured on both sides — a judged comparison of text two paths produced, not of a template against a model'),
   };
 }
 

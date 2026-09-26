@@ -98,7 +98,9 @@ denominator is the set the judge actually saw, not the set the archive kept.
 - **The baseline arms' TEXT is still the checkpoint's scripted comparator templates.** The harness
   prints that beside every magnitude (`text_is_scripted` on `A` and `B`): the baseline's *procedure*
   is the pre-engine path's own (degree-ranked retrieval, an undeduped walk), its *sentences* are the
-  frozen fixture's. The treatment side's text is a real model's.
+  frozen fixture's. The treatment side's text is a real model's. **Superseded** by the control fix below
+  (`live-20260926-141331`): the comparators now answer the real model on the same graph material, so
+  all four arms' text is model-written and no magnitude is `stub_determined`.
 - **The blinding is structural, not textual.** No case carried an arm label, an identity or a seed id, and the cases were interleaved across arms — but a candidate's own text is judged as written, and **2 of the 35** cases mention one of the run's mission ids inside their own `cheapest_test` field (a real candidate can name its mission). The instrument now counts those mentions into every capture it writes.
 - **The judge is a language model of the same family that wrote the treatment text.** Self-preference
   is possible; the prompt, the shuffle seed and every raw reply are recorded so the reading can be
@@ -145,6 +147,64 @@ block records them (raw value beside the default each one replaces).
 The retest is a *second bounded live run*, not a re-scoring: fresh sandbox identities and missions,
 the run's own graph ids, its own outcome rows. Its raw artefacts are in the private repository under
 `imagination/evidence/live-run-20260926-101239/`.
+
+## The control fix, and the reading it produced (2026-09-26, run token `live-20260926-141331`)
+
+The two runs above shared one confound, and it was the one that mattered: the **comparators' text was
+the fixture's scripted templates** while the treatment arms' text was a real model's, so the judge's
+0/12 vs 21/23 measured template prose against model prose at least as much as pre-engine against
+engine — and the one `improved` row (`false_novelty`) sat under the same confound, because template
+text is self-similar by construction. The independent review named the remedy: an A/B where **both
+sides answer the real model**, same blind judge, ≥5 outcomes per side.
+
+The comparators now do. One call per arm, from the mission's own graph material and nothing else (no
+salience traces, no operator families, no archive, no novelty instruction), one candidate per item —
+and **only that one variable moved**: the items, ids, operators, bins, evidence refs and structure are
+the template builders' own, so the frozen fixture's output (and its byte-compare gate) is untouched. A
+short or padded reply refuses the whole arm by name rather than silently changing the denominator; each
+arm's `admission_rule.text_is_scripted` now reads `false` and its `generation.determination`
+`store_measured`; the prompts are pure functions of the recorded `baseline_material`, and their sha256
+and the verbatim system prompt ride in the capture's `comparator_text` block.
+
+| | |
+| --- | --- |
+| comparator calls | `A` 4 items (418 in / 3 493 out), `B` 8 items (449 in / 1 798 out) — `deepseek-flash`, prompt sha256 `d001e6aa…` / `dcbe927b…` |
+| arms as the store recorded them | `A` 4 generated / **1 useful** · `B` 8 / **3** · `C` 8 / **8** · `D` 14 / **14** |
+| judge | 34 cases in **7 calls at batch size 5**, **0 refusals**, all 34 outcomes recorded (`IMAGINATION_BASELINE_JUDGE_BATCH_SIZE=5`, `…_JUDGE_MAX_TOKENS=16 000`, both recorded in the capture) |
+| `useful_novelty_rate` | **`improved`** — baseline 0.333333 (n 12) vs treatment 1 (n 22); relative gain **+2.0** against the named 0.3 target |
+| `false_novelty` | **`equal`** — 0 (n 12) vs 0 (n 22) |
+| `time_to_next_viable_direction` | `not_improved` — 53 851 ms (n 12) vs 67 598 ms (n 22); a *fair* race now, both sides making model calls |
+| `task_quality_regression` | `equal` (2/2 criteria both sides) |
+
+**The reading was fixed before the run.** The disposition was pre-committed in the private record
+(`imagination/DOD8-PRECOMMIT-control-fix-20260926.md`, committed ahead of this run): comparator useful
+count > 0 **and** engine > comparator ⇒ DoD #8 passes by the bullet's letter. It does — 4 useful of 12
+against 22 of 22, `like_for_like`, named target reached.
+
+**What changed in the record, and what did not** — stated plainly, because the two earlier summaries
+now read differently:
+
+- `false_novelty`'s `improved` row is **gone** (0 → 0, `equal`): it was the template artefact. The
+  comparators, answering the model, produce no seen-before candidates — so the engine's advantage on
+  that metric was an artefact of the control, and the record now says so.
+- The zero-baseline refusal is **gone too**, and not by tuning: the fair control genuinely produces
+  useful candidates sometimes (1 in 4, and 3 in 8). The metric can form a ratio, and the ratio favours
+  the engine.
+- `time_to_next_viable_direction` stays `not_improved`, and it means more now: with real model calls on
+  both sides the engine is still slower to its first admitted candidate (67.6 s vs 53.9 s), because a
+  cycle does strictly more per candidate than one retrieval call does.
+- `task_quality_regression`'s `equal` still rests on a comparator side whose criteria are **vacuous by
+  construction** (a control run promotes no baton, so there is nothing shared to scan). Pre-committed as
+  a standing residual; the decisive row is useful novelty.
+- **Cost, honestly**: the engine's cost per *useful* candidate (3 310 and 2 208 tokens for `C`/`D`) is
+  **higher** than arm `B`'s (749). The engine's case is the rate, not cost-efficiency.
+
+One bounded run on one frozen checkpoint, one run per arm — not a distribution. The judge is a model,
+disclosed and re-scorable from the transcript. Raw artefacts: the private repository,
+`imagination/evidence/live-run-20260926-141331/` — and `…-140241/`, the first attempt, kept because it
+is the finding that made the judge's batch size an experiment parameter (with every candidate
+model-written, two ten-case batches spent their whole output ceiling on reasoning and returned nothing
+usable, so 22 of 35 cases were refused by name: recorded, not papered over).
 
 ## Where the raw evidence lives
 
