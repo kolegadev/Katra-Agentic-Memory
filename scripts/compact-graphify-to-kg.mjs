@@ -5,7 +5,7 @@
  */
 import { MongoClient } from 'mongodb';
 
-const MONGO_URI = process.env.MONGO_URI || 'mongodb://admin:change-me@localhost:27017/katra?authSource=admin';
+const MONGO_URI = (process.env.MONGO_URI || process.env.MONGODB_URI) || 'mongodb://admin:change-me@localhost:27017/katra?authSource=admin';
 
 async function main() {
   const client = new MongoClient(MONGO_URI);
