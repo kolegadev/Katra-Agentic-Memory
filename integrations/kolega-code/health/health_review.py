@@ -10,9 +10,13 @@ Output:
 - human report on stdout
 - history appended to ~/.katra/inbox/health-reports.md
 - when anything needs action: an "Attention: <local identity>" agent message
-  posted to the shared scope (tagged machine-health-report) so the inbox
-  loop/session picks it up, plus a needs-owner entry for anything that is
-  the owner's call (hardware, tailnet-level, machines with no collector).
+  AUTHORED BY the system identity (Katra) and posted to the shared scope
+  (tagged machine-health-report) so the local inbox loop can fetch it: the
+  loop's candidate query excludes events authored by its own identity, so a
+  self-authored alert could never be dispatched (2026-09-26 incident) —
+  author and recipient must differ, plus a needs-owner entry for anything
+  that is the owner's call (hardware, tailnet-level, machines with no
+  collector).
 
 Usage:
     python3 health_review.py --hours 26 [--write-report] [--post-alert]
@@ -34,10 +38,19 @@ REPORT_FILE = Path.home() / ".katra" / "inbox" / "health-reports.md"
 NEEDS_OWNER = Path.home() / ".katra" / "inbox" / "needs-owner.md"
 API = "http://localhost:9012/api/v1"
 
-# Identity is deployment data: the alert is posted by and addressed to the
-# local identity (KATRA_USER_ID), never a hardcoded name.
+# Identity is deployment data. The alert is ADDRESSED to the local identity
+# (KATRA_USER_ID) but AUTHORED by the system identity (Katra): the inbox
+# candidate query excludes events authored by the consuming loop's own
+# AGENT_ID ("not authored by me"), so a self-authored alert can never be
+# dispatched to the loop it is meant for. 2026-09-19..26: every daily alert
+# was undeliverable — self-authored while the identity was the local one,
+# then (env-defaulted "katra") addressed to a name no loop's store query
+# fetches. Author and recipient must differ for delivery; see
+# docs/incident-improvement-loop.md, card health-alert-undeliverable.
 LOCAL_ID = (os.environ.get("KATRA_USER_ID", "katra") or "katra").strip() or "katra"
 LOCAL_NAME = LOCAL_ID.title()
+AUTHOR_ID = (os.environ.get("KATRA_ALERT_AUTHOR", "katra") or "katra").strip() or "katra"
+AUTHOR_NAME = AUTHOR_ID.title()
 
 
 def _mongo_password() -> str:
@@ -102,7 +115,7 @@ def post_agent_message(message: str) -> bool:
     if not key:
         return False
     payload = {
-        "user_id": LOCAL_ID,
+        "user_id": AUTHOR_ID,
         "event_type": "agent_message",
         "content": {"message": message},
         "metadata": {"tags": ["inter-agent", "agent-message", "machine-health-report"]},
@@ -235,7 +248,11 @@ def main() -> int:
     if card_due:
         alert_parts.append(f"incident cards due: {', '.join(card_due)}")
     if args.post_alert and alert_parts:
-        msg = (f"Attention: {LOCAL_NAME} — FROM: {LOCAL_NAME} — machine health review "
+        if LOCAL_ID == AUTHOR_ID:
+            print("health_review: WARNING — KATRA_USER_ID unresolved (target == author); "
+                  "alert would be self-authored and undeliverable to any inbox loop.",
+                  file=sys.stderr)
+        msg = (f"Attention: {LOCAL_NAME} — FROM: {AUTHOR_NAME} — machine health review "
                f"{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')}Z: "
                + " | ".join(alert_parts)
                + " — review, resolve, then close each incident with a card "
