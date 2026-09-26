@@ -54,6 +54,24 @@ jobs:
         working-directory: .
         run: python3 integrations/kolega-code/scripts/test_bridge_personality_fetch.py
 
+      # The DeepSeek off-peak gate and the stale model-id scan/migrate pair.
+      # Stdlib only, and none of them touches live state: the gate test only
+      # runs `offpeak_gate.py --at <literal>`, the scanner test walks a fixture
+      # tree it builds in a temp directory, and the migration test drives
+      # `--files` in DRY-RUN against temp files of its own (never `--apply`,
+      # never a machine profile).
+      - name: Off-peak gate (DeepSeek window + exit code)
+        working-directory: .
+        run: python3 integrations/kolega-code/scripts/test_offpeak_gate.py
+
+      - name: Stale DeepSeek id scan (classification + walk)
+        working-directory: .
+        run: python3 integrations/kolega-code/scripts/test_scan_stale_deepseek_ids.py
+
+      - name: Stale DeepSeek id migration (rewrite rules + dry run)
+        working-directory: .
+        run: python3 integrations/kolega-code/scripts/test_migrate_stale_deepseek_ids.py
+
       - name: Install dependencies
         run: npm ci
 
