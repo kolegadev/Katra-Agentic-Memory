@@ -13,12 +13,13 @@
  * Guard order (all hard rules — violation = FAIL):
  *   1. Approval gate FIRST — hasActiveApproval(caller.user_id, service)
  *      (honors the '*' wildcard). No active approval → no network activity.
- *      Exception (owner decision 2026-09-28): a TEAM-scope secret carrying
- *      its own flags.approval_required=false (dashboard "Approval required"
- *      unchecked) is usable by its RBAC reader set with no approvals row —
- *      RBAC open (step 5) and every other guard still apply, and the use is
- *      still audited. approval_required=true (the default) and private
- *      secrets keep the per-identity approvals-ledger gate.
+ *      Meta-first decision (2026-09-28, workplan Objective 1): a secret with
+ *      flags.approval_required=false (dashboard "Approval required"
+ *      unchecked) is usable with no approvals row (still audited); otherwise
+ *      the approval is derived from the SECRET's linked service, the
+ *      call-time service must match it ('service mismatch'), and an active
+ *      (identity, service) grant is required. RBAC open (step 5) and every
+ *      other guard still apply. See decideCapabilityApproval.
  *   2. Method whitelist GET POST PUT PATCH DELETE HEAD.
  *   3. Content rules (before any network activity): extra request headers
  *      are allowlisted names only (SAFE_EXTRA_HEADERS, case-insensitive;
@@ -61,7 +62,7 @@
 import type { CallerIdentity } from '../../utils/caller-identity.js';
 import { get_database } from '../../database/connection.js';
 import { lookup } from 'node:dns/promises';
-import { createVaultStore, type VaultStore } from './store.js';
+import { createVaultStore, type VaultStore, type SecretMeta } from './store.js';
 
 // ── Public types (contract F7 exact interfaces) ──────────────────────────
 
@@ -387,31 +388,68 @@ async function readBodyCapped(response: Response): Promise<string> {
   return Buffer.concat(chunks).toString('utf8');
 }
 
+/** Outcome of the capability approval decision (decideCapabilityApproval). */
+interface ApprovalDecision {
+  ok: boolean;
+  /** Static blocked reason when !ok. */
+  reason?: string;
+}
+
 /**
- * 2026-09-28 fix (owner decision, relayed via Lilly): honour a team-scope
- * secret's own `flags.approval_required = false` instead of consulting the
- * approvals ledger unconditionally. The flag is set from the dashboard
- * "Approval required" box (default on) at creation/update time; both John's
- * keys carry it unchecked, yet the gate refused them with 'no active
- * approval'. A waiver ONLY skips the per-identity approval: the RBAC open
- * and every other capability guard still run, and the attempt is still
- * audited. Team scope is the flagged, owner-approved case; private-scope
- * secrets and `approval_required: true` keep the ledger gate untouched.
+ * Capability approval decision — Objective 1 of the 2026-09-08 vault
+ * workplan (F1 flag binding + F2 service derivation), applied on the owner
+ * decision of 2026-09-28 after the class's second occurrence (JEV/FRED;
+ * first was ATP, 2026-09-08):
+ *
+ *  1. The secret's meta is loaded FIRST (caller-scoped, metadata only).
+ *     `flags.approval_required` false → ALLOW with no `vault_approvals` row
+ *     (the caller of this helper still audits the attempt). The flag is the
+ *     dashboard "Approval required" box (default on) and previously had no
+ *     reader anywhere in the use path.
+ *  2. `approval_required` true (the default) → the approval is checked
+ *     against the SECRET's linked service, not the caller's call-time
+ *     argument: the call-time service must match it exactly (blocked
+ *     'service mismatch' otherwise), then an active (identity,
+ *     secret.service) approval is required. This closes the hole where a
+ *     caller could satisfy the gate with an approval for a service of their
+ *     choosing.
+ *  3. A secret with NO linked service falls back to the call-time check
+ *     (a '*' grant covers it). Rejecting these outright would break live
+ *     flows whose records cannot be corrected yet — workplan Objective 2
+ *     (updateSecret) comes first for that.
+ *  4. Invisible/absent secrets keep the plain ledger check on the call-time
+ *     service — no new existence signal, same blocked reasons as before.
  */
-async function approvalWaivedForTeamSecret(
+async function decideCapabilityApproval(
   store: VaultStore,
   caller: CallerIdentity,
-  secretId: string,
-): Promise<boolean> {
+  secretId: string | undefined,
+  callTimeService: string,
+): Promise<ApprovalDecision> {
+  let meta: SecretMeta | null = null;
+  if (secretId !== undefined) {
+    try {
+      meta = await store.getSecretMeta(caller, secretId);
+    } catch {
+      meta = null;
+    }
+  }
+  if (meta !== null && meta.flags.approval_required === false) {
+    return { ok: true };
+  }
+  const derivedService = meta !== null ? meta.service : null;
+  let serviceToCheck = callTimeService;
+  if (derivedService !== null) {
+    if (callTimeService !== derivedService) {
+      return { ok: false, reason: 'service mismatch' };
+    }
+    serviceToCheck = derivedService;
+  }
   try {
-    const meta = await store.getSecretMeta(caller, secretId);
-    return (
-      meta !== null &&
-      meta.owner.shared_id !== undefined &&
-      meta.flags.approval_required === false
-    );
+    const approved = await store.hasActiveApproval(caller.user_id, serviceToCheck);
+    return approved ? { ok: true } : { ok: false, reason: 'no active approval' };
   } catch {
-    return false;
+    return { ok: false, reason: 'no active approval' };
   }
 }
 
@@ -497,22 +535,19 @@ export function createCapability(opts: CapabilityOptions = {}): Capability {
       try {
         const store: VaultStore = opts.store ?? (lazyStore ??= createVaultStore());
 
-        // 1 ── Approval gate FIRST (incl. '*' wildcard). No approval → no
-        // network activity, audit 'denied', blocked 'no active approval'.
-        // 2026-09-28: a team-scope secret with flags.approval_required=false
-        // waives the per-identity approval for its RBAC reader set (the
-        // ledger was previously consulted unconditionally).
-        let approved = false;
-        try {
-          approved = await store.hasActiveApproval(input.caller.user_id, input.service);
-        } catch {
-          approved = false;
-        }
-        if (!approved) {
-          approved = await approvalWaivedForTeamSecret(store, input.caller, input.secretId);
-        }
-        if (!approved) {
-          return finish('denied', blocked('no active approval'));
+        // 1 ── Approval gate FIRST — meta-first (no approval → no network
+        // activity, audit 'denied'). 2026-09-28 Objective 1: a secret with
+        // flags.approval_required=false is allowed with no grant; otherwise
+        // the approval is derived from the SECRET's service and the
+        // call-time service must match it (blocked 'service mismatch').
+        const approval = await decideCapabilityApproval(
+          store,
+          input.caller,
+          input.secretId,
+          input.service,
+        );
+        if (!approval.ok) {
+          return finish('denied', blocked(approval.reason ?? 'no active approval'));
         }
 
         // 2 ── Method whitelist.
@@ -765,23 +800,18 @@ export function createCapability(opts: CapabilityOptions = {}): Capability {
           );
         }
 
-        // Approval gate FIRST — identical to vaultHttp (incl. the
-        // 2026-09-28 team-scope flags.approval_required=false waiver when a
-        // secret_id is given; a session-only login has no secret to inspect).
+        // Approval gate FIRST — identical to vaultHttp (2026-09-28
+        // Objective 1 flag binding + service derivation; a session-only
+        // login has no secret to inspect and keeps the call-time check).
         const store: VaultStore = opts.store ?? (lazyStore ??= createVaultStore());
-        let approved = await store.hasActiveApproval(
-          input.caller.user_id,
+        const approval = await decideCapabilityApproval(
+          store,
+          input.caller,
+          hasSecretId ? (input.secretId as string) : undefined,
           input.service,
         );
-        if (!approved && hasSecretId) {
-          approved = await approvalWaivedForTeamSecret(
-            store,
-            input.caller,
-            input.secretId as string,
-          );
-        }
-        if (!approved) {
-          return finish('denied', blocked('no active approval'));
+        if (!approval.ok) {
+          return finish('denied', blocked(approval.reason ?? 'no active approval'));
         }
 
         const driver = opts.instagramLoginFn ?? defaultInstagramLoginFn(fetchImpl);

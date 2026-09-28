@@ -304,13 +304,13 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
   async function putSecretFor(
     owner: string,
     tag: string,
-    opts: { approvalRequired?: boolean } = {},
+    opts: { approvalRequired?: boolean; service?: string | null } = {},
   ): Promise<string> {
     const result = await store.putSecret({
       caller: KATRA,
       name: nameOf(tag),
       value: SECRET_VALUE,
-      service: 'agentmail',
+      service: opts.service === undefined ? 'agentmail' : opts.service,
       ownerUserId: owner,
       ...(opts.approvalRequired === undefined
         ? {}
@@ -322,14 +322,14 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
   /** Team secret in the default shared scope; flags.approval_required opt-in. */
   async function putTeamSecret(
     tag: string,
-    opts: { approvalRequired?: boolean; service?: string } = {},
+    opts: { approvalRequired?: boolean; service?: string | null } = {},
   ): Promise<string> {
     const result = await store.putSecret({
       caller: KATRA,
       name: nameOf(tag),
       value: SECRET_VALUE,
       scope: 'team',
-      service: opts.service ?? 'agentmail',
+      service: opts.service === undefined ? 'agentmail' : opts.service,
       ...(opts.approvalRequired === undefined
         ? {}
         : { approvalRequired: opts.approvalRequired }),
@@ -416,10 +416,13 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
     await assertNoSecretText(result, rows);
   });
 
-  // ── Criterion 1b–1d: team secrets with flags.approval_required=false skip
-  // the approvals-ledger gate for their RBAC readers (owner decision
-  // 2026-09-28); defaults and private scope are unchanged ───────────────
-  it('criterion 1b: team secret with flags.approval_required=false → use allowed with NO approvals row, audit ok', async () => {
+  // ── Criterion 1b–1g: Objective 1 of the 2026-09-08 vault workplan (F1
+  // flag binding + F2 service derivation), owner decision 2026-09-28:
+  // approval_required=false → allowed with no approvals row (any scope);
+  // otherwise the approval is derived from the SECRET's service, the
+  // call-time service must match it, and an active (identity, service) row
+  // is required; secrets with no linked service keep the call-time check ──
+  it('criterion 1b: secret with flags.approval_required=false → use allowed with NO approvals row, audit ok', async () => {
     const secretId = await putTeamSecret('flagwaived', { approvalRequired: false });
     const fetchSpy = mockFetch(OK_RESPONSE);
     const cap = createCapability({ store, fetchImpl: fetchSpy, resolveHost: resolveTo(PUBLIC_IP) });
@@ -440,7 +443,7 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
     await assertNoSecretText(result, rows);
   });
 
-  it('criterion 1c: team secret with the default approval_required=true still needs an approvals row', async () => {
+  it('criterion 1c: default approval_required=true with the call-time service matching the secret → no row, still blocked', async () => {
     const secretId = await putTeamSecret('flagdefault');
     const fetchSpy = mockFetch(OK_RESPONSE);
     const cap = createCapability({ store, fetchImpl: fetchSpy, resolveHost: resolveTo(PUBLIC_IP) });
@@ -454,15 +457,64 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
     expect(rows[0]).toMatchObject({ outcome: 'denied' });
   });
 
-  it('criterion 1d: private secret with approvalRequired=false keeps the ledger gate (team scope only)', async () => {
+  it('criterion 1d: the flag binds for private-scope secrets too — no grant needed', async () => {
     const secretId = await putSecretFor('agent-c', 'privflagfalse', { approvalRequired: false });
     const fetchSpy = mockFetch(OK_RESPONSE);
     const cap = createCapability({ store, fetchImpl: fetchSpy, resolveHost: resolveTo(PUBLIC_IP) });
 
     const result = await cap.vaultHttp(inputFor(secretId) as never);
 
-    expect(result).toEqual({ status: 0, body: '', blocked: { reason: 'no active approval' } });
+    expect(result).toEqual({ status: 200, body: '{"ok":true}' });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const rows = await auditRowsFor(secretId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ outcome: 'ok' });
+  });
+
+  it("criterion 1e: F2 — a call-time service mismatch is blocked even when the caller holds an approval for the service they passed", async () => {
+    await grant('agent-c', 'github'); // an approval for a service the caller picks…
+    const secretId = await putTeamSecret('svcspoof', { service: 'polyquant' }); // …but the secret links polyquant
+    const fetchSpy = mockFetch(OK_RESPONSE);
+    const cap = createCapability({ store, fetchImpl: fetchSpy, resolveHost: resolveTo(PUBLIC_IP) });
+
+    const result = await cap.vaultHttp({
+      ...(inputFor(secretId) as Record<string, unknown>),
+      service: 'github',
+    } as never);
+
+    expect(result).toEqual({ status: 0, body: '', blocked: { reason: 'service mismatch' } });
     expect(fetchSpy).not.toHaveBeenCalled();
+    const rows = await auditRowsFor(secretId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ outcome: 'denied' });
+    await assertNoSecretText(result, rows);
+  });
+
+  it('criterion 1f: matching call-time service + grant on the SECRET\u2019s service → allowed via the derived service', async () => {
+    await grant('agent-c', 'polyquant');
+    const secretId = await putTeamSecret('svcmatch', { service: 'polyquant' });
+    const fetchSpy = mockFetch(OK_RESPONSE);
+    const cap = createCapability({ store, fetchImpl: fetchSpy, resolveHost: resolveTo(PUBLIC_IP) });
+
+    const result = await cap.vaultHttp({
+      ...(inputFor(secretId) as Record<string, unknown>),
+      service: 'polyquant',
+    } as never);
+
+    expect(result).toEqual({ status: 200, body: '{"ok":true}' });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('criterion 1g: a secret with no linked service keeps the call-time check (transitional until Objective 2 updateSecret)', async () => {
+    await grant('agent-c', 'agentmail');
+    const secretId = await putTeamSecret('svcnull', { service: null });
+    const fetchSpy = mockFetch(OK_RESPONSE);
+    const cap = createCapability({ store, fetchImpl: fetchSpy, resolveHost: resolveTo(PUBLIC_IP) });
+
+    const result = await cap.vaultHttp(inputFor(secretId) as never);
+
+    expect(result).toEqual({ status: 200, body: '{"ok":true}' });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 
   // ── Criterion 2: approval active → injected fetch once, audit ok ─
@@ -497,7 +549,7 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
 
   // ── Criterion 2b: injectScheme composes the header value ────────
   it('criterion 2b: injectScheme prefixes the header value; absent → raw secret', async () => {
-    await grant('agent-c', 'github');
+    await grant('agent-c', 'agentmail');
     const secretId = await putSecretFor('agent-c', 'scheme');
     let seen: string | undefined;
     const fetchSpy = mockFetch(async (url, init) => {
@@ -505,9 +557,9 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
       return new Response('ok', { status: 200 });
     });
     const cap = createCapability({ store, fetchImpl: fetchSpy, resolveHost: resolveTo(PUBLIC_IP) });
-    await cap.vaultHttp({ ...inputFor(secretId, { injectHeader: 'Authorization' }), service: 'github', injectScheme: 'Bearer' } as never);
+    await cap.vaultHttp({ ...inputFor(secretId, { injectHeader: 'Authorization' }), service: 'agentmail', injectScheme: 'Bearer' } as never);
     expect(seen).toBe(`Bearer ${SECRET_VALUE}`);
-    await cap.vaultHttp({ ...inputFor(secretId, { injectHeader: 'Authorization' }), service: 'github' } as never);
+    await cap.vaultHttp({ ...inputFor(secretId, { injectHeader: 'Authorization' }), service: 'agentmail' } as never);
     expect(seen).toBe(SECRET_VALUE);
   });
 
@@ -775,7 +827,7 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
   // ── Body-template injection (2026-09-12 Instagram feature) ──────
   it('body_template: {{secret}} tokens are replaced with the resolved secret in the request body', async () => {
     await grant('agent-c', 'instagram');
-    const secretId = await putSecretFor('agent-c', 'bodytpl');
+    const secretId = await putSecretFor('agent-c', 'bodytpl', { service: 'instagram' });
     let seenBody: unknown;
     const fetchSpy = mockFetch(async (_url, init) => {
       seenBody = init.body;
@@ -801,7 +853,7 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
 
   it('body_template: body-only login (no inject_header) substitutes {{secret}} and never puts the secret in a header', async () => {
     await grant('agent-c', 'instagram');
-    const secretId = await putSecretFor('agent-c', 'bodyonly');
+    const secretId = await putSecretFor('agent-c', 'bodyonly', { service: 'instagram' });
     let seenBody: unknown;
     let seenHeaders: Record<string, string> = {};
     const fetchSpy = mockFetch(async (_url, init) => {
@@ -840,7 +892,7 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
 
   it('body_template: no injection target (no inject_header, no body, no body_template) → blocked', async () => {
     await grant('agent-c', 'instagram');
-    const secretId = await putSecretFor('agent-c', 'notarget');
+    const secretId = await putSecretFor('agent-c', 'notarget', { service: 'instagram' });
     const fetchSpy = mockFetch(async () => new Response('ok', { status: 200 }));
     const cap = createCapability({ store, fetchImpl: fetchSpy, resolveHost: resolveTo(PUBLIC_IP) });
 
@@ -859,7 +911,7 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
 
   // ── Typed instagrapi login (2026-09-12 Instagram feature) ──────
   it('instagramLogin: no active approval → blocked, driver never called', async () => {
-    const secretId = await putSecretFor('agent-c', 'igsecret');
+    const secretId = await putSecretFor('agent-c', 'igsecret', { service: 'instagram' });
     let called = false;
     const loginFn = vi.fn(async () => {
       called = true;
@@ -922,7 +974,7 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
 
   it('instagramLogin: driver receives username + the opened password; result carries session material only, never the password', async () => {
     await grant('agent-c', 'instagram');
-    const secretId = await putSecretFor('agent-c', 'igsecret2');
+    const secretId = await putSecretFor('agent-c', 'igsecret2', { service: 'instagram' });
     let seenArgs: { username: string; password: string } | undefined;
     const loginFn = vi.fn(async (args) => {
       seenArgs = args;
@@ -957,7 +1009,7 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
 
   it('instagramLogin: driver failure → static blocked reason, error audit row, no secret echoed', async () => {
     await grant('agent-c', 'instagram');
-    const secretId = await putSecretFor('agent-c', 'igsecret3');
+    const secretId = await putSecretFor('agent-c', 'igsecret3', { service: 'instagram' });
     const loginFn = vi.fn(async () => {
       throw new Error(`instagram rejected the password ${SECRET_VALUE}`);
     });
@@ -981,7 +1033,7 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
 
   it('instagramLogin: driver failure taxonomy passes through (class + sanitized message, no secret)', async () => {
     await grant('agent-c', 'instagram');
-    const secretId = await putSecretFor('agent-c', 'igtaxonomy');
+    const secretId = await putSecretFor('agent-c', 'igtaxonomy', { service: 'instagram' });
     const loginFn = vi.fn(async () => ({
       ok: false,
       class: 'CheckpointRequired',
@@ -1005,7 +1057,7 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
 
   it('instagramLogin: invalid username (empty/multiline) → denied invalid username', async () => {
     await grant('agent-c', 'instagram');
-    const secretId = await putSecretFor('agent-c', 'igsecret4');
+    const secretId = await putSecretFor('agent-c', 'igsecret4', { service: 'instagram' });
     const loginFn = vi.fn(async () => ({ ok: true }));
     const cap = createCapability({ store, instagramLoginFn: loginFn });
 
@@ -1057,7 +1109,7 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
 
   it('instagramLogin: expired session falls back to a fresh password login when secret_id is present', async () => {
     await grant('agent-c', 'instagram');
-    const secretId = await putSecretFor('agent-c', 'igfallback');
+    const secretId = await putSecretFor('agent-c', 'igfallback', { service: 'instagram' });
     const calls: Array<Record<string, string | undefined>> = [];
     const loginFn = vi.fn(async (args) => {
       calls.push(args);
@@ -1116,7 +1168,7 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
 
   it('body_template: upstream Set-Cookie headers surface as setCookies; absent → no key', async () => {
     await grant('agent-c', 'instagram');
-    const secretId = await putSecretFor('agent-c', 'cookies');
+    const secretId = await putSecretFor('agent-c', 'cookies', { service: 'instagram' });
     const cookieHeaders = new Headers();
     cookieHeaders.append('Set-Cookie', 'sessionid=abc123; Path=/; HttpOnly');
     cookieHeaders.append('Set-Cookie', 'csrftoken=xyz; Path=/');
@@ -1154,7 +1206,7 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
 
   it('body + body_template together → blocked, fetch never called, audit denied', async () => {
     await grant('agent-c', 'instagram');
-    const secretId = await putSecretFor('agent-c', 'conflict');
+    const secretId = await putSecretFor('agent-c', 'conflict', { service: 'instagram' });
     const fetchSpy = mockFetch(OK_RESPONSE);
     const cap = createCapability({ store, fetchImpl: fetchSpy, resolveHost: resolveTo(PUBLIC_IP) });
 
@@ -1178,7 +1230,7 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
 
   it('extra headers: allowlisted names pass through; forbidden names block without fetch', async () => {
     await grant('agent-c', 'instagram');
-    const secretId = await putSecretFor('agent-c', 'hdrs');
+    const secretId = await putSecretFor('agent-c', 'hdrs', { service: 'instagram' });
     let seenHeaders: Record<string, string> = {};
     const fetchSpy = mockFetch(async (_url, init) => {
       seenHeaders = init.headers as Record<string, string>;
@@ -1216,7 +1268,7 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
 
   it('extra headers: count/type/value bounds block with header not allowed', async () => {
     await grant('agent-c', 'instagram');
-    const secretId = await putSecretFor('agent-c', 'hdrlimits');
+    const secretId = await putSecretFor('agent-c', 'hdrlimits', { service: 'instagram' });
     const fetchSpy = mockFetch(OK_RESPONSE);
     const cap = createCapability({ store, fetchImpl: fetchSpy, resolveHost: resolveTo(PUBLIC_IP) });
 
@@ -1241,7 +1293,7 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
 
   it('extra headers: the injected secret header always wins a name collision', async () => {
     await grant('agent-c', 'instagram');
-    const secretId = await putSecretFor('agent-c', 'collide');
+    const secretId = await putSecretFor('agent-c', 'collide', { service: 'instagram' });
     let seenValue: unknown;
     const fetchSpy = mockFetch(async (_url, init) => {
       seenValue = (init.headers as Record<string, string>)['User-Agent'];
@@ -1263,7 +1315,7 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
 
   it('body_template: the secret appears in no result, audit row, or blocked reason', async () => {
     await grant('agent-c', 'instagram');
-    const secretId = await putSecretFor('agent-c', 'redacttpl');
+    const secretId = await putSecretFor('agent-c', 'redacttpl', { service: 'instagram' });
     const fetchSpy = mockFetch(async () => {
       throw new Error(`upstream exploded mid-login ${SECRET_VALUE}`);
     });

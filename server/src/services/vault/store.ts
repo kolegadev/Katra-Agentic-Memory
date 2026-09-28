@@ -45,11 +45,13 @@
  * `expires_at` (ISO, compared with Date.now()). Approval rows never carry
  * secret values, envelopes, or plaintext.
  *
- * 2026-09-28 (capability layer, not this store): a TEAM-scope secret whose
- * own `flags.approval_required` is false (dashboard "Approval required"
- * unchecked) is usable through the capability tools by its RBAC reader set
- * with no `vault_approvals` row — `hasActiveApproval` stays ledger-only, and
- * the flag check lives in capability.ts (`approvalWaivedForTeamSecret`).
+ * 2026-09-28 (capability layer, not this store): a secret whose own
+ * `flags.approval_required` is false (dashboard "Approval required"
+ * unchecked) is usable through the capability tools with no
+ * `vault_approvals` row; otherwise the capability layer derives the approval
+ * service from the secret's `service` field and requires the call-time
+ * service to match it. `hasActiveApproval` itself stays ledger-only — both
+ * behaviours live in capability.ts (`decideCapabilityApproval`).
  */
 
 import type { Db } from 'mongodb';
