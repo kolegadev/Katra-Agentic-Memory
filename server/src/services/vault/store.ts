@@ -44,6 +44,12 @@
  * `hasActiveApproval(identity, service)` honors the `'*'` wildcard and
  * `expires_at` (ISO, compared with Date.now()). Approval rows never carry
  * secret values, envelopes, or plaintext.
+ *
+ * 2026-09-28 (capability layer, not this store): a TEAM-scope secret whose
+ * own `flags.approval_required` is false (dashboard "Approval required"
+ * unchecked) is usable through the capability tools by its RBAC reader set
+ * with no `vault_approvals` row — `hasActiveApproval` stays ledger-only, and
+ * the flag check lives in capability.ts (`approvalWaivedForTeamSecret`).
  */
 
 import type { Db } from 'mongodb';
@@ -665,7 +671,8 @@ export function createVaultStore(opts?: {
       // default shared scope is a team member (the visibility filter already
       // treats shared_id === defaultSharedId as visible to all). USE of team
       // secrets is still gated upstream by the capability layer's per-service
-      // approval (F7) — this only unblocks team members from opening what
+      // approval (F7) — or waived by the secret's own approval_required=false
+      // flag (2026-09-28) — this only unblocks team members from opening what
       // they can already see.
       const ownerMayOpen =
         (doc?.owner.user_id !== undefined && doc.owner.user_id === c.user_id) ||

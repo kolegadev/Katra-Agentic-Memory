@@ -301,13 +301,38 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
     expect(res.granted).toBe(true);
   }
 
-  async function putSecretFor(owner: string, tag: string): Promise<string> {
+  async function putSecretFor(
+    owner: string,
+    tag: string,
+    opts: { approvalRequired?: boolean } = {},
+  ): Promise<string> {
     const result = await store.putSecret({
       caller: KATRA,
       name: nameOf(tag),
       value: SECRET_VALUE,
       service: 'agentmail',
       ownerUserId: owner,
+      ...(opts.approvalRequired === undefined
+        ? {}
+        : { approvalRequired: opts.approvalRequired }),
+    });
+    return result.secret_id;
+  }
+
+  /** Team secret in the default shared scope; flags.approval_required opt-in. */
+  async function putTeamSecret(
+    tag: string,
+    opts: { approvalRequired?: boolean; service?: string } = {},
+  ): Promise<string> {
+    const result = await store.putSecret({
+      caller: KATRA,
+      name: nameOf(tag),
+      value: SECRET_VALUE,
+      scope: 'team',
+      service: opts.service ?? 'agentmail',
+      ...(opts.approvalRequired === undefined
+        ? {}
+        : { approvalRequired: opts.approvalRequired }),
     });
     return result.secret_id;
   }
@@ -389,6 +414,55 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
     expect(Object.keys(rows[0]).every((k) => AUDIT_KEYS.has(k))).toBe(true);
     expect('error' in rows[0]).toBe(false); // denied rows never carry error
     await assertNoSecretText(result, rows);
+  });
+
+  // ── Criterion 1b–1d: team secrets with flags.approval_required=false skip
+  // the approvals-ledger gate for their RBAC readers (owner decision
+  // 2026-09-28); defaults and private scope are unchanged ───────────────
+  it('criterion 1b: team secret with flags.approval_required=false → use allowed with NO approvals row, audit ok', async () => {
+    const secretId = await putTeamSecret('flagwaived', { approvalRequired: false });
+    const fetchSpy = mockFetch(OK_RESPONSE);
+    const cap = createCapability({ store, fetchImpl: fetchSpy, resolveHost: resolveTo(PUBLIC_IP) });
+
+    const result = await cap.vaultHttp(inputFor(secretId) as never);
+
+    expect(result).toEqual({ status: 200, body: '{"ok":true}' });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const rows = await auditRowsFor(secretId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      action: 'capability_use',
+      actor: 'agent-c',
+      service: 'agentmail',
+      secret_id: secretId,
+      outcome: 'ok',
+    });
+    await assertNoSecretText(result, rows);
+  });
+
+  it('criterion 1c: team secret with the default approval_required=true still needs an approvals row', async () => {
+    const secretId = await putTeamSecret('flagdefault');
+    const fetchSpy = mockFetch(OK_RESPONSE);
+    const cap = createCapability({ store, fetchImpl: fetchSpy, resolveHost: resolveTo(PUBLIC_IP) });
+
+    const result = await cap.vaultHttp(inputFor(secretId) as never);
+
+    expect(result).toEqual({ status: 0, body: '', blocked: { reason: 'no active approval' } });
+    expect(fetchSpy).not.toHaveBeenCalled();
+    const rows = await auditRowsFor(secretId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ outcome: 'denied' });
+  });
+
+  it('criterion 1d: private secret with approvalRequired=false keeps the ledger gate (team scope only)', async () => {
+    const secretId = await putSecretFor('agent-c', 'privflagfalse', { approvalRequired: false });
+    const fetchSpy = mockFetch(OK_RESPONSE);
+    const cap = createCapability({ store, fetchImpl: fetchSpy, resolveHost: resolveTo(PUBLIC_IP) });
+
+    const result = await cap.vaultHttp(inputFor(secretId) as never);
+
+    expect(result).toEqual({ status: 0, body: '', blocked: { reason: 'no active approval' } });
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   // ── Criterion 2: approval active → injected fetch once, audit ok ─
@@ -806,6 +880,44 @@ describe.skipIf(!mongoAvailable)('vault capability core (F7) — contract criter
     const rows = await igAuditRows(secretId);
     expect(rows).toHaveLength(1);
     expect(rows[0].outcome).toBe('denied');
+  });
+
+  it('instagramLogin: team secret with flags.approval_required=false → driver called with NO approvals row', async () => {
+    const secretId = await putTeamSecret('igflagwaived', {
+      approvalRequired: false,
+      service: 'instagram',
+    });
+    let seenArgs: { username: string; password: string } | undefined;
+    const loginFn = vi.fn(async (args) => {
+      seenArgs = args;
+      return {
+        ok: true,
+        userIdPk: '12345678',
+        sessionid: 'session-material-abc',
+        csrftoken: 'csrf-token-xyz',
+      };
+    });
+    const cap = createCapability({ store, instagramLoginFn: loginFn });
+
+    const result = await cap.instagramLogin({
+      caller: AGENT_C,
+      secretId,
+      service: 'instagram',
+      username: 'katra5432',
+    });
+
+    expect(seenArgs?.password).toBe(SECRET_VALUE);
+    expect(result).toEqual({
+      ok: true,
+      username: 'katra5432',
+      userIdPk: '12345678',
+      sessionid: 'session-material-abc',
+      csrftoken: 'csrf-token-xyz',
+    });
+    const rows = await igAuditRows(secretId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].outcome).toBe('ok');
+    await assertNoSecretText(result, rows);
   });
 
   it('instagramLogin: driver receives username + the opened password; result carries session material only, never the password', async () => {

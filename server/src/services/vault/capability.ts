@@ -13,6 +13,12 @@
  * Guard order (all hard rules — violation = FAIL):
  *   1. Approval gate FIRST — hasActiveApproval(caller.user_id, service)
  *      (honors the '*' wildcard). No active approval → no network activity.
+ *      Exception (owner decision 2026-09-28): a TEAM-scope secret carrying
+ *      its own flags.approval_required=false (dashboard "Approval required"
+ *      unchecked) is usable by its RBAC reader set with no approvals row —
+ *      RBAC open (step 5) and every other guard still apply, and the use is
+ *      still audited. approval_required=true (the default) and private
+ *      secrets keep the per-identity approvals-ledger gate.
  *   2. Method whitelist GET POST PUT PATCH DELETE HEAD.
  *   3. Content rules (before any network activity): extra request headers
  *      are allowlisted names only (SAFE_EXTRA_HEADERS, case-insensitive;
@@ -381,6 +387,34 @@ async function readBodyCapped(response: Response): Promise<string> {
   return Buffer.concat(chunks).toString('utf8');
 }
 
+/**
+ * 2026-09-28 fix (owner decision, relayed via Lilly): honour a team-scope
+ * secret's own `flags.approval_required = false` instead of consulting the
+ * approvals ledger unconditionally. The flag is set from the dashboard
+ * "Approval required" box (default on) at creation/update time; both John's
+ * keys carry it unchecked, yet the gate refused them with 'no active
+ * approval'. A waiver ONLY skips the per-identity approval: the RBAC open
+ * and every other capability guard still run, and the attempt is still
+ * audited. Team scope is the flagged, owner-approved case; private-scope
+ * secrets and `approval_required: true` keep the ledger gate untouched.
+ */
+async function approvalWaivedForTeamSecret(
+  store: VaultStore,
+  caller: CallerIdentity,
+  secretId: string,
+): Promise<boolean> {
+  try {
+    const meta = await store.getSecretMeta(caller, secretId);
+    return (
+      meta !== null &&
+      meta.owner.shared_id !== undefined &&
+      meta.flags.approval_required === false
+    );
+  } catch {
+    return false;
+  }
+}
+
 // ── Factory ────────────────────────────────────────────────────────────────
 
 export function createCapability(opts: CapabilityOptions = {}): Capability {
@@ -465,11 +499,17 @@ export function createCapability(opts: CapabilityOptions = {}): Capability {
 
         // 1 ── Approval gate FIRST (incl. '*' wildcard). No approval → no
         // network activity, audit 'denied', blocked 'no active approval'.
+        // 2026-09-28: a team-scope secret with flags.approval_required=false
+        // waives the per-identity approval for its RBAC reader set (the
+        // ledger was previously consulted unconditionally).
         let approved = false;
         try {
           approved = await store.hasActiveApproval(input.caller.user_id, input.service);
         } catch {
           approved = false;
+        }
+        if (!approved) {
+          approved = await approvalWaivedForTeamSecret(store, input.caller, input.secretId);
         }
         if (!approved) {
           return finish('denied', blocked('no active approval'));
@@ -725,12 +765,21 @@ export function createCapability(opts: CapabilityOptions = {}): Capability {
           );
         }
 
-        // Approval gate FIRST — identical to vaultHttp.
+        // Approval gate FIRST — identical to vaultHttp (incl. the
+        // 2026-09-28 team-scope flags.approval_required=false waiver when a
+        // secret_id is given; a session-only login has no secret to inspect).
         const store: VaultStore = opts.store ?? (lazyStore ??= createVaultStore());
-        const approved = await store.hasActiveApproval(
+        let approved = await store.hasActiveApproval(
           input.caller.user_id,
           input.service,
         );
+        if (!approved && hasSecretId) {
+          approved = await approvalWaivedForTeamSecret(
+            store,
+            input.caller,
+            input.secretId as string,
+          );
+        }
         if (!approved) {
           return finish('denied', blocked('no active approval'));
         }

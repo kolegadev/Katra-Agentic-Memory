@@ -152,6 +152,13 @@ Secrets are only *used* server-side:
   granted by a human in the dashboard (which requires the human's admin session), carry an
   expiry (default 30d), and are revocable. Every use is written to `vault_audit`
   (who, service, operation, outcome, timestamp — never the value).
+- **Per-secret override** — a TEAM-scope secret created with
+  `flags.approval_required = false` (dashboard "Approval required" unchecked) may be used
+  by its RBAC reader set without an `(identity, service)` approval row; the RBAC open and
+  every other capability guard still apply, and the use is still written to `vault_audit`.
+  Private-scope secrets and `approval_required: true` (the default) keep the approval-row
+  requirement. Added 2026-09-28 (owner decision) — the gate previously consulted the
+  approvals ledger unconditionally and ignored the flag.
 
 ## 8. Agent authentication (TOTP)
 
