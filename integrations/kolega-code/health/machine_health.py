@@ -21,6 +21,9 @@ Env:
   KATRA_PORT        Katra REST port (default 9012)
   HEALTH_INTERVAL_M interval between runs, minutes (default 15; used by the
                     reviewer's staleness math)
+  HEALTH_RETRY_DELAY_S
+                    seconds before the single POST re-attempt (default 30;
+                    set 0 to disable). The payload is re-sent byte-identically.
   HEALTH_VERBOSE    when set, print the payload instead of only errors
 
 Usage:
@@ -43,6 +46,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 INTERVAL_MIN = int(os.environ.get("HEALTH_INTERVAL_M", "15"))
+# One POST re-attempt after this delay (Zefir proposal 2026-10-05): transient
+# link blips used to silently cost a sample; payload re-sent byte-identically.
+RETRY_DELAY_S = int(os.environ.get("HEALTH_RETRY_DELAY_S", "30"))
 KATRA_HOST = os.environ.get("KATRA_HOST", "localhost")
 KATRA_PORT = os.environ.get("KATRA_PORT", "9012")
 API = f"http://{KATRA_HOST}:{KATRA_PORT}/api/v1"
@@ -370,24 +376,43 @@ def main() -> int:
         print(f"machine_health[{checks['machine']['hostname']}]: no Katra key found — "
               f"status={status} reasons={reasons}", file=sys.stderr)
         return 1
-    try:
-        req = urllib.request.Request(
-            f"{API}/memory/episodic/events",
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json",
-                     "Authorization": f"Bearer {key}"},
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            body = resp.read(200)
-        ok = json.loads(body or b"{}").get("success")
-        if not ok:
-            raise RuntimeError(body[:200])
-    except Exception as exc:
-        print(f"machine_health[{checks['machine']['hostname']}]: POST failed: {exc}",
-              file=sys.stderr)
-        return 1
-    return 0
+    # One re-attempt on failure (Zefir proposal 2026-10-05): a transient link
+    # blip used to silently cost a sample. The payload is re-sent
+    # byte-identically; this endpoint has no content-hash dedupe (verified
+    # 10-05: two identical POSTs -> two rows), so if attempt 1 actually landed
+    # the retry adds one extra sample ~RETRY_DELAY_S later — accepted trade,
+    # rarer and milder than the lost sample it recovers.
+    data = json.dumps(payload).encode("utf-8")
+    first_exc = None
+    last_exc = None
+    for attempt in (1, 2):
+        try:
+            req = urllib.request.Request(
+                f"{API}/memory/episodic/events",
+                data=data,
+                headers={"Content-Type": "application/json",
+                         "Authorization": f"Bearer {key}"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                body = resp.read(200)
+            ok = json.loads(body or b"{}").get("success")
+            if not ok:
+                raise RuntimeError(body[:200])
+            if attempt == 2:
+                print(f"machine_health[{checks['machine']['hostname']}]: "
+                      f"POST retried: {first_exc}", file=sys.stderr)
+            return 0
+        except Exception as exc:
+            last_exc = exc
+            if attempt == 1:
+                first_exc = exc
+                if RETRY_DELAY_S <= 0:
+                    break
+                time.sleep(RETRY_DELAY_S)
+    print(f"machine_health[{checks['machine']['hostname']}]: POST failed: {last_exc}",
+          file=sys.stderr)
+    return 1
 
 
 if __name__ == "__main__":
