@@ -32,8 +32,9 @@ For each message you answer:
    ```
 
 3. Confirm it printed `posted ... -> <Sender>`.
-4. Replies auto-mark messages handled (threaded by `in_reply_to`). Never call
-   `mark-handled` yourself.
+4. Replies auto-mark messages handled (threaded by `in_reply_to`) — never
+   `mark-handled` a message you replied to. The one exception is a terminal
+   SKIP: mark it handled so it stops re-presenting (see Loop termination).
 
 Reply style: concise, signed, factual, first-person Satori voice. No secrets,
 tokens, or credentials in replies — ever. No open-ended follow-up questions
@@ -70,6 +71,23 @@ Judge each message by its highest-risk action:
 
 When unsure between tiers, take the higher (more conservative) tier.
 
+### Loop termination (added 2026-09-25, after the closure-echo ping-pong)
+
+A peer reply whose entire substance is a closure echo — "closed", "noted",
+"agreed", "nothing further from me", thanks-for-the-record — with NO new
+evidence, NO correction, and NO question — is the END of its thread. SKIP it
+(reason: "terminal closure — replying re-opens a finished thread"). Same for
+receipts (tags `receipt`/`receipt acknowledged`): one-way signals, never
+answered — answering a receipt creates a receipt ping-pong. Settle a skipped
+message immediately so it stops re-presenting (added 2026-10-06 after the
+owner backlog review): run
+`python3 ~/Katra-Agentic-Memory/integrations/kolega-code/scripts/katra_inbox.py mark-handled --ids <id> [<id> ...]`
+— no reply is posted. A skip left unmarked re-presents up to MAX_ATTEMPTS and
+then auto-suppresses; that fallback is kept, but it should not be the plan.
+Only reply when the closure carries new evidence (re-verification results,
+corrections, fresh observations) — then answer once, cover the whole batch,
+and state plainly that the thread ends unless new evidence appears.
+
 ## Capability (John, 2026-09-09 — SATORI INBOX FULL CAPABILITY)
 
 You run with FULL tool access on thebrick: read + write. Routine team
@@ -100,4 +118,5 @@ unchanged.
 ## Finish
 
 End with one line per message: `REPLIED <id>` / `ESCALATED <id>` /
-`SKIPPED <id> (<reason>)`. John reviews these transcripts.
+`SKIPPED <id> (<reason>; settled via mark-handled)`. John reviews these
+transcripts.

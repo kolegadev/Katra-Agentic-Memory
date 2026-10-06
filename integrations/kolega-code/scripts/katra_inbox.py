@@ -118,6 +118,7 @@ INBOX_AGENT_DIR = os.path.expanduser(
     os.environ.get("KATRA_INBOX_DIR")
     or os.path.join(REPO, "integrations/kolega-code/inbox-agent"))
 INBOX_REPLY = os.path.join(REPO, "integrations/kolega-code/scripts/inbox_reply.py")
+INBOX_SCRIPT = os.path.join(REPO, "integrations/kolega-code/scripts/katra_inbox.py")
 KOLEGA_BIN = os.path.expanduser(
     "~/.local/share/uv/tools/kolega-code/bin/kolega-code")
 
@@ -393,12 +394,31 @@ def dispatch(args) -> int:
             log.write("\n--- stderr ---\n")
             log.write(proc.stderr[-4000:] if proc.stderr else "")
         print(f"inbox: dispatch finished rc={proc.returncode}")
+        if proc.returncode != 0:
+            print("inbox: dispatch was not clean — affected messages keep their "
+                  "attempts and retry until MAX_ATTEMPTS")
 
-        # Re-scan: messages that now have replies are auto-handled.
-        remaining = pending(state)
-        still = [m["id"] for m in msgs if any(r["id"] == m["id"] for r in remaining)]
-        done = [m["id"] for m in msgs if m["id"] not in still]
-        print(f"inbox: replied {len(done)}/{len(msgs)}; still pending: {len(still)}")
+        # Re-scan: replies auto-handle; messages that exhausted MAX_ATTEMPTS
+        # without a reply or a handled-mark are settled-by-suppression. Report
+        # the classes separately — counting a suppression as "replied" hides
+        # unanswered messages (2026-10-06 owner backlog review).
+        state = load_state()
+        replied_now = fetch_replied_ids([m["id"] for m in msgs])
+        handled_now = set(state.get("handled", []))
+        settled, suppressed, still = [], [], []
+        for m in msgs:
+            cid = m["id"]
+            if cid in replied_now or cid in handled_now:
+                settled.append(cid)
+            elif state["attempts"].get(cid, 0) >= MAX_ATTEMPTS:
+                suppressed.append(cid)
+            else:
+                still.append(cid)
+        print(f"inbox: replied/handled {len(settled)}/{len(msgs)} of this batch; "
+              f"still pending: {len(still)}")
+        if suppressed:
+            print(f"inbox: suppressed after {MAX_ATTEMPTS} attempts with no reply "
+                  f"(terminal skip or repeated failure): {suppressed}")
         if still:
             print(f"inbox: unresolved after dispatch: {still}")
         return 0
@@ -436,7 +456,11 @@ def build_goal(msgs: list[dict]) -> str:
         "3. To reply: write your reply text to a temp file, then run",
         f"   `python3 {INBOX_REPLY} --to <agent> --in-reply-to <message id> --file <tempfile>`",
         "   (exact spelling of the message id matters).",
-        "4. Do NOT mark anything handled yourself — replies mark messages handled.",
+        "4. Replies mark messages handled automatically. Mark ONLY terminal "
+        "SKIPs yourself (closure echoes / receipts per AGENTS.md loop "
+        "termination) so they don't re-present: "
+        f"`python3 {INBOX_SCRIPT} mark-handled --ids <id> [<id> ...]`. "
+        "Never mark a message you replied to or escalated.",
         "5. You have FULL write capability on this host (operator mandate "
         "   2026-09-09): act "
         "   on routine requests — repo edits, builds, restarts, merges, deploys "
