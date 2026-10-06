@@ -181,6 +181,19 @@ def assess(events: list[dict], window_hours: int) -> dict:
         reasons_digest = ("; ".join(f"{r} x{n}" for r, n in top_reasons))[:240] or "none"
         # Recovered inside the window? (a resolution we must close with a card)
         recovered = status == "ok" and any(s in ("degraded", "down") for s in statuses[:-1])
+        # Boot-time change detection (applied 2026-10-06 — stops #6 and #8 were
+        # sub-tick and gap-invisible; only a manual boot diff found them). A
+        # boot_time_utc change between consecutive samples = the machine
+        # rebooted inside the window (orderly vs abrupt verified by the review).
+        boot_changes = []
+        prev_boot = None
+        for e in evs:
+            bt = (((e.get("content") or {}).get("checks") or {}).get("machine") or {}).get("boot_time_utc")
+            if bt is None:
+                continue
+            if prev_boot is not None and bt != prev_boot:
+                boot_changes.append({"at": e["timestamp"], "from": prev_boot, "to": bt})
+            prev_boot = bt
         machines[machine] = {
             "machine": machine,
             "latest_status": status,
@@ -195,6 +208,7 @@ def assess(events: list[dict], window_hours: int) -> dict:
             "tailscale": (checks.get("tailscale") or {}).get("backend_state"),
             "bridge_user": (checks.get("bridge") or {}).get("config_user"),
             "recovered": recovered,
+            "boot_changes": boot_changes,
         }
     return machines
 
@@ -236,6 +250,17 @@ def main() -> int:
             f" samples={m['samples']} degraded_hits={m['degraded_hits']} "
             f"kolega={m['kolega_version']} ts={m['tailscale']} bridge={m['bridge_user']}"
         )
+    # Boot changes are reviewable facts (sub-tick reboots never show as sample
+    # gaps): surface them in the report and the alert so the loop verifies
+    # orderly vs abrupt and cards the abrupt ones.
+    boot_lines: list[str] = []
+    for m in sorted(machines.values(), key=lambda x: x["machine"]):
+        for bc in m["boot_changes"]:
+            boot_lines.append(
+                f"- {m['machine']}: BOOT CHANGE at {bc['at']} (prev {bc['from']} -> {bc['to']})")
+            problems.append(
+                f"{m['machine']}: reboot inside window (boot change at {bc['at']}) — "
+                "verify orderly vs abrupt")
     if not machines:
         lines.append("- (no machine_health events in window — collectors not running yet?)")
         problems.append("no machine_health events at all in window")
@@ -247,6 +272,9 @@ def main() -> int:
         lines.append("PROBLEMS: none — all machines reporting, all ok")
     if card_due:
         lines.append(f"CARD DUE (incident-improvement loop): {', '.join(card_due)}")
+    if boot_lines:
+        lines.append("BOOT CHANGES (verify orderly vs abrupt):")
+        lines.extend(boot_lines)
     lines.append("")
 
     report = "\n".join(lines)
