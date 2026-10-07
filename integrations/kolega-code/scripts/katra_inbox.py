@@ -257,6 +257,20 @@ def _to_dt(ts):
     return None
 
 
+def _as_utc(dt):
+    """Normalise a datetime for comparisons: assume UTC when naive (2026-10-07).
+
+    The cursor watermark is compared by INSTANT, never by string: mixed
+    timestamp formats ('…662Z' vs '…662000+00:00') made the equal-instant
+    boundary case slip past the string compare and re-present once
+    (reported by Shoshin's loop, 2026-10-07)."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
 def is_skippable(msg: dict) -> bool:
     tags = [t.lower() for t in (msg.get("metadata", {}).get("tags") or [])]
     author = str(msg.get("user_id") or "").lower()
@@ -309,8 +323,14 @@ def pending(state: dict, include_old: bool = False) -> list[dict]:
             continue  # suppressed; surfaced via status
         ts = c.get("timestamp")
         ts_iso = ts.isoformat() if hasattr(ts, "isoformat") else str(ts)
-        if not include_old and state["cursor"] and ts_iso <= state["cursor"]:
-            continue
+        if not include_old and state["cursor"]:
+            ts_dt = _as_utc(_to_dt(ts))
+            cur_dt = _as_utc(_to_dt(state["cursor"]))
+            if ts_dt is not None and cur_dt is not None:
+                if ts_dt <= cur_dt:
+                    continue
+            elif ts_iso <= state["cursor"]:
+                continue  # unparseable timestamp — keep the legacy string rule
         out.append({**c, "timestamp": ts_iso,
                     "message": (c.get("content", {}).get("message") or "")[:MSG_PREVIEW_CHARS]})
     return out
@@ -568,10 +588,10 @@ def maintain(args) -> int:
              if target_is_me(c.get("content", {}).get("message", ""))
              and not is_skippable(c)]
     cand_ids = {c["id"] for c in cands}
-    ts_by_id = {c["id"]: _to_dt(c.get("timestamp")) for c in cands}
+    ts_by_id = {c["id"]: _as_utc(_to_dt(c.get("timestamp"))) for c in cands}
     replied = fetch_replied_ids([c["id"] for c in cands])
     handled = set(state["handled"])
-    cur = _to_dt(old_cursor)
+    cur = _as_utc(_to_dt(old_cursor))
 
     migrated = [i for i in sorted(cand_ids, key=lambda x: str(ts_by_id.get(x)))
                 if state["attempts"].get(i, 0) >= MAX_ATTEMPTS
@@ -602,7 +622,7 @@ def maintain(args) -> int:
     if watermark and (cur is None or watermark > cur):
         new_cursor = watermark.isoformat()
 
-    new_cur = _to_dt(new_cursor)
+    new_cur = _as_utc(_to_dt(new_cursor))
     prune_handled = []
     for cid in sorted(handled):
         ts = ts_by_id.get(cid)
@@ -654,7 +674,7 @@ def grandfather(args) -> int:
     for c in fetch_candidates():
         if not target_is_me(c.get("content", {}).get("message", "")):
             continue
-        ts_dt = _to_dt(c.get("timestamp"))
+        ts_dt = _as_utc(_to_dt(c.get("timestamp")))
         if ts_dt and ts_dt < cutoff and c["id"] not in state["handled"]:
             state["handled"].append(c["id"])
             old.append(c["id"])
