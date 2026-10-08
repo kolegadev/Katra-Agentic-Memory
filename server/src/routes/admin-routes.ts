@@ -33,10 +33,11 @@ import { embeddingService } from '../services/infrastructure/embedding-service.j
 // ---- Admin memory-search helpers ----------------------------------------
 // The admin search spans the four canonical memory collections. The keyword
 // pass is the deterministic bottom layer — no model dependency, so wake-ritual
-// rule recall never breaks: relevance-ranked $text for the collections that
-// carry a text index (episodic/facts), escaped-token regex elsewhere. Keyword
-// hits are returned ahead of the embedding service's semantic augmentation,
-// and every hit exposes id/_id/score (R29 D12).
+// rule recall never breaks: a literal-substring pass first (known-item: the
+// query verbatim in the document text), then relevance-ranked $text for the
+// collections that carry a text index (episodic/facts), escaped-token regex
+// elsewhere. Keyword hits are returned ahead of the embedding service's
+// semantic augmentation, and every hit exposes id/_id/score (R29 D12).
 
 const MEMORY_COLLECTIONS: string[] = ['episodic_events', 'semantic_facts', 'knowledge_nodes', 'reflective_journals'];
 
@@ -104,6 +105,22 @@ const buildTextClauses = (query: string): Array<Record<string, any>> => {
     { 'content': { $regex: terms, $options: 'i' } },
     { 'name': { $regex: terms, $options: 'i' } },
     { 'narrative': { $regex: terms, $options: 'i' } },
+  ];
+};
+
+// Literal-substring variant of the clauses above: the WHOLE query as one
+// escaped literal (not token ORed). This is the known-item workhorse — a
+// document's own opening text occurs verbatim inside it, and in a corpus dense
+// with same-vocabulary traffic the literal pins the true target while token
+// search drowns it (R29 D12: the target ranked below 200 for its own opening
+// because 1,438 near-duplicate messages shared its tokens).
+const buildLiteralClauses = (query: string): Array<Record<string, any>> => {
+  const literal = escape_regex(query.slice(0, 200));
+  return [
+    { 'content.message': { $regex: literal, $options: 'i' } },
+    { 'content': { $regex: literal, $options: 'i' } },
+    { 'name': { $regex: literal, $options: 'i' } },
+    { 'narrative': { $regex: literal, $options: 'i' } },
   ];
 };
 
@@ -216,6 +233,30 @@ const searchKeyword = async (
   const items = await db.collection(col).find(filter).sort({ [sortFieldFor(col)]: -1 }).limit(limit).toArray();
   push(items, null);
   return out;
+};
+
+/**
+ * Literal-substring pass for one collection: docs whose text contains the
+ * caller's query VERBATIM. Runs ahead of the token/$text pass so a known-item
+ * query (a document's own opening text) returns that document first. The scan
+ * early-stops at `limit`; hits are unsorted (natural order) — each one carries
+ * the literal, which is what the AGMT hit rule checks.
+ */
+const searchLiteral = async (
+  db: any,
+  col: string,
+  base: Record<string, any>,
+  query: string,
+  limit: number,
+): Promise<Array<{ key: string; item: any }>> => {
+  const literal = query.slice(0, 200);
+  if (!literal.trim()) return [];
+  const filter = buildCollectionFilter(col, base, buildLiteralClauses(literal));
+  const items = await db.collection(col).find(filter).limit(limit).toArray();
+  return items.map((item: any) => ({
+    key: `${col}:${String(item._id ?? '')}`,
+    item: mapMemoryItem(col, item, null),
+  }));
 };
 
 export const create_admin_routes = (): Hono => {
@@ -509,9 +550,10 @@ export const create_admin_routes = (): Hono => {
    * Public read-only search across memory collections — no auth required.
    * Params: ?query=... &collection=episodic|semantic|knowledge|reflections|all &user_id=... &limit=20
    *
-   * Hybrid search: deterministic keyword pass first (relevance-ranked via the
-   * $text index for episodic/semantic, escaped-token regex elsewhere), then
-   * semantic vector augmentation when the embedding model is available.
+   * Hybrid search: deterministic keyword pass first — literal-substring
+   * (known-item) then relevance-ranked $text for episodic/semantic and
+   * escaped-token regex elsewhere — then semantic vector augmentation when
+   * the embedding model is available.
    * Query + collection are honored with or without user_id. Every hit carries
    * its identity (`id`, `_id`) and, where defined, a `score` (textScore for
    * index-ranked keyword hits, cosine blend for semantic hits; null when
@@ -536,6 +578,8 @@ export const create_admin_routes = (): Hono => {
       const keyword: Array<{ key: string; item: any }> = [];
       for (const col of cols) {
         if (query) {
+          // Verbatim known-item pass first, then relevance-ranked tokens.
+          keyword.push(...(await searchLiteral(db, col, base, query, limit)));
           keyword.push(...(await searchKeyword(db, col, base, query, limit)));
         } else {
           const items = await db.collection(col).find(base).sort({ [sortFieldFor(col)]: -1 }).limit(limit).toArray();
@@ -546,6 +590,20 @@ export const create_admin_routes = (): Hono => {
       }
 
       const results: any[] = [];
+      // The first pass that surfaces a key defines its rank (literal -> $text
+      // -> semantic); a later scored pass for the same key upgrades the score
+      // only. Literal hits keep known-item priority, $text hits carry
+      // relevance scores, semantic fills the remainder.
+      const at = new Map<string, number>();
+      const add = (key: string, item: any): void => {
+        const idx = at.get(key);
+        if (idx == null) {
+          at.set(key, results.length);
+          results.push(item);
+        } else if (results[idx].score == null && item.score != null) {
+          results[idx] = item;
+        }
+      };
 
       // Semantic augmentation (best-effort): vector-ranked matches help fuzzy
       // and paraphrase queries. Any failure falls back to keyword results.
@@ -565,25 +623,24 @@ export const create_admin_routes = (): Hono => {
 
           // Deterministic keyword hits FIRST: an exact known-item match must
           // survive the limit slice (appending them after a full semantic page
-          // is how document-derived probes were buried — R29 D12). Semantic
-          // augmentation follows, deduped; a keyword hit that also matched
-          // semantically keeps the semantic score for like-for-like ranking.
+          // is how document-derived probes were buried — R29 D12). A keyword
+          // hit that also matched semantically keeps the semantic score for
+          // like-for-like ranking.
           const semanticScoreByKey = new Map(semantic.map((s) => [s.key, s.score]));
-          const seen = new Set<string>();
           for (const k of keyword) {
-            if (seen.has(k.key)) continue;
-            seen.add(k.key);
-            const semScore = semanticScoreByKey.get(k.key);
-            if (semScore != null) k.item.score = semScore;
-            results.push(k.item);
+            if (k.item.score == null) {
+              const semScore = semanticScoreByKey.get(k.key);
+              if (semScore != null) k.item.score = semScore;
+            }
+            add(k.key, k.item);
           }
-          for (const s of semantic) { if (!seen.has(s.key)) { seen.add(s.key); results.push(s.item); } }
+          for (const s of semantic) add(s.key, s.item);
         } catch (err: any) {
           console.warn('Memory search semantic augmentation failed, using keyword results:', err.message);
-          keyword.forEach((k) => results.push(k.item));
+          keyword.forEach((k) => add(k.key, k.item));
         }
       } else {
-        keyword.forEach((k) => results.push(k.item));
+        keyword.forEach((k) => add(k.key, k.item));
       }
 
       // With no query, order by recency desc (legacy behavior).

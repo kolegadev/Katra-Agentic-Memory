@@ -4,8 +4,9 @@
  * Regression: the no-user_id path used to return recent events and ignore
  * query/collection entirely. These tests lock in that query+collection filtering
  * works with or without user_id, a bogus query returns 0 results, the legacy
- * no-query recency fallback is preserved, and semantic vector matches are merged
- * ahead of keyword results when the embedding model is ready.
+ * no-query recency fallback is preserved, collection aliases resolve, hits
+ * expose id/_id/score, and deterministic keyword hits (literal known-item pass
+ * first) rank ahead of semantic augmentation when the embedding model is ready.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -169,6 +170,12 @@ describe('admin /memory-search — query+collection honored without user_id', ()
     const body = await res.json();
     expect(body.results.length).toBeGreaterThan(0);
     expect(body.results.every((r: any) => r.collection === 'episodic')).toBe(true);
+  });
+
+  it('known-item literal query ranks the exact document first', async () => {
+    const res = await search({ query: 'OPERATING RULE: TEAM COLLABORATION stored.' });
+    const body = await res.json();
+    expect(body.results[0]._id).toBe('e1');
   });
 
   it('every hit exposes id/_id/score', async () => {
