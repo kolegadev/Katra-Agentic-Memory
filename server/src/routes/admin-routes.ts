@@ -31,12 +31,47 @@ import { notePersonalityDeprecation } from '../services/integration/personality-
 import { embeddingService } from '../services/infrastructure/embedding-service.js';
 
 // ---- Admin memory-search helpers ----------------------------------------
-// The admin search spans the four canonical memory collections. Keyword
-// filtering (escaped token regex) is the deterministic bottom layer — no model
-// dependency, so wake-ritual rule recall never breaks. The embedding service
-// augments it with semantic matches when the model is available.
+// The admin search spans the four canonical memory collections. The keyword
+// pass is the deterministic bottom layer — no model dependency, so wake-ritual
+// rule recall never breaks: relevance-ranked $text for the collections that
+// carry a text index (episodic/facts), escaped-token regex elsewhere. Keyword
+// hits are returned ahead of the embedding service's semantic augmentation,
+// and every hit exposes id/_id/score (R29 D12).
 
 const MEMORY_COLLECTIONS: string[] = ['episodic_events', 'semantic_facts', 'knowledge_nodes', 'reflective_journals'];
+
+/**
+ * Collection aliases accepted on the `collection` query param. The public
+ * contract (dashboard + the AGMT measurement instrument) uses the short names;
+ * before 2026-10-08 the raw value was passed straight to db.collection(), so
+ * `collection=episodic` resolved to a NON-EXISTENT collection and returned []
+ * in ~0.01 s (R29 D12). Aliases — and the canonical names — now resolve to
+ * the real collections.
+ */
+const COLLECTION_ALIASES: Record<string, string> = {
+  episodic: 'episodic_events',
+  episodic_events: 'episodic_events',
+  semantic: 'semantic_facts',
+  facts: 'semantic_facts',
+  semantic_facts: 'semantic_facts',
+  knowledge: 'knowledge_nodes',
+  knowledge_nodes: 'knowledge_nodes',
+  reflections: 'reflective_journals',
+  reflective: 'reflective_journals',
+  reflective_journals: 'reflective_journals',
+};
+
+const resolveCollection = (col: string): string =>
+  COLLECTION_ALIASES[col] ?? COLLECTION_ALIASES[col.toLowerCase()] ?? col;
+
+/**
+ * Collections whose keyword pass uses the Mongo text index ($text): both carry
+ * a text index on the field the documents actually hold (episodic_events:
+ * content.message; semantic_facts: content). Relevance ranking matters there —
+ * recency sorting alone hides an older exact match under newer partial-token
+ * matches, which is exactly the known-item failure R29 measured.
+ */
+const TEXT_INDEXED_COLLECTIONS = new Set(['episodic_events', 'semantic_facts']);
 
 /**
  * Personality endpoints that are caller-pinned instead of admin-gated: a
@@ -94,7 +129,7 @@ const buildCollectionFilter = (
 // Map a raw Mongo doc to the response shape. `content` is polymorphic across
 // collections (object with .message for episodic, string for semantic facts,
 // name for knowledge nodes, narrative for reflective journals).
-const mapMemoryItem = (col: string, item: any): any => {
+const mapMemoryItem = (col: string, item: any, score: number | null = null): any => {
   const c = item.content;
   let content: string;
   if (c && typeof c === 'object' && c.message) content = c.message;
@@ -107,11 +142,80 @@ const mapMemoryItem = (col: string, item: any): any => {
   else if (item.title) content = item.title;
   else content = JSON.stringify(item);
   return {
+    id: item.id != null ? String(item.id) : String(item._id ?? ''),
+    _id: String(item._id ?? ''),
     collection: normalizeCollection(col),
     timestamp: item.timestamp || item.created_at || item.updated_at,
     user_id: item.user_id || 'system',
     content: content.substring(0, 300),
+    score,
   };
+};
+
+/**
+ * Keyword search for one collection.
+ *
+ * Text-indexed collections search via $text so results are RELEVANCE-ranked
+ * and carry a textScore. The $text path retries once with quotes/backslashes
+ * stripped (the only $text parse hazards) and falls back to the escaped-token
+ * regex when the text index is missing or the query stays unparseable.
+ * Non-indexed collections and the fallback keep the legacy regex behavior.
+ */
+const searchKeyword = async (
+  db: any,
+  col: string,
+  base: Record<string, any>,
+  query: string,
+  limit: number,
+): Promise<Array<{ key: string; item: any }>> => {
+  const out: Array<{ key: string; item: any }> = [];
+  const push = (items: any[], scores: Map<string, number> | null): void => {
+    items.forEach((item: any) =>
+      out.push({
+        key: `${col}:${String(item._id ?? '')}`,
+        item: mapMemoryItem(col, item, scores ? (scores.get(String(item._id)) ?? null) : null),
+      }),
+    );
+  };
+
+  if (TEXT_INDEXED_COLLECTIONS.has(col)) {
+    const capped = query.slice(0, 200);
+    if (capped.trim()) {
+      const attempts = [capped];
+      const sanitized = capped.replace(/["\\]/g, ' ');
+      if (sanitized !== capped) attempts.push(sanitized);
+      for (const search of attempts) {
+        try {
+          const res = await db.collection(col)
+            .find(
+              { ...base, $text: { $search: search } },
+              {
+                projection: {
+                  content: 1, timestamp: 1, created_at: 1, name: 1, narrative: 1, fact: 1, user_id: 1, id: 1,
+                  _tscore: { $meta: 'textScore' },
+                },
+              },
+            )
+            .sort({ _tscore: { $meta: 'textScore' } })
+            .limit(limit)
+            .toArray();
+          const scores = new Map<string, number>((res as any[]).map((d: any) => [String(d._id), d._tscore]));
+          push(res, scores);
+          return out;
+        } catch {
+          // Try the next attempt; fall through to the regex path if all fail.
+        }
+      }
+    }
+  }
+
+  // Escaped-token regex fallback (collections without a text index, or when
+  // the $text path failed). Recency-ordered, legacy behavior.
+  const textClauses = buildTextClauses(query);
+  const filter = buildCollectionFilter(col, base, textClauses);
+  const items = await db.collection(col).find(filter).sort({ [sortFieldFor(col)]: -1 }).limit(limit).toArray();
+  push(items, null);
+  return out;
 };
 
 export const create_admin_routes = (): Hono => {
@@ -405,9 +509,13 @@ export const create_admin_routes = (): Hono => {
    * Public read-only search across memory collections — no auth required.
    * Params: ?query=... &collection=episodic|semantic|knowledge|reflections|all &user_id=... &limit=20
    *
-   * Hybrid search: deterministic keyword (escaped token regex) first, then
+   * Hybrid search: deterministic keyword pass first (relevance-ranked via the
+   * $text index for episodic/semantic, escaped-token regex elsewhere), then
    * semantic vector augmentation when the embedding model is available.
-   * Query + collection are honored with or without user_id.
+   * Query + collection are honored with or without user_id. Every hit carries
+   * its identity (`id`, `_id`) and, where defined, a `score` (textScore for
+   * index-ranked keyword hits, cosine blend for semantic hits; null when
+   * neither applies).
    */
   router.get('/memory-search', async (c) => {
     try {
@@ -417,18 +525,24 @@ export const create_admin_routes = (): Hono => {
       const user_id = c.req.query('user_id') || '';
       const limit = Math.min(parseInt(c.req.query('limit') || '20'), 100);
 
-      const cols = collection === 'all' ? [...MEMORY_COLLECTIONS] : [collection];
+      const cols = collection === 'all' ? [...MEMORY_COLLECTIONS] : [resolveCollection(collection)];
 
       // Deterministic keyword pass — honors query + collection regardless of
-      // user_id (this is the contract fix).
+      // user_id (this is the contract fix). Text-indexed collections come back
+      // relevance-ranked with a textScore; the rest fall back to the
+      // escaped-token regex, recency-ordered.
       const base: Record<string, any> = user_id ? { user_id } : {};
-      const textClauses = query ? buildTextClauses(query) : null;
 
       const keyword: Array<{ key: string; item: any }> = [];
       for (const col of cols) {
-        const colFilter = buildCollectionFilter(col, base, textClauses);
-        const items = await db.collection(col).find(colFilter).sort({ [sortFieldFor(col)]: -1 }).limit(limit).toArray();
-        items.forEach((item: any) => keyword.push({ key: `${col}:${String(item._id ?? '')}`, item: mapMemoryItem(col, item) }));
+        if (query) {
+          keyword.push(...(await searchKeyword(db, col, base, query, limit)));
+        } else {
+          const items = await db.collection(col).find(base).sort({ [sortFieldFor(col)]: -1 }).limit(limit).toArray();
+          items.forEach((item: any) =>
+            keyword.push({ key: `${col}:${String(item._id ?? '')}`, item: mapMemoryItem(col, item) }),
+          );
+        }
       }
 
       const results: any[] = [];
@@ -443,14 +557,27 @@ export const create_admin_routes = (): Hono => {
             for (const hit of hits) {
               const key = `${col}:${String(hit._id ?? '')}`;
               if (semantic.some((s) => s.key === key)) continue;
-              semantic.push({ key, score: hit.score ?? 0, item: mapMemoryItem(col, hit) });
+              const score = hit.score ?? 0;
+              semantic.push({ key, score, item: mapMemoryItem(col, hit, score) });
             }
           }
           semantic.sort((a, b) => b.score - a.score);
 
+          // Deterministic keyword hits FIRST: an exact known-item match must
+          // survive the limit slice (appending them after a full semantic page
+          // is how document-derived probes were buried — R29 D12). Semantic
+          // augmentation follows, deduped; a keyword hit that also matched
+          // semantically keeps the semantic score for like-for-like ranking.
+          const semanticScoreByKey = new Map(semantic.map((s) => [s.key, s.score]));
           const seen = new Set<string>();
+          for (const k of keyword) {
+            if (seen.has(k.key)) continue;
+            seen.add(k.key);
+            const semScore = semanticScoreByKey.get(k.key);
+            if (semScore != null) k.item.score = semScore;
+            results.push(k.item);
+          }
           for (const s of semantic) { if (!seen.has(s.key)) { seen.add(s.key); results.push(s.item); } }
-          for (const k of keyword) { if (!seen.has(k.key)) { seen.add(k.key); results.push(k.item); } }
         } catch (err: any) {
           console.warn('Memory search semantic augmentation failed, using keyword results:', err.message);
           keyword.forEach((k) => results.push(k.item));
