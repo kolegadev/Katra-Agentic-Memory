@@ -11,6 +11,7 @@
  */
 
 import { get_database } from '../../database/connection.js';
+import { stableContentHash } from './content-hash-utils.js';
 import type { UserMemoryProfile } from '../memory/memory-consolidator.js';
 
 type ConsolidationCallback = (profile: UserMemoryProfile) => void | Promise<void>;
@@ -110,16 +111,29 @@ export class ConsolidationOutputBus {
       };
 
       const factContent = `Consolidation run for ${profile.userId}: ${(summary.expertise_domains as any[]).length} expertise areas, ${(summary.interest_areas as any[]).length} interests, ${(summary.top_entities as any[]).length} key entities. Knowledge depth trend: ${summary.knowledge_depth_trend}.`;
-      await db.collection('semantic_facts').insertOne({
-        ...summary,
-        content: factContent,
-        content_length: [...factContent].length,
-        category: 'fact',
-        source: 'consolidation-output-bus',
-        confidence: 0.9,
-        tags: ['consolidation-output', 'memory-profile', 'drive-system'],
-        created_at: new Date(),
-      });
+      // Dedupe via the same stable content hash the semantic-fact manager
+      // uses — one row per (user, content), updated in place each run.
+      const contentHash = stableContentHash(profile.userId, factContent);
+      await db.collection('semantic_facts').findOneAndUpdate(
+        { content_hash: contentHash },
+        {
+          $set: {
+            ...summary,
+            content: factContent,
+            content_hash: contentHash,
+            user_id: profile.userId,
+            content_length: [...factContent].length,
+            category: 'fact',
+            source: 'consolidation-output-bus',
+            confidence: 0.9,
+            tags: ['consolidation-output', 'memory-profile', 'drive-system'],
+            updated_at: new Date(),
+          },
+          $setOnInsert: { created_at: new Date() },
+          $inc: { extraction_count: 1 },
+        },
+        { upsert: true }
+      );
     } catch (err) {
       console.error('[ConsolidationOutputBus] semantic fact storage failed:', err);
     }

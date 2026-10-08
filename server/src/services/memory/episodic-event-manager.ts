@@ -355,13 +355,13 @@ export class EpisodicEventManager {
       user_id: eventData.user_id,
       session_id: eventData.session_id, // Include session_id in hash for better isolation
       event_type: eventData.event_type,
-      message: eventData.content.message?.trim(),
-      role: eventData.content.role,
-      context: eventData.content.context,
-      // Use second-level precision instead of minute-level to reduce collisions
-      timestamp_second: eventData.timestamp ? 
-        Math.floor(eventData.timestamp.getTime() / 1000) :
-        Math.floor(Date.now() / 1000)
+      // Hash the FULL content payload (string content, tool outputs, health
+      // payloads, and message/role/context alike). Dedupe must only collapse
+      // truly identical payloads — never two different ones.
+      payload: (() => {
+        const raw = eventData.content as unknown;
+        return typeof raw === 'string' ? raw.trim() : raw;
+      })(),
     };
 
     // Generate SHA-256 hash
