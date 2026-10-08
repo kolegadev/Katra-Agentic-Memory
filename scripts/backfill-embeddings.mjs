@@ -35,7 +35,14 @@ async function main() {
 
   const filter = {
     has_embedding: { $ne: true },
-    content_length: { $gte: MIN_LEN },
+    $or: [
+      { content_length: { $gte: MIN_LEN } },
+      // Legacy docs can predate the content_length field; for those the length
+      // is checked in JS before embedding. Without this clause the doc is
+      // invisible to the index-backed predicate and stays unembedded forever
+      // (2026-10-08: 388 such facts — R29 D12 ask 4).
+      { content_length: { $exists: false } },
+    ],
   };
   if (USER_ID) filter.user_id = USER_ID;
 
@@ -58,11 +65,21 @@ async function main() {
 
     for (const d of docs) {
       processed++;
-      const vec = await embeddingService.encode(d.content, 'semantic_fact');
+      const text = typeof d.content === 'string' ? d.content : '';
+      if ([...text].length < MIN_LEN) {
+        // Below policy threshold — mark so it is classified, not re-scanned.
+        await col.updateOne(
+          { _id: d._id },
+          { $set: { embedding_skipped: true, embedding_skipped_reason: `below_min_len_${MIN_LEN}`, content_length: [...text].length } }
+        );
+        skipped++;
+        continue;
+      }
+      const vec = await embeddingService.encode(text, 'semantic_fact');
       if (vec) {
         await col.updateOne(
           { _id: d._id },
-          { $set: { embedding: vec, embedding_model: embeddingService.modelName, embedding_version: embeddingService.version, has_embedding: true } }
+          { $set: { embedding: vec, embedding_model: embeddingService.modelName, embedding_version: embeddingService.version, has_embedding: true, content_length: [...text].length } }
         );
         embedded++;
       } else {
