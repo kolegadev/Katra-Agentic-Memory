@@ -23,6 +23,7 @@ const h = vi.hoisted(() => {
     semantic_facts: [
       { _id: 's1', user_id: 'agent-a', created_at: new Date('2026-09-09T12:00:00Z'), content: 'OPERATING RULE (operator): TEAM COLLABORATION' },
       { _id: 's2', user_id: 'agent-c', created_at: new Date('2026-09-08T12:00:00Z'), content: 'wifi fix for the office network' },
+      { _id: 's3', user_id: 'agent-a', created_at: new Date('2026-09-07T12:00:00Z'), content: 'TEAM COLLABORATION stored. yes' },
     ],
     knowledge_nodes: [
       { _id: 'k1', user_id: 'system', updated_at: new Date('2026-09-09T09:00:00Z'), name: 'OPERATING RULE' },
@@ -182,6 +183,15 @@ describe('admin /memory-search — query+collection honored without user_id', ()
     const res = await search({ query: 'OPERATING RULE (operator): TEAM COLLABORATION' });
     const body = await res.json();
     expect(body.results[0]._id).toBe('s1');
+    expect(body.results.some((r: any) => r._id === 'e1')).toBe(true);
+  });
+
+  it('literal prefix matches (document opening with the query) outrank deeper literal matches', async () => {
+    // e1 CONTAINS 'TEAM COLLABORATION stored.' mid-content; s3 OPENS with it.
+    // s3 must rank first even though episodic_events is iterated first.
+    const res = await search({ query: 'TEAM COLLABORATION stored.' });
+    const body = await res.json();
+    expect(body.results[0]._id).toBe('s3');
     expect(body.results.some((r: any) => r._id === 'e1')).toBe(true);
   });
 

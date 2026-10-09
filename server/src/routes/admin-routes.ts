@@ -250,16 +250,21 @@ const searchLiteral = async (
   base: Record<string, any>,
   query: string,
   limit: number,
-): Promise<Array<{ key: string; cls: string; item: any }>> => {
+): Promise<Array<{ key: string; cls: string; pref?: boolean; item: any }>> => {
   const literal = query.slice(0, 200);
   if (!literal.trim()) return [];
   const filter = buildCollectionFilter(col, base, buildLiteralClauses(literal));
   const items = await db.collection(col).find(filter).limit(limit).toArray();
-  return items.map((item: any) => ({
-    key: `${col}:${String(item._id ?? '')}`,
-    cls: 'lit',
-    item: mapMemoryItem(col, item, null),
-  }));
+  const head = literal.toLowerCase();
+  return items.map((item: any) => {
+    const mapped = mapMemoryItem(col, item, null);
+    return {
+      key: `${col}:${String(item._id ?? '')}`,
+      cls: 'lit',
+      pref: String(mapped.content).toLowerCase().startsWith(head),
+      item: mapped,
+    };
+  });
 };
 
 export const create_admin_routes = (): Hono => {
@@ -578,7 +583,7 @@ export const create_admin_routes = (): Hono => {
       // escaped-token regex, recency-ordered.
       const base: Record<string, any> = user_id ? { user_id } : {};
 
-      const keyword: Array<{ key: string; cls: string; item: any }> = [];
+      const keyword: Array<{ key: string; cls: string; pref?: boolean; item: any }> = [];
       for (const col of cols) {
         if (query) {
           // Verbatim known-item pass first, then relevance-ranked tokens.
@@ -605,6 +610,15 @@ export const create_admin_routes = (): Hono => {
         const ra = cls_rank[a.cls] ?? 3;
         const rb = cls_rank[b.cls] ?? 3;
         if (ra !== rb) return ra - rb;
+        // Within the literal class, documents that START with the query (the
+        // query is their own opening text) outrank matches buried deeper in
+        // other documents: shared-opening families otherwise flood the slice
+        // (R29 facts-arm 2026-10-09: 49 episodic docs embedding the JSON beat
+        // the 13 facts that open with it). Query capped at 200 chars, mapped
+        // content at 300 — the comparison is safe in-memory.
+        const pa = a.pref === true ? 1 : 0;
+        const pb = b.pref === true ? 1 : 0;
+        if (pa !== pb) return pb - pa;
         const sa = a.item.score ?? Number.NEGATIVE_INFINITY;
         const sb = b.item.score ?? Number.NEGATIVE_INFINITY;
         return sb - sa;
