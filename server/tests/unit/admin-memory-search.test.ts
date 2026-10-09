@@ -178,6 +178,13 @@ describe('admin /memory-search — query+collection honored without user_id', ()
     expect(body.results[0]._id).toBe('e1');
   });
 
+  it('facts literal hit outranks episodic token hits in collection=all (R29 facts-arm)', async () => {
+    const res = await search({ query: 'OPERATING RULE (operator): TEAM COLLABORATION' });
+    const body = await res.json();
+    expect(body.results[0]._id).toBe('s1');
+    expect(body.results.some((r: any) => r._id === 'e1')).toBe(true);
+  });
+
   it('every hit exposes id/_id/score', async () => {
     const res = await search({ query: 'OPERATING', collection: 'episodic_events' });
     const body = await res.json();

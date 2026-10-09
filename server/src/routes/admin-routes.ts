@@ -36,8 +36,9 @@ import { embeddingService } from '../services/infrastructure/embedding-service.j
 // rule recall never breaks: a literal-substring pass first (known-item: the
 // query verbatim in the document text), then relevance-ranked $text for the
 // collections that carry a text index (episodic/facts), escaped-token regex
-// elsewhere. Keyword hits are returned ahead of the embedding service's
-// semantic augmentation, and every hit exposes id/_id/score (R29 D12).
+// elsewhere. Keyword hits are merged best-first across collections (verbatim,
+// then score-ranked) and returned ahead of the embedding service's semantic
+// augmentation; every hit exposes id/_id/score (R29 D12).
 
 const MEMORY_COLLECTIONS: string[] = ['episodic_events', 'semantic_facts', 'knowledge_nodes', 'reflective_journals'];
 
@@ -184,12 +185,13 @@ const searchKeyword = async (
   base: Record<string, any>,
   query: string,
   limit: number,
-): Promise<Array<{ key: string; item: any }>> => {
-  const out: Array<{ key: string; item: any }> = [];
-  const push = (items: any[], scores: Map<string, number> | null): void => {
+): Promise<Array<{ key: string; cls: string; item: any }>> => {
+  const out: Array<{ key: string; cls: string; item: any }> = [];
+  const push = (items: any[], scores: Map<string, number> | null, cls: string): void => {
     items.forEach((item: any) =>
       out.push({
         key: `${col}:${String(item._id ?? '')}`,
+        cls,
         item: mapMemoryItem(col, item, scores ? (scores.get(String(item._id)) ?? null) : null),
       }),
     );
@@ -217,7 +219,7 @@ const searchKeyword = async (
             .limit(limit)
             .toArray();
           const scores = new Map<string, number>((res as any[]).map((d: any) => [String(d._id), d._tscore]));
-          push(res, scores);
+          push(res, scores, 'text');
           return out;
         } catch {
           // Try the next attempt; fall through to the regex path if all fail.
@@ -231,7 +233,7 @@ const searchKeyword = async (
   const textClauses = buildTextClauses(query);
   const filter = buildCollectionFilter(col, base, textClauses);
   const items = await db.collection(col).find(filter).sort({ [sortFieldFor(col)]: -1 }).limit(limit).toArray();
-  push(items, null);
+  push(items, null, 're');
   return out;
 };
 
@@ -248,13 +250,14 @@ const searchLiteral = async (
   base: Record<string, any>,
   query: string,
   limit: number,
-): Promise<Array<{ key: string; item: any }>> => {
+): Promise<Array<{ key: string; cls: string; item: any }>> => {
   const literal = query.slice(0, 200);
   if (!literal.trim()) return [];
   const filter = buildCollectionFilter(col, base, buildLiteralClauses(literal));
   const items = await db.collection(col).find(filter).limit(limit).toArray();
   return items.map((item: any) => ({
     key: `${col}:${String(item._id ?? '')}`,
+    cls: 'lit',
     item: mapMemoryItem(col, item, null),
   }));
 };
@@ -575,7 +578,7 @@ export const create_admin_routes = (): Hono => {
       // escaped-token regex, recency-ordered.
       const base: Record<string, any> = user_id ? { user_id } : {};
 
-      const keyword: Array<{ key: string; item: any }> = [];
+      const keyword: Array<{ key: string; cls: string; item: any }> = [];
       for (const col of cols) {
         if (query) {
           // Verbatim known-item pass first, then relevance-ranked tokens.
@@ -584,10 +587,28 @@ export const create_admin_routes = (): Hono => {
         } else {
           const items = await db.collection(col).find(base).sort({ [sortFieldFor(col)]: -1 }).limit(limit).toArray();
           items.forEach((item: any) =>
-            keyword.push({ key: `${col}:${String(item._id ?? '')}`, item: mapMemoryItem(col, item) }),
+            keyword.push({ key: `${col}:${String(item._id ?? '')}`, cls: 're', item: mapMemoryItem(col, item) }),
           );
         }
       }
+
+      // Cross-collection ranking. The per-collection lists above are otherwise
+      // concatenated in fixed collection order, which lets the FIRST
+      // collection's page crowd out later collections at the final limit
+      // slice (R29 facts-arm, 2026-10-09: a page of episodic $text hits hid
+      // the semantic_facts literal hit for a fact's own opening text in
+      // collection=all). Merge best-first instead: verbatim (literal) hits
+      // first, then $text hits by relevance score across ALL collections,
+      // then regex-fallback hits. Ties keep collection order (stable sort).
+      const cls_rank: Record<string, number> = { lit: 0, text: 1, re: 2 };
+      keyword.sort((a, b) => {
+        const ra = cls_rank[a.cls] ?? 3;
+        const rb = cls_rank[b.cls] ?? 3;
+        if (ra !== rb) return ra - rb;
+        const sa = a.item.score ?? Number.NEGATIVE_INFINITY;
+        const sb = b.item.score ?? Number.NEGATIVE_INFINITY;
+        return sb - sa;
+      });
 
       const results: any[] = [];
       // The first pass that surfaces a key defines its rank (literal -> $text
