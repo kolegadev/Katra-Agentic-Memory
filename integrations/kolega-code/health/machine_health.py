@@ -186,7 +186,7 @@ def tailscale_state() -> dict:
         "installed": True,
         "backend_state": data.get("BackendState"),
         "self_online": self_node.get("Online"),
-        "peers": len(data.get("Peer", {})),
+        "peers": len(data.get("Peer") or {}),
         "dns": (self_node.get("DNSName") or "").rstrip("."),
     }
 
@@ -245,7 +245,7 @@ def bridge_state() -> dict:
             )
             try:
                 out = json.loads(proc.stdout.strip().splitlines()[-1])
-                ctx = out.get("hookSpecificOutput", {}).get("additionalContext")
+                ctx = (out.get("hookSpecificOutput") or {}).get("additionalContext")
                 result["bridge_self_test_context"] = bool(ctx and len(ctx) > 40)
             except Exception:
                 result["bridge_self_test_context"] = False
