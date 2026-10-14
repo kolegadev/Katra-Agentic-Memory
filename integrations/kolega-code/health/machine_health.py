@@ -332,6 +332,24 @@ def compute_status(checks: dict) -> tuple[str, list[str]]:
         reasons.append(f"disk free {disk}%")
     if checks.get("kolega", {}).get("installed") is False:
         reasons.append("kolega-code not installed")
+    # 2026-10-14 (post-OOM-churn finding): sustained host resource pressure must
+    # be a first-class degraded reason. The 10-13 thebrick OOM episode (mongod
+    # ~10 GB RSS OOM-killed 5x, load peaked 131/16 cores, mem 98%) surfaced in
+    # the health loop ONLY as downstream 'katra unreachable' timeouts — the
+    # collector recorded load/mem but never flagged them. Thresholds are
+    # deliberately extreme to stay quiet on normal load (brick baseline load
+    # <13, mem <87%).
+    mem = checks.get("mem_used_pct")
+    if isinstance(mem, (int, float)) and mem >= 95.0:
+        reasons.append(f"memory pressure: {mem:.1f}%")
+    load = (checks.get("machine") or {}).get("load") or []
+    try:
+        l1 = float(load[0]) if load else None
+    except (TypeError, ValueError):
+        l1 = None
+    cores = os.cpu_count() or 0
+    if l1 is not None and cores and l1 >= 2.0 * cores:
+        reasons.append(f"load saturation: {l1:.1f} on {cores} cores")
     if len(failures) == len(dns) or (ts.get("installed") and ts.get("backend_state") not in (None, "Running")
                                      and failures):
         status = "down"
