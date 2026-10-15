@@ -252,6 +252,14 @@ def main() -> int:
             problems.append(f"{m['machine']}: {m['latest_status']} "
                             f"({m['degraded_hits']}/{m['samples']} bad samples; "
                             f"reasons: {m['reasons']}; dns fails: {m['dns_fails'] or 'none'})")
+        # 2026-10-15 (foreign finding — a dead proxy returning "success with
+        # empty results" is indistinguishable from a working one): a sample
+        # carrying no valid status used to render as a quiet 'unknown' line,
+        # unflagged. Unknown is not OK — flag it like a fault.
+        if m["latest_status"] not in ("ok", "degraded", "down"):
+            flag += f" {m['latest_status'].upper()}"
+            problems.append(f"{m['machine']}: unrecognised status {m['latest_status']!r} — "
+                            f"collector regression? ({m['samples']} samples in window)")
         if m["recovered"]:
             flag += " RECOVERED"
             card_due.append(m["machine"])
