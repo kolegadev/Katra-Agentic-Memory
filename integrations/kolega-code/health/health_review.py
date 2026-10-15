@@ -38,6 +38,16 @@ REPORT_FILE = Path.home() / ".katra" / "inbox" / "health-reports.md"
 NEEDS_OWNER = Path.home() / ".katra" / "inbox" / "needs-owner.md"
 API = "http://localhost:9012/api/v1"
 
+# Machines the custody loop tracks (2026-10-15). A machine that produces ZERO
+# samples in the window used to be invisible: the per-machine assessment only
+# walks machines derived FROM the samples, so natasha's full-silence stretch
+# (~28 h, 10-14/15) produced a review with no PROBLEMS line at all — quieter
+# than a partial-stale window, which is backwards. Roster machines with no
+# samples now get a loud line. Override with HEALTH_MACHINES="a,b".
+KNOWN_MACHINES = [m.strip() for m in
+                  (os.environ.get("HEALTH_MACHINES", "thebrick,MacBook-Pro-2.local") or "").split(",")
+                  if m.strip()]
+
 # Identity is deployment data. The alert is ADDRESSED to the local identity
 # (KATRA_USER_ID) but AUTHORED by the system identity (Katra): the inbox
 # candidate query excludes events authored by the consuming loop's own
@@ -250,6 +260,15 @@ def main() -> int:
             f" samples={m['samples']} degraded_hits={m['degraded_hits']} "
             f"kolega={m['kolega_version']} ts={m['tailscale']} bridge={m['bridge_user']}"
         )
+    # Roster check (2026-10-15, see KNOWN_MACHINES): full-silence must be LOUDER
+    # than stale, not invisible. A roster machine with no samples at all in the
+    # window gets a report line + PROBLEMS entry + owner item.
+    for km in KNOWN_MACHINES:
+        if km not in machines:
+            lines.append(f"- {km:<22} NO SAMPLES in window (collector missing or machine off?)")
+            problems.append(f"{km}: no samples at all in the window — collector missing or machine off")
+            owner_items.append(f"{km}: no samples at all in the window — collector missing or machine off; "
+                               "verify machine power/network and the */15 machine_health cron.")
     # Boot changes are reviewable facts (sub-tick reboots never show as sample
     # gaps): surface them in the report and the alert so the loop verifies
     # orderly vs abrupt and cards the abrupt ones.
