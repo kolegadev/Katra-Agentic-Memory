@@ -18,6 +18,7 @@ import {
   getMissionCognitionServices,
 } from './index.js';
 import { SchedulerService } from './scheduler-service.js';
+import { DELTA_TYPES } from './state-delta-service.js';
 import { runWithUsageOrigin } from '../infrastructure/llm-usage-ledger.js';
 import type { AuthorityClass, CognitiveBatonDraft, StateDeltaDraft } from '../../types/cognitive-control.js';
 
@@ -75,7 +76,10 @@ const ledgerEntrySchema = z.object({
 const submitStateDeltaInput = z.object({
   mission_id: z.string(),
   base_mission_version: z.number().int().positive(),
-  delta_type: z.string().min(1),
+  delta_type: z
+    .string()
+    .min(1)
+    .describe(`One of: ${DELTA_TYPES.join(', ')}`),
   operations: z.array(z.record(z.string(), z.unknown())).default([]),
   ledger_entries: z.array(ledgerEntrySchema).optional(),
   rationale: z.string().min(1),

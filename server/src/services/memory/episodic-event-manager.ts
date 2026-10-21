@@ -13,6 +13,7 @@ import { llmService } from '../infrastructure/llm-service.js';
 import type { Db, Collection } from 'mongodb';
 import { ValenceTagger } from '../processing/valence-tagger.js';
 import { assertVaultCollectionAllowed } from '../vault/denylist.js';
+import { descriptionOf, propositionOf } from './proposition-key.js';
 
 /**
  * Cascade Detection Circuit Breaker
@@ -157,13 +158,21 @@ export interface StoredEpisodicEvent extends EpisodicEventData {
     derived_from_events: string[];
     triggered_by?: string;
   };
+  // Delta capture (2026-10-21): a distilled event's identity is its
+  // proposition, so a repeat increments `occurrences` and appends `variants`
+  // instead of inserting a near-clone. See proposition-key.ts.
+  proposition_key?: string;
+  occurrences?: number;
+  first_seen_at?: Date;
+  last_seen_at?: Date;
+  variants?: Array<{ text: string; seen_at: Date }>;
 }
 
 export interface EventCreationResult {
   event: StoredEpisodicEvent;
   was_duplicate: boolean;
   duplicate_of?: string;
-  action_taken: 'created' | 'updated_metadata' | 'no_change' | 'cascade_blocked';
+  action_taken: 'created' | 'updated_metadata' | 'no_change' | 'cascade_blocked' | 'merged_proposition';
 }
 
 /**
@@ -271,6 +280,51 @@ export class EpisodicEventManager {
       };
     }
 
+    // ── Delta capture: a distilled event's identity is its proposition ──────
+    // Re-extraction of an unchanged transcript yields the same proposition with
+    // a fresh `extracted_at`. The content hash cannot see that (the payload
+    // differs), so before this rule every pass stored another near-clone and
+    // retrieval returned a wall of almost-identical candidates. Measured
+    // 2026-10-21: 946,688 description-bearing rows collapse to 437,026
+    // propositions — 53.8% redundant. See services/memory/proposition-key.ts.
+    const proposition = propositionOf(eventData.event_type, eventData.content);
+    if (proposition) {
+      const priorDocument = await this.collection.findOne({
+        user_id: eventData.user_id,
+        event_type: eventData.event_type,
+        proposition_key: proposition.key,
+      });
+      const prior = priorDocument as unknown as StoredEpisodicEvent | null;
+      if (prior) {
+        const priorDescription = descriptionOf(prior.content) || '';
+        const incoming = descriptionOf(eventData.content) || '';
+        const variants = Array.isArray((prior as any).variants) ? (prior as any).variants : [];
+        const seen = new Date();
+        const update: Record<string, any> = {
+          $inc: { occurrences: 1 },
+          $set: {
+            last_seen_at: eventData.timestamp || seen,
+            'metadata.updated_at': seen,
+            'metadata.last_accessed_at': seen,
+          },
+        };
+        if (proposition.strategy === 'latest') {
+          // Structured decisions: the newest rationale is the current evidence.
+          update.$set.content = eventData.content;
+        } else if (incoming && incoming !== priorDescription &&
+            !variants.some((v: any) => v && v.text === incoming)) {
+          update.$push = { variants: { text: incoming, seen_at: seen } };
+        }
+        await this.collection.updateOne({ _id: (prior as any)._id }, update);
+        return {
+          event: { ...prior, occurrences: ((prior as any).occurrences || 1) + 1 },
+          was_duplicate: true,
+          duplicate_of: prior.id,
+          action_taken: 'merged_proposition',
+        };
+      }
+    }
+
     // Create new event with enhanced metadata
     const newEvent: StoredEpisodicEvent = {
       id: `event_${randomUUID()}`,
@@ -281,6 +335,15 @@ export class EpisodicEventManager {
       content: eventData.content,
       content_hash: contentHash,
       idempotency_key: idempotencyKey,
+      ...(proposition
+        ? {
+            proposition_key: proposition.key,
+            occurrences: 1,
+            first_seen_at: eventData.timestamp || new Date(),
+            last_seen_at: eventData.timestamp || new Date(),
+            variants: [],
+          }
+        : {}),
       timestamp: eventData.timestamp || new Date(),
       metadata: {
         processed: false,

@@ -2701,7 +2701,11 @@ async function handleListMissions(args: unknown): Promise<TextContent[]> {
     const displayTitle = typeof m.title === 'string' ? m.title 
       : (typeof m.meta_goal === 'string' ? m.meta_goal 
       : (m.meta_goal?.goal || m.meta_goal?.title || 'Untitled'));
-    lines.push(`- ${emoji} **${displayTitle}** (${done}/${total}) — ${m.status}`);
+    const missionId = typeof m.id === 'string' ? m.id : (m._id ? String(m._id) : '');
+    lines.push(
+      `- ${emoji} **${displayTitle}** (${done}/${total}) — ${m.status}` +
+        (missionId ? ` · \`${missionId}\`` : ''),
+    );
   });
 
   return [{ type: 'text', text: lines.join('\n') }];

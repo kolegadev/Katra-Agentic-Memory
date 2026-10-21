@@ -264,7 +264,49 @@ describe('state-delta target resolution fails closed', () => {
         targetDelta(1, 'status-bad-1', 'MISSION_STATUS_CHANGED', '/status'),
         { actorId: 'satori' },
       ),
-    ).rejects.toThrow(/requires operations\[0\]\.status/);
+    ).rejects.toThrow(/requires operations\[0\]\.value/);
+    expect((await missions.getMissionState('test_mission_targets'))!.version).toBe(1);
+  });
+
+  it('applies MISSION_STATUS_CHANGED carried in value — the only form the operation contract allows', async () => {
+    // The regression: the guard required `operations[0].status`, a field the
+    // operation contract (op/path/value/from) forbids, so the delta could not
+    // be expressed at all. Found by Satori on 2026-10-21 while exercising the
+    // long-horizon feature — the test mission could not be closed.
+    await fresh();
+    const d = await deltas.submitDelta(
+      targetDelta(1, 'status-value-1', 'MISSION_STATUS_CHANGED', '/status', 'completed'),
+      { actorId: 'satori' },
+    );
+    expect(d.status).toBe('accepted');
+
+    const s = await missions.getMissionState('test_mission_targets');
+    expect(s!.version).toBe(2);
+    expect(s!.status).toBe('completed');
+  });
+
+  it('names the allowed delta_types when it refuses an unknown one', async () => {
+    // The enum IS enforced (JSON schema), but the refusal used to read "must be
+    // equal to one of the allowed values" and name none of them, so the caller
+    // had to open the schema to discover the set. Reported by Satori 2026-10-21.
+    await fresh();
+    await expect(
+      deltas.submitDelta(
+        targetDelta(1, 'unknown-type-1', 'NOT_A_DELTA' as never, '/status', 'completed'),
+        { actorId: 'satori' },
+      ),
+    ).rejects.toThrow(/allowed: .*MISSION_STATUS_CHANGED/);
+    expect((await missions.getMissionState('test_mission_targets'))!.version).toBe(1);
+  });
+
+  it('refuses a MISSION_STATUS_CHANGED status the state schema would reject', async () => {
+    await fresh();
+    await expect(
+      deltas.submitDelta(
+        targetDelta(1, 'status-junk-1', 'MISSION_STATUS_CHANGED', '/status', 'finished'),
+        { actorId: 'satori' },
+      ),
+    ).rejects.toThrow(/is not a mission status/);
     expect((await missions.getMissionState('test_mission_targets'))!.version).toBe(1);
   });
 

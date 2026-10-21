@@ -27,6 +27,9 @@ const CONSTRAINT_KINDS = [
   'time', 'cost', 'privacy', 'safety', 'legal', 'technical', 'authority', 'other',
 ] as const;
 
+/** Must match mission-state.schema.json's status enum and the MissionStatus type. */
+const MISSION_STATUSES: readonly string[] = ['draft', 'active', 'paused', 'completed', 'cancelled'];
+
 /** Pure merge of one delta into a mission state (no IO). Exported for rebuild. */
 export function applyDeltaToState(state: MissionState, delta: StateDelta, now?: string): MissionState {
   const next: MissionState = structuredClone(state);
@@ -117,7 +120,16 @@ export function applyDeltaToState(state: MissionState, delta: StateDelta, now?: 
       break;
     }
     case 'MISSION_STATUS_CHANGED': {
-      if (op0?.status) next.status = op0.status;
+      // The operation contract allows only op/path/value/from, so the status
+      // arrives in `value` (`status` is kept as a fallback for rows written
+      // straight to the collection). Reading `op0.status` alone made this a
+      // guaranteed no-op — and, because the guard demanded that same forbidden
+      // field, the delta could not be expressed at all: every attempt was
+      // refused as an additional property. Found by Satori, 2026-10-21.
+      const rawStatus = op0?.value ?? op0?.status;
+      if (typeof rawStatus === 'string' && rawStatus) {
+        next.status = rawStatus as MissionState['status'];
+      }
       break;
     }
     case 'CONSTRAINT_ADDED': {
@@ -188,6 +200,30 @@ const LEDGER_REFERENCE: ReadonlySet<DeltaType> = new Set<DeltaType>([
 const OBJECTIVE_TARGETED: ReadonlySet<DeltaType> = new Set<DeltaType>([
   'OBJECTIVE_UPDATED', 'OBJECTIVE_COMPLETED', 'BLOCKED',
 ]);
+
+/**
+ * The closed set of delta types the applier understands. Mirrors the
+ * `DeltaType` union in types/cognitive-control.ts, and `satisfies` keeps the
+ * two from drifting.
+ *
+ * This existed only as a TypeScript type, so nothing checked it at runtime: an
+ * unknown delta_type reached applyDeltaToState, matched no `case`, fell into
+ * `default:` — and was recorded `accepted` with the version advanced and no
+ * state change. That is the same silent-no-op class the comments in this file
+ * describe, one level up. Found by Satori, 2026-10-21.
+ */
+export const DELTA_TYPES = [
+  'CLAIM_ADDED', 'EVIDENCE_ADDED', 'ASSUMPTION_CHALLENGED',
+  'UNCERTAINTY_OPENED', 'UNCERTAINTY_UPDATED', 'UNCERTAINTY_RESOLVED',
+  'HYPOTHESIS_ADDED', 'HYPOTHESIS_REJECTED',
+  'EXPERIMENT_PROPOSED', 'EXPERIMENT_RESULT',
+  'DECISION_PROPOSED', 'DECISION_ACCEPTED', 'DECISION_INVALIDATED',
+  'OBJECTIVE_CREATED', 'OBJECTIVE_UPDATED', 'OBJECTIVE_COMPLETED',
+  'SUCCESS_CRITERION_UPDATED',
+  'BLOCKED', 'CAPABILITY_REQUESTED', 'PLAN_CHANGE_PROPOSED',
+  'CHECKPOINT_CREATED', 'MISSION_STATUS_CHANGED',
+  'CONSTRAINT_ADDED',
+] as const satisfies readonly DeltaType[];
 
 export function assertTargetsResolve(state: MissionState, draft: StateDeltaDraft): void {
   const raw = (draft.operations[0] as { path?: unknown } | undefined)?.path;
@@ -295,12 +331,24 @@ export function assertTargetsResolve(state: MissionState, draft: StateDeltaDraft
     return;
   }
 
-  // MISSION_STATUS_CHANGED: `if (op0?.status) next.status = op0.status` — no
-  // status means no effect.
+  // MISSION_STATUS_CHANGED: the applier reads `value` — the contract's payload
+  // slot — with `status` only as a fallback, so an op carrying neither is a
+  // no-op that would still be recorded accepted. Validate the same way, and
+  // check the string against the mission-state enum: an unknown status would
+  // advance the version and leave the state schema-invalid.
   if (draft.delta_type === 'MISSION_STATUS_CHANGED') {
-    const status = (draft.operations[0] as { status?: unknown } | undefined)?.status;
+    const op = draft.operations[0] as { value?: unknown; status?: unknown } | undefined;
+    const status = op?.value ?? op?.status;
     if (typeof status !== 'string' || !status) {
-      throw new Error('MISSION_STATUS_CHANGED requires operations[0].status (a non-empty string)');
+      throw new Error(
+        'MISSION_STATUS_CHANGED requires operations[0].value (a non-empty status string); ' +
+          `allowed: ${MISSION_STATUSES.join('|')}`,
+      );
+    }
+    if (!MISSION_STATUSES.includes(status)) {
+      throw new Error(
+        `MISSION_STATUS_CHANGED status "${status}" is not a mission status; allowed: ${MISSION_STATUSES.join('|')}`,
+      );
     }
     return;
   }
