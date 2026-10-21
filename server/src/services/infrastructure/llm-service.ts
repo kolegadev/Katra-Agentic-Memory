@@ -431,6 +431,22 @@ export class LLMService {
     }
     merged.entities = Array.from(seenEntities.values());
 
+    // Deduplicate knowledge and activities across chunks too. Only entities
+    // were deduped, so the same fact surfacing in two overlapping chunks became
+    // two facts — and a long transcript is exactly where chunks overlap.
+    const dedupeBy = (items: any[], textOf: (x: any) => string) => {
+      const seen = new Map<string, any>();
+      for (const item of items) {
+        const text = String(textOf(item) || '').toLowerCase().replace(/\s+/g, ' ').trim();
+        if (!text) continue;
+        const prev = seen.get(text);
+        if (!prev || (item.confidence ?? 0) > (prev.confidence ?? 0)) seen.set(text, item);
+      }
+      return Array.from(seen.values());
+    };
+    merged.knowledge = dedupeBy(merged.knowledge, k => k?.content ?? k?.fact ?? '');
+    merged.activities = dedupeBy(merged.activities, a => a?.description ?? '');
+
     return merged;
   }
 
@@ -464,7 +480,12 @@ export class LLMService {
 
   /** Run the extraction LLM call for a single chunk and parse JSON. */
   private async extractSingleChunk(provider: any, chunkText: string, context?: string): Promise<any> {
-    const contextStr = context ? `Context: ${context}\n\n` : '';
+    // The context carries the last few messages so references can be resolved.
+    // It is NOT material to extract from: without this label, every turn
+    // re-derived the facts of its own recent history.
+    const contextStr = context
+      ? `Context (reference only — resolve references with it, do NOT extract facts from it):\n${context}\n\n`
+      : '';
     const userPrompt = `${contextStr}Text to distill:\n"""\n${chunkText}\n"""\n\nReturn ONLY valid JSON.`;
 
     let content: string | null = null;
@@ -853,6 +874,8 @@ CRITICAL RULES:
  * auto-caches it across calls. The variable content goes in the user message.
  */
 const EXTRACTION_SYSTEM_PROMPT = `You are a cognitive memory distiller. Your job is to compress a conversation into a SMALL set of concise, self-contained, high-signal facts that an AI agent would want to recall later.
+
+Scope: extract ONLY from the "Text to distill" block. The context block exists so you can resolve names, pronouns and references; it is not material to extract from. If a fact appears only in the context, do not output it.
 
 Quality bar (this is the most important part):
 - CONCISE: each fact is 1-3 sentences for simple topics, up to a short paragraph (4-5 sentences) when the reasoning chain matters. Always self-contained - no transcripts, no raw logs. Prefer depth over brevity for complex topics.

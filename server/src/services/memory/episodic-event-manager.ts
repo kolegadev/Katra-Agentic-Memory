@@ -300,20 +300,34 @@ export class EpisodicEventManager {
         const incoming = descriptionOf(eventData.content) || '';
         const variants = Array.isArray((prior as any).variants) ? (prior as any).variants : [];
         const seen = new Date();
-        const update: Record<string, any> = {
-          $inc: { occurrences: 1 },
-          $set: {
-            last_seen_at: eventData.timestamp || seen,
-            'metadata.updated_at': seen,
-            'metadata.last_accessed_at': seen,
+        // A row written before this rule carries no `occurrences`; $inc would
+        // count it from zero and report 1 for the second sighting. The pipeline
+        // form treats "absent" as the one occurrence it already represents.
+        const update: any[] = [
+          {
+            $set: {
+              occurrences: { $add: [{ $ifNull: ['$occurrences', 1] }, 1] },
+              last_seen_at: eventData.timestamp || seen,
+              'metadata.updated_at': seen,
+              'metadata.last_accessed_at': seen,
+            },
           },
-        };
+        ];
         if (proposition.strategy === 'latest') {
           // Structured decisions: the newest rationale is the current evidence.
-          update.$set.content = eventData.content;
+          update.push({ $set: { content: eventData.content } });
         } else if (incoming && incoming !== priorDescription &&
             !variants.some((v: any) => v && v.text === incoming)) {
-          update.$push = { variants: { text: incoming, seen_at: seen } };
+          update.push({
+            $set: {
+              variants: {
+                $concatArrays: [
+                  { $ifNull: ['$variants', []] },
+                  [{ text: incoming, seen_at: seen }],
+                ],
+              },
+            },
+          });
         }
         await this.collection.updateOne({ _id: (prior as any)._id }, update);
         return {
