@@ -133,3 +133,64 @@ Survivors carry `proposition_key`, `occurrences`, `first_seen_at`,
   transcript — is a separate change to the extraction service.
 - **Deletes are deletes.** The export is the recovery path; it lives under
   `exports/` and should be retained until the next compaction is verified.
+
+## Second round (same day, John's four follow-ups)
+
+### semantic_facts
+
+895,399 documents scanned → 840,631 propositions; 33,018 duplicate groups,
+**54,812 redundant rows (6.1%)**, exported and removed. Logical size 4,942 →
+4,649 MB. The remaining 4.6 GB is not duplication: it is 384-dimension
+embeddings (one per fact, ~895k of them). Dedupe here is worth doing and is
+cheap, but it is not where the space goes.
+
+### The paraphrase experiment — a negative result, kept on the record
+
+A Jaccard gate was built and deployed: merge when the token overlap with a
+recent event of the same type is ≥ 0.8. The live acceptance test killed it:
+
+| pair | overlap | result |
+|---|---|---|
+| "Get the reflection root cause from Satori" / "Obtain …" | 4/5 = 0.80 | merge (intended) |
+| "Delete the reflection root cause from Satori" / "Get …" | 4/5 = 0.80 | **merge (wrong)** |
+
+The verb carries the proposition, and it is the single token that differs, so
+token overlap cannot separate a synonym from an antonym. The gate was removed
+from the write path; the deterministic proposition key remains, because it only
+merges what normalises identically. A paraphrase merge needs a semantic
+threshold (embedding cosine ≥ 0.95) validated against antonym pairs before it
+is safe to ship.
+
+The failed test also merged three fixture strings into three real `goal` events
+from the same session; those were repaired (occurrences reset, variants pulled)
+the same evening.
+
+### Occurrences were under-counted on legacy rows
+
+`$inc: {occurrences: 1}` starts from zero, so a row written before this rule
+reported 1 on its second sighting. The merge now uses a pipeline `$set` with
+`$ifNull` so an absent counter counts as the one occurrence the row already is.
+Verified: a row with `occurrences` unset, written twice, ends at 2.
+
+### The upstream cause
+
+`extractStructuredData` deduped entities across chunks but not the `knowledge`
+and `activities` it also emits — a long transcript split into two overlapping
+chunks produced the same fact twice. It also handed the last three messages to
+the extractor as "Context" with no instruction to exclude them, so every turn
+re-derived the facts of its own recent history. Three changes:
+
+1. knowledge and activities are deduped across chunks (same normalised text,
+   highest confidence wins), mirroring what entities already did;
+2. the context block is labelled "reference only — do not extract facts from
+   it";
+3. the system prompt states scope explicitly: extract only from "Text to
+   distill"; a fact that appears only in the context is not output.
+
+### Disk reclaim
+
+After both passes, `freeStorageSize` is 0 on both collections and the on-disk
+sizes are already 1,457 MB (`episodic_events`) and 3,695 MB (`semantic_facts`).
+WiredTiger reused the freed pages as new writes arrived, so `compact` would
+return zero bytes and only block writes for its duration. It was not run, and
+`compact` dry runs confirm `bytesFreed: 0`.
