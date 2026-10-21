@@ -13,7 +13,7 @@ import { createHash } from 'node:crypto';
 const APPLY = process.argv.includes('--apply');
 const URI = process.env.MONGODB_URI || 'mongodb://localhost:27017';
 const DB = process.env.DATABASE_NAME || 'katra';
-const OUT = `/tmp/semantic-merged-${new Date().toISOString().replace(/[:.]/g, '-')}.jsonl.gz`;
+const OUT = `/app/exports/semantic-merged-${new Date().toISOString().replace(/[:.]/g, '-')}.jsonl.gz`;
 
 const STOPWORDS = new Set([
   'a','an','and','or','but','of','to','in','on','for','with','from','by','at','as',

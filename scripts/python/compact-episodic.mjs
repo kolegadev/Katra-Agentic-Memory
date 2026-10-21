@@ -15,7 +15,7 @@ import { once } from 'node:events';
 const APPLY = process.argv.includes('--apply');
 const URI = process.env.MONGODB_URI || 'mongodb://localhost:27017';
 const DB = process.env.DATABASE_NAME || 'katra';
-const OUT = `/tmp/episodic-merged-${new Date().toISOString().replace(/[:.]/g, '-')}.jsonl.gz`;
+const OUT = `/app/exports/episodic-merged-${new Date().toISOString().replace(/[:.]/g, '-')}.jsonl.gz`;
 
 // ── must match server/src/services/memory/proposition-key.ts ────────────────
 const RAW_EVENT_TYPES = new Set([

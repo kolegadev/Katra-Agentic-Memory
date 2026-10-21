@@ -194,3 +194,20 @@ sizes are already 1,457 MB (`episodic_events`) and 3,695 MB (`semantic_facts`).
 WiredTiger reused the freed pages as new writes arrived, so `compact` would
 return zero bytes and only block writes for its duration. It was not run, and
 `compact` dry runs confirm `bytesFreed: 0`.
+
+### A recovery artifact was lost — and the procedure fixed
+
+The semantic_facts export was written to the container's `/tmp`. Two deploys
+later the container was recreated and the file was gone; the host copy had never
+been made. The rows it held were exact-normalized duplicates of surviving
+documents, whose `occurrences`, `first_seen_at` and `last_seen_at` remain, so no
+proposition was lost — but the per-duplicate timestamps and session ids that
+would have allowed a restore are not recoverable.
+
+The fix is structural, not a reminder: `./exports` is now mounted into the
+server container at `/app/exports`, and all three compaction scripts write
+their export there by default, so an export survives any recreate. Verified by
+touching a file inside the container and reading it from the host.
+
+The episodic and gas-law exports (7.3 MB, 503 KB) were made before their
+containers were recreated and are intact under `exports/`.

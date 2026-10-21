@@ -14,7 +14,7 @@ const APPLY = process.argv.includes('--apply');
 const URI = process.env.MONGODB_URI || 'mongodb://localhost:27017';
 const DB = process.env.DATABASE_NAME || 'katra';
 const TYPE = 'gas_law_train_decision';
-const OUT = `/tmp/${TYPE}-merged-${new Date().toISOString().replace(/[:.]/g, '-')}.jsonl.gz`;
+const OUT = `/app/exports/${TYPE}-merged-${new Date().toISOString().replace(/[:.]/g, '-')}.jsonl.gz`;
 
 const client = new MongoClient(URI);
 await client.connect();
