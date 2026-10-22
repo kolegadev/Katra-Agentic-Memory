@@ -194,3 +194,36 @@ sizes are already 1,457 MB (`episodic_events`) and 3,695 MB (`semantic_facts`).
 WiredTiger reused the freed pages as new writes arrived, so `compact` would
 return zero bytes and only block writes for its duration. It was not run, and
 `compact` dry runs confirm `bytesFreed: 0`.
+
+## Watching it — the memory-growth check
+
+The dedupe changes are only worth what the next weeks show. `scripts/python/katra_memory_growth.py`
+measures the store and appends a labelled block to `~/.katra/inbox/health-reports.md`,
+so it is in front of the 06:30Z review; cron runs it at 06:50 local (05:50Z).
+
+It reports four numbers and one verdict:
+
+| number | why it matters |
+|---|---|
+| docs, and docs added in 24h | raw rows are expected to grow (health samples, messages) and say nothing about the merge |
+| propositions omitted by `prop_rows` | **new propositions are the only row growth that means duplication escaped** |
+| occurrences represented | repeats absorbed into an existing row |
+| session cursors | how many sessions are extracting deltas |
+
+The verdict compares new propositions against absorbed repeats:
+
+- `0 new propositions, >0 occurrences` → **FLOW STEMMED**: every repeat went into an existing row.
+- `>= 1 repeat absorbed per new proposition` → **ABSORPTION WORKING**.
+- more new propositions than absorbed repeats → **REVIEW**: that ratio is worth a look.
+- nothing moved at all → **NO ACTIVITY**, which is not a pass; it says nothing either way.
+
+Baseline, 2026-10-22 06:37Z: **365,635 docs, 55,501 propositions, 663,666 occurrences,
+3 cursors**; 4,726 rows added in the previous 24h, of which only **105** were new
+propositions. The sentinel propositions to watch are the ones this work found
+most duplicated — "katra-server was restarted to recover from an unhealthy
+state" (4,759), "katra-server experienced an outage." (4,360) — because if they
+climb in `occurrences` while the row count stays flat, the merge is doing its
+job; if they reappear as **new rows**, the cursor or the key is leaking.
+
+A JSON baseline is kept at `~/.katra/inbox/memory-growth-baseline.json`, so each
+run reports deltas since the previous one rather than absolute numbers alone.
