@@ -94,7 +94,6 @@ export class MemoryManager {
     // Setup semantic_facts collection with indexes
     await createIndexSafely('semantic_facts', { user_id: 1 });
     await createIndexSafely('semantic_facts', { source: 1 });
-    await createIndexSafely('semantic_facts', { user_id: 1, proposition_key: 1 });
     await createIndexSafely('semantic_facts', { confidence: -1 });
     await createIndexSafely('semantic_facts', { content: 'text' });
     await createIndexSafely('semantic_facts', { embedding: 1 }, { sparse: true });
@@ -312,7 +311,7 @@ export class MemoryManager {
       const propositionKey = propositionKeyOf(fact.content);
       if (propositionKey) {
         const existing = await db.collection('semantic_facts').findOne(
-          { user_id: userId, proposition_key: propositionKey },
+          { user_id: userId, proposition_norm: propositionKey },
           { projection: { _id: 1 } },
         );
         if (existing?._id) {
@@ -336,7 +335,7 @@ export class MemoryManager {
         ...factFields,
         user_id: userId,
         content_hash: contentHash,
-        ...(propositionKey ? { proposition_key: propositionKey } : {}),
+        ...(propositionKey ? { proposition_norm: propositionKey } : {}),
         // Persisted content length (code points) so hot-path queries
         // (embed-candidate selection, memory-integrity checks) can filter by
         // it with an index instead of a $expr strLenCP full-collection scan.

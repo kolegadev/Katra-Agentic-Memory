@@ -111,6 +111,16 @@ export const MEMORY_SYSTEM_INDEXES: CollectionIndexes = {
       keys: { user_id: 1, fact_type: 1 },
       options: { name: 'user_fact_type', background: true }
     },
+    // Proposition-level dedupe (2026-10-22): add_semantic_fact looks up
+    // (user_id, proposition_norm) on every fact write. Without this index that
+    // lookup is a full scan of the fact store — 848k documents on thebrick.
+    // Distinct from `proposition_key`, which the one-off
+    // scripts/python/compact-semantic.mjs wrote as a compaction grouping key;
+    // this field is the live write-path key and the two must not be mixed.
+    {
+      keys: { user_id: 1, proposition_norm: 1 },
+      options: { name: 'user_proposition_norm', sparse: true, background: true }
+    },
     {
       keys: { shared_id: 1, fact_type: 1 },
       options: { name: 'shared_fact_type', sparse: true, background: true }
