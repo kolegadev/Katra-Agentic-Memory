@@ -143,6 +143,28 @@ export function propositionOf(
 }
 
 /** True when an event type is one the merge rule may collapse. */
+/**
+ * Proposition key for a semantic fact's text, or null when the text is too
+ * short to identify a proposition.
+ *
+ * Four content tokens is the floor: below it two different facts look the same
+ * ("done", "retry later", "ok"), and merging those is worse than keeping a
+ * duplicate. Above the floor, a re-wording of the same proposition normalises
+ * to the same key and is recorded as an occurrence instead of a new row.
+ */
+export function propositionKeyOf(content: string | null | undefined): string | null {
+  const raw = String(content || '');
+  // Semantic-fact contents are written as "<kind>: <value>" (see
+  // dispatch-service). The kind is metadata, not part of the proposition:
+  // without stripping it the same sentence stored as `insight: X`,
+  // `fact: X` and `preference: X` keys three ways, and that proliferation
+  // was itself one of the duplicate patterns (measured 2026-10-22).
+  const withoutKind = raw.replace(/^[a-z_]{2,20}:\s*/i, '');
+  const normalized = normalizeProposition(withoutKind);
+  if (!normalized) return null;
+  return normalized.split(' ').length >= 4 ? normalized : null;
+}
+
 export function isMergeableEventType(eventType: string): boolean {
   return !RAW_EVENT_TYPES.has(eventType);
 }

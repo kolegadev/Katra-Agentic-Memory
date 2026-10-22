@@ -7,6 +7,7 @@ import { get_database } from '../../database/connection.js';
 import { ObjectId } from 'mongodb';
 import { generateContentHash, generateIdempotencyKey, stableContentHash } from '../infrastructure/content-hash-utils.js';
 import { MemoryDecayService } from '../processing/memory-decay-service.js';
+import { propositionKeyOf } from './proposition-key.js';
 import type { 
   EpisodicEvent, 
   KnowledgeNode, 
@@ -77,6 +78,7 @@ export class MemoryManager {
     // Setup semantic_facts collection with indexes
     await createIndexSafely('semantic_facts', { user_id: 1 });
     await createIndexSafely('semantic_facts', { source: 1 });
+    await createIndexSafely('semantic_facts', { user_id: 1, proposition_key: 1 });
     await createIndexSafely('semantic_facts', { confidence: -1 });
     await createIndexSafely('semantic_facts', { content: 'text' });
     await createIndexSafely('semantic_facts', { embedding: 1 }, { sparse: true });
@@ -284,6 +286,32 @@ export class MemoryManager {
       const userId = fact.user_id || 'unknown';
       const contentHash = stableContentHash(userId, fact.content);
 
+      // Proposition-level dedupe. The content hash above is exact, so a
+      // paraphrase ("katra-server malfunctioned." vs "katra-server was
+      // malfunctioning.") hashes differently and inserts again — measured
+      // 2026-10-22: 848,433 distinct hashes over 848,448 rows, i.e. exact
+      // dedupe reclaims nothing while the same proposition repeats dozens of
+      // times. Normalise to a proposition key so a re-wording increments
+      // `extraction_count` on the original and records the variant.
+      const propositionKey = propositionKeyOf(fact.content);
+      if (propositionKey) {
+        const existing = await db.collection('semantic_facts').findOne(
+          { user_id: userId, proposition_key: propositionKey },
+          { projection: { _id: 1 } },
+        );
+        if (existing?._id) {
+          await db.collection('semantic_facts').updateOne(
+            { _id: existing._id },
+            {
+              $inc: { extraction_count: 1 },
+              $set: { updated_at: new Date() },
+              $addToSet: { variants: fact.content },
+            },
+          );
+          return existing._id.toString();
+        }
+      }
+
       // Strip created_at from the spread — it's handled by $setOnInsert below.
       // Including it would conflict: $set sets created_at + $setOnInsert also
       // sets created_at → MongoServerError "would create a conflict".
@@ -292,6 +320,7 @@ export class MemoryManager {
         ...factFields,
         user_id: userId,
         content_hash: contentHash,
+        ...(propositionKey ? { proposition_key: propositionKey } : {}),
         // Persisted content length (code points) so hot-path queries
         // (embed-candidate selection, memory-integrity checks) can filter by
         // it with an index instead of a $expr strLenCP full-collection scan.

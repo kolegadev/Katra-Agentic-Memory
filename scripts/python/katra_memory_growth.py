@@ -48,6 +48,12 @@ const out = {
   measured_at: now.toISOString(),
   docs_total: c.estimatedDocumentCount(),
   rows_24h: c.countDocuments({ timestamp: { $gte: dayAgo } }),
+  derived_24h: c.countDocuments({
+    timestamp: { $gte: dayAgo },
+    event_type: { $in: ['goal','plan','problem','insight','decision','solution','mind_wander','machine_health','bridge_health','executive_action'] },
+  }),
+  facts_24h: dbx.semantic_facts.countDocuments({ created_at: { $gte: dayAgo } }),
+  facts_total: dbx.semantic_facts.estimatedDocumentCount(),
   prop_rows_24h: c.countDocuments({ timestamp: { $gte: dayAgo }, proposition_key: { $exists: true } }),
   prop_rows: c.countDocuments({ proposition_key: { $exists: true } }),
   occurrence_total: 0,
@@ -142,6 +148,23 @@ def render(m: dict, base: dict | None) -> str:
     )
     lines.append(
         f"- last 24h: {m['rows_24h']:,} rows added, of which {m['prop_rows_24h']:,} carry a proposition key"
+    )
+    # Flow ceilings. Post-fix observed rates on 2026-10-22 were ~1.0 derived
+    # events/min and ~2.7 facts/min, i.e. ~1,400 and ~3,900 per day. The
+    # pre-fix derivation loop ran at ~5.8 derived/min (~8,300/day). These
+    # ceilings sit between the two: a resumption trips the line, normal
+    # traffic does not. Tune from measurement, not from hope.
+    derived_24h = m.get("derived_24h", 0)
+    facts_24h = m.get("facts_24h", 0)
+    over = []
+    if derived_24h > 5000:
+        over.append(f"derived {derived_24h:,} > 5,000")
+    if facts_24h > 8000:
+        over.append(f"facts {facts_24h:,} > 8,000")
+    flag = "  ** FLOW ABOVE CEILING (" + ", ".join(over) + ") **" if over else ""
+    lines.append(
+        f"- last 24h flow: {derived_24h:,} derived events, {facts_24h:,} semantic facts "
+        f"(store total {m.get('facts_total', 0):,} facts){flag}"
     )
 
     if base:
