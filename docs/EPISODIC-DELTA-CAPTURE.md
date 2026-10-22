@@ -211,3 +211,50 @@ touching a file inside the container and reading it from the host.
 
 The episodic and gas-law exports (7.3 MB, 503 KB) were made before their
 containers were recreated and are intact under `exports/`.
+
+## Session extraction cursor (2026-10-22)
+
+The proposition key makes duplicates cheap; it does not stop them being
+generated. A session that re-writes a growing transcript still handed the
+extractor the same prefix every turn, so the same facts were re-derived from
+unchanged text.
+
+`server/src/services/processing/extraction-delta.ts` gives each
+`(user, session)` a cursor: the hash and length of the prefix already consumed.
+The processor then extracts:
+
+| situation | plan | what is sent to the model |
+|---|---|---|
+| no cursor yet | `full` / `no_cursor` | the whole text |
+| text starts with the consumed prefix and is longer | `delta` / `new_suffix` | only the suffix |
+| text unchanged, or the suffix is < 50 chars | `skip` / `already_extracted` · `delta_too_small` | nothing |
+| the opening text differs, or the text shrank | `full` / `prefix_changed` | the whole text |
+
+A shrink is deliberately treated as a changed document: a shorter text cannot be
+verified as a prefix of what was consumed without storing the text itself, and a
+needless full pass costs one extraction while a wrong skip loses a fact.
+
+### The flaw the end-to-end check caught
+
+The first version let **any** event read and advance the cursor. The extraction
+dispatch writes derived events (activities) into the *same* `session_id`; those
+carry no `message`, so their content is `JSON.stringify(...)` and they advanced
+the cursor with their own text. The next real turn then looked like a changed
+document — visible in the log as `full (prefix_changed)` for a transcript that
+had only grown. The cursor is now read and advanced only by a `conversation`
+event that carries a message.
+
+### Verification
+
+Two-turn synthetic session (252 then 494 characters), processed by the live
+background loop:
+
+```
+Extraction plan for event_38a78c78…: full (no_cursor)
+Extraction plan for event_9503b0f3…: delta (new_suffix)
+cursor: len 252 -> 494
+```
+
+Unit tests cover the planner (8 cases: growth, no change, shrink, changed
+opening, trivial append, empty, and prefix-hash identity). Fixtures were removed
+after the run.

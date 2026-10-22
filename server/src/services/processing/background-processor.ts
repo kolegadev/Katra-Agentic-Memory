@@ -20,6 +20,7 @@ import { stableContentHash } from '../infrastructure/content-hash-utils.js';
 import { DecisionActionService } from './decision-action-service.js';
 import { SalienceService } from './salience-service.js';
 import { assertVaultCollectionAllowed } from '../vault/denylist.js';
+import { nextCursor, planExtractionDelta } from './extraction-delta.js';
 
 export class BackgroundProcessor {
   private static instance: BackgroundProcessor;
@@ -367,9 +368,49 @@ export class BackgroundProcessor {
 
       console.log(`🧠 Processing event ${eventId}: ${content.substring(0, 50)}...`);
 
-    // Build extraction context with conversation history
-    // Guard: conversation events feed the LLM extraction call below.
+    // ── Extraction delta ────────────────────────────────────────────────
+    // A session that re-writes a growing transcript hands the extractor the
+    // same prefix every turn; only the suffix past the cursor is new. This is
+    // what stops the same facts being re-derived, re-stored and merged again.
     assertVaultCollectionAllowed('episodic_events', 'background-processor:processEvent');
+    // Only a transcript event may read or advance a cursor: the extraction
+    // dispatch writes derived events (activities) into the SAME session_id, and
+    // those have no message — letting them advance the cursor made the next
+    // real turn look like a changed document.
+    const isTranscriptEvent = event.event_type === 'conversation'
+      && typeof event.content?.message === 'string'
+      && event.content.message.length > 0;
+    const { get_database: get_extraction_db } = await import('../../database/connection.js');
+    const cursor_id = `${userId}:${sessionId}`;
+    const cursorDoc = isTranscriptEvent
+      ? await get_extraction_db().collection('extraction_cursors').findOne({ _id: cursor_id as any })
+      : null;
+    const deltaPlan = isTranscriptEvent
+      ? planExtractionDelta(content, cursorDoc as any)
+      : { mode: 'full' as const, text: content, reason: 'not_transcript' };
+    console.log(`🧠 Extraction plan for ${eventId}: ${deltaPlan.mode} (${deltaPlan.reason})`);
+    if (deltaPlan.mode === 'skip') {
+      console.log(`⏭️ Extraction skipped for ${eventId}: ${deltaPlan.reason}`);
+      await this.memoryManager.mark_event_processed(eventId, {
+        processed_at: new Date(),
+        extraction_result: {
+          entities_count: 0,
+          relationships_count: 0,
+          facts_count: 0,
+          reason: `delta_${deltaPlan.reason}`,
+        },
+      });
+      if (idempotencyKey) {
+        await this.updateProcessingLogEntry(idempotencyKey, 'completed', {
+          processed_at: new Date(),
+          extraction_summary: { entity_count: 0, relationship_count: 0, event_count: 0, fact_count: 0 },
+          dispatch_summary: { operations_completed: 0, operations_failed: 0 },
+        });
+      }
+      return;
+    }
+
+    // Build extraction context with conversation history
     const recentEvents = await this.memoryManager.get_session_events(sessionId, 5);
     const conversationHistory = recentEvents
       .filter(e => e.content?.message && e.id !== eventId)
@@ -389,7 +430,7 @@ export class BackgroundProcessor {
     try {
       console.log(`🔍 Starting extraction for event ${eventId}...`);
       extractionResult = await extraction_service.extractStructuredData(
-        content,
+        deltaPlan.text,
         extractionContext
       );
       console.log(`✅ Extraction successful for event ${eventId}`);
@@ -411,6 +452,7 @@ export class BackgroundProcessor {
         extractionResult.relationships.length === 0 &&
         extractionResult.semantic_facts.length === 0) {
       console.log('⏭️ No meaningful semantic information extracted, marking as processed');
+      await this.advanceExtractionCursor(userId, sessionId, content, event);
       await this.memoryManager.mark_event_processed(eventId, {
         processed_at: new Date(),
         extraction_result: {
@@ -467,6 +509,10 @@ export class BackgroundProcessor {
     this.embedEventAndFacts(eventId, content, event.event_type, userId).catch((e) => {
       console.warn('⚠️ Background embedding failed (non-critical):', e.message);
     });
+
+    // The text is consumed: the next event of this session extracts only what
+    // follows it.
+    await this.advanceExtractionCursor(userId, sessionId, content, event);
 
     // Mark event as processed
     await this.memoryManager.mark_event_processed(eventId, {
@@ -835,6 +881,38 @@ export class BackgroundProcessor {
     }
 
     return idMapping;
+  }
+
+  /**
+   * Record how much of a session's text has been consumed, so the next event
+   * extracts only the delta. Non-critical: a failed cursor update costs a
+   * repeated extraction, never data.
+   */
+  private async advanceExtractionCursor(
+    userId: string,
+    sessionId: string,
+    content: string,
+    event: any,
+  ): Promise<void> {
+    // Derived events must not move the session's transcript cursor.
+    if (event?.event_type !== 'conversation') return;
+    if (typeof event?.content?.message !== 'string') return;
+    try {
+      const { get_database } = await import('../../database/connection.js');
+      await get_database().collection('extraction_cursors').updateOne(
+        { _id: `${userId}:${sessionId}` as any },
+        {
+          $set: {
+            user_id: userId,
+            session_id: sessionId,
+            ...nextCursor(content, new Date(event?.timestamp || Date.now())),
+          },
+        },
+        { upsert: true },
+      );
+    } catch (e: any) {
+      console.warn('⚠️ Extraction cursor update failed (non-critical):', e?.message);
+    }
   }
 
   /**
