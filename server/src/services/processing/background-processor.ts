@@ -93,6 +93,25 @@ export class BackgroundProcessor {
         'agent_bulletin',
       ]);
 
+      // Derived events are emitted by extraction/self-model passes themselves.
+      // Re-extracting them produces fresh paraphrases with fresh content
+      // hashes (goal/plan/problem/insight/decision/solution), which is a
+      // self-sustaining loop. Triage them; never extract them again.
+      const DERIVED_EVENT_TYPES = new Set([
+        'goal',
+        'plan',
+        'problem',
+        'insight',
+        'decision',
+        'solution',
+        'mind_wander',
+        'machine_health',
+        'bridge_health',
+        'executive_action',
+      ]);
+      const isDerivedEvent = (e: any): boolean =>
+        Boolean(e?.content?.extracted_at) || DERIVED_EVENT_TYPES.has(e?.event_type);
+
       let processedCount = 0;
       let triagedCount = 0;
       let failedCount = 0;
@@ -102,7 +121,9 @@ export class BackgroundProcessor {
       // so they don't clog the pipeline. No bottleneck needed here.
       assertVaultCollectionAllowed('episodic_events', 'background-processor:processUnprocessedEvents');
       const systemEvents = await this.memoryManager.get_unprocessed_events(200);
-      const sysEvents = systemEvents.filter((e: any) => SYSTEM_EVENT_TYPES.has(e.event_type));
+      const sysEvents = systemEvents.filter((e: any) =>
+        SYSTEM_EVENT_TYPES.has(e.event_type) || isDerivedEvent(e)
+      );
 
       if (sysEvents.length > 0) {
         for (const event of sysEvents) {
@@ -129,7 +150,7 @@ export class BackgroundProcessor {
       assertVaultCollectionAllowed('episodic_events', 'background-processor:processUnprocessedEvents');
       const allUnprocessed = await this.memoryManager.get_unprocessed_events(100);
       const convEvents = allUnprocessed
-        .filter((e: any) => !SYSTEM_EVENT_TYPES.has(e.event_type))
+        .filter((e: any) => !SYSTEM_EVENT_TYPES.has(e.event_type) && !isDerivedEvent(e))
         .slice(0, CONVERSATION_BATCH_SIZE);
 
       if (convEvents.length > 0) {
