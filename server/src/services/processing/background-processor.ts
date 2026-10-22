@@ -21,6 +21,7 @@ import { DecisionActionService } from './decision-action-service.js';
 import { SalienceService } from './salience-service.js';
 import { assertVaultCollectionAllowed } from '../vault/denylist.js';
 import { nextCursor, planExtractionDelta } from './extraction-delta.js';
+import { capExtractionFanOut } from './extraction-fanout.js';
 
 export class BackgroundProcessor {
   private static instance: BackgroundProcessor;
@@ -466,6 +467,18 @@ export class BackgroundProcessor {
         stack: extractionError.stack?.split('\n').slice(0, 5)
       });
       throw extractionError;
+    }
+
+    // ── Fan-out caps ────────────────────────────────────────────────────
+    // A single event may not add unbounded rows to the store. The dropped
+    // count is logged so a truncated run is visible rather than silent.
+    const fanOut = capExtractionFanOut(extractionResult);
+    if (fanOut.capped) {
+      console.warn(
+        `⚠️ Extraction fan-out capped for ${eventId}: ` +
+        `facts -${fanOut.factsDropped}, events -${fanOut.eventsDropped}`
+      );
+      extractionResult = fanOut.result;
     }
 
     // Only proceed if we extracted meaningful information
