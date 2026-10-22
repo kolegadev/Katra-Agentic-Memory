@@ -1,6 +1,6 @@
 # Phase 6 — Rollback and Kill Switch Runbook
 
-Branch `feat/cognitive-control-local` · local only, never pushed.
+Branch `feat/cognitive-control-local` was created local-only; **its content is now public** — `feat/imagination-engine` (tip `048d060`) was pushed 2026-10-22 to `origin` (PUBLIC: kolegadev/Katra-Agentic-Memory) and `longhorizon` (PRIVATE: kolegadev/Long-Horizon), no PR. The pre-push guard was restored after that one publication; future pushes touching mission-cognition/authority/Phase-6 are gated again. Read "local only" as the branch's origin, not the content's current state.
 
 ## Immediate control (no rebuild, no code change) — contract §4.10
 
