@@ -217,7 +217,92 @@ function detectConvergentAgents(all: EntryLike[]): FiredTrigger[] {
   return fired;
 }
 
-export async function evaluateTriggers(db: Db, missionId: string): Promise<{ fired: FiredTrigger[]; byTrigger: Record<string, number> }> {
+// ---------------------------------------------------------------------------
+// (i) mission_stalled — the mission has stopped moving.
+//
+// Detectors (a)-(h) are predicates over the ledger's CONTENT: they can tell you
+// that a hypothesis survived three failures, or that two agents agreed too
+// easily. None of them can see the failure that actually happened — 28 of 30
+// active missions had accepted no delta for a month and every one still said
+// `active`, because nothing looked at time. This one looks only at the mission's
+// own history. Deterministic; no model calls; no wall-clock read when the caller
+// supplies `now`.
+// ---------------------------------------------------------------------------
+const STALL_DAYS_DEFAULT = 14;
+
+/** Stall threshold in days. Env-overridable; 14 is a signal, not a verdict. */
+export function missionStallDays(): number {
+  const n = Number(process.env.MISSION_STALL_DAYS);
+  return Number.isFinite(n) && n > 0 ? n : STALL_DAYS_DEFAULT;
+}
+
+interface MissionStallFacts {
+  mission_id: string;
+  status: string;
+  version: number;
+  created_at: string | null;
+  accepted_deltas: number;
+  last_accepted_at: string | null;
+}
+
+async function missionStallFacts(db: Db, missionId: string): Promise<MissionStallFacts | null> {
+  const state = (await db
+    .collection(COLLECTIONS.missionStates)
+    .findOne(
+      { mission_id: missionId },
+      { projection: { _id: 0, status: 1, version: 1, created_at: 1 } },
+    )) as { status?: string; version?: number; created_at?: string } | null;
+  if (!state) return null;
+  const deltas = (await db
+    .collection(COLLECTIONS.stateDeltas)
+    .find(
+      { mission_id: missionId, status: 'accepted' },
+      { projection: { _id: 0, applied_at: 1, created_at: 1 } },
+    )
+    .toArray()) as Array<{ applied_at?: string; created_at?: string }>;
+  let last: string | null = null;
+  for (const d of deltas) {
+    const at = d.applied_at ?? d.created_at;
+    if (at && (last === null || at > last)) last = at;
+  }
+  return {
+    mission_id: missionId,
+    status: String(state.status ?? ''),
+    version: Number(state.version ?? 0),
+    created_at: state.created_at ?? null,
+    accepted_deltas: deltas.length,
+    last_accepted_at: last,
+  };
+}
+
+function detectMissionStalled(
+  facts: MissionStallFacts | null,
+  now: number,
+  stallDays: number,
+): FiredTrigger[] {
+  if (!facts || facts.status !== 'active') return [];
+  const thresholdMs = stallDays * 24 * 3600 * 1000;
+  // A mission with no accepted delta is measured from its creation, so a
+  // mission opened this morning is not "stalled" the moment it is swept.
+  const since = facts.last_accepted_at ?? facts.created_at;
+  if (!since) return [];
+  const age = now - Date.parse(since);
+  if (!Number.isFinite(age) || age < thresholdMs) return [];
+  const days = Math.floor(age / 86400000);
+  return [{
+    trigger: 'mission_stalled',
+    mission_id: facts.mission_id,
+    reason: facts.last_accepted_at
+      ? `active at v${facts.version}; last accepted delta ${days} days ago (threshold ${stallDays}d, ${facts.accepted_deltas} accepted in total)`
+      : `active at v${facts.version}; no accepted delta since creation ${days} days ago (threshold ${stallDays}d)`,
+  }];
+}
+
+export async function evaluateTriggers(
+  db: Db,
+  missionId: string,
+  opts: { now?: number } = {},
+): Promise<{ fired: FiredTrigger[]; byTrigger: Record<string, number> }> {
   const all = await entries(db, missionId);
   const detectors: Array<[TriggerType, (es: EntryLike[]) => FiredTrigger[]]> = [
     ['repeated_failure_stable_confidence', detectRepeatedFailureStableConfidence],
@@ -236,5 +321,13 @@ export async function evaluateTriggers(db: Db, missionId: string): Promise<{ fir
     byTrigger[type] = hits.length;
     fired.push(...hits);
   }
+  // The ninth detector needs the mission's history, not its ledger.
+  const stallHits = detectMissionStalled(
+    await missionStallFacts(db, missionId),
+    opts.now ?? Date.now(),
+    missionStallDays(),
+  );
+  byTrigger['mission_stalled'] = stallHits.length;
+  fired.push(...stallHits);
   return { fired, byTrigger };
 }

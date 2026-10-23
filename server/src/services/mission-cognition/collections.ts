@@ -18,6 +18,12 @@ export const COLLECTIONS = {
   schedulerDecisions: 'scheduler_decisions',
   missionEvents: 'mission_events',
   triggerEvaluations: 'trigger_evaluations', // Phase 5: trigger precision + cost telemetry (§5.3)
+  // 2026-10-23: one document per periodic sweep over active missions. The
+  // detectors existed and were reachable only from an expensive on-demand path,
+  // so nothing ever evaluated the portfolio. This is the snapshot the sweep
+  // writes: what fired, on which mission, and why. Append-only; no decisions
+  // read it.
+  triggerSweeps: 'trigger_sweeps',
   // Phase 6: controlled activation (contract §5.3 — declared here, not silent):
   activationLedger: 'activation_ledger',              // every mode transition, opt-in change, counterfactual, refusal, halt
   missionOptIns: 'mission_opt_ins',                   // per-mission activation opt-in register
@@ -57,6 +63,9 @@ export async function ensureMissionCognitionIndexes(db: Db): Promise<void> {
     p(COLLECTIONS.missionEvents, { _expires_at: 1 }, { expireAfterSeconds: 0, name: 'me_ttl' }),
     p(COLLECTIONS.triggerEvaluations, { evaluation_id: 1 }, { unique: true, name: 'te_unique' }),
     p(COLLECTIONS.triggerEvaluations, { mission_id: 1, trigger: 1, fired_at: -1 }, { name: 'te_mission_trigger' }),
+    p(COLLECTIONS.triggerSweeps, { sweep_id: 1 }, { unique: true, name: 'ts_sweep_unique' }),
+    p(COLLECTIONS.triggerSweeps, { swept_at: -1 }, { name: 'ts_swept' }),
+    p(COLLECTIONS.triggerSweeps, { 'missions.mission_id': 1, swept_at: -1 }, { name: 'ts_mission' }),
     // Phase 6 (contract §5.3 — indexes exist, not just collections):
     p(COLLECTIONS.activationLedger, { ledger_id: 1 }, { unique: true, name: 'al_unique' }),
     p(COLLECTIONS.activationLedger, { created_at: -1 }, { name: 'al_created' }),

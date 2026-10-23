@@ -61,9 +61,11 @@ function seedEntry(e: Record<string, any>): void {
 
 afterEach(() => FAKE_DB.reset());
 
-describe('trigger detectors — all eight, deterministic, no model calls (criteria 1-4)', () => {
+describe('trigger detectors — all nine, deterministic, no model calls (criteria 1-4)', () => {
   it('fires and near-misses per detector', async () => {
-    seedMission();
+    // (i) mission_stalled — firing. The mission has to be old, because the whole
+    // point of this detector is that it measures time, which (a)-(h) never do.
+    seedMission({ created_at: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString() });
     // (a) repeated failure + stable/rising confidence — firing
     seedEntry({ entry_id: 'h1', entry_type: 'hypothesis', status: 'active', confidence: 0.9, statement: 'h', confidence_history: [
       { prior: 0.8, next: 0.9, reason: 'x', actor_id: 'satori', at: 't1' },

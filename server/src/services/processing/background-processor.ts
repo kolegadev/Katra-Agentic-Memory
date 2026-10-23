@@ -22,11 +22,16 @@ import { SalienceService } from './salience-service.js';
 import { assertVaultCollectionAllowed } from '../vault/denylist.js';
 import { nextCursor, planExtractionDelta } from './extraction-delta.js';
 import { capExtractionFanOut } from './extraction-fanout.js';
+import { sweepActiveMissions, triggerSweepIntervalMs } from '../mission-cognition/mission-trigger-sweep.js';
 
 export class BackgroundProcessor {
   private static instance: BackgroundProcessor;
   private processing = false;
   private processingInterval: NodeJS.Timeout | null = null;
+  // 2026-10-23: a slow, separate cadence for the mission trigger sweep. The
+  // detector set is cheap but the portfolio is not a 30-second concern.
+  private triggerSweepInterval: NodeJS.Timeout | null = null;
+  private sweepingTriggers = false;
   private memoryManager: MemoryManager;
   private lastNoEventsLogTime: number = 0;
   private processingCycleCount: number = 0;
@@ -59,6 +64,49 @@ export class BackgroundProcessor {
     this.processingInterval = setInterval(() => {
       this.processUnprocessedEvents();
     }, intervalMs);
+
+    // Mission trigger sweep: its own, slower cadence. Zero disables it.
+    const sweepMs = triggerSweepIntervalMs();
+    if (sweepMs > 0) {
+      console.log(`🩺 Starting mission trigger sweep (interval: ${sweepMs}ms)`);
+      void this.sweepMissionTriggers();
+      this.triggerSweepInterval = setInterval(() => {
+        void this.sweepMissionTriggers();
+      }, sweepMs);
+    } else {
+      console.log('⏸️ Mission trigger sweep disabled (MISSION_TRIGGER_SWEEP_MS=0)');
+    }
+  }
+
+  /**
+   * Evaluate every active mission against the deterministic detectors and
+   * persist one snapshot. No model calls, and no mission state is written.
+   *
+   * Added 2026-10-23: the detectors were reachable only from an on-demand MCP
+   * tool and from focused consolidation, which costs a model call and only runs
+   * for a mission somebody already asked about. Nothing ever evaluated the
+   * portfolio, so the state said `active` about 28 missions that had not moved
+   * in a month and produced no signal at all.
+   */
+  async sweepMissionTriggers(): Promise<void> {
+    if (this.sweepingTriggers) return;
+    this.sweepingTriggers = true;
+    try {
+      const { get_database } = await import('../../database/connection.js');
+      const sweep = await sweepActiveMissions(get_database());
+      const line =
+        `🩺 trigger sweep: ${sweep.missions_scanned} active, ` +
+        `${sweep.missions_with_triggers} with triggers, ${sweep.stalled.length} stalled`;
+      if (sweep.stalled.length > 0) console.log(`${line} — ${sweep.stalled.join(', ')}`);
+      else console.log(line);
+      if (sweep.errors.length > 0) {
+        console.warn(`⚠️ trigger sweep errors: ${sweep.errors.map(e => e.mission_id).join(', ')}`);
+      }
+    } catch (err) {
+      console.error('❌ trigger sweep failed:', err instanceof Error ? err.message : err);
+    } finally {
+      this.sweepingTriggers = false;
+    }
   }
 
   /**
@@ -69,6 +117,10 @@ export class BackgroundProcessor {
       clearInterval(this.processingInterval);
       this.processingInterval = null;
       console.log('⏹️ Background processor stopped');
+    }
+    if (this.triggerSweepInterval) {
+      clearInterval(this.triggerSweepInterval);
+      this.triggerSweepInterval = null;
     }
   }
 

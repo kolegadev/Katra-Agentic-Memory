@@ -408,6 +408,11 @@ export type TriggerType =
   | 'plan_unchanged_despite_evidence'
   | 'critic_disagreement'
   | 'convergent_agents'
+  // 2026-10-23: the only detector that is a property of the mission's own
+  // history rather than of the ledger's content. The other eight cannot see a
+  // mission that nobody is working on: 28 of 30 active missions sat untouched
+  // for a month and no trigger fired, because no detector looked at deltas.
+  | 'mission_stalled'
   // ITER-7 (Phase 5): the trigger whose OUTCOME is a baton candidate's fate.
   // The imagination cycle fires no uncertainty detector; what it produces is a
   // candidate, and `recordCandidateOutcome` records whether acting on it
