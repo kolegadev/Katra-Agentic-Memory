@@ -48,6 +48,7 @@ import { getMemoryScope, buildScopeFilter, resolveSharedId, invalidateScopeCache
 import { resolveWriteScope } from './services/memory/write-scope-policy.js';
 import { selectVectorCandidates } from './services/memory/vector-candidate-selector.js';
 import { bestCosine, blendedScore, MIN_VECTOR_COSINE } from './services/memory/vector-ranking.js';
+import { collapseNearDuplicates } from './services/memory/result-dedupe.js';
 import { vectorIndexService } from './services/memory/vector-index-service.js';
 import { llmService, get_llm_config_from_db, save_llm_config_to_db } from './services/infrastructure/llm-service.js';
 import { getEpisodicEventManager } from './services/memory/episodic-event-manager.js';
@@ -2129,8 +2130,11 @@ async function handleVectorSearch(args: unknown): Promise<TextContent[]> {
               _score: blendedScore(cosine, f.created_at ?? f.updated_at ?? f.timestamp),
             };
           })
-          .sort((a: any, b: any) => b._score - a._score)
-          .slice(0, input.limit);
+          .sort((a: any, b: any) => b._score - a._score);
+        // Collapse paraphrase variants before the page is cut, so three
+        // rewordings of one proposition cannot occupy three slots. Ordered by
+        // score, so the best-scoring wording survives.
+        results = collapseNearDuplicates(results, input.limit);
         usedVector = true;
       }
     }
