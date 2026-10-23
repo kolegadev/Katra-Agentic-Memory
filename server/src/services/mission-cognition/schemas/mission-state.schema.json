@@ -75,6 +75,32 @@
         "maxLength": 1000
       }
     },
+    "stop_conditions_history": {
+      "description": "Append-only record of stop-condition sets that were replaced. A replanned stop leaves the previous set visible in current state, not only in version history. Record-only: no decision path reads this field.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "at",
+          "from"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "type": "string"
+          },
+          "from": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "delta_id": {
+            "type": "string"
+          }
+        }
+      }
+    },
     "constraints": {
       "type": "array",
       "items": {

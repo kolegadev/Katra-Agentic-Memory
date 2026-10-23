@@ -59,6 +59,31 @@ describe('STOP_CONDITIONS_CHANGED (defect 1)', () => {
     expect(next.stop_conditions).toEqual(['success', 'abort']);
   });
 
+  it('leaves the replaced set visible in the state a caller reads', () => {
+    const next = applyDeltaToState(baseState(), delta(['success', 'exhaustion']));
+    expect(next.stop_conditions).toEqual(['success', 'exhaustion']);
+    // The point of the custody argument: a reader of current state must be able
+    // to see that the mission was once governed by something else.
+    expect(next.stop_conditions_history).toHaveLength(1);
+    expect(next.stop_conditions_history?.[0].from).toEqual(['owner intervention']);
+    expect(next.stop_conditions_history?.[0].delta_id).toBe('d1');
+  });
+
+  it('appends to the history rather than overwriting it on a second replan', () => {
+    const once = applyDeltaToState(baseState(), delta(['success']));
+    const twice = applyDeltaToState(once, delta(['success', 'abort']));
+    expect(twice.stop_conditions_history).toHaveLength(2);
+    expect(twice.stop_conditions_history?.[0].from).toEqual(['owner intervention']);
+    expect(twice.stop_conditions_history?.[1].from).toEqual(['success']);
+  });
+
+  it('does not record history when there was no prior set to replace', () => {
+    const empty = { ...baseState(), stop_conditions: [] } as MissionState;
+    const next = applyDeltaToState(empty, delta(['success']));
+    expect(next.stop_conditions).toEqual(['success']);
+    expect(next.stop_conditions_history).toBeUndefined();
+  });
+
   it('passes fail-closed validation for a valid delta', () => {
     expect(() => assertTargetsResolve(baseState(), {
       delta_type: 'STOP_CONDITIONS_CHANGED',

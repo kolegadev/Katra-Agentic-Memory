@@ -162,9 +162,23 @@ export function applyDeltaToState(state: MissionState, delta: StateDelta, now?: 
           ? (raw as { stop_conditions?: unknown }).stop_conditions
           : undefined);
       if (Array.isArray(list)) {
-        next.stop_conditions = list.filter(
+        const filtered = list.filter(
           (s): s is string => typeof s === 'string' && s.trim().length > 0,
         );
+        // Record-only, append-only. A replanned stop must not erase the set it
+        // replaced from the state a caller reads: version history keeps every
+        // revision, but a reader of current state would otherwise see no trace
+        // that the mission was once governed by something else.
+        const previous = next.stop_conditions ?? [];
+        if (previous.length > 0) {
+          next.stop_conditions_history ??= [];
+          next.stop_conditions_history.push({
+            at: effectiveNow,
+            from: [...previous],
+            delta_id: delta.delta_id,
+          });
+        }
+        next.stop_conditions = filtered;
       }
       break;
     }

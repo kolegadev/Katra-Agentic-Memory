@@ -72,6 +72,18 @@ export interface MissionState {
   shared_id?: string;
   success_criteria: SuccessCriterion[];
   stop_conditions?: string[];
+  /**
+   * Append-only record of stop-condition sets that were replaced.
+   *
+   * A replanned stop must leave the previous set visible in the state a caller
+   * reads, not only in mission_state_versions. Record-only: nothing decides on
+   * this field. (2026-10-23, after the custody argument on stop authority.)
+   */
+  stop_conditions_history?: Array<{
+    at: string;
+    from: string[];
+    delta_id?: string;
+  }>;
   /** Must match mission-state.schema.json ($defs/constraint). */
   constraints?: Array<{ id: string; kind: 'time' | 'cost' | 'privacy' | 'safety' | 'legal' | 'technical' | 'authority' | 'other'; description: string }>;
   authority_class: AuthorityClass;
