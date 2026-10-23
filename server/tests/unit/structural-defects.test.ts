@@ -143,3 +143,75 @@ describe('human_gate vocabulary (defect 2)', () => {
     expect(() => normaliseHumanGate('maybe')).toThrow(/unknown human_gate/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Defect 3 (2026-10-23): success criteria were frozen at intake, exactly as
+// stop_conditions were before defect 1. The owner asked to re-baseline a
+// mission's targets and to add criteria, and the applier could not represent
+// it: the guard refused an unknown id and the branch did nothing without one.
+// Found while re-freezing a benchmark that had gone stale.
+// ---------------------------------------------------------------------------
+const criterionDelta = (criterionId: string, value: unknown): StateDelta => ({
+  schema_version: '1.0',
+  delta_id: 'd2',
+  idempotency_key: 'idem-87654321',
+  mission_id: 'ms_test',
+  base_mission_version: 1,
+  author_id: 'tester',
+  delta_type: 'SUCCESS_CRITERION_UPDATED',
+  operations: [{ op: 'add', path: `/success_criteria/${criterionId}`, value }],
+  rationale: 'a target that cannot be added cannot be re-baselined',
+  confidence: 0.9,
+  created_at: '2026-10-23T00:00:00.000Z',
+} as unknown as StateDelta);
+
+describe('SUCCESS_CRITERION_UPDATED — adding after intake (defect 3)', () => {
+  it('adds a criterion carried in full, with status defaulting to unmet', () => {
+    const next = applyDeltaToState(
+      { ...baseState(), success_criteria: [] } as MissionState,
+      criterionDelta('sc13', { description: 'AGMT cost per 1k retrievals <= 50% of Katra' }),
+    );
+    expect(next.success_criteria).toHaveLength(1);
+    expect(next.success_criteria?.[0]).toMatchObject({
+      id: 'sc13',
+      description: 'AGMT cost per 1k retrievals <= 50% of Katra',
+      status: 'unmet',
+    });
+  });
+
+  it('keeps an explicit status when one is supplied', () => {
+    const next = applyDeltaToState(
+      { ...baseState(), success_criteria: [] } as MissionState,
+      criterionDelta('sc14', { description: 'restore verified', status: 'partial' }),
+    );
+    expect(next.success_criteria?.[0].status).toBe('partial');
+  });
+
+  it('does not duplicate an id that already exists, and updates it instead', () => {
+    const existing = { ...baseState(), success_criteria: [{ id: 'sc1', description: 'old', status: 'unmet' }] } as MissionState;
+    const next = applyDeltaToState(existing, criterionDelta('sc1', { status: 'met' }));
+    expect(next.success_criteria).toHaveLength(1);
+    expect(next.success_criteria?.[0].status).toBe('met');
+    expect(next.success_criteria?.[0].description).toBe('old');
+  });
+
+  it('refuses an unknown id with no criterion to add', () => {
+    expect(() => assertTargetsResolve(
+      { ...baseState(), success_criteria: [] } as MissionState,
+      criterionDelta('sc99', 'met') as never,
+    )).toThrow(/carries no complete criterion to add/);
+  });
+
+  it('refuses an addition whose description is blank', () => {
+    expect(() => assertTargetsResolve(
+      { ...baseState(), success_criteria: [] } as MissionState,
+      criterionDelta('sc99', { description: '   ' }) as never,
+    )).toThrow(/carries no complete criterion to add/);
+  });
+
+  it('still refuses a valueless update to an existing criterion', () => {
+    const existing = { ...baseState(), success_criteria: [{ id: 'sc1', description: 'x', status: 'unmet' }] } as MissionState;
+    expect(() => assertTargetsResolve(existing, criterionDelta('sc1', {}) as never))
+      .toThrow(/a valueless update changes no state/);
+  });
+});

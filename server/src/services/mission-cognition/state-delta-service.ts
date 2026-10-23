@@ -116,6 +116,23 @@ export function applyDeltaToState(state: MissionState, delta: StateDelta, now?: 
         if (nextStatus !== undefined) criterion.status = nextStatus;
         const refs = typeof raw === 'object' && raw !== null ? raw.evidence_refs : undefined;
         if (Array.isArray(refs)) criterion.evidence_refs = refs;
+      } else {
+        // Adding a criterion after intake. Until 2026-10-23 this was
+        // unrepresentable: the guard refused an unknown id and the branch did
+        // nothing without one, so acceptance criteria were frozen at creation
+        // exactly as stop_conditions were. The owner asked to re-baseline a
+        // mission's targets and could not. An addition is licensed ONLY by a
+        // complete criterion in the op (id and non-empty description); the
+        // guard refuses anything less, so a partial op still cannot slip
+        // through as a no-op.
+        const raw = op0?.value as { description?: unknown; status?: unknown } | undefined;
+        if (raw && typeof raw.description === 'string' && raw.description.trim().length > 0) {
+          (next.success_criteria ??= []).push({
+            id,
+            description: raw.description.trim(),
+            status: (typeof raw.status === 'string' ? raw.status : 'unmet'),
+          } as never);
+        }
       }
       break;
     }
@@ -324,11 +341,26 @@ export function assertTargetsResolve(state: MissionState, draft: StateDeltaDraft
       );
     }
     if (!(state.success_criteria ?? []).some(c => c.id === segment)) {
-      throw new Error(
-        `${draft.delta_type} targets unknown success criterion id "${segment}"; known: ${
-          (state.success_criteria ?? []).map(c => c.id).join(', ') || '(none)'
-        }`,
-      );
+      // An unknown id is a legitimate ADDITION only when the op carries a
+      // complete criterion. Without this branch a mission's acceptance criteria
+      // were fixed at creation: the owner could not re-baseline a target or add
+      // one, which is how this was found (2026-10-23, re-freezing a stale
+      // benchmark). A partial op is still refused, so it cannot advance the
+      // version as a no-op.
+      const additionRaw = draft.operations[0] as { value?: unknown } | undefined;
+      const addition = (additionRaw?.value && typeof additionRaw.value === 'object')
+        ? additionRaw.value as { description?: unknown }
+        : undefined;
+      const isAddition =
+        typeof addition?.description === 'string' && addition.description.trim().length > 0;
+      if (!isAddition) {
+        throw new Error(
+          `${draft.delta_type} targets unknown success criterion id "${segment}" and carries no complete ` +
+            `criterion to add; known: ${(state.success_criteria ?? []).map(c => c.id).join(', ') || '(none)'}. ` +
+            'Adding one requires operations[0].value.description.',
+        );
+      }
+      return;
     }
     const value = (draft.operations[0] as { value?: unknown } | undefined)?.value;
     const isStatusString = typeof value === 'string' && CRITERION_STATUSES.includes(value);
