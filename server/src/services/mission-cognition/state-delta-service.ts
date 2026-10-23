@@ -369,12 +369,41 @@ export function assertTargetsResolve(state: MissionState, draft: StateDeltaDraft
       evidence_refs?: unknown;
     };
     const hasStatus = typeof v.status === 'string' && CRITERION_STATUSES.includes(v.status);
-    const hasRefs = Array.isArray(v.evidence_refs) && v.evidence_refs.length > 0;
+    const hasRefs =
+      Array.isArray(v.evidence_refs) &&
+      v.evidence_refs.length > 0 &&
+      v.evidence_refs.every((r: unknown) => typeof r === 'string' && r.trim().length > 0);
     if (!isStatusString && !hasStatus && !hasRefs) {
       throw new Error(
         'SUCCESS_CRITERION_UPDATED requires operations[0].value to be a status string or an object with ' +
           `a valid status (${CRITERION_STATUSES.join('|')}) or non-empty evidence_refs; ` +
           'a valueless update changes no state',
+      );
+    }
+
+    // Evidence that was NAMED must be evidence that exists. An explicit
+    // `evidence_refs: []` was filtered away by the applier and the delta
+    // accepted anyway, so a criterion could leave an update with a new status
+    // and no evidence while the caller believed it had supplied some. Found
+    // 2026-10-23 by doing exactly that twice.
+    const refsSupplied = Object.prototype.hasOwnProperty.call(v, 'evidence_refs');
+    if (refsSupplied && !hasRefs) {
+      throw new Error(
+        'SUCCESS_CRITERION_UPDATED was given evidence_refs that are empty, not an array, or not non-empty ' +
+          'strings; omit the key when there is no evidence to name so the absence stays visible',
+      );
+    }
+
+    // "met" is the terminal claim a success criterion makes. A criterion that is
+    // met with nothing to check is the failure this whole record exists to
+    // prevent, so a move to met must name at least one ref. The other statuses
+    // do not: "unmet" after a failed attempt and "waived" for a superseded
+    // target are both honest with nothing attached.
+    const nextStatus = isStatusString ? value : (hasStatus ? v.status : undefined);
+    if (nextStatus === 'met' && !hasRefs) {
+      throw new Error(
+        'moving a success criterion to "met" requires at least one evidence_refs entry; ' +
+          'a met criterion with nothing to check cannot be told apart from an unevaluated one',
       );
     }
     return;

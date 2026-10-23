@@ -189,10 +189,43 @@ describe('SUCCESS_CRITERION_UPDATED — adding after intake (defect 3)', () => {
 
   it('does not duplicate an id that already exists, and updates it instead', () => {
     const existing = { ...baseState(), success_criteria: [{ id: 'sc1', description: 'old', status: 'unmet' }] } as MissionState;
-    const next = applyDeltaToState(existing, criterionDelta('sc1', { status: 'met' }));
+    const next = applyDeltaToState(existing, criterionDelta('sc1', { status: 'met', evidence_refs: ['ev1'] }));
     expect(next.success_criteria).toHaveLength(1);
     expect(next.success_criteria?.[0].status).toBe('met');
     expect(next.success_criteria?.[0].description).toBe('old');
+    expect(next.success_criteria?.[0].evidence_refs).toEqual(['ev1']);
+  });
+
+  // Defect 4 (2026-10-23): evidence that was NAMED could vanish. An explicit
+  // `evidence_refs: []` was filtered away and the delta accepted, so a criterion
+  // could come out of an update with a new status and no evidence while the
+  // caller believed it had supplied some. Found by doing it twice in one sitting.
+  it('refuses evidence_refs that were supplied but are empty', () => {
+    const existing = { ...baseState(), success_criteria: [{ id: 'sc1', description: 'x', status: 'unmet' }] } as MissionState;
+    expect(() => assertTargetsResolve(existing, criterionDelta('sc1', { status: 'partial', evidence_refs: [] }) as never))
+      .toThrow(/evidence_refs that are empty/);
+  });
+
+  it('refuses evidence_refs entries that are not non-empty strings', () => {
+    const existing = { ...baseState(), success_criteria: [{ id: 'sc1', description: 'x', status: 'unmet' }] } as MissionState;
+    expect(() => assertTargetsResolve(existing, criterionDelta('sc1', { status: 'partial', evidence_refs: ['ok', ''] }) as never))
+      .toThrow(/evidence_refs that are empty/);
+  });
+
+  it('refuses "met" without evidence, in both the string and object forms', () => {
+    const existing = { ...baseState(), success_criteria: [{ id: 'sc1', description: 'x', status: 'partial' }] } as MissionState;
+    expect(() => assertTargetsResolve(existing, criterionDelta('sc1', 'met') as never))
+      .toThrow(/requires at least one evidence_refs entry/);
+    expect(() => assertTargetsResolve(existing, criterionDelta('sc1', { status: 'met' }) as never))
+      .toThrow(/requires at least one evidence_refs entry/);
+  });
+
+  it('accepts "met" when a ref is named, and "partial" with none', () => {
+    const existing = { ...baseState(), success_criteria: [{ id: 'sc1', description: 'x', status: 'unmet' }] } as MissionState;
+    expect(() => assertTargetsResolve(existing, criterionDelta('sc1', { status: 'met', evidence_refs: ['ev1'] }) as never))
+      .not.toThrow();
+    expect(() => assertTargetsResolve(existing, criterionDelta('sc1', { status: 'partial' }) as never))
+      .not.toThrow();
   });
 
   it('refuses an unknown id with no criterion to add', () => {
