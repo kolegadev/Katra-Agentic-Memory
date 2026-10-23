@@ -149,6 +149,25 @@ export function applyDeltaToState(state: MissionState, delta: StateDelta, now?: 
       }
       break;
     }
+    case 'STOP_CONDITIONS_CHANGED': {
+      // stop_conditions could be set at intake and never changed: no branch
+      // wrote it, and the class guard at the foot of assertTargetsResolve
+      // refused the operation by name rather than discarding it silently.
+      // The guard was right; the owner was missing. A mission cannot be
+      // governed by a stop condition it cannot store. (Satori, 2026-10-23.)
+      const raw = op0?.value;
+      const list = Array.isArray(raw)
+        ? raw
+        : (raw && typeof raw === 'object'
+          ? (raw as { stop_conditions?: unknown }).stop_conditions
+          : undefined);
+      if (Array.isArray(list)) {
+        next.stop_conditions = list.filter(
+          (s): s is string => typeof s === 'string' && s.trim().length > 0,
+        );
+      }
+      break;
+    }
     default:
       // Ledger-reference deltas: content lives in the ledger; state holds the ref.
       break;
@@ -223,6 +242,7 @@ export const DELTA_TYPES = [
   'BLOCKED', 'CAPABILITY_REQUESTED', 'PLAN_CHANGE_PROPOSED',
   'CHECKPOINT_CREATED', 'MISSION_STATUS_CHANGED',
   'CONSTRAINT_ADDED',
+  'STOP_CONDITIONS_CHANGED',
 ] as const satisfies readonly DeltaType[];
 
 export function assertTargetsResolve(state: MissionState, draft: StateDeltaDraft): void {
@@ -382,6 +402,33 @@ export function assertTargetsResolve(state: MissionState, draft: StateDeltaDraft
       throw new Error(
         'CONSTRAINT_ADDED requires operations[0].value.description (a non-empty string)',
       );
+    }
+    return;
+  }
+
+  // STOP_CONDITIONS_CHANGED: the path is fixed and the value must be a
+  // non-empty array of non-empty strings. A valueless change would advance the
+  // version and leave the mission governed by nothing, which is the failure
+  // this whole file exists to prevent.
+  if (draft.delta_type === 'STOP_CONDITIONS_CHANGED') {
+    if (typeof path !== 'string' || !/^\/stop_conditions$/.test(path)) {
+      throw new Error(
+        `STOP_CONDITIONS_CHANGED requires path /stop_conditions (got ${JSON.stringify(path)})`,
+      );
+    }
+    const value = (draft.operations[0] as { value?: unknown } | undefined)?.value;
+    const list = Array.isArray(value)
+      ? value
+      : (value && typeof value === 'object'
+        ? (value as { stop_conditions?: unknown }).stop_conditions
+        : undefined);
+    if (!Array.isArray(list) || list.length === 0) {
+      throw new Error(
+        'STOP_CONDITIONS_CHANGED requires operations[0].value to be a non-empty array of strings',
+      );
+    }
+    if (list.some(s => typeof s !== 'string' || !String(s).trim())) {
+      throw new Error('STOP_CONDITIONS_CHANGED values must be non-empty strings');
     }
     return;
   }

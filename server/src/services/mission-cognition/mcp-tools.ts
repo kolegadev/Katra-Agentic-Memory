@@ -19,6 +19,7 @@ import {
 } from './index.js';
 import { SchedulerService } from './scheduler-service.js';
 import { DELTA_TYPES } from './state-delta-service.js';
+import { normaliseHumanGate } from './human-gate.js';
 import { runWithUsageOrigin } from '../infrastructure/llm-usage-ledger.js';
 import type { AuthorityClass, CognitiveBatonDraft, StateDeltaDraft } from '../../types/cognitive-control.js';
 
@@ -87,7 +88,10 @@ const submitStateDeltaInput = z.object({
   idempotency_key: z.string().optional(),
   evidence_refs: z.array(z.string()).optional(),
   expected_effects: z.array(z.string()).optional(),
-  human_gate: z.enum(['none', 'approval', 'review']).optional(),
+  // Both vocabularies accepted; normaliseHumanGate maps to the schema's set.
+  human_gate: z
+    .enum(['none', 'approval', 'review', 'required_before_merge', 'required_before_effect'])
+    .optional(),
   skills_used: z.record(z.string(), z.string()).optional(),
   baton_id: z.string().optional(),
   work_item_id: z.string().optional(),
@@ -489,7 +493,7 @@ export async function handleCognitiveTool(
         confidence: input.confidence,
         evidence_refs: input.evidence_refs,
         expected_effects: input.expected_effects,
-        human_gate: input.human_gate,
+        human_gate: normaliseHumanGate(input.human_gate),
         skills_used: input.skills_used,
         baton_id: input.baton_id,
         work_item_id: input.work_item_id,

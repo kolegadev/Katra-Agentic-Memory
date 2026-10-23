@@ -14,6 +14,7 @@ export type DeltaType =
   | 'OBJECTIVE_CREATED' | 'OBJECTIVE_UPDATED' | 'OBJECTIVE_COMPLETED'
   | 'SUCCESS_CRITERION_UPDATED'
   | 'BLOCKED' | 'CAPABILITY_REQUESTED' | 'PLAN_CHANGE_PROPOSED'
+  | 'STOP_CONDITIONS_CHANGED'
   | 'CHECKPOINT_CREATED' | 'MISSION_STATUS_CHANGED'
   // Appends one constraint to mission-state `constraints`. Added 2026-09-21:
   // constraint ADDITION had no delta_type and no applier branch, so
@@ -132,7 +133,7 @@ export interface StateDeltaDraft {
   confidence: number;
   evidence_refs?: string[];
   expected_effects?: string[];
-  human_gate?: 'none' | 'approval' | 'review';
+  human_gate?: 'none' | 'required_before_merge' | 'required_before_effect';
   skills_used?: Record<string, string>;
   created_at?: string;
   audit_hash?: string;
