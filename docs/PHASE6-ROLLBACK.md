@@ -100,7 +100,7 @@ kill switch beats allocate_internal -> off
 ```
 
 Independently verified by the Phase-6 verifier (2026-09-20): tool surface
-through the real MCP entrypoint **81 tools off → 112 on** with the cognitive
+through the real MCP entrypoint **83 tools off → 114 on** with the cognitive
 plane enabled, and **7/7 Phase-6 modules byte-identical** in the image.
 Nothing above `off` is active on the running instance — activation requires
 the evidence gate, per-mission opt-in, and an explicit mode transition, each

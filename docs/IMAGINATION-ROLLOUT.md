@@ -336,7 +336,7 @@ curl -s -H "Authorization: Bearer $KATRA_API_KEY" \
   'http://localhost:9012/api/v1/imagination/metrics' | head -c 400
 # → {"plane":"off","flag":{"name":"FOCUSED_IMAGINATION","on":false},"reason":"FOCUSED_IMAGINATION=off — …"}
 
-# The MCP surface must be back to its default size (81 tools):
+# The MCP surface must be back to its default size (83 tools):
 #   tools/list, with every flag off
 ```
 

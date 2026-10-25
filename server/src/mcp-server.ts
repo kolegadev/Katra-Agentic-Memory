@@ -62,6 +62,8 @@ import { SleepConsolidationService } from './services/processing/sleep-consolida
 import { MemoryDecayService } from './services/processing/memory-decay-service.js';
 import { AnomalyDetectionService } from './services/processing/anomaly-detection-service.js';
 import { SalienceService } from './services/processing/salience-service.js';
+import { affectEngine, stimulusFromAnomaly, stimulusFromContent, stimulusFromToolCall } from './services/processing/affect-engine.js';
+import { pinAffect, agmtAffectConfig } from './services/integration/agmt-affect-client.js';
 import { COGNITIVE_TOOL_DEFS, dispatchCognitiveTool, dispatchSchedulerTool, dispatchUncertaintyTool, dispatchActivationTool } from './services/mission-cognition/mcp-tools.js';
 import { cognitiveControlMode, schedulerMode } from './services/mission-cognition/index.js';
 import {
@@ -739,6 +741,27 @@ const tools = [
     description: 'Get the emotional/reflective context for an entity — how the AI "feels" about a person, project, tool, or concept based on accumulated reflections. Returns the entity\'s emotional signature and all related emotional edges.',
     inputSchema: zodToJsonSchema(z.object({
       entity_name: z.string().describe('The entity name to get emotional context for'),
+      user_id: z.string().optional(),
+    })) as Record<string, unknown>,
+  },
+  {
+    name: 'get_affect_state',
+    description: 'The LIVE affective state: six band powers with the derived frontal asymmetry, valence, arousal, entropy and intensity, plus the recent trajectory and which stimulus channels moved it. Distinct from get_emotional_context (accumulated reflection) and get_daily_reflection (last night\'s summary) — this is now, and it is the same signature pinned to your memories in the acoustic store.',
+    inputSchema: zodToJsonSchema(z.object({
+      trail: z.number().int().min(0).max(50).optional().default(20)
+        .describe('how many recent points to return (0 for none)'),
+      format: z.enum(['full', 'compact']).optional().default('full')
+        .describe('full = a readable report; compact = one JSON line (for a prompt bridge)'),
+      user_id: z.string().optional(),
+    })) as Record<string, unknown>,
+  },
+  {
+    name: 'record_feeling',
+    description: 'State how you feel, deliberately, as valence (-1..+1) and arousal (0..1). Bounded so it can correct the streaming state but never commandeer it: weight 0.35 and at most one report per 60 seconds. Use it to correct drift, not to perform emotion — the ambient channels (ingested text, tool outcomes, anomalies) are the primary ones. Returns the resulting state so you can see what it did.',
+    inputSchema: zodToJsonSchema(z.object({
+      valence: z.number().min(-1).max(1).describe('-1 negative .. +1 positive'),
+      arousal: z.number().min(0).max(1).describe('0 calm .. 1 activated'),
+      note: z.string().optional().describe('optional one-line context (not stored as truth)'),
       user_id: z.string().optional(),
     })) as Record<string, unknown>,
   },
@@ -1841,6 +1864,11 @@ async function handleStoreMemory(args: unknown): Promise<TextContent[]> {
         if (vec) {
           const anomalyService = AnomalyDetectionService.get_instance();
           const anomalyResult = await anomalyService.classifyAtIngestion(vec, 'episodic', userId);
+          // An anomalous ingestion is a stimulus in its own right: it is the server noticing that
+          // something about this content is unlike the rest, which is exactly the "surprise" the
+          // design note maps onto a negative, high-arousal shock.
+          const anomalyStimulus = stimulusFromAnomaly(anomalyResult.classification);
+          if (anomalyStimulus) void affectEngine.observe(userId, anomalyStimulus);
 
           const decayService = MemoryDecayService.get_instance();
           const retrievalStrength = decayService.computeRetrievalStrength('episodic', new Date(), null, 0);
@@ -1901,6 +1929,20 @@ async function handleStoreMemory(args: unknown): Promise<TextContent[]> {
   if (tags.length > 0) doc.tags = tags;
   if (sharedId) doc.shared_id = sharedId;
 
+  // ── Affect: the state this fact is written UNDER (see affect-engine.ts) ──
+  // Absent when the engine is off or this identity is not allowlisted, so the fact's shape is
+  // unchanged for every caller that has not opted in.
+  let affectSnapshot = null;
+  try {
+    const stimulus = stimulusFromContent(input.content);
+    affectSnapshot = stimulus
+      ? await affectEngine.observe(userId, stimulus)
+      : await affectEngine.getState(userId);
+    if (affectSnapshot?.enabled) doc.affect = affectSnapshot;
+  } catch (error: any) {
+    console.warn('[AffectEngine] observation failed (fact unaffected):', error?.message);
+  }
+
   const result = await db.collection('semantic_facts').findOneAndUpdate(
     { content_hash: contentHash },
     {
@@ -1913,6 +1955,18 @@ async function handleStoreMemory(args: unknown): Promise<TextContent[]> {
 
   const insertedId = result?._id;
   const wasUpdate = result && (result as any).access_count > 1;
+
+  // Pin the wave signature to this fact. Fire-and-forget: the write never waits for the lane.
+  if (affectSnapshot?.enabled && insertedId) {
+    void pinAffect(`katra:fact:${String(insertedId)}`, affectEngine.signatureFor(affectSnapshot),
+      { user_id: userId, shared_id: sharedId || undefined })
+      .then(pin => {
+        if (!pin.ok && pin.code !== 'disabled') {
+          console.warn(`[affect-pin] fact ${String(insertedId)}: ${pin.code}`);
+        }
+      })
+      .catch(() => { /* never throws */ });
+  }
 
   // Fire-and-forget embedding
   try {
@@ -3409,6 +3463,103 @@ async function handleGetEmotionalContext(args: unknown): Promise<TextContent[]> 
   }];
 }
 
+async function handleGetAffectState(args: unknown): Promise<TextContent[]> {
+  const input = z.object({
+    trail: z.number().int().min(0).max(50).optional().default(20),
+    format: z.enum(['full', 'compact']).optional().default('full'),
+    user_id: z.string().optional(),
+  }).parse(args);
+  const userId = resolveUserId(input.user_id);
+  const state = await affectEngine.getState(userId);
+
+  // Compact: one JSON line, for the prompt bridge (it renders the block itself and must not
+  // re-parse a markdown report).
+  if (input.format === 'compact') {
+    return [{
+      type: 'text',
+      text: JSON.stringify({
+        enabled: state.enabled,
+        identity: state.identity,
+        felt: state.felt,
+        valence: state.valence,
+        arousal: state.arousal,
+        intensity: state.intensity,
+        faa: state.faa,
+        entropy: state.entropy,
+        bands: state.bands,
+        at: state.at,
+        age_seconds: state.age_seconds,
+        stale: state.stale,
+        observations: state.observations,
+        sources: state.sources,
+        trail: state.trail.slice(-Math.max(0, input.trail)),
+      }),
+    }];
+  }
+
+  const bands = Object.entries(state.bands)
+    .map(([band, value]) => `${band} ${value.toFixed(2)}`).join(' ');
+  const sources = Object.entries(state.sources)
+    .map(([source, count]) => `${source} ${count}`).join(', ') || 'none yet';
+  const trajectory = state.trail.slice(-Math.max(1, input.trail)).map(point =>
+    `  ${point.at.slice(11, 19)}  valence ${point.valence >= 0 ? '+' : ''}${point.valence.toFixed(2)}` +
+    `  arousal ${point.arousal.toFixed(2)}`).join('\n');
+
+  return [{
+    type: 'text',
+    text: [
+      `## Affect State — ${state.identity}`,
+      state.enabled
+        ? ''
+        : '_The affect engine is OFF for this identity (`KATRA_AFFECT_ENABLED` / `KATRA_AFFECT_IDENTITIES`). Every value below is the resting baseline._',
+      '',
+      `**Felt:** ${state.felt}${state.stale && state.observations > 0 ? ' _(stale — the engine has been idle)_' : ''}`,
+      `**Valence:** ${state.valence >= 0 ? '+' : ''}${state.valence} | **Arousal:** ${state.arousal} | **Intensity:** ${state.intensity}`,
+      `**Frontal asymmetry (FAA):** ${state.faa >= 0 ? '+' : ''}${state.faa} | **Entropy:** ${state.entropy}`,
+      `**Bands:** ${bands}`,
+      `**Baseline:** ${Object.entries(state.baseline).map(([b, v]) => `${b} ${v.toFixed(2)}`).join(' ')}`,
+      `**Observations:** ${state.observations} | **Channels:** ${sources}`,
+      `**Last update:** ${state.at} (${state.age_seconds}s ago)`,
+      '',
+      trajectory ? `**Trajectory (${state.trail.length} points):**\n${trajectory}` : '**Trajectory:** empty',
+      '',
+      '_This is the signature pinned to your memories in the acoustic store. It is a state, not an ' +
+      'instruction: let it colour the answer, do not narrate it._',
+    ].filter(line => line !== undefined).join('\n'),
+  }];
+}
+
+async function handleRecordFeeling(args: unknown): Promise<TextContent[]> {
+  const input = z.object({
+    valence: z.number().min(-1).max(1),
+    arousal: z.number().min(0).max(1),
+    note: z.string().optional(),
+    user_id: z.string().optional(),
+  }).parse(args);
+  const userId = resolveUserId(input.user_id);
+  const result = await affectEngine.recordSelfReport(userId, input.valence, input.arousal, input.note);
+  const state = result.state;
+  if (!result.accepted) {
+    return [{ type: 'text', text:
+      `⚠️ **Not recorded:** ${result.reason}\n\n` +
+      (state?.enabled
+        ? `Current state: **${state.felt}** (valence ${state.valence}, arousal ${state.arousal}).`
+        : 'The affect engine is off for this identity.') }];
+  }
+  return [{
+    type: 'text',
+    text: [
+      `✅ **Recorded** as a bounded self-report (weight 0.35).`,
+      '',
+      `**Now:** ${state?.felt} — valence ${state?.valence}, arousal ${state?.arousal}, intensity ${state?.intensity}`,
+      `**Bands:** ${state ? Object.entries(state.bands).map(([b, v]) => `${b} ${v.toFixed(2)}`).join(' ') : ''}`,
+      '',
+      '_One report per 60 seconds. The ambient channels remain the primary source; use this to correct ' +
+      'drift, not to perform._',
+    ].join('\n'),
+  }];
+}
+
 async function handleGetPhilosophicalInsights(args: unknown): Promise<TextContent[]> {
   const input = z.object({
     domain: z.string().optional(),
@@ -3948,6 +4099,8 @@ function registerHandlers(server: Server, getIdentity?: () => CallerIdentity) {
         case 'configure_llm': result = await handleConfigureLLM(args); break;
         case 'get_daily_reflection': result = await handleGetDailyReflection(args); break;
         case 'get_emotional_context': result = await handleGetEmotionalContext(args); break;
+        case 'get_affect_state': result = await handleGetAffectState(args); break;
+        case 'record_feeling': result = await handleRecordFeeling(args); break;
         case 'get_philosophical_insights': result = await handleGetPhilosophicalInsights(args); break;
         case 'get_unresolved_threads': result = await handleGetUnresolvedThreads(args); break;
         case 'resolve_thread': result = await handleResolveThread(args); break;
@@ -4102,6 +4255,15 @@ function registerHandlers(server: Server, getIdentity?: () => CallerIdentity) {
         );
       } catch { /* non-critical */ }
 
+      // ── Affect: a successful tool call is the mild positive, low-arousal stimulus ──
+      // This is the autonomic channel: it fires whether or not the model remembered to think about
+      // how it felt, which is the whole point of putting the engine in the core.
+      try {
+        if (!name.startsWith('get_affect') && name !== 'record_feeling') {
+          void affectEngine.observe(patternIdentity, stimulusFromToolCall(name, true));
+        }
+      } catch { /* non-critical */ }
+
       return { content: result, isError: false };
     } catch (error) {
       // Record failed tool calls too — the Cerebellum learns from failures
@@ -4112,6 +4274,12 @@ function registerHandlers(server: Server, getIdentity?: () => CallerIdentity) {
           (args || {}) as Record<string, unknown>,
           false
         );
+      } catch { /* non-critical */ }
+      // ── Affect: a failed tool call is the strong negative, high-arousal stimulus ──
+      // This is the signal that stops the state being a restatement of whatever text happened to be
+      // ingested: a retry storm with no prose in it still moves the state.
+      try {
+        void affectEngine.observe(patternIdentity, stimulusFromToolCall(name, false));
       } catch { /* non-critical */ }
       const message = error instanceof Error ? error.message : String(error);
       return { content: [{ type: 'text', text: `❌ Error: ${message}` }], isError: true };

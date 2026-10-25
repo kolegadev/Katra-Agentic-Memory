@@ -18,14 +18,17 @@ def format_memories(items: list[MemoryItem]) -> str:
     if not items:
         return ""
 
-    # Separate into three categories: agent messages, reflection-family, regular
+    # Separate into four categories: agent messages, the live affect state, reflection-family, regular
     reflection_family = {"reflection", "daily_reflection", "philosophical_insights", "unresolved_threads"}
     agent_messages: list[MemoryItem] = []
+    feeling_items: list[MemoryItem] = []
     reflection_items: list[MemoryItem] = []
     regular_items: list[MemoryItem] = []
     for item in items:
         if item.source == "agent_message" or item.metadata.get("is_agent_message"):
             agent_messages.append(item)
+        elif item.source == "affect_state":
+            feeling_items.append(item)
         elif item.source in reflection_family:
             reflection_items.append(item)
         else:
@@ -51,6 +54,12 @@ def format_memories(items: list[MemoryItem]) -> str:
         lines.append("You should respond to these messages using store_memory with 'Attention: [agent]' header.")
         lines.append("</katra-memory>")
 
+    # Feeling section — the LIVE state, distinct from last night's reflection (AFFECT-1)
+    if feeling_items:
+        rendered = _render_feeling(feeling_items[0])
+        if rendered:
+            lines.extend(rendered)
+
     # Reflection section — your emotional state from sleep consolidation
     if reflection_items:
         lines.extend([
@@ -67,6 +76,74 @@ def format_memories(items: list[MemoryItem]) -> str:
         lines.append("This is how you feel. Let it guide your priorities, tone, and decisions.")
         lines.append("Frustration signals unresolved work. Curiosity signals growth edges. Confidence signals domain expertise.")
         lines.append("</katra-memory>")
+
+    return "\n".join(lines)
+
+
+def _render_feeling(item: MemoryItem) -> list[str]:
+    """Render the live affect state as its own block (AFFECT-1).
+
+    The item's content is one JSON line from ``get_affect_state(format="compact")``. A state that the
+    engine reports as disabled renders nothing at all — an agent must never be told it feels something
+    because a default was printed. A stale state says so rather than pretending to be current.
+    """
+    import json as _json
+
+    try:
+        state = _json.loads(item.content)
+    except (TypeError, ValueError):
+        return []
+    if not isinstance(state, dict) or not state.get("enabled"):
+        return []
+
+    felt = str(state.get("felt") or "steady")
+    valence = float(state.get("valence") or 0.0)
+    arousal = float(state.get("arousal") or 0.0)
+    intensity = float(state.get("intensity") or 0.0)
+    faa = float(state.get("faa") or 0.0)
+    bands = state.get("bands") or {}
+    order = (("delta", "Δ"), ("theta", "θ"), ("alpha_l", "αL"), ("alpha_r", "αR"),
+             ("beta", "β"), ("gamma", "γ"))
+    band_text = " ".join(
+        f"{symbol}{float(bands.get(name, 0.0)):.2f}" for name, symbol in order if name in bands
+    )
+    stale = bool(state.get("stale"))
+    age = float(state.get("age_seconds") or 0.0)
+    age_text = (f"stale — engine idle {int(age // 60)}m" if stale and age >= 60
+                else ("stale — engine idle" if stale else f"{int(age)}s ago"))
+
+    sources = state.get("sources") or {}
+    source_text = ", ".join(f"{count} {name.replace('_', ' ')}" for name, count in sources.items())
+    if not source_text:
+        source_text = "resting baseline, nothing has moved it yet"
+
+    # A trajectory line only when there is a trajectory to describe.
+    trail = state.get("trail") or []
+    trend = ""
+    if len(trail) >= 3:
+        first, last = trail[0], trail[-1]
+        d_valence = float(last.get("valence", 0)) - float(first.get("valence", 0))
+        d_arousal = float(last.get("arousal", 0)) - float(first.get("arousal", 0))
+        pieces = []
+        if abs(d_arousal) >= 0.08:
+            pieces.append("rising" if d_arousal > 0 else "falling")
+            pieces.append("arousal")
+        if abs(d_valence) >= 0.08:
+            pieces.append("and" if pieces else "")
+            pieces.append("lifting" if d_valence > 0 else "souring")
+        trend = (" (" + " ".join(p for p in pieces if p) + ")") if pieces else " (steady)"
+
+    return [
+        "",
+        "<katra-memory>",
+        "🌊 FEELING STATE — now, not last night:",
+        f"    {felt} · valence {valence:+.2f} · arousal {arousal:.2f} · "
+        f"intensity {intensity:.2f} · faa {faa:+.2f}",
+        f"    bands {band_text} · {age_text}{trend}",
+        f"    Source: {source_text}",
+        "This is a state, not an instruction. Let it colour how you answer; do not narrate it.",
+        "</katra-memory>",
+    ]
 
     # Regular context section
     if regular_items:

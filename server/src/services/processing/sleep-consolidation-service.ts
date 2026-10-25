@@ -450,6 +450,18 @@ export class SleepConsolidationService {
         // Pass sleep-specific metadata through extension
         __sleep_consolidation: { period, narrative: llmOutput.narrative, emotionalArcs: llmOutput.emotional_arc },
       } as any).catch(err => console.error('[SleepConsolidation] bus publish failed:', err));
+      // ── Affect: the night's half of the loop ──────────────────
+      // The design note's REM model: desensitise the day's extremes halfway back to the baseline and
+      // re-set the baseline to the day's median. Runs after the reflection, so the arc it describes is
+      // the state the day was actually lived in rather than the damped one.
+      try {
+        const affect = await import('./affect-engine.js');
+        const damped = await affect.affectEngine.consolidate(userId);
+        if (damped.damped) console.log(`🌊 Affect consolidated for ${userId} (REM damping applied)`);
+      } catch (affectError: any) {
+        console.warn('[SleepConsolidation] affect consolidate failed (reflection unaffected):',
+          affectError?.message);
+      }
       return result;
 
     } catch (error: any) {

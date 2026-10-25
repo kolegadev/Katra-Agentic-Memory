@@ -23,6 +23,23 @@ DEFAULT_CACHE_TTL_SECONDS = 30
 DEFAULT_PERSONALITY = "balanced"
 DEFAULT_SOURCES = ["reflection", "working_memory", "temporal_context", "vector_search", "temporal_recall"]
 
+
+def affect_view_enabled(user_id: str) -> bool:
+    """Whether this identity should receive the FEELING STATE block (AFFECT-1).
+
+    Opt-in twice over: the CLI environment must ask for it (``KATRA_AFFECT_VIEW=1``) and the identity
+    must be on the allowlist (``KATRA_AFFECT_IDENTITIES``, default ``shoshin``). The block is a live
+    state rendered into every prompt, so the default has to be silence rather than surprise.
+    """
+    if os.environ.get("KATRA_AFFECT_VIEW", "").strip().lower() not in ("1", "true", "yes", "on"):
+        return False
+    allowed = [
+        name.strip()
+        for name in os.environ.get("KATRA_AFFECT_IDENTITIES", "shoshin").split(",")
+        if name.strip()
+    ]
+    return str(user_id) in allowed
+
 # When True, the active personality (profile + weight/scoring overrides +
 # budget) is fetched from the Katra server's REST admin API and takes
 # precedence over the local file values. This lets the dashboard steer

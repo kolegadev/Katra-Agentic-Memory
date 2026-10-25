@@ -307,6 +307,17 @@ export const MEMORY_SYSTEM_INDEXES: CollectionIndexes = {
     }
   ],
 
+  // The affect engine's live state (AFFECT-1): ONE document per identity, keyed by user_id. The
+  // unique index is the whole consistency argument — the engine's write-behind upserts on it, so
+  // two processes racing a flush converge on one row instead of two half-states. The trail lives
+  // inside the document (bounded at 200 points), so there is no second collection to keep level.
+  affect_state: [
+    {
+      keys: { user_id: 1 },
+      options: { name: 'user_unique', unique: true, background: true }
+    }
+  ],
+
   // Katra Vault auth sessions (F9): UNIQUE + SPARSE on (identity,
   // last_counter) — every TOTP-issued session doc carries the verified
   // `last_counter`, so the index makes each code claimable at most once per

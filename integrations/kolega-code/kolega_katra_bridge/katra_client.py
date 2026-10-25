@@ -281,6 +281,46 @@ class KatraMCPClient:
             for entry in entries
         ]
 
+    async def get_affect_state(self) -> list[MemoryItem]:
+        """Fetch the LIVE affective state as one compact JSON item (AFFECT-1).
+
+        The tool answers ``format="compact"`` with a single JSON line precisely so this bridge does not
+        have to re-parse a markdown report. A failure is silent (an empty list): a missing feeling block
+        must never cost the agent its memories.
+        """
+        args: dict[str, Any] = {
+            "format": "compact",
+            "trail": 3,
+            "user_id": self.config.user_id,
+        }
+        try:
+            result = await self._call_tool("get_affect_state", args)
+        except KatraClientError:
+            logger.warning("get_affect_state failed")
+            return []
+
+        items: list[MemoryItem] = []
+        for entry in _pluck_content_list(result):
+            text = _text_from_entry(entry)
+            if not text:
+                continue
+            try:
+                state = json.loads(text)
+            except (TypeError, ValueError):
+                logger.warning("get_affect_state returned a non-JSON payload; ignored")
+                continue
+            if not isinstance(state, dict):
+                continue
+            items.append(
+                MemoryItem(
+                    source="affect_state",
+                    content=text,
+                    metadata={"enabled": bool(state.get("enabled"))},
+                    score=0.9,
+                )
+            )
+        return items
+
     async def get_daily_reflection(self, period_type: str = "daily") -> list[MemoryItem]:
         """Fetch the latest reflective journal entry from sleep consolidation."""
         args: dict[str, Any] = {
