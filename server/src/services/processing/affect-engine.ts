@@ -68,6 +68,52 @@ export const AFFECT_AROUSAL_GAIN = 2.0;
  * Published because the arousal readout is normalised against it.
  */
 export const AFFECT_AROUSAL_SUM_MAX = 3.7;
+
+/**
+ * The success channel is bounded (AFFECT-5).
+ *
+ * A successful tool call is evidence that the agent is WORKING, not that it is aroused — and it is by
+ * far the highest-volume channel. Measured live on 2026-10-26: 1111 successes against 18 memories
+ * written (62:1), and a brute-force campaign held beta at its clamp and arousal at 0.95 for hours,
+ * where "working hard" and "alarmed" read the same. Two bounds fix the asymmetry:
+ *
+ *   * a GAIN below 1 keeps a success's impulse quiet, and
+ *   * a CAP stops the success channel lifting beta+gamma more than `CAP_OFFSET` above the baseline,
+ *     whatever the volume.
+ *
+ * Failures, anomalies and content keep full authority, so alarm stays reachable: a failure should
+ * alarm, a thousand greps should not.
+ */
+export const AFFECT_SUCCESS_GAIN = 0.35;
+export const AFFECT_SUCCESS_CAP_OFFSET = 0.5;
+
+/**
+ * A state key: the identity, optionally scoped to a context (`shoshin#sentry-cwe`).
+ *
+ * The state was per identity, and an identity is not a project: a campaign running on shoshin's
+ * behalf voted in the same election as the session that was thinking, and volume won. A context
+ * gives a caller its own state without a second collection or a schema migration — the key is just
+ * another `user_id` value, so the existing unique index still holds one document per key.
+ */
+export function stateKey(identity: string, context?: string | null): string {
+  const base = String(identity ?? '').trim();
+  const scope = String(context ?? '').trim();
+  return scope ? `${base}#${scope}` : base;
+}
+
+/** The identity part of a state key. */
+export function baseIdentityOf(key: string): string {
+  const text = String(key ?? '');
+  const index = text.indexOf('#');
+  return index === -1 ? text : text.slice(0, index);
+}
+
+/** The context part of a state key, or null when there is none. */
+export function contextOf(key: string): string | null {
+  const text = String(key ?? '');
+  const index = text.indexOf('#');
+  return index === -1 ? null : text.slice(index + 1);
+}
 const TRAIL_MAX = 200;
 const PERSIST_MIN_INTERVAL_MS = 1000;
 
@@ -88,6 +134,19 @@ export interface AffectStimulus {
    * letting it drive theta integrated to 3.3x baseline over a hundred successes (measured live).
    */
   theta_weight?: number;
+  /** Scales the beta/gamma (activation) part of the impulse. Successes run at a fraction of 1. */
+  arousal_gain?: number;
+  /** Scales the alpha (valence) part of the impulse. */
+  valence_gain?: number;
+  /**
+   * How far above the identity's baseline this channel may lift beta+gamma, whatever the volume.
+   * Only the success channel sets it: volume must not be able to masquerade as alarm.
+   */
+  arousal_cap_offset?: number;
+  /** Who produced this observation (a session, a job, a process). Defaults to the channel name. */
+  source_id?: string;
+  /** Attribution scope: a campaign or project getting its own state instead of the identity's. */
+  context?: string;
 }
 
 export interface AffectPoint {
@@ -115,6 +174,10 @@ export interface AffectStateSnapshot {
   observations: number;
   trail: AffectPoint[];
   sources: Partial<Record<AffectStimulusSource, number>>;
+  /** The attribution scope, when this state belongs to a campaign rather than the identity. */
+  context?: string | null;
+  /** Who has been moving this state, most observations first. */
+  contributors?: Record<string, { observations: number; successes: number; lastAt: number }>;
 }
 
 interface UserAffect {
@@ -126,8 +189,10 @@ interface UserAffect {
   trail: AffectPoint[];
   lastPersist: number;
   dirty: boolean;
-  /** Timestamps of recent successful calls, for habituation (see `habituation`). */
-  successWindow: number[];
+  /** Timestamps of recent successful calls PER SOURCE, for habituation (see `habituation`). */
+  successWindows: Record<string, number[]>;
+  /** Who has been moving this state: observations and successes per source, newest last. */
+  contributors: Record<string, { observations: number; successes: number; lastAt: number }>;
   /** True while a trailing flush is scheduled, so a burst schedules exactly one. */
   flushScheduled?: boolean;
 }
@@ -268,7 +333,10 @@ export class AffectEngine {
   isEnabled(identity?: string): boolean {
     if (String(process.env.KATRA_AFFECT_ENABLED || '0') !== '1') return false;
     if (!identity) return true;
-    return readIdentities().includes(identity);
+    const allowed = readIdentities();
+    // A scoped key (`shoshin#sentry-cwe`) is enabled when its identity is, so adding a context never
+    // requires a new allow-list entry; an entry may also name the scoped key explicitly.
+    return allowed.includes(identity) || allowed.includes(baseIdentityOf(identity));
   }
 
   /**
@@ -309,7 +377,8 @@ export class AffectEngine {
           trail: Array.isArray(row.trail) ? row.trail.slice(-TRAIL_MAX) : [],
           lastPersist: 0,
           dirty: false,
-          successWindow: [],
+          successWindows: {},
+          contributors: (row.contributors || {}) as UserAffect['contributors'],
         });
       }
       this.loaded.add(identity);
@@ -341,7 +410,8 @@ export class AffectEngine {
         trail: [],
         lastPersist: 0,
         dirty: false,
-        successWindow: [],
+        successWindows: {},
+        contributors: {},
       };
       this.users.set(identity, state);
     }
@@ -369,21 +439,43 @@ export class AffectEngine {
    * in a minute carries half weight, the tenth a third, and sustained work settles at a steady,
    * mildly-activated state instead of an alarm.
    */
-  private habituation(state: UserAffect, now: number): number {
-    state.successWindow = state.successWindow.filter(at => now - at < 60_000);
-    state.successWindow.push(now);
-    return 1 / (1 + state.successWindow.length / 5);
+  private habituation(state: UserAffect, sourceId: string, now: number): number {
+    // Per SOURCE, not per identity: one flooding process habituates against its own window instead of
+    // spending the identity's shared budget, so a thousand calls from a campaign cannot drown out a
+    // session that made five. Many genuine sources still add up — that is load, and load should count.
+    const window = (state.successWindows[sourceId] || []).filter(at => now - at < 60_000);
+    window.push(now);
+    state.successWindows[sourceId] = window;
+    const seen = Object.entries(state.successWindows)
+      .filter(([id]) => id !== sourceId)
+      .map(([, times]) => times.filter(at => now - at < 60_000).length);
+    if (seen.length > 24) {
+      // Bound the bookkeeping: keep the wins that are still inside the window.
+      for (const [id, times] of Object.entries(state.successWindows)) {
+        const live = times.filter(at => now - at < 60_000);
+        if (live.length === 0) delete state.successWindows[id];
+      }
+    }
+    return 1 / (1 + window.length / 5);
   }
 
   /** One observation: decay, then the shock, with the shock's norm bounded. */
-  async observe(identity: string, stimulus: AffectStimulus): Promise<AffectStateSnapshot | null> {
-    if (!this.isEnabled(identity)) return null;
-    await this.initialize(identity);
-    const state = this.state(identity);
+  async observe(identity: string, stimulus: AffectStimulus, context?: string | null):
+    Promise<AffectStateSnapshot | null> {
+    const key = stateKey(identity, context ?? stimulus.context ?? null);
+    if (!this.isEnabled(key)) return null;
+    await this.initialize(key);
+    const state = this.state(key);
     const now = Date.now();
     this.decay(state, now);
 
-    const habituated = stimulus.source === 'tool_success' ? this.habituation(state, now) : 1;
+    const sourceId = String(stimulus.source_id || stimulus.source || 'unknown');
+    const habituated = stimulus.source === 'tool_success' ? this.habituation(state, sourceId, now) : 1;
+    const bucket = state.contributors[sourceId] || { observations: 0, successes: 0, lastAt: 0 };
+    bucket.observations += 1;
+    if (stimulus.source === 'tool_success') bucket.successes += 1;
+    bucket.lastAt = now;
+    state.contributors[sourceId] = bucket;
     const weight = clamp(Number(stimulus.weight) || 0, 0, 1) * habituated;
     const valence = clamp(Number(stimulus.valence) || 0, -1, 1);
     const arousal = clamp(Number(stimulus.arousal) || 0, 0, 1);
@@ -402,15 +494,31 @@ export class AffectEngine {
       step = { delta: 0, theta: 0, alpha_l: 0, alpha_r: 0, beta: 0, gamma: 0 };
       for (const band of AFFECT_BANDS) step[band] = weight * (target[band] - state.bands[band]);
     } else {
+      const arousalGain = clamp(Number(stimulus.arousal_gain ?? 1), 0, 1);
+      const valenceGain = clamp(Number(stimulus.valence_gain ?? 1), 0, 1);
       const shock: AffectBands = { delta: 0, theta: 0, alpha_l: 0, alpha_r: 0, beta: 0, gamma: 0 };
-      shock.alpha_l -= 0.8 * valence * weight;
-      shock.alpha_r += 0.8 * valence * weight;
-      shock.beta += 1.5 * arousal * weight;
-      shock.gamma += 2.0 * arousal * arousal * weight;
+      shock.alpha_l -= 0.8 * valence * weight * valenceGain;
+      shock.alpha_r += 0.8 * valence * weight * valenceGain;
+      shock.beta += 1.5 * arousal * weight * arousalGain;
+      shock.gamma += 2.0 * arousal * arousal * weight * arousalGain;
       shock.theta += 0.3 * (1 - arousal) * weight * (stimulus.theta_weight ?? 1);
       const norm = Math.sqrt(AFFECT_BANDS.reduce((sum, band) => sum + shock[band] ** 2, 0));
       const scale = norm > SHOCK_MAX_NORM ? SHOCK_MAX_NORM / norm : 1;
       for (const band of AFFECT_BANDS) shock[band] *= scale;
+
+      // The cap: a channel may be bounded in how far it can lift activation, so that volume alone
+      // cannot read as alarm. Applied to the impulse, never pulling the state down.
+      const capOffset = stimulus.arousal_cap_offset;
+      const lift = shock.beta + shock.gamma;
+      if (capOffset !== undefined && lift > 0) {
+        const baseSum = state.baseline.beta + state.baseline.gamma;
+        const room = Math.max(0, baseSum + capOffset - (state.bands.beta + state.bands.gamma));
+        if (lift > room) {
+          const factor = room / lift;
+          shock.beta *= factor;
+          shock.gamma *= factor;
+        }
+      }
       step = shock;
     }
     for (const band of AFFECT_BANDS) {
@@ -438,13 +546,15 @@ export class AffectEngine {
    * `selfReportTarget`), so it can correct drift in either direction but never commandeer the
    * state; and it is rate-limited so a burst of calls cannot stand in for a genuine change.
    */
-  async recordSelfReport(identity: string, valence: number, arousal: number, note?: string):
+  async recordSelfReport(identity: string, valence: number, arousal: number, note?: string,
+    context?: string | null):
     Promise<{ accepted: boolean; reason?: string; state: AffectStateSnapshot | null }> {
-    if (!this.isEnabled(identity)) {
+    const key = stateKey(identity, context ?? null);
+    if (!this.isEnabled(key)) {
       return { accepted: false, reason: 'the affect engine is off for this identity', state: null };
     }
     const now = Date.now();
-    const last = this.selfReportAt.get(identity) || 0;
+    const last = this.selfReportAt.get(key) || 0;
     if (now - last < 60_000) {
       return {
         accepted: false,
@@ -452,30 +562,33 @@ export class AffectEngine {
         state: await this.getState(identity),
       };
     }
-    this.selfReportAt.set(identity, now);
+    this.selfReportAt.set(key, now);
     const state = await this.observe(identity, {
       valence: clamp(Number(valence) || 0, -1, 1),
       arousal: clamp(Number(arousal) || 0, 0, 1),
       weight: 0.35,
       source: 'self_report',
+      source_id: 'self_report',
       detail: note ? String(note).slice(0, 200) : undefined,
-    });
+    }, context ?? null);
     return { accepted: true, state };
   }
 
-  async getState(identity: string): Promise<AffectStateSnapshot> {
-    const enabled = this.isEnabled(identity);
-    if (!enabled) return this.emptySnapshot(identity, false);
-    await this.initialize(identity);
-    const state = this.state(identity);
+  async getState(identity: string, context?: string | null): Promise<AffectStateSnapshot> {
+    const key = stateKey(identity, context ?? null);
+    const enabled = this.isEnabled(key);
+    if (!enabled) return this.emptySnapshot(baseIdentityOf(key), false);
+    await this.initialize(key);
+    const state = this.state(key);
     this.decay(state, Date.now());
-    return this.snapshotFor(identity, state);
+    return this.snapshotFor(key, state);
   }
 
-  async getTrail(identity: string, limit = 20): Promise<AffectPoint[]> {
-    if (!this.isEnabled(identity)) return [];
-    await this.initialize(identity);
-    const state = this.state(identity);
+  async getTrail(identity: string, limit = 20, context?: string | null): Promise<AffectPoint[]> {
+    const key = stateKey(identity, context ?? null);
+    if (!this.isEnabled(key)) return [];
+    await this.initialize(key);
+    const state = this.state(key);
     return state.trail.slice(-Math.max(1, Math.min(limit, TRAIL_MAX)));
   }
 
@@ -484,10 +597,12 @@ export class AffectEngine {
    * toward the baseline (desensitisation), the baseline is re-set to the day's median band vector
    * (homeostasis), and the trail is cleared. Nothing is invented: with no trail, nothing moves.
    */
-  async consolidate(identity: string): Promise<{ damped: boolean; baseline_moved: boolean }> {
-    if (!this.isEnabled(identity)) return { damped: false, baseline_moved: false };
-    await this.initialize(identity);
-    const state = this.state(identity);
+  async consolidate(identity: string, context?: string | null):
+    Promise<{ damped: boolean; baseline_moved: boolean }> {
+    const key = stateKey(identity, context ?? null);
+    if (!this.isEnabled(key)) return { damped: false, baseline_moved: false };
+    await this.initialize(key);
+    const state = this.state(key);
     if (state.trail.length === 0) return { damped: false, baseline_moved: false };
     this.decay(state, Date.now());
 
@@ -514,7 +629,9 @@ export class AffectEngine {
       bands: { ...snapshot.bands },
       engine: AFFECT_ENGINE_VERSION,
       at: Date.parse(snapshot.at) / 1000,
-      source: 'katra',
+      // Attribution travels with the pin: a state scoped to a campaign says so in the lane, so a
+      // reader can tell whose feeling it is looking at rather than assuming it is the identity's own.
+      source: snapshot.context ? `katra:${snapshot.context}` : 'katra',
     };
   }
 
@@ -534,7 +651,13 @@ export class AffectEngine {
     const ageSeconds = Math.max(0, (Date.now() - state.lastUpdate) / 1000);
     return {
       enabled: true,
-      identity,
+      identity: baseIdentityOf(identity),
+      context: contextOf(identity),
+      contributors: Object.fromEntries(
+        Object.entries(state.contributors)
+          .sort(([, a], [, b]) => b.observations - a.observations)
+          .slice(0, 8),
+      ),
       engine: AFFECT_ENGINE_VERSION,
       bands: { ...state.bands },
       baseline: { ...state.baseline },
@@ -612,6 +735,8 @@ export class AffectEngine {
             last_update_ms: state.lastUpdate,
             observations: state.observations,
             sources: state.sources,
+            contributors: state.contributors,
+            context: contextOf(identity),
             trail: state.trail,
             engine: AFFECT_ENGINE_VERSION,
             updated_at: new Date(),
@@ -646,9 +771,13 @@ export function stimulusFromContent(text: string): AffectStimulus | null {
 export function stimulusFromToolCall(tool: string, ok: boolean): AffectStimulus {
   return ok
     ? { valence: 0.15, arousal: 0.15, weight: 0.25, source: 'tool_success', detail: tool,
-        theta_weight: 0 }
+        theta_weight: 0,
+        // Bounded (AFFECT-5): quiet impulse, and a hard ceiling on how far volume can lift activation.
+        arousal_gain: AFFECT_SUCCESS_GAIN, valence_gain: AFFECT_SUCCESS_GAIN,
+        arousal_cap_offset: AFFECT_SUCCESS_CAP_OFFSET,
+        source_id: 'tool_success' }
     : { valence: -0.5, arousal: 0.85, weight: 0.9, source: 'tool_failure', detail: tool,
-        theta_weight: 0 };
+        theta_weight: 0, source_id: 'tool_failure' };
 }
 
 export function stimulusFromAnomaly(classification?: string): AffectStimulus | null {

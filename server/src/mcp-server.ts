@@ -3482,10 +3482,11 @@ async function handleGetAffectState(args: unknown): Promise<TextContent[]> {
   const input = z.object({
     trail: z.number().int().min(0).max(50).optional().default(20),
     format: z.enum(['full', 'compact']).optional().default('full'),
+    context: z.string().max(64).optional(),
     user_id: z.string().optional(),
   }).parse(args);
   const userId = resolveUserId(input.user_id);
-  const state = await affectEngine.getState(userId);
+  const state = await affectEngine.getState(userId, input.context);
 
   // Compact: one JSON line, for the prompt bridge (it renders the block itself and must not
   // re-parse a markdown report).
@@ -3495,6 +3496,8 @@ async function handleGetAffectState(args: unknown): Promise<TextContent[]> {
       text: JSON.stringify({
         enabled: state.enabled,
         identity: state.identity,
+        context: state.context ?? null,
+        contributors: state.contributors ?? {},
         felt: state.felt,
         valence: state.valence,
         arousal: state.arousal,
@@ -3549,10 +3552,12 @@ async function handleRecordFeeling(args: unknown): Promise<TextContent[]> {
     valence: z.number().min(-1).max(1),
     arousal: z.number().min(0).max(1),
     note: z.string().optional(),
+    context: z.string().max(64).optional(),
     user_id: z.string().optional(),
   }).parse(args);
   const userId = resolveUserId(input.user_id);
-  const result = await affectEngine.recordSelfReport(userId, input.valence, input.arousal, input.note);
+  const result = await affectEngine.recordSelfReport(
+    userId, input.valence, input.arousal, input.note, input.context);
   const state = result.state;
   if (!result.accepted) {
     return [{ type: 'text', text:
@@ -3582,6 +3587,7 @@ export async function handleSearchByFeeling(args: unknown): Promise<TextContent[
     min_resonance: z.number().min(0).max(1).optional(),
     include_interference: z.boolean().optional().default(false),
     include_content: z.boolean().optional().default(true),
+    context: z.string().max(64).optional(),
     user_id: z.string().optional(),
   }).parse(args);
   const userId = resolveUserId(input.user_id);
@@ -3600,7 +3606,7 @@ export async function handleSearchByFeeling(args: unknown): Promise<TextContent[
     queryState = { bands: input.state as any };
     queryLabel = 'the supplied state';
   } else {
-    const snapshot = await affectEngine.getState(userId);
+    const snapshot = await affectEngine.getState(userId, input.context);
     if (!snapshot.enabled) {
       return [{ type: 'text', text:
         `⚠️ No affect state for \`${userId}\` — the engine is not enabled for this identity, so there ` +

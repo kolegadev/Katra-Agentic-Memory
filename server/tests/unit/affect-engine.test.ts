@@ -27,6 +27,9 @@ import {
   AFFECT_AROUSAL_FLOOR,
   AFFECT_AROUSAL_GAIN,
   AFFECT_AROUSAL_SUM_MAX,
+  AFFECT_SUCCESS_CAP_OFFSET,
+  AFFECT_SUCCESS_GAIN,
+  stateKey,
   arousalOf,
   arousalTargetSum,
   AFFECT_BANDS,
@@ -57,7 +60,7 @@ function fresh(identity: string) {
 
 beforeEach(() => {
   process.env.KATRA_AFFECT_ENABLED = '1';
-  process.env.KATRA_AFFECT_IDENTITIES = 'shoshin,test-identity,test-a,test-b,test-c,test-d,test-e,test-f,test-g,test-h';
+  process.env.KATRA_AFFECT_IDENTITIES = 'shoshin,test-identity,test-a,test-b,test-c,test-d,test-e,test-f,test-g,test-h,test-i,test-j,test-k,test-l';
 });
 
 afterEach(() => {
@@ -382,6 +385,125 @@ describe('the bounded self-report', () => {
         Math.max(arousal, AFFECT_AROUSAL_FLOOR), 3,
       );
     }
+  });
+});
+
+describe('the bounded success channel, and attribution (AFFECT-5)', () => {
+  it('two hundred successes cannot reach the alarm region', async () => {
+    // Measured live 2026-10-26: a brute-force campaign put 1111 successful calls through this engine
+    // against 18 memories written, held beta at its clamp and arousal at 0.95 for hours, so "working
+    // hard" and "alarmed" read the same. Volume must not be able to do that.
+    const identity = fresh('test-i');
+    vi.useFakeTimers();
+    vi.setSystemTime(10_000_000);
+    for (let i = 0; i < 200; i += 1) {
+      vi.setSystemTime(10_000_000 + i * 100);
+      await engine.observe(identity, stimulusFromToolCall('store_memory', true));
+    }
+    const state = await engine.getState(identity);
+    const baseSum = state.baseline.beta + state.baseline.gamma;
+    const sum = state.bands.beta + state.bands.gamma;
+
+    expect(sum).toBeLessThanOrEqual(baseSum + AFFECT_SUCCESS_CAP_OFFSET + 0.05);
+    expect(state.arousal).toBeLessThan(0.7);        // engaged, not alarmed
+  });
+
+  it('one failure still reaches alarm, however much work came before it', async () => {
+    const identity = fresh('test-j');
+    vi.useFakeTimers();
+    vi.setSystemTime(11_000_000);
+    for (let i = 0; i < 100; i += 1) {
+      vi.setSystemTime(11_000_000 + i * 100);
+      await engine.observe(identity, stimulusFromToolCall('store_memory', true));
+    }
+    const working = await engine.getState(identity);
+    expect(working.arousal).toBeLessThan(0.7);
+
+    vi.setSystemTime(11_020_000);
+    await engine.observe(identity, stimulusFromToolCall('store_memory', false));
+    const alarmed = await engine.getState(identity);
+
+    // The asymmetry is the point: a failure keeps full authority, a thousand greps do not.
+    expect(alarmed.arousal).toBeGreaterThan(0.9);
+    expect(alarmed.arousal - working.arousal).toBeGreaterThan(0.25);
+  });
+
+  it('content keeps authority the success channel is not allowed to reach', async () => {
+    const identity = fresh('test-k');
+    vi.useFakeTimers();
+    vi.setSystemTime(12_000_000);
+    for (let i = 0; i < 200; i += 1) {
+      vi.setSystemTime(12_000_000 + i * 100);
+      await engine.observe(identity, stimulusFromToolCall('store_memory', true));
+    }
+    const capped = await engine.getState(identity);
+
+    vi.setSystemTime(12_040_000);
+    await engine.observe(identity, { valence: -0.4, arousal: 0.9, weight: 1, source: 'content' });
+    const afterContent = await engine.getState(identity);
+
+    expect(afterContent.arousal).toBeGreaterThan(capped.arousal);
+    expect(afterContent.bands.beta + afterContent.bands.gamma)
+      .toBeGreaterThan(capped.bands.beta + capped.bands.gamma + 0.1);
+  });
+
+  it('says who moved the state: contributors are recorded per source', async () => {
+    const identity = fresh('test-l');
+    vi.useFakeTimers();
+    vi.setSystemTime(13_000_000);
+    for (let i = 0; i < 5; i += 1) {
+      vi.setSystemTime(13_000_000 + i * 100);
+      await engine.observe(identity, stimulusFromToolCall('store_memory', true));
+    }
+    await engine.observe(identity, {
+      valence: -0.3, arousal: 0.5, weight: 0.5, source: 'anomaly', source_id: 'campaign-a',
+    });
+    const state = await engine.getState(identity);
+
+    expect(state.contributors?.['tool_success']?.observations).toBe(5);
+    expect(state.contributors?.['campaign-a']?.observations).toBe(1);
+    // most observations first, so the loudest channel is the first thing a reader sees
+    expect(Object.keys(state.contributors || {})[0]).toBe('tool_success');
+  });
+
+  it('a context gets its own state, and the pin says whose feeling it is', async () => {
+    const identity = fresh('test-k');
+    vi.useFakeTimers();
+    vi.setSystemTime(14_000_000);
+
+    // A scoped key is enabled by its identity: adding a context needs no allow-list edit.
+    expect(engine.isEnabled(stateKey(identity, 'sentry-cwe'))).toBe(true);
+
+    const before = await engine.getState(identity);
+    for (let i = 0; i < 10; i += 1) {
+      vi.setSystemTime(14_000_000 + i * 100);
+      await engine.observe(identity,
+        { valence: -0.6, arousal: 0.8, weight: 0.9, source: 'tool_failure' },
+        'sentry-cwe');
+    }
+    const scoped = await engine.getState(identity, 'sentry-cwe');
+    const unscoped = await engine.getState(identity);
+
+    expect(scoped.context).toBe('sentry-cwe');
+    expect(scoped.identity).toBe(identity);            // the identity is not renamed by a scope
+    expect(scoped.observations).toBe(10);
+    // and the identity's own state did not move
+    expect(unscoped.observations).toBe(before.observations);
+    expect(unscoped.arousal).toBeCloseTo(before.arousal, 6);
+
+    expect(engine.signatureFor(scoped).source).toBe('katra:sentry-cwe');
+    expect(engine.signatureFor(unscoped).source).toBe('katra');
+  });
+
+  it('the success channel is quieter than it was: the impulse carries the gain', () => {
+    const ok = stimulusFromToolCall('store_memory', true);
+    expect(ok.arousal_gain).toBe(AFFECT_SUCCESS_GAIN);
+    expect(ok.valence_gain).toBe(AFFECT_SUCCESS_GAIN);
+    expect(ok.arousal_cap_offset).toBe(AFFECT_SUCCESS_CAP_OFFSET);
+    // a failure is untouched: it keeps full authority, which is what makes alarm meaningful
+    const bad = stimulusFromToolCall('store_memory', false);
+    expect(bad.arousal_gain).toBeUndefined();
+    expect(bad.arousal_cap_offset).toBeUndefined();
   });
 });
 
