@@ -757,7 +757,7 @@ const tools = [
   },
   {
     name: 'record_feeling',
-    description: 'State how you feel, deliberately, as valence (-1..+1) and arousal (0..1). Bounded so it can correct the streaming state but never commandeer it: weight 0.35 and at most one report per 60 seconds. Use it to correct drift, not to perform emotion — the ambient channels (ingested text, tool outcomes, anomalies) are the primary ones. Returns the resulting state so you can see what it did.',
+    description: 'State how you feel, deliberately, as valence (-1..+1) and arousal (0..1). It BLENDS the streaming state a third of the way toward what you report (weight 0.35, at most one report per 60 seconds), so it corrects drift in either direction but never commandeers: report calm and the state actually gets calmer. The lowest arousal the readout can express is about 0.12, so a calmer report lands there. Use it to correct drift, not to perform emotion — the ambient channels (ingested text, tool outcomes, anomalies) are the primary ones. Returns the resulting state so you can see what it did.',
     inputSchema: zodToJsonSchema(z.object({
       valence: z.number().min(-1).max(1).describe('-1 negative .. +1 positive'),
       arousal: z.number().min(0).max(1).describe('0 calm .. 1 activated'),

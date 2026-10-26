@@ -24,9 +24,11 @@ vi.mock('../../src/database/connection.js', () => ({
 
 import {
   AffectEngine,
+  AFFECT_AROUSAL_FLOOR,
   AFFECT_BANDS,
   AFFECT_BASELINE,
   deriveAffect,
+  selfReportTarget,
   feltLabel,
   stimulusFromContent,
   stimulusFromToolCall,
@@ -51,7 +53,7 @@ function fresh(identity: string) {
 
 beforeEach(() => {
   process.env.KATRA_AFFECT_ENABLED = '1';
-  process.env.KATRA_AFFECT_IDENTITIES = 'shoshin,test-identity,test-a,test-b,test-c,test-d';
+  process.env.KATRA_AFFECT_IDENTITIES = 'shoshin,test-identity,test-a,test-b,test-c,test-d,test-e,test-f,test-g,test-h';
 });
 
 afterEach(() => {
@@ -252,6 +254,90 @@ describe('the bounded self-report', () => {
     expect(second.accepted).toBe(false);
     expect(String(second.reason)).toContain('rate-limited');
     expect(second.state?.valence).toBeLessThan(0);       // the first report still owns the state
+  });
+
+  // AFFECT-3. The door shipped as an additive shock, and a shock from (valence, arousal) can only
+  // ever ADD activation: beta (1.5a) and gamma (2a^2) are non-negative for every a, and the one
+  // decreasing term, theta, is not in the arousal readout. Measured live on 2026-10-26: reporting
+  // arousal 0.10 ("as calm as I can say") moved the readout 0.796 -> 0.822, and reporting 0.62 moved
+  // it 0.779 -> 0.951. The four cases below are the contract the blend has to satisfy.
+  it('can LOWER arousal: a calm report is a correction, not another stimulus', async () => {
+    const identity = fresh('test-e');
+    vi.useFakeTimers();
+    vi.setSystemTime(6_000_000);
+    for (let i = 0; i < 3; i += 1) {
+      vi.setSystemTime(6_000_000 + i * 1_000);
+      await engine.observe(identity, stimulusFromToolCall('store_memory', false));
+    }
+    const hot = await engine.getState(identity);
+    expect(hot.arousal).toBeGreaterThan(0.8);
+
+    vi.setSystemTime(6_010_000);
+    await engine.recordSelfReport(identity, 0, 0.1, 'calmer than that');
+
+    const cooled = await engine.getState(identity);
+    expect(cooled.arousal).toBeLessThan(hot.arousal);
+
+    // Asserted on beta+gamma, the quantity the blend moves, because the readout is tanh-compressed
+    // near the ceiling: at arousal 0.999 a 35% cut in beta+gamma only moves the NUMBER by 0.03. That
+    // compression is the readout's, not the door's, and the next case shows the blend still converges.
+    const hotSum = hot.bands.beta + hot.bands.gamma;
+    const coolSum = cooled.bands.beta + cooled.bands.gamma;
+    expect(coolSum).toBeLessThan(hotSum * 0.7);
+  });
+
+  it('converges on what was reported, and stops at the floor the readout can express', async () => {
+    const identity = fresh('test-f');
+    vi.useFakeTimers();
+    vi.setSystemTime(7_000_000);
+    await engine.observe(identity, stimulusFromToolCall('store_memory', false));   // start hot
+    for (let i = 0; i < 14; i += 1) {
+      vi.setSystemTime(7_000_000 + i * 1_000);
+      // The rate limit lives in the door, not the engine: repeated reports are what convergence means.
+      await engine.observe(identity, { valence: 0, arousal: 0.1, weight: 0.35, source: 'self_report' });
+    }
+    const settled = await engine.getState(identity);
+    expect(settled.arousal).toBeLessThan(0.2);
+    // Not below the floor: the readout cannot name a calmer state, and the target must not pretend.
+    expect(settled.arousal).toBeGreaterThanOrEqual(AFFECT_AROUSAL_FLOOR - 1e-6);
+  });
+
+  it('moves valence where it was told, including across zero', async () => {
+    const identity = fresh('test-g');
+    vi.useFakeTimers();
+    vi.setSystemTime(8_000_000);
+    const before = await engine.getState(identity);
+    expect(before.valence).toBeGreaterThan(-0.2);      // baseline sits near zero
+
+    await engine.recordSelfReport(identity, -0.8, 0.3, 'this does not sit right');
+    const after = await engine.getState(identity);
+    expect(after.valence).toBeLessThan(-0.2);
+    expect(after.valence).toBeLessThan(before.valence);
+  });
+
+  it('leaves the bands it was not told about where they were', async () => {
+    const identity = fresh('test-h');
+    vi.useFakeTimers();
+    vi.setSystemTime(9_000_000);
+    const before = await engine.getState(identity);
+    await engine.recordSelfReport(identity, -0.5, 0.9, 'plain');
+    const after = await engine.getState(identity);
+    // A report is two numbers. theta and delta are not among them, so the blend must not invent them
+    // (the additive version wrote theta += 0.3*(1-a)*w on every report).
+    expect(after.bands.theta).toBeCloseTo(before.bands.theta, 10);
+    expect(after.bands.delta).toBeCloseTo(before.bands.delta, 10);
+  });
+
+  it('the target is an exact inverse: it reads back as the state that was reported', () => {
+    const from = { delta: 1, theta: 1.3, alpha_l: 1.44, alpha_r: 2.55, beta: 1.1, gamma: 0.4 };
+    for (const [valence, arousal] of [[0.45, 0.62], [-0.8, 0.2], [0, 0.9], [0.9, 0.15]] as const) {
+      const target = selfReportTarget(from, valence, arousal);
+      const readBack = deriveAffect(target);
+      expect(readBack.valence).toBeCloseTo(valence, 3);
+      expect(Math.max(readBack.arousal, AFFECT_AROUSAL_FLOOR)).toBeCloseTo(
+        Math.max(arousal, AFFECT_AROUSAL_FLOOR), 3,
+      );
+    }
   });
 });
 

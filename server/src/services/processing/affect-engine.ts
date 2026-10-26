@@ -136,6 +136,52 @@ export function deriveAffect(bands: AffectBands): {
   return { faa, valence, arousal, entropy, intensity, felt: feltLabel(valence, arousal) };
 }
 
+/** tanh's inverse, written out rather than taken from the platform (lib targets vary). */
+const atanh = (value: number): number => 0.5 * Math.log((1 + value) / (1 - value));
+
+/**
+ * The lowest arousal the published readout can express: beta+gamma = 0 gives 0.5 - 0.5*tanh(1).
+ * A report asking for calmer than this asks for a state the readout cannot name, so the target is
+ * clamped here rather than promising something that will never appear.
+ */
+export const AFFECT_AROUSAL_FLOOR = clamp(0.5 - 0.5 * Math.tanh(1), 0, 1);
+
+/**
+ * The band vector a self-report aims at.
+ *
+ * A report supplies two numbers, so it may constrain exactly two degrees of freedom: the alpha
+ * RATIO (which is what valence reads) and the beta+gamma SUM (which is what arousal reads). The
+ * other four are held where they are, because a report says nothing about theta, delta or the
+ * beta:gamma split — inventing values for them is how the additive version turned "I am calm" into
+ * "arousal 0.95".
+ *
+ * Solved against the published readouts instead of approximated:
+ *   valence = tanh(faa / 1.2)                  -> faa = atanh(valence) * 1.2
+ *   arousal = 0.5 + 0.5*tanh((b+g-base)/base)   -> b+g = base * (1 + atanh(2*arousal - 1))
+ * The alpha pair keeps its SUM and takes the reported RATIO; the beta/gamma pair keeps its SHARE of
+ * the current split and takes the reported SUM. Both are exact inverses of `deriveAffect`, so the
+ * target provably reads back as the state the report asked for.
+ */
+export function selfReportTarget(bands: AffectBands, valence: number, arousal: number): AffectBands {
+  const wanted = clamp(Number(valence) || 0, -0.999, 0.999);
+  const activation = clamp(Number(arousal) || 0, AFFECT_AROUSAL_FLOOR, 0.999);
+  const ratio = Math.exp(atanh(wanted) * FAA_SCALE);
+  const alphaSum = Math.max(bands.alpha_l + bands.alpha_r, 2 * BAND_FLOOR);
+  const alphaRight = (alphaSum * ratio) / (1 + ratio);
+  const base = AFFECT_BASELINE.beta + AFFECT_BASELINE.gamma;
+  const activated = Math.max(base * (1 + atanh(2 * activation - 1)), 0);
+  const current = bands.beta + bands.gamma;
+  const share = current > 0 ? bands.gamma / current : AFFECT_BASELINE.gamma / base;
+  return {
+    delta: bands.delta,
+    theta: bands.theta,
+    alpha_l: alphaSum - alphaRight,
+    alpha_r: alphaRight,
+    beta: activated * (1 - share),
+    gamma: activated * share,
+  };
+}
+
 /** A rendering label. Never the stored truth: the stored truth is the band vector. */
 export function feltLabel(valence: number, arousal: number): string {
   if (arousal >= 0.6) {
@@ -290,19 +336,36 @@ export class AffectEngine {
     const now = Date.now();
     this.decay(state, now);
 
-    const shock: AffectBands = { delta: 0, theta: 0, alpha_l: 0, alpha_r: 0, beta: 0, gamma: 0 };
     const habituated = stimulus.source === 'tool_success' ? this.habituation(state, now) : 1;
     const weight = clamp(Number(stimulus.weight) || 0, 0, 1) * habituated;
     const valence = clamp(Number(stimulus.valence) || 0, -1, 1);
     const arousal = clamp(Number(stimulus.arousal) || 0, 0, 1);
-    shock.alpha_l -= 0.8 * valence * weight;
-    shock.alpha_r += 0.8 * valence * weight;
-    shock.beta += 1.5 * arousal * weight;
-    shock.gamma += 2.0 * arousal * arousal * weight;
-    shock.theta += 0.3 * (1 - arousal) * weight * (stimulus.theta_weight ?? 1);
 
-    const norm = Math.sqrt(AFFECT_BANDS.reduce((sum, band) => sum + shock[band] ** 2, 0));
-    const scale = norm > SHOCK_MAX_NORM ? SHOCK_MAX_NORM / norm : 1;
+    // Two kinds of input, two kinds of arithmetic.
+    //
+    // The ambient channels (content, outcomes, anomalies) report on something that HAPPENED, so they
+    // add a bounded shock. A self-report asserts the RESULTING state, so it BLENDS toward the state
+    // it names. As a shock it was one-way: beta (1.5a) and gamma (2a^2) only ever rise, and the calm
+    // band, theta, is not in the arousal readout at all — so "I am calm" RAISED arousal. Measured
+    // live on 2026-10-26: reporting 0.10 moved the readout 0.796 -> 0.822, and reporting 0.62 moved
+    // it 0.779 -> 0.951. See `selfReportTarget`.
+    let step: AffectBands;
+    if (stimulus.source === 'self_report') {
+      const target = selfReportTarget(state.bands, valence, arousal);
+      step = { delta: 0, theta: 0, alpha_l: 0, alpha_r: 0, beta: 0, gamma: 0 };
+      for (const band of AFFECT_BANDS) step[band] = weight * (target[band] - state.bands[band]);
+    } else {
+      const shock: AffectBands = { delta: 0, theta: 0, alpha_l: 0, alpha_r: 0, beta: 0, gamma: 0 };
+      shock.alpha_l -= 0.8 * valence * weight;
+      shock.alpha_r += 0.8 * valence * weight;
+      shock.beta += 1.5 * arousal * weight;
+      shock.gamma += 2.0 * arousal * arousal * weight;
+      shock.theta += 0.3 * (1 - arousal) * weight * (stimulus.theta_weight ?? 1);
+      const norm = Math.sqrt(AFFECT_BANDS.reduce((sum, band) => sum + shock[band] ** 2, 0));
+      const scale = norm > SHOCK_MAX_NORM ? SHOCK_MAX_NORM / norm : 1;
+      for (const band of AFFECT_BANDS) shock[band] *= scale;
+      step = shock;
+    }
     for (const band of AFFECT_BANDS) {
       // No band may sit further than `span` from the baseline: repeated identical input must not run
       // a band away, whatever the stimulus mix. `span` is the larger of 3x the baseline and an
@@ -312,7 +375,7 @@ export class AffectEngine {
       const span = Math.max(3 * baseline, 1.5);
       const low = Math.max(BAND_FLOOR, baseline - span);
       const high = Math.min(BAND_CEILING, baseline + span);
-      state.bands[band] = clamp(state.bands[band] + shock[band] * scale, low, high);
+      state.bands[band] = clamp(state.bands[band] + step[band], low, high);
     }
 
     state.observations += 1;
@@ -324,8 +387,9 @@ export class AffectEngine {
   }
 
   /**
-   * The one voluntary door. Bounded so it can correct the state but never commandeer it, and
-   * rate-limited so a burst of calls cannot stand in for a genuine state change.
+   * The one voluntary door. It BLENDS the state a third of the way toward what was reported (see
+   * `selfReportTarget`), so it can correct drift in either direction but never commandeer the
+   * state; and it is rate-limited so a burst of calls cannot stand in for a genuine change.
    */
   async recordSelfReport(identity: string, valence: number, arousal: number, note?: string):
     Promise<{ accepted: boolean; reason?: string; state: AffectStateSnapshot | null }> {
