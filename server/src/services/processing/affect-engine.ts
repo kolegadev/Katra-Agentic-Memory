@@ -13,7 +13,8 @@
  *
  *   faa        = ln(alpha_r) - ln(alpha_l)
  *   valence    = tanh(faa / 1.2)
- *   arousal    = 0.5 + 0.5*tanh(((beta+gamma) - (beta0+gamma0)) / (beta0+gamma0))
+ *   arousal    = 0.5 + 0.5*tanh(GAIN * (beta+gamma - base) / side)   # side = the reachable
+ *                distance on that side: base below the baseline, SUM_MAX - base above it
  *   entropy    = -Σ p ln p over the normalised bands;  intensity = 1 - entropy/ln 6
  *
  * Dynamics are a leaky integrator integrated LAZILY: every read or observation advances the state by
@@ -49,6 +50,24 @@ const BAND_FLOOR = 0.05;
 const BAND_CEILING = 6.0;
 const SHOCK_MAX_NORM = 2.0;
 const FAA_SCALE = 1.2;
+
+/**
+ * Arousal: one gain, applied to each side's own reachable distance (see `arousalOf`).
+ *
+ * The first reading divided the excess over baseline by the BASELINE SUM, which made one baseline sum
+ * of distance the whole usable range. The bands can legitimately reach about five times that, so
+ * measured on the live lane on 2026-10-26: 11 of 16 pins read above 0.95, a busy working day
+ * (beta+gamma 1.16) read 0.79, and the calm fixture read 0.34 — the top of the scale was where
+ * everything lived and "calm" was unreachable (floor 0.119, not 0).
+ */
+export const AFFECT_AROUSAL_GAIN = 2.0;
+
+/**
+ * The highest beta+gamma the integrator can reach at the DEFAULT baseline:
+ * beta <= 0.5 + max(3*0.5, 1.5) = 2.0 and gamma <= 0.2 + max(3*0.2, 1.5) = 1.7.
+ * Published because the arousal readout is normalised against it.
+ */
+export const AFFECT_AROUSAL_SUM_MAX = 3.7;
 const TRAIL_MAX = 200;
 const PERSIST_MIN_INTERVAL_MS = 1000;
 
@@ -118,6 +137,23 @@ const clamp = (value: number, low: number, high: number): number =>
 
 const floorOf = (value: number): number => (Number.isFinite(value) ? Math.max(value, 1e-9) : 1e-9);
 
+/**
+ * Arousal from the fast bands, normalised per side by the range that side can actually reach.
+ *
+ *   arousal = 0.5 + 0.5*tanh( GAIN * (beta+gamma - base) / side )
+ *   side    = base                  when beta+gamma <= base   (down to a band sum of 0)
+ *           = SUM_MAX - base        when beta+gamma >  base   (up to the integrator's ceiling)
+ *
+ * baseline -> exactly 0.5; a band sum of 0 -> 0.018; the ceiling -> 0.982. Monotone, continuous at
+ * the baseline, and invertible, so a reader can recover the band sum from the number.
+ */
+export function arousalOf(beta: number, gamma: number): number {
+  const base = AFFECT_BASELINE.beta + AFFECT_BASELINE.gamma;
+  const total = beta + gamma;
+  const side = total <= base ? base : AFFECT_AROUSAL_SUM_MAX - base;
+  return clamp(0.5 + 0.5 * Math.tanh((AFFECT_AROUSAL_GAIN * (total - base)) / side), 0, 1);
+}
+
 /** The published derivations. Exported so a test can pin them against the storage lane's. */
 export function deriveAffect(bands: AffectBands): {
   faa: number; valence: number; arousal: number; entropy: number; intensity: number; felt: string;
@@ -129,8 +165,7 @@ export function deriveAffect(bands: AffectBands): {
     const share = Math.max(bands[band], 0) / total;
     if (share > 0) entropy -= share * Math.log(share);
   }
-  const base = AFFECT_BASELINE.beta + AFFECT_BASELINE.gamma;
-  const arousal = clamp(0.5 + 0.5 * Math.tanh((bands.beta + bands.gamma - base) / base), 0, 1);
+  const arousal = arousalOf(bands.beta, bands.gamma);
   const valence = Math.tanh(faa / FAA_SCALE);
   const intensity = clamp(1 - entropy / Math.log(AFFECT_BANDS.length), 0, 1);
   return { faa, valence, arousal, entropy, intensity, felt: feltLabel(valence, arousal) };
@@ -140,11 +175,23 @@ export function deriveAffect(bands: AffectBands): {
 const atanh = (value: number): number => 0.5 * Math.log((1 + value) / (1 - value));
 
 /**
- * The lowest arousal the published readout can express: beta+gamma = 0 gives 0.5 - 0.5*tanh(1).
+ * The lowest arousal the readout can express: a band sum of 0 gives 0.5 - 0.5*tanh(GAIN) = 0.018.
  * A report asking for calmer than this asks for a state the readout cannot name, so the target is
  * clamped here rather than promising something that will never appear.
  */
-export const AFFECT_AROUSAL_FLOOR = clamp(0.5 - 0.5 * Math.tanh(1), 0, 1);
+export const AFFECT_AROUSAL_FLOOR = clamp(0.5 - 0.5 * Math.tanh(AFFECT_AROUSAL_GAIN), 0, 1);
+
+/**
+ * The inverse of `arousalOf`, restricted to a band SUM: the sum a report asks for when it names an
+ * arousal. The beta:gamma split is not something a report can speak to, so it is not solved here.
+ */
+export function arousalTargetSum(arousal: number): number {
+  const base = AFFECT_BASELINE.beta + AFFECT_BASELINE.gamma;
+  const wanted = clamp(Number(arousal) || 0, AFFECT_AROUSAL_FLOOR, 0.999);
+  const scaled = atanh(2 * wanted - 1) / AFFECT_AROUSAL_GAIN;
+  const side = wanted <= 0.5 ? base : AFFECT_AROUSAL_SUM_MAX - base;
+  return Math.max(base + scaled * side, 0);
+}
 
 /**
  * The band vector a self-report aims at.
@@ -156,8 +203,8 @@ export const AFFECT_AROUSAL_FLOOR = clamp(0.5 - 0.5 * Math.tanh(1), 0, 1);
  * "arousal 0.95".
  *
  * Solved against the published readouts instead of approximated:
- *   valence = tanh(faa / 1.2)                  -> faa = atanh(valence) * 1.2
- *   arousal = 0.5 + 0.5*tanh((b+g-base)/base)   -> b+g = base * (1 + atanh(2*arousal - 1))
+ *   valence = tanh(faa / 1.2)   -> faa = atanh(valence) * 1.2
+ *   arousal = arousalOf(b, g)   -> b+g = arousalTargetSum(arousal)
  * The alpha pair keeps its SUM and takes the reported RATIO; the beta/gamma pair keeps its SHARE of
  * the current split and takes the reported SUM. Both are exact inverses of `deriveAffect`, so the
  * target provably reads back as the state the report asked for.
@@ -169,7 +216,7 @@ export function selfReportTarget(bands: AffectBands, valence: number, arousal: n
   const alphaSum = Math.max(bands.alpha_l + bands.alpha_r, 2 * BAND_FLOOR);
   const alphaRight = (alphaSum * ratio) / (1 + ratio);
   const base = AFFECT_BASELINE.beta + AFFECT_BASELINE.gamma;
-  const activated = Math.max(base * (1 + atanh(2 * activation - 1)), 0);
+  const activated = arousalTargetSum(activation);
   const current = bands.beta + bands.gamma;
   const share = current > 0 ? bands.gamma / current : AFFECT_BASELINE.gamma / base;
   return {

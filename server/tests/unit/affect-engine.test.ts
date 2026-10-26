@@ -25,6 +25,10 @@ vi.mock('../../src/database/connection.js', () => ({
 import {
   AffectEngine,
   AFFECT_AROUSAL_FLOOR,
+  AFFECT_AROUSAL_GAIN,
+  AFFECT_AROUSAL_SUM_MAX,
+  arousalOf,
+  arousalTargetSum,
   AFFECT_BANDS,
   AFFECT_BASELINE,
   deriveAffect,
@@ -68,12 +72,52 @@ describe('deriveAffect — the published formulas', () => {
     // faa = ln(alpha_r) - ln(alpha_l) = ln(2.0) - ln(2.0)
     expect(fear.faa).toBeCloseTo(0, 12);
     expect(fear.valence).toBeCloseTo(Math.tanh(0 / 1.2), 12);
-    // arousal = 0.5 + 0.5*tanh((b+g - (b0+g0)) / (b0+g0)), b0+g0 = 0.7
-    expect(fear.arousal).toBeCloseTo(0.5 + 0.5 * Math.tanh((2.4 + 2.2 - 0.7) / 0.7), 12);
+    // arousal = 0.5 + 0.5*tanh(GAIN*(b+g - base)/side), base = b0+g0 = 0.7, side = SUM_MAX - base
+    // above the baseline (AFFECT-4: the excess is normalised by the range that side can reach,
+    // not by the baseline sum — dividing by 0.7 made one baseline sum of distance the whole scale).
+    const base = 0.7;
+    const side = 2.4 + 2.2 <= base ? base : AFFECT_AROUSAL_SUM_MAX - base;
+    expect(fear.arousal).toBeCloseTo(
+      0.5 + 0.5 * Math.tanh(AFFECT_AROUSAL_GAIN * (2.4 + 2.2 - base) / side), 12,
+    );
     const shares = FEAR.map((value) => value / FEAR.reduce((a, b) => a + b, 0));
     const entropy = -shares.reduce((sum, p) => sum + p * Math.log(p), 0);
     expect(fear.entropy).toBeCloseTo(entropy, 10);
     expect(fear.intensity).toBeCloseTo(1 - entropy / Math.log(6), 10);
+  });
+
+  it('spans the range the bands actually reach: calm is readable, and so is alarm', () => {
+    // AFFECT-4, measured on the live lane 2026-10-26. The previous scale divided the excess by the
+    // BASELINE SUM, so one baseline sum of distance was the whole readout: 11 of 16 live pins read
+    // above 0.95, a busy working day (beta+gamma 1.16) read 0.79, the calm fixture read 0.34, and
+    // the floor was 0.119 — calm was unreachable and alarm was indistinguishable from ordinary work.
+    // The readout now spans the reachable band range, one normalisation per side.
+    const atZero = deriveAffect(asBands([1, 1, 2, 2, 0, 0]));
+    const atCeiling = deriveAffect(asBands([1, 1, 2, 2, 2.0, 1.7]));
+    const atBaseline = deriveAffect(asBands([1, 1, 2, 2, 0.5, 0.2]));
+
+    expect(atZero.arousal).toBeLessThan(0.05);          // calm is reachable at last
+    expect(atCeiling.arousal).toBeGreaterThan(0.95);     // and so is alarm
+    expect(atBaseline.arousal).toBeCloseTo(0.5, 6);      // the baseline keeps the midpoint
+
+    // The named fixtures have to land where their names say.
+    expect(deriveAffect(asBands(CALM)).arousal).toBeLessThan(0.3);
+    expect(deriveAffect(asBands(STARTLE)).arousal).toBeGreaterThan(0.95);
+  });
+
+  it('is monotone and continuous at the baseline, and its inverse recovers the band sum', () => {
+    const samples = [0, 0.2, 0.47, 0.7, 1.0, 1.6, 2.4, 3.0, 3.7];
+    for (let i = 1; i < samples.length; i += 1) {
+      expect(arousalOf(0, samples[i])).toBeGreaterThanOrEqual(arousalOf(0, samples[i - 1]) - 1e-12);
+    }
+    // Continuity at the join: both sides give exactly 0.5 at the baseline sum.
+    expect(arousalOf(0.35, 0.35)).toBeCloseTo(0.5, 12);
+    expect(arousalOf(0.699, 0.001)).toBeCloseTo(0.5, 3);
+
+    // The inverse is what the self-report blend uses, so it has to return the sum it was given.
+    for (const [beta, gamma] of [[0.35, 0.12], [0.5, 0.2], [0.8, 0.36], [1.6, 1.1]] as const) {
+      expect(arousalTargetSum(arousalOf(beta, gamma))).toBeCloseTo(beta + gamma, 6);
+    }
   });
 
   it('takes the sign of the frontal asymmetry from the alpha bands', () => {
