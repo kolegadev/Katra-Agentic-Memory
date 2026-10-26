@@ -18,7 +18,7 @@ Pi5 (Docker, aarch64)
 | File | Purpose |
 |------|---------|
 | `index.js` | Main entry; starts REST API, MCP server, background processor |
-| `mcp-server.js` | 83 MCP tools for memory operations (source: `server/src/mcp-server.ts`) |
+| `mcp-server.js` | 84 MCP tools for memory operations (source: `server/src/mcp-server.ts`) |
 | `services/` | 30+ service modules forming the pipeline |
 
 ---

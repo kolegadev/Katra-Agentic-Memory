@@ -63,7 +63,7 @@ import { MemoryDecayService } from './services/processing/memory-decay-service.j
 import { AnomalyDetectionService } from './services/processing/anomaly-detection-service.js';
 import { SalienceService } from './services/processing/salience-service.js';
 import { affectEngine, stimulusFromAnomaly, stimulusFromContent, stimulusFromToolCall } from './services/processing/affect-engine.js';
-import { pinAffect, agmtAffectConfig } from './services/integration/agmt-affect-client.js';
+import { pinAffect, agmtAffectConfig, affectSearch } from './services/integration/agmt-affect-client.js';
 import { COGNITIVE_TOOL_DEFS, dispatchCognitiveTool, dispatchSchedulerTool, dispatchUncertaintyTool, dispatchActivationTool } from './services/mission-cognition/mcp-tools.js';
 import { cognitiveControlMode, schedulerMode } from './services/mission-cognition/index.js';
 import {
@@ -762,6 +762,21 @@ const tools = [
       valence: z.number().min(-1).max(1).describe('-1 negative .. +1 positive'),
       arousal: z.number().min(0).max(1).describe('0 calm .. 1 activated'),
       note: z.string().optional().describe('optional one-line context (not stored as truth)'),
+      user_id: z.string().optional(),
+    })) as Record<string, unknown>,
+  },
+  {
+    name: 'search_by_feeling',
+    description: 'Recall memories by AFFECT ALONE — no words, no entity, no keywords. By default the query is your CURRENT affective state, so the question it answers is "what did I know the last time I felt like this?". Returns the memories whose pinned wave signatures resonate with the state, with their resonance score, the state each was pinned under, and a snippet. This is a state-space lookup: it will not find a memory by topic, and a low resonance means nothing similar in feeling was stored — which is information, not failure.',
+    inputSchema: zodToJsonSchema(z.object({
+      state: z.union([z.array(z.number()), z.record(z.number())]).optional()
+        .describe('optional override: six bands as [delta, theta, alpha_l, alpha_r, beta, gamma] or by name. Omit to use your current state.'),
+      k: z.number().int().min(1).max(25).optional().default(5),
+      min_resonance: z.number().min(0).max(1).optional()
+        .describe('admission floor; the store default (0.90) is measured to separate related from unrelated states. Pass 0 to rank without a floor.'),
+      include_interference: z.boolean().optional().default(false)
+        .describe('also report the wave-store carrier overlap beside each score (it is NOT the ranking key)'),
+      include_content: z.boolean().optional().default(true).describe('attach a content snippet'),
       user_id: z.string().optional(),
     })) as Record<string, unknown>,
   },
@@ -3560,6 +3575,104 @@ async function handleRecordFeeling(args: unknown): Promise<TextContent[]> {
   }];
 }
 
+export async function handleSearchByFeeling(args: unknown): Promise<TextContent[]> {
+  const input = z.object({
+    state: z.union([z.array(z.number()), z.record(z.number())]).optional(),
+    k: z.number().int().min(1).max(25).optional().default(5),
+    min_resonance: z.number().min(0).max(1).optional(),
+    include_interference: z.boolean().optional().default(false),
+    include_content: z.boolean().optional().default(true),
+    user_id: z.string().optional(),
+  }).parse(args);
+  const userId = resolveUserId(input.user_id);
+
+  if (!agmtAffectConfig().enabled) {
+    return [{ type: 'text', text:
+      '⚠️ **search_by_feeling is off.** It needs `KATRA_AFFECT_ENABLED=1` (the engine) and the AGMT ' +
+      'affect lane running (`AGMT_AFFECT=1` on the wave store). Nothing was searched.' }];
+  }
+
+  // The query: the caller's current state unless one is given. This is the point of the tool — an
+  // agent asks "what did I know when I felt like this?" without having to describe the feeling.
+  let queryState: Record<string, unknown>;
+  let queryLabel: string;
+  if (input.state) {
+    queryState = { bands: input.state as any };
+    queryLabel = 'the supplied state';
+  } else {
+    const snapshot = await affectEngine.getState(userId);
+    if (!snapshot.enabled) {
+      return [{ type: 'text', text:
+        `⚠️ No affect state for \`${userId}\` — the engine is not enabled for this identity, so there ` +
+        'is no feeling to search by. Pass an explicit `state` if you want to query anyway.' }];
+    }
+    queryState = affectEngine.signatureFor(snapshot);
+    queryLabel = `your current state (${snapshot.felt}, valence ${snapshot.valence >= 0 ? '+' : ''}${snapshot.valence}, arousal ${snapshot.arousal})`;
+  }
+
+  const found = await affectSearch(queryState, {
+    k: input.k, identity: userId,
+    minResonance: input.min_resonance,
+    includeInterference: input.include_interference,
+  });
+  if (!found.ok) {
+    return [{ type: 'text', text:
+      `⚠️ **The wave store answered with a failure:** \`${found.code}\`. ` +
+      'Nothing was retrieved; the memory store itself is unaffected.' }];
+  }
+  if (found.hits.length === 0) {
+    return [{ type: 'text', text:
+      `## Nothing resonates\n\nSearched by **${queryLabel}** against ${found.scored} pinned memories ` +
+      `at a floor of ${found.floor ?? 0.9}.\n\nNo pinned memory sits close enough in feeling. That is a ` +
+      'real answer: either nothing similar has been stored yet, or the similarity lives below the floor ' +
+      '(pass `min_resonance: 0` to rank without one).' }];
+  }
+
+  const db = get_database();
+  const lines: string[] = [
+    `## Memories that resonate with ${queryLabel}`,
+    '',
+    `_${found.admitted} of ${found.scored} pinned memories cleared the floor in ${found.seconds}s. ` +
+    'Ranked by resonance — a state-space match, not a topic match._',
+    '',
+  ];
+  for (const hit of found.hits) {
+    lines.push(`### ${hit.resonance.toFixed(3)} — \`${hit.external_id}\``);
+    const pinned = hit.state || ({} as any);
+    lines.push(`*Pinned under:* valence ${Number(pinned.valence ?? 0) >= 0 ? '+' : ''}` +
+      `${Number(pinned.valence ?? 0).toFixed(2)}, arousal ${Number(pinned.arousal ?? 0).toFixed(2)} ` +
+      `| ${new Date((hit.at || 0) * 1000).toISOString().slice(0, 19).replace('T', ' ')}`);
+    if (input.include_content && db) {
+      const snippet = await memorySnippet(db, hit.external_id);
+      if (snippet) lines.push('', snippet);
+    }
+    lines.push('');
+  }
+  return [{ type: 'text', text: lines.join('\n') }];
+}
+
+/** Resolve a pin's external id back to the memory it was written under, and quote a snippet. */
+async function memorySnippet(db: any, externalId: string): Promise<string | null> {
+  try {
+    if (externalId.startsWith('katra:fact:')) {
+      const { ObjectId } = await import('mongodb');
+      const raw = externalId.slice('katra:fact:'.length);
+      const fact = await db.collection('semantic_facts').findOne({ _id: new ObjectId(raw) });
+      if (!fact) return null;
+      return `> ${String(fact.content || '').slice(0, 240).replace(/\n/g, ' ')}`;
+    }
+    const eventId = externalId.startsWith('katra:') ? externalId.slice('katra:'.length) : externalId;
+    const event = await db.collection('episodic_events').findOne({ id: eventId });
+    if (!event) return null;
+    const content = typeof event.content === 'string'
+      ? event.content
+      : String(event.content?.message || JSON.stringify(event.content || ''));
+    return `> ${content.slice(0, 240).replace(/\n/g, ' ')}`;
+  } catch {
+    return null;                      // a missing memory is a gap, never a failed search
+  }
+}
+
 async function handleGetPhilosophicalInsights(args: unknown): Promise<TextContent[]> {
   const input = z.object({
     domain: z.string().optional(),
@@ -4101,6 +4214,7 @@ function registerHandlers(server: Server, getIdentity?: () => CallerIdentity) {
         case 'get_emotional_context': result = await handleGetEmotionalContext(args); break;
         case 'get_affect_state': result = await handleGetAffectState(args); break;
         case 'record_feeling': result = await handleRecordFeeling(args); break;
+        case 'search_by_feeling': result = await handleSearchByFeeling(args); break;
         case 'get_philosophical_insights': result = await handleGetPhilosophicalInsights(args); break;
         case 'get_unresolved_threads': result = await handleGetUnresolvedThreads(args); break;
         case 'resolve_thread': result = await handleResolveThread(args); break;

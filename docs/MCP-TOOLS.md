@@ -1,17 +1,17 @@
 # MCP Tools Reference
 
-Katra (the self-hosted cognitive memory appliance) exposes **83 tools** via the Model Context Protocol (MCP) on a default deployment — every feature flag off, i.e. exactly what `tools/list` returns out of the box (see [Registered surface](#registered-surface-and-what-the-flags-add)). All tools are accessible through the MCP endpoint at `http://<host>:3112/mcp` (host port 3112 → container port 3100). The transport is **POST-only streamable HTTP** — `GET /mcp` returns 405 (standalone SSE streams are not supported). A plain `GET /health` on the same port (3112) reports service health without authentication.
+Katra (the self-hosted cognitive memory appliance) exposes **84 tools** via the Model Context Protocol (MCP) on a default deployment — every feature flag off, i.e. exactly what `tools/list` returns out of the box (see [Registered surface](#registered-surface-and-what-the-flags-add)). All tools are accessible through the MCP endpoint at `http://<host>:3112/mcp` (host port 3112 → container port 3100). The transport is **POST-only streamable HTTP** — `GET /mcp` returns 405 (standalone SSE streams are not supported). A plain `GET /health` on the same port (3112) reports service health without authentication.
 
 ## Registered surface (and what the flags add)
 
-`tools/list` reports **83 tools** on a default deployment: `COGNITIVE_CONTROL_ENABLED` off,
+`tools/list` reports **84 tools** on a default deployment: `COGNITIVE_CONTROL_ENABLED` off,
 `COGNITIVE_SCHEDULER_MODE` off, `PER_IDENTITY_PERSONALITY` off, `FOCUSED_IMAGINATION` off,
 `CREATIVE_BATON_PROMOTION` off, `COGNITIVE_TEAM_ALLOCATION` off. That
 number is *measured, not hand-maintained* — `server/tests/unit/mcp-tool-surface-docs.test.ts` counts
 the registered tools in `server/src/mcp-server.ts` and fails if this page or the README states
 anything else.
 
-Those 83 are **68 catalogued tools** (every `###` entry below except the flag-gated
+Those 84 are **69 catalogued tools** (every `###` entry below except the flag-gated
 `get_my_personality`, `run_focused_consolidation`, `get_salience_trace`,
 `generate_imagination_seeds`, `get_idea_archive`, `run_imagination_cycle`, `get_creative_baton`,
 `promote_creative_baton`, `baton_candidates_to_work_items`, `record_candidate_outcome`,
@@ -34,28 +34,28 @@ Feature flags grow the same surface. Totals are `tools/list` counts:
 
 | Flags | `tools/list` | Added over the default |
 | --- | --- | --- |
-| all off (**default**) | **83** | — |
-| `PER_IDENTITY_PERSONALITY=1` | **84** | +1 — `get_my_personality` (catalogued below) |
-| `FOCUSED_IMAGINATION=1` | **93** | +10 — `run_focused_consolidation`, `get_salience_trace`, `generate_imagination_seeds`, `get_idea_archive`, `run_imagination_cycle`, `get_creative_baton`, `baton_candidates_to_work_items`, `record_candidate_outcome`, `get_imagination_metrics`, `record_experiment_observation` (catalogued below) |
-| `FOCUSED_IMAGINATION=1` + `CREATIVE_BATON_PROMOTION=1` | **94** | +1 — `promote_creative_baton` (the promotion flag on its own adds nothing: it is meaningless without the family flag) |
-| `COGNITIVE_TEAM_ALLOCATION=1` | **89** | +6 — `assign_thinking_mode`, `get_active_mode`, `create_inheritance_envelope`, `allocate_cognitive_portfolio`, `plan_independent_first_pass`, `synthesize_portfolios` (catalogued below; the family is gated on its own flag, so a deployment may run the single-agent imagination surface without ever assembling a team) |
-| `COGNITIVE_CONTROL_ENABLED=read` or `write` | **108** | +25 — mission state, state deltas, epistemic ledger, batons, allocator evidence/counterfactuals, skill-candidate lifecycle (`server/src/services/mission-cognition/`) |
-| `COGNITIVE_SCHEDULER_MODE=shadow` or `recommend` or `allocate_internal` (with the row above) | **121** | +13 more — scheduler queue/decision, uncertainty, trigger and experiment tools |
-| `PER_IDENTITY_PERSONALITY=1` with a cognitive-control row | **84 / 109 / 122** | both — the flags are independent |
+| all off (**default**) | **84** | — |
+| `PER_IDENTITY_PERSONALITY=1` | **85** | +1 — `get_my_personality` (catalogued below) |
+| `FOCUSED_IMAGINATION=1` | **94** | +10 — `run_focused_consolidation`, `get_salience_trace`, `generate_imagination_seeds`, `get_idea_archive`, `run_imagination_cycle`, `get_creative_baton`, `baton_candidates_to_work_items`, `record_candidate_outcome`, `get_imagination_metrics`, `record_experiment_observation` (catalogued below) |
+| `FOCUSED_IMAGINATION=1` + `CREATIVE_BATON_PROMOTION=1` | **95** | +1 — `promote_creative_baton` (the promotion flag on its own adds nothing: it is meaningless without the family flag) |
+| `COGNITIVE_TEAM_ALLOCATION=1` | **90** | +6 — `assign_thinking_mode`, `get_active_mode`, `create_inheritance_envelope`, `allocate_cognitive_portfolio`, `plan_independent_first_pass`, `synthesize_portfolios` (catalogued below; the family is gated on its own flag, so a deployment may run the single-agent imagination surface without ever assembling a team) |
+| `COGNITIVE_CONTROL_ENABLED=read` or `write` | **109** | +25 — mission state, state deltas, epistemic ledger, batons, allocator evidence/counterfactuals, skill-candidate lifecycle (`server/src/services/mission-cognition/`) |
+| `COGNITIVE_SCHEDULER_MODE=shadow` or `recommend` or `allocate_internal` (with the row above) | **122** | +13 more — scheduler queue/decision, uncertainty, trigger and experiment tools |
+| `PER_IDENTITY_PERSONALITY=1` with a cognitive-control row | **85 / 110 / 123** | both — the flags are independent |
 
 `FOCUSED_IMAGINATION` is independent of every row above: it adds its **10** (and its **11th** with
-`CREATIVE_BATON_PROMOTION`) wherever it is set — **93 / 94** for the family on the promotion flag
-off and on, **94** with `PER_IDENTITY_PERSONALITY=1`, **95** with both, **119** with the
-cognitive-control row, **132** with a scheduler mode, and **133** with all of them on. (ITER-5
+`CREATIVE_BATON_PROMOTION`) wherever it is set — **94 / 95** for the family on the promotion flag
+off and on, **95** with `PER_IDENTITY_PERSONALITY=1`, **96** with both, **120** with the
+cognitive-control row, **133** with a scheduler mode, and **134** with all of them on. (ITER-5
 contributed the salience trace pair, ITER-6 the imagination pair, ITER-7 the
 cycle/baton/adapter/outcome quartet and — behind the second flag — the promotion, and ITER-9 the
 metrics read plus the one gated experiment-observation write; the default surface is unchanged
 because every one of them is flag-gated.)
 
 `COGNITIVE_TEAM_ALLOCATION` is independent of every other row as well: it adds its **6**
-wherever it is set — **89** on its own, **90** with `PER_IDENTITY_PERSONALITY=1`, **99** with
-`FOCUSED_IMAGINATION=1`, **100** with the promotion flag too, **114** with the cognitive-control row,
-**127** with a scheduler mode and **139** with everything on. (ITER-8 contributed the team layer:
+wherever it is set — **90** on its own, **91** with `PER_IDENTITY_PERSONALITY=1`, **100** with
+`FOCUSED_IMAGINATION=1`, **101** with the promotion flag too, **115** with the cognitive-control row,
+**128** with a scheduler mode and **140** with everything on. (ITER-8 contributed the team layer:
 expiring thinking modes, the bounded inheritance envelope, the portfolio allocator, the independent
 first pass and synthesis.)
 
@@ -494,6 +494,36 @@ state; the ambient channels remain the primary source. Returns the resulting sta
 | valence | number (−1…1) | Yes |
 | arousal | number (0…1) | Yes |
 | note | string | No |
+| user_id | string | No (caller-bound for untrusted callers) |
+
+### search_by_feeling
+
+Recall memories by **affect alone** — no words, no entity, no keywords. By default the query is the
+caller's *current* state, so the question it answers is "what did I know the last time I felt like
+this?". Returns the memories whose pinned wave signatures resonate, each with its resonance score and
+the state it was pinned under.
+
+What it is, measured rather than assumed (`tools/affect_eval.py`, `tools/affect_floor.py`):
+
+- A state-only query recovers its own family 6/6 against a chance floor of 0.179 (36 planted pins,
+  6 families). The query carries no text, so no lexical or semantic path can be doing the work.
+- The admission floor is **0.90**, and it is measured, not chosen: same-family pairs score
+  0.9375-0.9768 and cross-family pairs top out at 0.8754, so anything in (0.88, 0.94) separates them
+  with recall 1.0 and no false positives. The first floor, 0.5, admitted 86.7% of cross-family pairs.
+- **It will not beat a text search at text.** On six separated families the shipped metric, a bare
+  valence/arousal distance and the store's carrier overlap all score 1.000 — so the band structure is
+  justified by one thing only: two states with *identical* valence and arousal but different bands are
+  separated by the metric (0.802, below the floor) and cannot be separated by a scalar at all.
+
+A low resonance is information, not failure: it means nothing similar in feeling has been stored.
+
+| Parameter | Type | Required |
+|---|---|---|
+| state | array[6] or object (band to value) | No — defaults to your current state |
+| k | integer (1-25, default 5) | No |
+| min_resonance | number (0-1, default 0.90) | No |
+| include_interference | boolean | No |
+| include_content | boolean (default true) | No |
 | user_id | string | No (caller-bound for untrusted callers) |
 
 ### get_philosophical_insights

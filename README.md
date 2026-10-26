@@ -60,7 +60,7 @@ and ultimately emotion.
   cache, semantic facts with embeddings, a knowledge graph, and temporal querying.
 - **Cognitive layer** — *sleep consolidation* runs daily/weekly/monthly reflection
   that generates insights, emotional context, and self-narrative.
-- **MCP-native with rich tooling** — **83** specialized tools instead of generic
+- **MCP-native with rich tooling** — **84** specialized tools instead of generic
   add/search.
 - **Autonomous & background** — passive collection via watchers plus a
   salience-driven autonomous loop (no cron, no hand-written task files).
@@ -81,7 +81,7 @@ and ultimately emotion.
 | **mcp-memory-service** | Semantic + typed KG | Auto-consolidation | MCP + REST | Docker | MCP-native semantic memory |
 | **Vestige** | Cognitive modules + spaced repetition | Neuroscience-inspired | MCP | Single Rust binary | Local cognitive modeling |
 | **Letta (MemGPT)** | Tiered (core/recall/archival) | Agent self-manages | Tools | Full agent runtime | Stateful agents |
-| **Katra (this project)** | Episodic + semantic + KG + working + temporal | **Sleep consolidation + reflection** | **MCP** (83 tools) | Docker appliance | Long-running agents needing emergent behaviours |
+| **Katra (this project)** | Episodic + semantic + KG + working + temporal | **Sleep consolidation + reflection** | **MCP** (84 tools) | Docker appliance | Long-running agents needing emergent behaviours |
 
 Katra is early-stage next to more mature projects and is complementary to them:
 many teams run Katra *alongside* a simpler retrieval layer when they need deeper
@@ -147,7 +147,7 @@ caller is**. Add Katra to your agent's MCP config:
 }
 ```
 
-Your agent now has **83 MCP tools** — store memories, search by keyword or
+Your agent now has **84 MCP tools** — store memories, search by keyword or
 semantic similarity, recall by time range, explore a knowledge graph, sync a
 code graph, detect patterns, run sleep consolidation, send and read inter-agent
 messages, configure the LLM provider, and more. Feature flags add to that
@@ -335,7 +335,7 @@ memory that outlives any single session or context window.
 
 - [Quick Start](docs/QUICKSTART.md) — 5-minute setup
 - [Architecture](docs/ARCHITECTURE.md) — how it works under the hood
-- [MCP Tools Reference](docs/MCP-TOOLS.md) — all 83 tools with examples
+- [MCP Tools Reference](docs/MCP-TOOLS.md) — all 84 tools with examples
 - [Autonomous Loop](docs/AUTONOMOUS-LOOP.md) — salience-driven autonomy
 - [Sleep Consolidation](docs/SLEEP-CONSOLIDATION.md) — reflective memory distillation
 - [Security Architecture](docs/SECURITY.md) — audit findings & hardening

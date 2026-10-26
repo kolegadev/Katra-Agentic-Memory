@@ -117,3 +117,62 @@ export async function affectLaneStats(config: AgmtAffectConfig = agmtAffectConfi
     return { ok: false, code: String(error?.message || error).slice(0, 120) };
   }
 }
+
+export interface AffectHit {
+  external_id: string;
+  resonance: number;
+  user_id: string;
+  shared_id: string;
+  at: number;
+  state: { bands: Record<string, number>; valence: number; arousal: number };
+}
+
+export interface AffectSearchResult {
+  ok: boolean;
+  hits: AffectHit[];
+  scored: number;
+  admitted: number;
+  seconds?: number;
+  floor?: number;
+  code?: string;
+}
+
+/**
+ * Ask the lane which memories resonate with a state — NO TEXT.
+ *
+ * This is the whole capability in one call: the query is a state, the answer is a set of memory ids.
+ * The floor is the store's measured default (0.90) unless the caller passes one; passing 0 turns the
+ * lane back into a pure ranker, which is a legitimate use and is reported as such by the payload.
+ */
+export async function affectSearch(state: Record<string, unknown>, options: {
+  k?: number; identity?: string; minResonance?: number; includeInterference?: boolean;
+} = {}, config: AgmtAffectConfig = agmtAffectConfig()): Promise<AffectSearchResult> {
+  if (!config.enabled) {
+    return { ok: false, hits: [], scored: 0, admitted: 0, code: 'disabled' };
+  }
+  try {
+    const result = await callTool('agmt_affect_search', {
+      state,
+      k: options.k ?? 5,
+      identity: options.identity || '',
+      ...(options.minResonance === undefined ? {} : { min_resonance: options.minResonance }),
+      include_interference: options.includeInterference ?? false,
+    }, config);
+    if (result?.ok === false) {
+      return { ok: false, hits: [], scored: 0, admitted: 0,
+               code: String(result?.error || 'lane_refused').slice(0, 120) };
+    }
+    return {
+      ok: true,
+      hits: Array.isArray(result?.hits) ? result.hits as AffectHit[] : [],
+      scored: Number(result?.scored) || 0,
+      admitted: Number(result?.admitted) || 0,
+      seconds: Number(result?.seconds) || 0,
+      floor: Number(result?.min_resonance),
+    };
+  } catch (error: any) {
+    const aborted = error?.name === 'AbortError';
+    return { ok: false, hits: [], scored: 0, admitted: 0,
+             code: `${aborted ? 'timeout' : 'unreachable'}: ${String(error?.message || error).slice(0, 120)}` };
+  }
+}
