@@ -125,9 +125,10 @@ button{padding:8px 16px;border-radius:var(--radius-sm);border:none;font-size:0.8
       <button class="nav-btn" data-tab="settings"><span class="nav-icon">⚙️</span> Settings</button>
       <a class="nav-btn" href="/dashboard/cognition/" style="display:block;text-decoration:none"><span class="nav-icon">🧭</span> Cognition</a>
     </nav>
-    <div class="sidebar-footer">
+    <div class="sidebar-footer" style="flex-wrap:wrap">
       <span class="dot on" id="sidebar-dot"></span>
       <span id="sidebar-status">Checking…</span>
+      <button class="btn btn-secondary btn-sm" id="admin-key-btn" onclick="promptAdminKey()" style="width:100%;margin-top:8px" title="Store the admin key in this browser — required to read vault secrets, approvals and service stats">🔑 Admin key</button>
     </div>
   </aside>
 
@@ -465,6 +466,25 @@ function requireAuth() {
   return true;
 }
 
+// Explicit admin-key entry. The read paths (secrets list, approvals, overview stats)
+// never prompted on their own — they only said a key was needed — so viewing anything
+// gated was a dead end until a write happened. This is the way in.
+function promptAdminKey() {
+  const k = (prompt('Enter KATRA_API_KEY (admin key):') || '').trim();
+  if (!k) return false;
+  adminKey = k;
+  localStorage.setItem('katra_admin_key', k);
+  paintAdminKeyBtn();
+  toast('Admin key stored — loading…', 'success');
+  loadTab(currentTab);
+  return true;
+}
+
+function paintAdminKeyBtn() {
+  const b = document.getElementById('admin-key-btn');
+  if (b) b.textContent = adminKey ? '🔑 Admin key ✓' : '🔑 Admin key';
+}
+
 // ── Escaping ──
 // Every value that originates from the server or from user input (identity
 // ids, profile names, timestamps, vault fields) is escaped BEFORE it is
@@ -623,9 +643,9 @@ function showLoadError() {
 }
 
 function showNoAuthMessage() {
-  document.getElementById('service-cards').innerHTML = '<div class="card" style="grid-column:1/-1;text-align:center;padding:24px;color:var(--text3)">🔐 Enter admin key to load service stats</div>';
-  document.getElementById('recent-activity').innerHTML = '<tr><td colspan="5" style="color:var(--text3)">🔐 Enter admin key to view autonomous activity</td></tr>';
-  document.getElementById('no-pending-msg').textContent = '🔐 Enter admin key to view pending approvals';
+  document.getElementById('service-cards').innerHTML = '<div class="card" style="grid-column:1/-1;text-align:center;padding:24px;color:var(--text3)">🔐 <button class="btn btn-secondary btn-sm" onclick="promptAdminKey()">Enter admin key</button> to load service stats</div>';
+  document.getElementById('recent-activity').innerHTML = '<tr><td colspan="5" style="color:var(--text3)">🔐 <button class="btn btn-secondary btn-sm" onclick="promptAdminKey()">Enter admin key</button> to view autonomous activity</td></tr>';
+  document.getElementById('no-pending-msg').innerHTML = '🔐 <button class="btn btn-secondary btn-sm" onclick="promptAdminKey()">Enter admin key</button> to view pending approvals';
 }
 
 async function approveTask(taskId) {
@@ -882,7 +902,7 @@ async function loadBGStatus() {
       <p><strong>Events:</strong> ${d?.episodic_events || '—'} total | ${d?.unprocessed || '—'} unprocessed</p>
       <p><strong>Semantic Facts:</strong> ${d?.semantic_facts || '—'}</p>
       <p><strong>Processing:</strong> ${d?.background_processing || '30s interval'}</p>`;
-  } catch(e) { document.getElementById('bg-status').textContent = 'Enter admin key and refresh'; }
+  } catch(e) { document.getElementById('bg-status').innerHTML = '🔐 <button class="btn btn-secondary btn-sm" onclick="promptAdminKey()">Enter admin key</button>'; }
 }
 
 async function triggerReflection() {
@@ -989,7 +1009,7 @@ async function loadVault() {
   if (!statusEl || !tbody) return;
   if (!adminKey) {
     tbody.innerHTML = '';
-    statusEl.textContent = '🔐 Enter the admin key (you will be prompted on the first write) to view vault secrets.';
+    statusEl.innerHTML = '🔐 <button class="btn btn-secondary btn-sm" onclick="promptAdminKey()">Enter admin key</button> to view vault secrets.';
     return;
   }
   statusEl.textContent = 'Loading…';
@@ -1130,7 +1150,7 @@ async function loadVaultApprovals() {
   if (!statusEl || !tbody) return;
   if (!adminKey) {
     tbody.innerHTML = '';
-    statusEl.textContent = '🔐 Enter the admin key (you will be prompted on the first write) to view approvals.';
+    statusEl.innerHTML = '🔐 <button class="btn btn-secondary btn-sm" onclick="promptAdminKey()">Enter admin key</button> to view approvals.';
     return;
   }
   statusEl.textContent = 'Loading…';
@@ -1634,6 +1654,7 @@ function applyIdentity(identity) {
 
 // ── Init ──
 async function init() {
+  paintAdminKeyBtn();
   loadIdentity();
   const vaultScopeSel = document.getElementById('vault-scope');
   const vaultOwnerRow = document.getElementById('vault-owner-row');

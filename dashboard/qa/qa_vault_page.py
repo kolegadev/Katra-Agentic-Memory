@@ -159,11 +159,17 @@ def main():
         page.fill("#va-service", "qa-svc")
         page.fill("#va-ttl", "1")
         page.click('button:has-text("Grant Approval")')
-        page.wait_for_selector("#vault-approvals tr:has-text('qa-svc')", timeout=10000)
-        check("approval granted + listed", "qa-svc" in page.inner_text("#vault-approvals"))
-        page.locator("#vault-approvals tr", has_text="qa-svc").locator("button:has-text('Revoke')").click()
+        # Revoked rows are retained in the ledger, so earlier runs leave their own qa-svc rows
+        # behind. Wait for THIS run's ACTIVE row before asserting: the previous
+        # wait_for_selector(has_text='qa-svc') returned instantly on the stale revoked rows,
+        # and the strict-mode locator then matched several rows and threw instead of asserting.
+        active_qa = page.locator("#vault-approvals tr", has_text="qa-svc").filter(has_not_text="revoked")
+        active_qa.first.wait_for(state="visible", timeout=10000)
+        check("approval granted + listed (single active row)", active_qa.count() == 1, f"count={active_qa.count()}")
+        active_qa.first.locator("button:has-text('Revoke')").click()
         page.wait_for_timeout(1000)
-        check("approval revoked (status shows revoked)", "revoked" in page.locator("#vault-approvals tr", has_text="qa-svc").inner_text())
+        this_run = page.locator("#vault-approvals tr", has_text="agent-c").filter(has_text="qa-svc").first
+        check("approval revoked (status shows revoked)", "revoked" in this_run.inner_text(), repr(this_run.inner_text()[:80]))
 
         # ── 10. localStorage hygiene ────────────────────────────────────────
         ls = page.evaluate("() => { const o={}; for (let i=0;i<localStorage.length;i++){const k=localStorage.key(i); o[k]=localStorage.getItem(k);} return o; }")
