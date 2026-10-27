@@ -7,9 +7,10 @@
  * insight in the top three slots, which reads as three recollections and is
  * actually one.
  *
- * The key is the proposition when the row has one (written by add_semantic_fact
- * since 2026-10-22), and a normalised content prefix otherwise, so old rows and
- * new rows collapse against the same rule.
+ * The key is the proposition when the row has one (`proposition_key`, written
+ * by add_semantic_fact since 2026-10-22; older callers may pass
+ * `proposition_norm`), and a normalised content prefix otherwise, so old rows
+ * and new rows collapse against the same rule.
  *
  * This is a presentation fix, not a data fix: it changes which rows a page
  * shows, never what is stored.
@@ -17,6 +18,7 @@
 
 export interface DedupeCandidate {
   proposition_norm?: string | null;
+  proposition_key?: string | null;
   content?: string | null;
 }
 
@@ -35,7 +37,7 @@ export function contentPrefixKey(content: string | null | undefined, width = 80)
 
 /** The identity used to decide whether two results are the same proposition. */
 export function nearDuplicateKey(item: DedupeCandidate, width = 80): string {
-  const proposition = String(item.proposition_norm ?? '').trim();
+  const proposition = String(item.proposition_norm || item.proposition_key || '').trim();
   if (proposition) return `p:${proposition}`;
   const prefix = contentPrefixKey(item.content, width);
   return `c:${prefix}`;

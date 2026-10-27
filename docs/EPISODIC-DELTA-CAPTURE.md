@@ -55,7 +55,8 @@ Measured collapse under an order-insensitive normal form:
 | plan | 67,867 | 30,580 | 54.9% |
 | decision | 246,282 | 173,026 | 29.7% |
 | gas_law_train_decision | 192,990 | 107,317 | 44.4% |
-| **total (measured types)** | **946,688** | **437,026** | **53.8%** |
+| other (161 mergeable types) | 21,902 | 21,613 | 1.3% |
+| **total (all 167 mergeable types)** | **946,688** | **437,026** | **53.8%** |
 
 The extreme case: *"katra-server was restarted to recover from an unhealthy
 state."* was stored **4,759 times**.
@@ -107,15 +108,23 @@ Survivors carry `proposition_key`, `occurrences`, `first_seen_at`,
 ## Operating notes
 
 - Index `proposition_lookup` on `(user_id, event_type, proposition_key)` makes
-  the merge lookup cheap; it is created by the compaction script and costs about
-  250 MB across the collection.
+  the merge lookup cheap; it is created by `compact-episodic.mjs --apply`, so
+  the current store does not have it until that run happens.
 - `scripts` (in the run history): `compact-episodic.mjs` (dry run by default,
-  `--apply` to write) and `compact-gaslaw.mjs`. Both refuse to delete without
-  exporting first.
-- Exports are gzipped JSONL, one line per removed document, named
-  `exports/<collection>-merged-<timestamp>.jsonl.gz`.
-- Re-running either script is idempotent: already-merged rows have one member
-  per group and are skipped.
+  `--apply` to write), `compact-gaslaw.mjs`, and `compact-semantic.mjs`. All
+  three finish the export stream before deleting.
+- Exports are gzipped JSONL, one line per removed document, written to
+  `EXPORT_DIR` (default `/app/exports`, the bind-mounted `exports/`) and named
+  `<collection>-merged-<timestamp>.jsonl.gz`.
+- The 2026-10-22 `semantic_facts` export predates that path: it was written to
+  the container's `/tmp` and is not on the host. Its 54,812 removed rows were
+  exact-normalised duplicates of survivors, so no proposition was lost, but the
+  per-duplicate timestamps and session ids are not recoverable.
+- `compact-semantic.mjs --repair-timestamps --apply` rebuilds
+  `first_seen_at`/`last_seen_at` from `created_at`/`updated_at` on the 17,710
+  survivors written with 1970 timestamps by the first run.
+- Re-running the scripts is idempotent: already-merged rows have one member per
+  group and are skipped.
 
 ## Honest limits
 
@@ -143,6 +152,13 @@ Survivors carry `proposition_key`, `occurrences`, `first_seen_at`,
 4,649 MB. The remaining 4.6 GB is not duplication: it is 384-dimension
 embeddings (one per fact, ~895k of them). Dedupe here is worth doing and is
 cheap, but it is not where the space goes.
+
+The first semantic compaction projected `timestamp`, which `semantic_facts`
+does not carry (84 of 228,709 rows have it). Survivors written from an absent
+field got 1970-01-01 as `first_seen_at`/`last_seen_at` — 17,710 rows. The
+script now maps `created_at` → `first_seen_at` and `updated_at` →
+`last_seen_at`, and `compact-semantic.mjs --repair-timestamps --apply` rebuilds
+the rows written before that fix.
 
 ### The paraphrase experiment — a negative result, kept on the record
 
@@ -199,9 +215,10 @@ return zero bytes and only block writes for its duration. It was not run, and
 
 The dedupe changes are only worth what the next weeks show. `scripts/python/katra_memory_growth.py`
 measures the store and appends a labelled block to `~/.katra/inbox/health-reports.md`,
-so it is in front of the 06:30Z review; cron runs it at 06:50 local (05:50Z).
+so it is in front of the 07:30Z review; cron runs it at 06:50 local
+(Europe/Jersey), i.e. 05:50Z in BST and 06:50Z in GMT.
 
-It reports four numbers and one verdict:
+It reports five numbers, one verdict, and two flow ceilings:
 
 | number | why it matters |
 |---|---|
@@ -209,21 +226,26 @@ It reports four numbers and one verdict:
 | propositions omitted by `prop_rows` | **new propositions are the only row growth that means duplication escaped** |
 | occurrences represented | repeats absorbed into an existing row |
 | session cursors | how many sessions are extracting deltas |
+| derived events / semantic facts added in 24h | flow ceilings: >5,000 derived or >8,000 facts prints `** FLOW ABOVE CEILING **` |
 
 The verdict compares new propositions against absorbed repeats:
 
 - `0 new propositions, >0 occurrences` → **FLOW STEMMED**: every repeat went into an existing row.
 - `>= 1 repeat absorbed per new proposition` → **ABSORPTION WORKING**.
 - more new propositions than absorbed repeats → **REVIEW**: that ratio is worth a look.
+- rows added but 0 new propositions → **KEY NOT WRITTEN**: the write path is not keying them; the check must not read as quiet.
+- store shrank (a compaction) → **COMPACTION SEEN**: deltas restart here.
 - nothing moved at all → **NO ACTIVITY**, which is not a pass; it says nothing either way.
 
 Baseline, 2026-10-22 06:37Z: **365,635 docs, 55,501 propositions, 663,666 occurrences,
 3 cursors**; 4,726 rows added in the previous 24h, of which only **105** were new
-propositions. The sentinel propositions to watch are the ones this work found
-most duplicated — "katra-server was restarted to recover from an unhealthy
-state" (4,759), "katra-server experienced an outage." (4,360) — because if they
-climb in `occurrences` while the row count stays flat, the merge is doing its
-job; if they reappear as **new rows**, the cursor or the key is leaking.
+propositions. The script pins the two propositions this work found most
+duplicated — "katra-server was restarted to recover from an unhealthy state"
+(4,759), "katra-server experienced an outage." (4,360) — and reports their row
+and occurrence counts directly each run, alongside the six highest-occurrence
+propositions. If a pinned sentinel climbs in `occurrences` while the row count
+stays flat, the merge is doing its job; if it reappears as **new rows**, the key
+is leaking. A pinned sentinel with 0 rows is reported as 0, not as flat.
 
 A JSON baseline is kept at `~/.katra/inbox/memory-growth-baseline.json`, so each
 run reports deltas since the previous one rather than absolute numbers alone.

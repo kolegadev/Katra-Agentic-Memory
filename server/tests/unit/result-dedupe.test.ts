@@ -52,6 +52,19 @@ describe('result dedupe (Stage 4 retrieval hygiene)', () => {
     expect(out[1].content).toBe('a different sentence here');
   });
 
+  it('uses proposition_key when the call site supplies it (semantic_facts)', () => {
+    // D9: vector_search spreads semantic_facts rows, which carry proposition_key,
+    // not proposition_norm. The key must still be the proposition.
+    const rows = [
+      { id: 'best', proposition_key: 'ka:abc', content: 'first wording that diverges inside the first eighty characters' },
+      { id: 'dup', proposition_key: 'ka:abc', content: 'second wording that diverges inside the first eighty characters' },
+      { id: 'other', proposition_key: 'ka:def', content: 'different' },
+    ];
+    const out = collapseNearDuplicates(rows, 10);
+    expect(out.map((r) => r.id)).toEqual(['best', 'other']);
+    expect(nearDuplicateKey({ proposition_key: 'p1', content: 'x' })).toBe('p:p1');
+  });
+
   it('treats the proposition key as stronger than the content', () => {
     expect(nearDuplicateKey({ proposition_norm: 'p1', content: 'x' })).toBe('p:p1');
     expect(nearDuplicateKey({ content: 'X' })).toBe('c:x');

@@ -21,9 +21,9 @@ Writes a labelled block to health-reports.md (read by the 06:30Z review) and
 keeps a JSON baseline so the next run reports deltas.
 
 Usage:
-  katra_memory_growth.py                 # measure, report, update baseline
-  katra_memory_growth.py --no-report     # measure + print only
-  katra_memory_growth.py --quiet         # measure, update baseline, no output
+  katra_memory_growth.py                 # measure, append report, update baseline, print
+  katra_memory_growth.py --no-report     # measure + print only; no report, no baseline save
+  katra_memory_growth.py --quiet         # measure, append report, update baseline; no stdout
 """
 from __future__ import annotations
 
@@ -71,6 +71,13 @@ c.find({ occurrences: { $gt: 1 } }, { occurrences: 1, event_type: 1, 'content.de
     occ: d.occurrences,
     text: String((d.content && d.content.description) || '').slice(0, 80),
   }));
+out.sentinels = [
+  'katra-server was restarted to recover from an unhealthy state',
+  'katra-server experienced an outage.',
+].map(text => {
+  const docs = c.find({ 'content.description': text }, { occurrences: 1 }).toArray();
+  return { text, count: docs.length, occ: docs.reduce((a, d) => a + (d.occurrences || 1), 0) };
+});
 print(JSON.stringify(out));
 """
 
@@ -131,17 +138,56 @@ def save_baseline(m: dict) -> None:
 
 def top_delta(before: list, after: list) -> list:
     prev = {t["text"]: t["occ"] for t in before}
+    now = {t["text"]: t["occ"] for t in after}
     out = []
     for t in after:
         was = prev.get(t["text"])
-        if was is not None:
-            out.append({**t, "delta": t["occ"] - was})
+        out.append({
+            **t,
+            "delta": (t["occ"] - was) if was is not None else None,
+            "state": ("climbing" if was is not None and t["occ"] > was
+                      else ("flat" if was is not None else "new")),
+        })
+    for t in before:
+        if t["text"] not in now:
+            out.append({**t, "delta": None, "state": "dropped"})
     return out
+
+
+def verdict_text(d_docs: int, d_prop: int, d_occ: int) -> str:
+    """Return the one-line verdict for a delta window.
+
+    The ordering is deliberate: a shrinking store is a compaction, not a quiet
+    window; rows arriving with no proposition key are the failure the check
+    exists to catch; "no activity" is reserved for a window where nothing at
+    all moved.
+    """
+    if d_docs < 0 or d_prop < 0:
+        return (
+            f"COMPACTION SEEN — store shrank by {abs(min(d_docs, 0)):,} docs / "
+            f"{abs(min(d_prop, 0)):,} propositions; deltas restart here"
+        )
+    if d_docs == 0 and d_prop == 0 and d_occ == 0:
+        return "NO ACTIVITY in this window — too short to judge; compare at the next daily check"
+    if d_prop == 0 and d_docs > 0:
+        return (
+            f"KEY NOT WRITTEN — {d_docs:,} rows added, 0 propositions; "
+            "the write path is not keying them"
+        )
+    if d_prop == 0:
+        return "FLOW STEMMED — every repeat absorbed into an existing proposition, 0 new rows"
+    ratio = d_occ / d_prop
+    if ratio >= 1:
+        return f"ABSORPTION WORKING — {ratio:.1f} repeats absorbed per new proposition"
+    return (
+        f"REVIEW — {d_prop} new propositions vs {d_occ} absorbed repeats; "
+        "more new rows than repeats is worth a look"
+    )
 
 
 def render(m: dict, base: dict | None) -> str:
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%MZ")
-    lines = [f"# MEMORY GROWTH {stamp} — delta-capture check (Lilly; for the 06:30Z review)"]
+    lines = [f"# MEMORY GROWTH {stamp} — delta-capture check (Lilly; for the 07:30Z review)"]
     lines.append(
         f"- store: {m['docs_total']:,} episodic docs | {m['prop_rows']:,} propositions | "
         f"{m['occurrence_total']:,} represented occurrences | {m['cursors']} session cursors"
@@ -175,55 +221,64 @@ def render(m: dict, base: dict | None) -> str:
         # samples, messages, conversations) are expected to grow and say nothing
         # about whether the merge works.
         ratio = (d_occ / d_prop) if d_prop > 0 else None
-        lines.append(
-            f"- since {base['measured_at'][:16]}Z baseline: {d_docs:+,} docs "
-            f"({d_prop:+,} propositions), occurrences {d_occ:+,}"
-            + (f", {ratio:.1f} absorbed repeats per new proposition" if ratio is not None
-               else ", repeats absorbed into existing propositions only")
-        )
-        deltas = top_delta(base.get("top", []), m.get("top", []))
-        hot = [d for d in deltas if d["delta"] > 0]
-        if hot:
-            lines.append("- sentinel propositions still climbing: " + "; ".join(
-                f"“{d['text'][:60]}” x{d['occ']} ({d['delta']:+d})" for d in hot[:3]))
-        else:
-            lines.append("- sentinel propositions: flat since baseline")
-        if d_prop == 0 and d_occ == 0:
-            # No writes at all is not a pass: it says nothing about the merge.
-            verdict = "NO ACTIVITY in this window — too short to judge; compare at the next daily check"
-        elif d_prop == 0 and d_occ > 0:
-            verdict = "FLOW STEMMED — every repeat absorbed into an existing proposition, 0 new rows"
-        elif ratio is not None and ratio >= 1:
-            verdict = f"ABSORPTION WORKING — {ratio:.1f} repeats absorbed per new proposition"
-        else:
-            verdict = (
-                f"REVIEW — {d_prop} new propositions vs {d_occ} absorbed repeats; "
-                "more new rows than repeats is worth a look"
+        if d_docs < 0 or d_prop < 0:
+            lines.append(
+                f"- since {base['measured_at'][:16]}Z baseline: {d_docs:+,} docs "
+                f"({d_prop:+,} propositions), occurrences {d_occ:+,} — compaction, deltas restart here"
             )
-        lines.append(f"- verdict: {verdict}")
+        else:
+            lines.append(
+                f"- since {base['measured_at'][:16]}Z baseline: {d_docs:+,} docs "
+                f"({d_prop:+,} propositions), occurrences {d_occ:+,}"
+                + (f", {ratio:.1f} absorbed repeats per new proposition" if ratio is not None
+                   else (", repeats absorbed into existing propositions only" if d_occ > 0
+                         else ", no occurrences added"))
+            )
+        sentinels = m.get("sentinels") or []
+        if sentinels:
+            lines.append("- pinned sentinels: " + "; ".join(
+                f"“{s['text'][:60]}” x{s['occ']} ({s['count']} rows)" for s in sentinels))
+        deltas = top_delta(base.get("top", []), m.get("top", []))
+        hot = [d for d in deltas if d.get("delta") is not None and d["delta"] > 0]
+        dropped = [d for d in deltas if d.get("state") == "dropped"]
+        if hot:
+            lines.append("- top propositions still climbing: " + "; ".join(
+                f"“{d['text'][:60]}” x{d['occ']} ({d['delta']:+d})" for d in hot[:3]))
+        elif dropped:
+            lines.append("- top propositions: " + "; ".join(
+                f"“{d['text'][:60]}” dropped out of top 6" for d in dropped[:3]))
+        else:
+            lines.append("- top propositions: flat since baseline")
+        lines.append(f"- verdict: {verdict_text(d_docs, d_prop, d_occ)}")
     else:
         lines.append("- verdict: BASELINE ESTABLISHED (no prior measurement to compare)")
         if m.get("top"):
-            lines.append("- sentinel propositions: " + "; ".join(
+            lines.append("- top propositions: " + "; ".join(
                 f"“{t['text'][:60]}” x{t['occ']}" for t in m["top"][:3]))
+        sentinels = m.get("sentinels") or []
+        if sentinels:
+            lines.append("- pinned sentinels: " + "; ".join(
+                f"“{s['text'][:60]}” x{s['occ']} ({s['count']} rows)" for s in sentinels))
 
     return "\n".join(lines) + "\n"
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--no-report", action="store_true", help="print only; do not append to health-reports.md")
-    ap.add_argument("--quiet", action="store_true", help="no output")
+    ap.add_argument("--no-report", action="store_true",
+                    help="print only; do not append to health-reports.md and do not save the baseline")
+    ap.add_argument("--quiet", action="store_true",
+                    help="no stdout; the health report and baseline are still written")
     args = ap.parse_args()
 
     m = measure()
     base = load_baseline()
     block = render(m, base)
 
-    if not args.no_report and not args.quiet:
+    if not args.no_report:
         with open(REPORT, "a") as f:
             f.write("\n" + block + "\n")
-    save_baseline(m)
+        save_baseline(m)
 
     if not args.quiet:
         print(block)

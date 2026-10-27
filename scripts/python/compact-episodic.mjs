@@ -1,21 +1,24 @@
 // Episodic compaction — collapse near-duplicate distilled events by proposition.
 // Lilly, 2026-10-21. Default is a DRY RUN; pass --apply to write.
 //
-//   node /tmp/compact-episodic.mjs            # report only
-//   node /tmp/compact-episodic.mjs --apply    # export + merge + delete
+//   node /app/compact-episodic.mjs            # report only
+//   node /app/compact-episodic.mjs --apply    # export + merge + delete
 //
-// Export is written BEFORE any delete, gzipped JSONL, one line per removed
+// Export is finished BEFORE any delete, gzipped JSONL, one line per removed
 // document, then verified line-count == delete-count.
 
 import { MongoClient } from 'mongodb';
-import { createWriteStream } from 'node:fs';
+import { createWriteStream, mkdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { createGzip } from 'node:zlib';
 import { once } from 'node:events';
 
 const APPLY = process.argv.includes('--apply');
 const URI = process.env.MONGODB_URI || 'mongodb://localhost:27017';
 const DB = process.env.DATABASE_NAME || 'katra';
-const OUT = `/tmp/episodic-merged-${new Date().toISOString().replace(/[:.]/g, '-')}.jsonl.gz`;
+const EXPORT_DIR = process.env.EXPORT_DIR || '/app/exports';
+mkdirSync(EXPORT_DIR, { recursive: true });
+const OUT = join(EXPORT_DIR, `episodic-merged-${new Date().toISOString().replace(/[:.]/g, '-')}.jsonl.gz`);
 
 // ── must match server/src/services/memory/proposition-key.ts ────────────────
 const RAW_EVENT_TYPES = new Set([
@@ -55,7 +58,6 @@ await client.connect();
 const db = client.db(DB);
 const coll = db.collection('episodic_events');
 
-const before = coll.stats ? null : null;
 const docsBefore = await coll.estimatedDocumentCount();
 const stBefore = await db.command({ collStats: 'episodic_events' });
 console.log(`mode: ${APPLY ? 'APPLY' : 'DRY RUN'}`);
@@ -116,6 +118,7 @@ const gz = createGzip({ level: 6 });
 const out = createWriteStream(OUT);
 gz.pipe(out);
 gz.on('error', e => { console.error('gzip error', e); process.exit(1); });
+out.on('error', e => { console.error('export write error', e); process.exit(1); });
 
 let exported = 0;
 const write = async line => {
@@ -157,6 +160,8 @@ for (const g of groups.values()) {
   });
 }
 
+gz.end();
+await once(out, 'finish');
 console.log(`exported ${exported} rows to ${OUT}`);
 
 let updated = 0;
@@ -178,9 +183,6 @@ if (deleted !== exported) {
 } else {
   console.log('export verified: line count matches deletes');
 }
-
-gz.end();
-await once(out, 'finish');
 
 const docsAfter = await coll.estimatedDocumentCount();
 const stAfter = await db.command({ collStats: 'episodic_events' });

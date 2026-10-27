@@ -5,7 +5,8 @@
 //   node /app/compact-gaslaw.mjs --apply
 
 import { MongoClient } from 'mongodb';
-import { createWriteStream } from 'node:fs';
+import { createWriteStream, mkdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { createGzip } from 'node:zlib';
 import { once } from 'node:events';
 import { createHash } from 'node:crypto';
@@ -14,7 +15,9 @@ const APPLY = process.argv.includes('--apply');
 const URI = process.env.MONGODB_URI || 'mongodb://localhost:27017';
 const DB = process.env.DATABASE_NAME || 'katra';
 const TYPE = 'gas_law_train_decision';
-const OUT = `/tmp/${TYPE}-merged-${new Date().toISOString().replace(/[:.]/g, '-')}.jsonl.gz`;
+const EXPORT_DIR = process.env.EXPORT_DIR || '/app/exports';
+mkdirSync(EXPORT_DIR, { recursive: true });
+const OUT = join(EXPORT_DIR, `${TYPE}-merged-${new Date().toISOString().replace(/[:.]/g, '-')}.jsonl.gz`);
 
 const client = new MongoClient(URI);
 await client.connect();
@@ -57,6 +60,8 @@ if (!APPLY) {
 const gz = createGzip({ level: 6 });
 const out = createWriteStream(OUT);
 gz.pipe(out);
+gz.on('error', e => { console.error('gzip error', e); process.exit(1); });
+out.on('error', e => { console.error('export write error', e); process.exit(1); });
 let exported = 0;
 const write = async line => { if (!gz.write(line)) await once(gz, 'drain'); exported++; };
 
@@ -91,6 +96,8 @@ for (const g of groups.values()) {
   });
 }
 
+gz.end();
+await once(out, 'finish');
 console.log(`exported ${exported} rows to ${OUT}`);
 
 let updated = 0;
@@ -107,9 +114,6 @@ for (let i = 0; i < deletes.length; i += 1000) {
   if (i % 20000 === 0) console.log(`  deleted ${deleted}/${deletes.length}`);
 }
 console.log(deleted === exported ? 'export verified: matches deletes' : `⚠️ MISMATCH exported=${exported} deleted=${deleted}`);
-
-gz.end();
-await once(out, 'finish');
 
 const st1 = await db.command({ collStats: 'episodic_events' });
 const n1 = await coll.countDocuments({ event_type: TYPE });
