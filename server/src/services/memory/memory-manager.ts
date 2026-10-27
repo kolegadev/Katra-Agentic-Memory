@@ -78,6 +78,14 @@ export class MemoryManager {
     await createIndexSafely('episodic_events', { event_type: 1 });
     await createIndexSafely('episodic_events', { user_id: 1, timestamp: -1 });
     await createIndexSafely('episodic_events', { session_id: 1, timestamp: 1 });
+    // Proposition lookups run on every distilled write (store_event and
+    // createEvent). Without this index the merge filter scans all of the
+    // user's events; with it the scope is one exact key.
+    await createIndexSafely(
+      'episodic_events',
+      { user_id: 1, event_type: 1, proposition_key: 1, shared_id: 1 },
+      { name: 'proposition_lookup', background: true },
+    );
     await createIndexSafely('episodic_events', { 'content.message': 'text' }, { background: true, name: 'episodic_text_index' });
     await createIndexSafely('episodic_events', { embedding: 1 }, { sparse: true });
 
@@ -85,6 +93,11 @@ export class MemoryManager {
     await createIndexSafely('semantic_facts', { user_id: 1 });
     await createIndexSafely('semantic_facts', { source: 1 });
     await createIndexSafely('semantic_facts', { user_id: 1, proposition_key: 1 });
+    await createIndexSafely(
+      'semantic_facts',
+      { user_id: 1, proposition_key: 1, shared_id: 1 },
+      { name: 'semantic_proposition_scoped', background: true },
+    );
     await createIndexSafely('semantic_facts', { confidence: -1 });
     await createIndexSafely('semantic_facts', { content: 'text' });
     await createIndexSafely('semantic_facts', { embedding: 1 }, { sparse: true });
