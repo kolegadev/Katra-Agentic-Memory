@@ -13,7 +13,7 @@ import { llmService } from '../infrastructure/llm-service.js';
 import type { Db, Collection } from 'mongodb';
 import { ValenceTagger } from '../processing/valence-tagger.js';
 import { assertVaultCollectionAllowed } from '../vault/denylist.js';
-import { propositionOf } from './proposition-key.js';
+import { propositionOf, type Proposition } from './proposition-key.js';
 import { episodicPropositionFilter, buildEpisodicMergeUpdate } from './proposition-merge.js';
 
 /**
@@ -355,8 +355,15 @@ export class EpisodicEventManager {
       }
     };
 
-    // Insert with retry logic for race conditions
-    const insertResult = await this.insertWithRetry(newEvent, 3);
+    // Insert with retry logic for race conditions. The proposition filter is
+    // passed so a duplicate-key conflict on the unique sparse index can merge
+    // into the winning row instead of retrying a doomed insert.
+    const insertResult = await this.insertWithRetry(
+      newEvent,
+      3,
+      proposition,
+      proposition ? episodicPropositionFilter(newEvent, proposition.key) : null,
+    );
     
     // Trigger event-driven processing for new events
     if (insertResult.id) {
@@ -434,7 +441,12 @@ export class EpisodicEventManager {
   /**
    * Insert event with enhanced retry logic and distributed locking
    */
-  private async insertWithRetry(event: StoredEpisodicEvent, maxAttempts: number): Promise<StoredEpisodicEvent> {
+  private async insertWithRetry(
+    event: StoredEpisodicEvent,
+    maxAttempts: number,
+    proposition: Proposition | null = null,
+    propositionFilter: Record<string, unknown> | null = null,
+  ): Promise<StoredEpisodicEvent> {
     const lockKey = `event_insert:${event.session_id}:${event.content_hash}`;
     
     // Acquire distributed lock for this content hash
@@ -476,6 +488,27 @@ export class EpisodicEventManager {
             if (existingEvent) {
               console.log(`✅ Found existing event ${existingEvent.id}, using that instead`);
               return existingEvent;
+            }
+
+            // A unique sparse proposition index can reject a different payload
+            // that carries the same proposition (the exact-content hash above
+            // will not find it). Merge into the winning proposition row.
+            if (proposition && propositionFilter) {
+              const priorDocument = await this.collection.findOne(propositionFilter);
+              const prior = priorDocument as unknown as StoredEpisodicEvent | null;
+              if (prior) {
+                const { update, merged } = buildEpisodicMergeUpdate(
+                  prior,
+                  event,
+                  proposition,
+                  event.content_hash,
+                  event.idempotency_key,
+                  new Date(),
+                );
+                await this.collection.updateOne({ _id: (prior as any)._id }, update);
+                console.log(`✅ Merged duplicate proposition into ${prior.id}`);
+                return merged as StoredEpisodicEvent;
+              }
             }
             
             // If no existing event found and we have attempts left, generate new ID

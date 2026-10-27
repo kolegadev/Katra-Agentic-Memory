@@ -99,10 +99,6 @@ if (!APPLY) {
 }
 
 await coll.createIndex(
-  { user_id: 1, proposition_key: 1, shared_id: 1 },
-  { name: 'semantic_proposition_scoped', background: true },
-);
-await coll.createIndex(
   { user_id: 1, proposition_norm: 1, shared_id: 1 },
   { name: 'semantic_proposition_norm_scoped', background: true },
 );
@@ -158,6 +154,24 @@ for (let i = 0; i < deletes.length; i += 1000) {
   if (i % 20000 === 0) console.log(`  deleted ${deleted}/${deletes.length}`);
 }
 console.log(deleted === exported ? 'export verified: matches deletes' : `⚠️ MISMATCH exported=${exported} deleted=${deleted}`);
+
+// ── unique sparse index: atomic guard for concurrent proposition writes ──────
+try {
+  await coll.dropIndex('semantic_proposition_scoped');
+  console.log('dropped pre-merge semantic_proposition_scoped');
+} catch (error) {
+  if (error.code !== 27) throw error; // 27 = IndexNotFound
+}
+await coll.createIndex(
+  { user_id: 1, proposition_key: 1, shared_id: 1 },
+  {
+    name: 'semantic_proposition_scoped',
+    unique: true,
+    partialFilterExpression: { proposition_key: { $exists: true } },
+    background: true,
+  },
+);
+console.log('unique semantic_proposition_scoped ensured');
 
 const st1 = await db.command({ collStats: 'semantic_facts' });
 const n1 = await coll.estimatedDocumentCount();

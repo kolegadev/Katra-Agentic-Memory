@@ -127,7 +127,14 @@ Survivors carry `proposition_key`, `occurrences`, `first_seen_at`,
 - Index `proposition_lookup` on `(user_id, event_type, proposition_key,
   shared_id)` makes the merge lookup cheap; the runtime creates it at startup,
   and `compact-episodic.mjs --apply` ensures the same shape on an existing
-  store.
+  store. After the duplicate groups are deleted, compaction replaces it with a
+  unique sparse index on the same key (partial on `proposition_key` existing),
+  which is the atomic guard against concurrent first-writes; the insert path
+  re-reads and merges when that index returns a duplicate-key error.
+- `compact-semantic.mjs --apply` does the same for
+  `(user_id, proposition_key, shared_id)` (`semantic_proposition_scoped`), and
+  keeps a non-unique `(user_id, proposition_norm, shared_id)` lookup for rows
+  written before the field rename.
 - `scripts` (in the run history): `compact-episodic.mjs` (dry run by default,
   `--apply` to write), `compact-gaslaw.mjs`, and `compact-semantic.mjs`. All
   three finish the export stream before deleting.

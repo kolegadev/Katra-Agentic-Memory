@@ -12,6 +12,10 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 const state = vi.hoisted(() => ({
   prior: null as any,
   semanticPrior: null as any,
+  conflictPrior: null as any,
+  conflictSemantic: null as any,
+  insertConflict: false,
+  semanticUpsertConflict: false,
   finds: [] as any[],
   inserts: [] as any[],
   updates: [] as any[],
@@ -26,7 +30,20 @@ vi.mock('../../src/database/connection.js', () => ({
       },
       insertOne: async (document: any) => {
         state.inserts.push(document);
+        if (state.insertConflict) {
+          state.insertConflict = false;
+          state.prior = state.conflictPrior;
+          throw Object.assign(new Error('E11000 duplicate key'), { code: 11000 });
+        }
         return { insertedId: { toString: () => 'mongo-inserted-1' } };
+      },
+      findOneAndUpdate: async () => {
+        if (state.semanticUpsertConflict) {
+          state.semanticUpsertConflict = false;
+          state.semanticPrior = state.conflictSemantic;
+          throw Object.assign(new Error('E11000 duplicate key'), { code: 11000 });
+        }
+        return { _id: 'mongo-inserted-1' };
       },
       updateOne: async (filter: any, update: any) => {
         state.updates.push({ filter, update });
@@ -55,6 +72,10 @@ describe('MemoryManager.store_event — proposition write path', () => {
   beforeEach(() => {
     state.prior = null;
     state.semanticPrior = null;
+    state.conflictPrior = null;
+    state.conflictSemantic = null;
+    state.insertConflict = false;
+    state.semanticUpsertConflict = false;
     state.finds.length = 0;
     state.inserts.length = 0;
     state.updates.length = 0;
@@ -108,6 +129,28 @@ describe('MemoryManager.store_event — proposition write path', () => {
     });
     expect(update[0].$set.session_id).toEqual({ $ifNull: ['s2', '$session_id'] });
     expect(update[0].$set.last_seen_at).toEqual(EVENT.timestamp);
+  });
+
+  it('merges when the unique proposition index rejects a concurrent insert', async () => {
+    state.insertConflict = true;
+    state.conflictPrior = {
+      _id: 'race-id',
+      id: 'event-race-winner',
+      user_id: 'u1',
+      shared_id: 'team-a',
+      session_id: 's1',
+      event_type: 'goal',
+      content: { description: 'Get the reflection root cause from Satori' },
+      occurrences: 0,
+      variants: [],
+      metadata: { processed: true },
+    };
+
+    const result = await manager.store_event(EVENT);
+
+    expect(result).toBe('event-race-winner');
+    expect(state.updates).toHaveLength(1);
+    expect(state.updates[0].filter).toEqual({ _id: 'race-id' });
   });
 
   it('scopes a private event to the rows without a shared scope', async () => {
@@ -165,6 +208,10 @@ describe('MemoryManager.add_semantic_fact — proposition merge', () => {
   beforeEach(() => {
     state.prior = null;
     state.semanticPrior = null;
+    state.conflictPrior = null;
+    state.conflictSemantic = null;
+    state.insertConflict = false;
+    state.semanticUpsertConflict = false;
     state.finds.length = 0;
     state.inserts.length = 0;
     state.updates.length = 0;
@@ -220,5 +267,36 @@ describe('MemoryManager.add_semantic_fact — proposition merge', () => {
 
     const lineage = state.updates.find(entry => entry.filter?.id === 'event-src');
     expect(lineage.update.$addToSet['metadata.derived_facts']).toBe('fact-1');
+  });
+
+  it('retries into the proposition row when the unique index rejects the exact upsert', async () => {
+    state.semanticUpsertConflict = true;
+    state.conflictSemantic = {
+      _id: 'fact-race',
+      user_id: 'u1',
+      shared_id: 'team-a',
+      proposition_key: 'the reflection root cause resolved thebrick',
+      content: 'The reflection root cause is resolved on thebrick.',
+      confidence: 0.4,
+      source: 'unknown',
+      tags: [],
+      metadata: {},
+      extraction_count: 1,
+    };
+
+    const id = await manager.add_semantic_fact({
+      user_id: 'u1',
+      shared_id: 'team-a',
+      content: 'The reflection root cause is resolved on thebrick',
+      source: 'extraction',
+      confidence: 0.9,
+      metadata: {},
+      created_at: new Date('2026-10-27T14:00:00Z'),
+    } as any);
+
+    expect(id).toBe('fact-race');
+    const merge = state.updates.find(entry => entry.filter?._id === 'fact-race');
+    expect(merge).toBeDefined();
+    expect(merge.update[0].$set.confidence.$cond).toBeDefined();
   });
 });

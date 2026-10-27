@@ -93,13 +93,6 @@ if (!APPLY) {
   process.exit(0);
 }
 
-// ── index for the write-path lookup ─────────────────────────────────────────
-await coll.createIndex(
-  { user_id: 1, event_type: 1, proposition_key: 1, shared_id: 1 },
-  { name: 'proposition_lookup', background: true },
-);
-console.log('index proposition_lookup ensured');
-
 // ── export, then merge + delete ─────────────────────────────────────────────
 const gz = createGzip({ level: 6 });
 const out = createWriteStream(OUT);
@@ -170,6 +163,26 @@ if (deleted !== exported) {
 } else {
   console.log('export verified: line count matches deletes');
 }
+
+// ── unique sparse index: the atomic guard for concurrent first-writes ────────
+// It can only be built after the duplicate groups above are gone. Same key as
+// the runtime lookup index, so it serves both purposes.
+try {
+  await coll.dropIndex('proposition_lookup');
+  console.log('dropped pre-merge proposition_lookup');
+} catch (error) {
+  if (error.code !== 27) throw error; // 27 = IndexNotFound
+}
+await coll.createIndex(
+  { user_id: 1, event_type: 1, proposition_key: 1, shared_id: 1 },
+  {
+    name: 'proposition_lookup',
+    unique: true,
+    partialFilterExpression: { proposition_key: { $exists: true } },
+    background: true,
+  },
+);
+console.log('unique proposition_lookup ensured');
 
 const docsAfter = await coll.estimatedDocumentCount();
 const stAfter = await db.command({ collStats: 'episodic_events' });

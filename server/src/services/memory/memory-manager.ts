@@ -161,27 +161,31 @@ export class MemoryManager {
     });
     const idempotencyKey = generateIdempotencyKey(incoming as any, contentHash);
     const proposition = propositionOf(incoming.event_type, incoming.content);
+    const propositionFilter = proposition
+      ? episodicPropositionFilter(incoming, proposition.key)
+      : null;
+    const mergeIntoPrior = async (prior: any): Promise<string> => {
+      const { update, merged } = buildEpisodicMergeUpdate(
+        prior,
+        incoming,
+        proposition!,
+        contentHash,
+        idempotencyKey,
+        new Date(),
+      );
+      await db.collection('episodic_events').updateOne({ _id: prior._id }, update);
+      return String(merged.id || prior._id);
+    };
 
     // The proposition merge used to live only in EpisodicEventManager.createEvent.
     // Dispatch-service writes extracted description events through this method, so
     // without the same rule those rows never receive a proposition_key (the live
     // 666-rows/0-propositions window). Apply the same merge here, scoped by
     // shared_id so a private and a communal fact never collapse together.
-    if (proposition) {
-      const prior = await db.collection('episodic_events').findOne(
-        episodicPropositionFilter(incoming, proposition.key),
-      );
+    if (propositionFilter) {
+      const prior = await db.collection('episodic_events').findOne(propositionFilter);
       if (prior) {
-        const { update, merged } = buildEpisodicMergeUpdate(
-          prior,
-          incoming,
-          proposition,
-          contentHash,
-          idempotencyKey,
-          new Date(),
-        );
-        await db.collection('episodic_events').updateOne({ _id: (prior as any)._id }, update);
-        return String(merged.id || (prior as any)._id);
+        return mergeIntoPrior(prior);
       }
     }
 
@@ -206,8 +210,21 @@ export class MemoryManager {
       },
     } as EpisodicEvent;
 
-    const result = await db.collection('episodic_events').insertOne(episodicEvent);
-    return result.insertedId.toString();
+    try {
+      const result = await db.collection('episodic_events').insertOne(episodicEvent);
+      return result.insertedId.toString();
+    } catch (error: any) {
+      // The unique sparse proposition index (created after compaction) turns a
+      // concurrent first-write into a duplicate-key error. Re-read the winner
+      // and merge into it instead of surfacing the race to the caller.
+      if (error?.code === 11000 && propositionFilter) {
+        const prior = await db.collection('episodic_events').findOne(propositionFilter);
+        if (prior) {
+          return mergeIntoPrior(prior);
+        }
+      }
+      throw error;
+    }
   }
 
   async get_event_by_id(event_id: string, user_id?: string): Promise<EpisodicEvent | null> {
@@ -354,25 +371,29 @@ export class MemoryManager {
       // times. Normalise to a proposition key so a re-wording increments
       // `extraction_count` on the original and records the variant.
       const propositionKey = propositionKeyOf(fact.content);
+      const mergeSemanticInto = async (existing: any): Promise<string> => {
+        await db.collection('semantic_facts').updateOne(
+          { _id: existing._id },
+          buildSemanticMergeUpdate(fact),
+        );
+        // The early return used to skip lineage: record the new source event
+        // before returning so the merged fact keeps a bidirectional trail.
+        if (fact.metadata?.extraction_context?.source_event_id) {
+          await this.add_derived_fact_to_event(
+            fact.metadata.extraction_context.source_event_id,
+            existing._id.toString(),
+          );
+        }
+        return existing._id.toString();
+      };
+
       if (propositionKey) {
         const existing = await db.collection('semantic_facts').findOne(
           semanticPropositionFilter(fact, userId, propositionKey),
           { projection: { _id: 1 } },
         );
         if (existing?._id) {
-          await db.collection('semantic_facts').updateOne(
-            { _id: existing._id },
-            buildSemanticMergeUpdate(fact),
-          );
-          // The early return used to skip lineage: record the new source event
-          // before returning so the merged fact keeps a bidirectional trail.
-          if (fact.metadata?.extraction_context?.source_event_id) {
-            await this.add_derived_fact_to_event(
-              fact.metadata.extraction_context.source_event_id,
-              existing._id.toString(),
-            );
-          }
-          return existing._id.toString();
+          return mergeSemanticInto(existing);
         }
       }
 
@@ -394,15 +415,31 @@ export class MemoryManager {
         updated_at: new Date(),
       };
 
-      const result = await db.collection('semantic_facts').findOneAndUpdate(
-        { content_hash: contentHash, shared_id: fact.shared_id ?? null },
-        {
-          $set: factDocument,
-          $setOnInsert: { created_at: new Date() },
-          $inc: { extraction_count: 1 },
-        },
-        { upsert: true, returnDocument: 'after' }
-      );
+      let result: any;
+      try {
+        result = await db.collection('semantic_facts').findOneAndUpdate(
+          { content_hash: contentHash, shared_id: fact.shared_id ?? null },
+          {
+            $set: factDocument,
+            $setOnInsert: { created_at: new Date() },
+            $inc: { extraction_count: 1 },
+          },
+          { upsert: true, returnDocument: 'after' }
+        );
+      } catch (error: any) {
+        // The unique sparse proposition index turns a concurrent first-write
+        // (same proposition, different exact content) into a duplicate-key
+        // error. Re-read the winner and merge into it.
+        if (error?.code === 11000 && propositionKey) {
+          const existing = await db.collection('semantic_facts').findOne(
+            semanticPropositionFilter(fact, userId, propositionKey),
+          );
+          if (existing?._id) {
+            return mergeSemanticInto(existing);
+          }
+        }
+        throw error;
+      }
 
       const fact_id = result?._id?.toString();
       if (!fact_id) {
