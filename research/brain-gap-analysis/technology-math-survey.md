@@ -150,7 +150,7 @@ This section extracts design patterns from major cognitive architectures that ar
 
 ### 2.1 ACT-R (Adaptive Control of Thought—Rational)
 
-**Origin:** John R. Anderson, Carnegie Mellon (1993–present). One of the most empirically validated cognitive architectures.
+**Origin:** the operator R. Anderson, Carnegie Mellon (1993–present). One of the most empirically validated cognitive architectures.
 
 **Core design pattern — Production System + Declarative Memory:**
 
@@ -206,7 +206,7 @@ def select_action(productions, goal_value, temperature=1.0):
 
 ### 2.2 SOAR
 
-**Origin:** Allen Newell, John Laird, Paul Rosenbloom, Carnegie Mellon (1983–present). SOAR is a *symbolic* cognitive architecture emphasizing problem-solving and learning.
+**Origin:** Allen Newell, the operator Laird, Paul Rosenbloom, Carnegie Mellon (1983–present). SOAR is a *symbolic* cognitive architecture emphasizing problem-solving and learning.
 
 **Core design pattern — Problem Space Computational Model:**
 All deliberative behavior is search through problem spaces. States are represented in a global working memory (graph structure). Operators transform states. An impasse occurs when no operator can be selected — this triggers automatic subgoaling.

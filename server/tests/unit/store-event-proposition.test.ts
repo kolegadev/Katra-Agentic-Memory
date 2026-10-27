@@ -62,7 +62,7 @@ const EVENT = {
   session_id: 's2',
   event_type: 'goal',
   timestamp: new Date('2026-10-27T14:00:00Z'),
-  content: { description: 'Get the reflection root cause from Satori' },
+  content: { description: 'Get the reflection root cause from the generator' },
   metadata: { source: 'extraction' },
 } as any;
 
@@ -110,7 +110,7 @@ describe('MemoryManager.store_event — proposition write path', () => {
       shared_id: 'team-a',
       session_id: 's1',
       event_type: 'goal',
-      content: { description: 'Get the reflection root cause from Satori' },
+      content: { description: 'Get the reflection root cause from the generator' },
       occurrences: 2,
       variants: [],
       metadata: { processed: true },
@@ -140,7 +140,7 @@ describe('MemoryManager.store_event — proposition write path', () => {
       shared_id: 'team-a',
       session_id: 's1',
       event_type: 'goal',
-      content: { description: 'Get the reflection root cause from Satori' },
+      content: { description: 'Get the reflection root cause from the generator' },
       occurrences: 0,
       variants: [],
       metadata: { processed: true },

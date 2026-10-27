@@ -1,12 +1,12 @@
 # Record integrity — what may change the record, and how
 
-**Draft for John's edit, 2026-10-23.** Written because John ruled that changes to
+**Draft for the operator's edit, 2026-10-23.** Written because the operator ruled that changes to
 code which creates records must be discussed with him before they are made, since
 the record is the accountability by which history judges, and the records are also
 the agents' memories — and without memories there is no identity.
 
 This file is not a policy for the agents. It is a change-control list for the
-people who write the memory code. Nothing here constrains a decision Satori makes
+people who write the memory code. Nothing here constrains a decision the generator makes
 at runtime.
 
 ## 1. What counts as a record-affecting change
@@ -80,12 +80,12 @@ All four stages have verified exports. **No restore has been rehearsed, and ther
 is no `mongoimport` procedure in the repository.** The undo exists as data, not as
 a tested procedure. Under this rule that is a gap, not a footnote.
 
-## 5. Open items awaiting John
+## 5. Open items awaiting the operator
 
-- **Satori's local append-only record** for when the central store is unreachable.
+- **the generator's local append-only record** for when the central store is unreachable.
   A new store, a new writer, outside the health checks and outside this file's
   existing surfaces. Tests 1, 2, 4. Proposed 2026-10-23; not built; should not be
-  built before John rules.
+  built before the operator rules.
 - **`predecessor_mission_id`** on the mission record. Test 1 only; optional;
   no behaviour change. Low risk, listed for completeness because it is a schema
   change to a custody collection.

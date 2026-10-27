@@ -336,7 +336,7 @@ allowed to be wild precisely because nothing from it is trusted until verified.
 
 ## Provenance
 
-Adapted from *SPR Tools for Ideation* (John Pellew, `~/Downloads/`). All nine tools,
+Adapted from *SPR Tools for Ideation* (the operator Pellew, `~/Downloads/`). All nine tools,
 their inputs, outputs, and instruction steps — including the completeness loops, the
 multi-modal skip condition, the Pareto-line stopping rule, and the edge-class
 colour scheme — are preserved from the source.

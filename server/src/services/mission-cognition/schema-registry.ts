@@ -82,7 +82,7 @@ export function validateAgainst(schemaId: string, doc: unknown): ValidationResul
       // caller must open the schema to learn the valid values. Every closed
       // enum in this plane (delta_type, entry_type, status, ...) reported
       // "must be equal to one of the allowed values" and named none of them —
-      // reported by Satori, 2026-10-21.
+      // reported by the generator, 2026-10-21.
       const allowed = (e.params as { allowedValues?: unknown[] } | undefined)?.allowedValues;
       return e.keyword === 'enum' && Array.isArray(allowed)
         ? `${base} (allowed: ${allowed.map(v => String(v)).join('|')})`

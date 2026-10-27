@@ -13,14 +13,14 @@ const prior = {
   shared_id: 'team-a',
   session_id: 's1',
   event_type: 'goal',
-  content: { description: 'Get the reflection root cause from Satori' },
+  content: { description: 'Get the reflection root cause from the generator' },
   occurrences: 2,
   variants: [],
   metadata: { processed: true },
 };
 const proposition = {
   key: 'k1',
-  normalized: 'get reflection root cause satori',
+  normalized: 'get reflection root cause agent-a',
   tokens: 4,
   strategy: 'first' as const,
 };
@@ -46,7 +46,7 @@ describe('episodic proposition merge', () => {
       event_type: 'goal',
       session_id: 's2',
       shared_id: 'team-a',
-      content: { description: 'Get the reflection root cause from Satori again' },
+      content: { description: 'Get the reflection root cause from the generator again' },
       timestamp: new Date('2026-10-27T14:00:00Z'),
     };
     const { update, merged } = buildEpisodicMergeUpdate(
@@ -66,7 +66,7 @@ describe('episodic proposition merge', () => {
     const variantSet = update[1].$set.variants;
     expect(variantSet.$slice[1]).toBe(-5);
     expect(variantSet.$slice[0].$concatArrays[1][0]).toMatchObject({
-      text: 'Get the reflection root cause from Satori again',
+      text: 'Get the reflection root cause from the generator again',
       session_id: 's2',
       shared_id: 'team-a',
       seen_at: event.timestamp,

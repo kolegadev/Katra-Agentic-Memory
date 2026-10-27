@@ -1,6 +1,6 @@
 # Decision-Making, Motivation, and Action Selection for Katra
 
-> *"The programming we need is environmental programming — build the petri dish, furnish it with agar, and see what grows."* — John
+> *"The programming we need is environmental programming — build the petri dish, furnish it with agar, and see what grows."* — the operator
 
 **Status:** Research Survey & Architectural Analysis
 **Date:** 2026-06-30
@@ -153,7 +153,7 @@ G(π) = E_{q(o,θ|π)}[ln q(θ|π) - ln p(o,θ|π)]
 - **Pragmatic value** (goal achievement): Actions that bring observations in line with prior preferences
 
 **Relevance to Katra:**
-Active inference is philosophically aligned with John's "environmental programming" philosophy. It says: don't program the agent to do things; give it a generative model of its world and a drive to minimize surprise. Behavior *emerges* from the drive.
+Active inference is philosophically aligned with the operator's "environmental programming" philosophy. It says: don't program the agent to do things; give it a generative model of its world and a drive to minimize surprise. Behavior *emerges* from the drive.
 
 Katra already has some of the raw materials:
 - **Generative model:** The knowledge graph + semantic memory + temporal patterns form a predictive model of "what tends to happen"
@@ -517,7 +517,7 @@ In Katra terms:
 - **Competition** = the basal ganglia model above — actions compete through mutual inhibition
 - **Selection** = the action that first crosses threshold, modulated by context
 
-The affordance approach is particularly aligned with John's "build the petri dish" philosophy: don't program decision logic. Instead, create the conditions where possible actions continuously emerge from the memory state and compete for selection — and let the architecture (not the programmer) determine which action wins.
+The affordance approach is particularly aligned with the operator's "build the petri dish" philosophy: don't program decision logic. Instead, create the conditions where possible actions continuously emerge from the memory state and compete for selection — and let the architecture (not the programmer) determine which action wins.
 
 ### 3.3 Habit vs Goal-Directed Action: Dual-Process Theory
 

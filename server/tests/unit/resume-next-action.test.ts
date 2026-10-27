@@ -21,7 +21,7 @@ function state(overrides: Partial<MissionState> = {}): MissionState {
     title: 't',
     intent: 'i',
     status: 'active',
-    owner_id: 'satori',
+    owner_id: 'agent-a',
     success_criteria: [],
     authority_class: 'B',
     created_at: new Date().toISOString(),
@@ -31,7 +31,7 @@ function state(overrides: Partial<MissionState> = {}): MissionState {
 }
 
 const done = (id: string, status: string) => ({ id, description: `criterion ${id}`, status: status as never });
-const obj = (id: string, status: string) => ({ id, description: `objective ${id}`, status: status as never, owner_id: 'satori' });
+const obj = (id: string, status: string) => ({ id, description: `objective ${id}`, status: status as never, owner_id: 'agent-a' });
 
 describe('resume next-action reflects success criteria', () => {
   it('says READY TO CLOSE when all objectives and all criteria are satisfied', () => {

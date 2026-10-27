@@ -46,7 +46,7 @@ const IDENTITY = 'katra';
 
 beforeEach(() => {
   process.env.KATRA_AFFECT_ENABLED = '1';
-  process.env.KATRA_AFFECT_IDENTITIES = `shoshin,${IDENTITY}`;
+  process.env.KATRA_AFFECT_IDENTITIES = IDENTITY;
   affectSearch.mockReset();
 });
 

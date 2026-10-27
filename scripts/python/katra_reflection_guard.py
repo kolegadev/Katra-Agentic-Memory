@@ -4,8 +4,8 @@
 Root cause this guards (2026-10-21): SleepConsolidationService.schedule() calls
 runConsolidation(period) with no user_id -> DEFAULT_USER_ID ("katra") only, while
 consolidation_runs stores ONE global last_run per period. The scheduler looks
-healthy while every other identity's reflection goes stale (satori 10-11,
-shoshin 10-06, zefir 10-05, lilly 08-24 at the time of writing).
+healthy while every other identity's reflection goes stale (agent-a 10-11,
+agent 10-06, agent-c 10-05, agent-b 08-24 at the time of writing).
 
 This guard reads the latest reflective_journals row per identity, and for any
 identity older than MAX_AGE_H, calls the admin trigger endpoint
@@ -15,7 +15,7 @@ consolidates one identity at a time).
 
 Note (learned 2026-10-21): the MCP `trigger_reflection` tool honours a named
 user_id only for a TRUSTED caller; the loop.env key resolves to its own
-identity, so a call naming lilly consolidated `katra` instead. The admin route
+identity, so a call naming agent-b consolidated `katra` instead. The admin route
 takes user_id directly and is gated by the container's KATRA_API_KEY.
 
 Usage:

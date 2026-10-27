@@ -1,5 +1,5 @@
 // semantic_facts compaction — exact-proposition dedupe with export-first.
-// Lilly, 2026-10-21. DRY RUN by default; --apply writes.
+// the loop director, 2026-10-21. DRY RUN by default; --apply writes.
 //
 //   node /app/compact-semantic.mjs                         # dry run
 //   node /app/compact-semantic.mjs --apply                 # export + merge + delete

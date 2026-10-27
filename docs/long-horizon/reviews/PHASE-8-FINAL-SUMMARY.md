@@ -43,7 +43,7 @@ episode and later resume from the mission id alone, with **no transcript replay*
 
 ## 4. Independent verification (Phase 8)
 
-Lilly (Verifier) re-ran the contract's gate commands herself. **Generator results were not used as
+the loop director (Verifier) re-ran the contract's gate commands herself. **Generator results were not used as
 evidence.** Verdict: **PASS — no falsification achieved.**
 
 - All six generator claims confirmed, including §4.18 (zero credential references on the new surfaces)
@@ -142,7 +142,7 @@ live on power-on without intervention. If you need to roll back, check out a git
 
 ## 6b. Verification of the section-7 pass (`d7cb777`)
 
-Lilly independently re-ran the gates at `d7cb777` (tag `section7-d7cb777`). **All six claims
+the loop director independently re-ran the gates at `d7cb777` (tag `section7-d7cb777`). **All six claims
 CONFIRMED.** Notable results from her own run, not mine:
 
 - Gates: typecheck 0 · build 131 · **743 passed / 0 failed / 159 skipped** · allocator **51/0**
@@ -160,12 +160,12 @@ CONFIRMED.** Notable results from her own run, not mine:
 ### ⚠️ The identity-environment trap (found by the Verifier, in MY instructions)
 
 **Always run the suite as `env -u KATRA_USER_ID npx vitest run`.** My `WHAT-TO-RUN` block for
-this pass dropped the `-u`, and in a dispatch environment that leaks `KATRA_USER_ID=satori`
+this pass dropped the `-u`, and in a dispatch environment that leaks `KATRA_USER_ID=agent-a`
 (the inbox cron exports it) **7 identity tests fail** — `resolveCallerIdentity` expects
 `katra`. Verified both ways:
 
 ```
-KATRA_USER_ID=satori npx vitest run        # 7 FAILURES  (environment leakage)
+KATRA_USER_ID=agent-a npx vitest run        # 7 FAILURES  (environment leakage)
 env -u KATRA_USER_ID npx vitest run        # 743 passed / 0 failed
 ```
 
@@ -175,14 +175,14 @@ The contract's §6 command had it right; my abbreviated re-statement is what los
 
 ### The deferred allocator fix — Verifier's ruling
 
-On the un-patched source defect (see §7), Lilly ruled: **do not amend the contract.** The 51/0
+On the un-patched source defect (see §7), the loop director ruled: **do not amend the contract.** The 51/0
 freeze is the governing constraint and her own verified reconciliation depends on it; the
 display-layer normalisation closes the user-visible defect, and the note's honest quoting of
 the original artefact is better than a silent rewrite.
 
 **Logged as a deferred item**: the one-line source fix (guard the rationale template for the
 single-candidate case) should ride any *future* allocator amendment rather than being made
-now. John decides when, if ever.
+now. the operator decides when, if ever.
 
 ---
 

@@ -3,7 +3,7 @@
 # Fixed no-arg script. The snapshot path is read from the restore-target
 # file written by the s15 skill in the invoking user's state dir.
 set -u
-SU="${SUDO_USER:-johnpellew}"
+SU="${SUDO_USER:-$HOME}"
 STATE="$(getent passwd "$SU" | cut -d: -f6)/.local/state/net-agent"
 TARGET_FILE="$STATE/restore-target"
 

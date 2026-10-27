@@ -1,6 +1,6 @@
 # Episodic delta capture — what a turn records, and why near-duplicates piled up
 
-2026-10-21 · Lilly, at John's direction.
+2026-10-21 · the loop director, at the operator's direction.
 
 ## The problem as stated
 
@@ -41,8 +41,8 @@ Two mechanisms produced it:
    therefore byte-different and dedup never fires, even when the proposition is
    identical.
 2. **The extractor paraphrases.** The same fact re-derived from an unchanged
-   transcript arrives with different wording — "Get from Satori the
-   reflection-stall root cause" and "Obtain from Satori the reflection-stall
+   transcript arrives with different wording — "Get from the generator the
+   reflection-stall root cause" and "Obtain from the generator the reflection-stall
    root cause" are two rows, 15 minutes apart.
 
 Measured collapse under an order-insensitive normal form:
@@ -168,7 +168,7 @@ Survivors carry `proposition_key`, `occurrences`, `first_seen_at`,
 - **Deletes are deletes.** The export is the recovery path; it lives under
   `exports/` and should be retained until the next compaction is verified.
 
-## Second round (same day, John's four follow-ups)
+## Second round (same day, the operator's four follow-ups)
 
 ### semantic_facts
 
@@ -198,8 +198,8 @@ recent event of the same type is ≥ 0.8. The live acceptance test killed it:
 
 | pair | overlap | result |
 |---|---|---|
-| "Get the reflection root cause from Satori" / "Obtain …" | 4/5 = 0.80 | merge (intended) |
-| "Delete the reflection root cause from Satori" / "Get …" | 4/5 = 0.80 | **merge (wrong)** |
+| "Get the reflection root cause from the generator" / "Obtain …" | 4/5 = 0.80 | merge (intended) |
+| "Delete the reflection root cause from the generator" / "Get …" | 4/5 = 0.80 | **merge (wrong)** |
 
 The verb carries the proposition, and it is the single token that differs, so
 token overlap cannot separate a synonym from an antonym. The gate was removed

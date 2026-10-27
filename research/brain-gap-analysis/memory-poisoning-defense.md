@@ -3,7 +3,7 @@
 > **Research Scope:** Katra cognitive memory system — append-only graph-based agent memory  
 > **Problem:** No mechanism exists to detect false, planted, or adversarial memories  
 > **Human Analogues:** Source monitoring, reality monitoring, consistency checking, social corroboration  
-> **John's Hypothesis:** Truth ≈ deviation from topical stream; outliers beyond σ threshold are quarantined pending cross-validation  
+> **the operator's Hypothesis:** Truth ≈ deviation from topical stream; outliers beyond σ threshold are quarantined pending cross-validation  
 > **Date:** 30 June 2026
 
 ---
@@ -12,7 +12,7 @@
 
 1. [Attack Surface Taxonomy](#1-attack-surface-taxonomy)
 2. [Defense Mechanism Survey](#2-defense-mechanism-survey)
-3. [Implementation of John's STD-from-Stream Hypothesis](#3-implementation-of-johns-std-from-stream-hypothesis)
+3. [Implementation of the operator's STD-from-Stream Hypothesis](#3-implementation-of-johns-std-from-stream-hypothesis)
 4. [Graph Adversarial Robustness Techniques](#4-graph-adversarial-robustness-techniques)
 5. [Recommended Defense Architecture for Katra](#5-recommended-defense-architecture-for-katra)
 6. [References](#6-references)
@@ -376,13 +376,13 @@ This is essentially a PageRank-style trust propagation, similar to Advogato and 
 
 ---
 
-## 3. Implementation of John's STD-from-Stream Hypothesis
+## 3. Implementation of the operator's STD-from-Stream Hypothesis
 
 > *"Conceptually, truth might be measured by how many standard deviations away from the current topical stream of data a new piece of data is. If it is too far away, it gains less attention and is potentially quarantined or tagged as suspect unless cross-validated by other sources."*
 
 ### 3.1 Theoretical Foundation
 
-John's hypothesis captures an intuition that has deep roots in both statistics and cognitive science:
+the operator's hypothesis captures an intuition that has deep roots in both statistics and cognitive science:
 
 1. **Statistical:** Genuine observations from a stable process should fall within the expected distribution. Outliers suggest either a genuine anomalous event or fabricated data.
 2. **Cognitive:** The human brain's **reality monitoring** system flags memories whose sensory/perceptual details don't match the expected profile of real experiences (Johnson & Raye, 1981).
@@ -722,7 +722,7 @@ Poisoned edges often have low centrality (they connect things that shouldn't be 
                     │  Layer 3: Cross │  ← BFT voting, DelphiAgent,
                     │  Validation     │     multi-model consensus
                     ├─────────────────┤
-                    │  Layer 2: STD   │  ← John's hypothesis:
+                    │  Layer 2: STD   │  ← the operator's hypothesis:
                     │  Deviation      │     embedding, temporal,
                     │  Detection      │     drift, source anomaly
                     ├─────────────────┤

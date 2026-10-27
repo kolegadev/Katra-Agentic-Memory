@@ -6,7 +6,7 @@
  * none | approval | review, and only `none` is common to both, so every gated
  * delta was invalid on one side or the other. The surface now accepts both and
  * normalises here, so the stored contract keeps one vocabulary and old callers
- * keep working. (Satori, 2026-10-23.)
+ * keep working. (the generator, 2026-10-23.)
  */
 export const HUMAN_GATES = ['none', 'required_before_merge', 'required_before_effect'] as const;
 export type HumanGate = (typeof HUMAN_GATES)[number];

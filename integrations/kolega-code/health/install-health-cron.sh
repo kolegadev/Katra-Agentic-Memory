@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Install (idempotently) the machine-health collector cron line on a host.
 #
-# Hardening (Zefir/Satori 2026-09-17): the cron command creates its own log
+# Hardening (two agents 2026-09-17): the cron command creates its own log
 # directory first (mkdir -p) instead of assuming ~/.katra/inbox exists — a
 # missing directory makes /bin/sh fail the redirect, so machine_health.py
 # silently never runs and the failure is mailed into the local mail spool.

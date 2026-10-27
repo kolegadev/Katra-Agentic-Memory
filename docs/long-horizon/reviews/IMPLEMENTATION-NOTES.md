@@ -1,4 +1,4 @@
-# Long Horizon Cognitive Control — implementation notes (Satori, 2026-09-19)
+# Long Horizon Cognitive Control — implementation notes (the generator, 2026-09-19)
 
 Local-testing implementation on thebrick, branch `feat/cognitive-control-local` in
 `~/Katra-Agentic-Memory` — **never pushed** (pre-push hook blocks it mechanically).
@@ -67,5 +67,5 @@ Local-testing implementation on thebrick, branch `feat/cognitive-control-local` 
 - Formal TS authority matrix + shared config with `scripts/python/authority_matrix.py`.
 - Durable outbox consumer offsets / repair worker.
 - Live-server activation: katra-server image rebuild + `COGNITIVE_CONTROL_ENABLED`
-  env and restart remain John-gated. No production collection touched; the feature
+  env and restart remain the operator-gated. No production collection touched; the feature
   flag defaults to `off`.

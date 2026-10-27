@@ -1,6 +1,6 @@
 # Independent Review — Katra Long Horizon Cognitive Control Handoff v0.1
 
-**Reviewer:** Lilly (Kolega Code), on the Mac checkout
+**Reviewer:** the loop director, on the Mac checkout
 **Date:** 19 September 2026
 **Scope:** the handoff package as received — README, docs 01–07, 6 JSON Schemas, 9 seed SKILL.md
 **Method:** full read, then every load-bearing claim checked against the actual repository at
@@ -231,7 +231,7 @@ Katra's chat LLM.
 **4.3 — No concrete bridge from existing `missions` to `mission_states`.**
 "Retain current mission tools during migration … adapt their output into Mission State where
 safe." The existing object is a goal + task tree; the new one is a versioned operational model.
-No adapter is specified. Satori currently has **live missions** — they must not become
+No adapter is specified. the generator currently has **live missions** — they must not become
 second-class citizens. Phase 1 needs an explicit mapping table, including what happens to
 in-flight tasks when a mission gains a version.
 
@@ -328,7 +328,7 @@ Worth preserving deliberately, because these are the parts that will still be ri
 
 ## 8. Handling constraint — do not publish
 
-John's instruction, and the reason this document is filed outside the repository:
+the operator's instruction, and the reason this document is filed outside the repository:
 
 > **This work must NOT reach the public GitHub remote.**
 > `github.com/kolegadev/Katra-Agentic-Memory` is public. The long-horizon cognitive control
@@ -343,10 +343,10 @@ Accordingly:
   to push it, so the constraint is enforced mechanically rather than by discipline.
 - **Do not add design docs to `docs/`** in a pushed state. Doc 06's "documentation updates
   required in the repository" applies to the eventual private/paid form, not to `main` today.
-- If a decision is later made to publish, that is a deliberate act requiring John's explicit
+- If a decision is later made to publish, that is a deliberate act requiring the operator's explicit
   approval — not a side-effect of a routine push.
 
 ---
 
-*End of review. Prepared by Lilly. All repository claims are reproducible against `35f61fb`;
+*End of review. Prepared by the loop director. All repository claims are reproducible against `35f61fb`;
 the verification commands are recorded in the session log.*

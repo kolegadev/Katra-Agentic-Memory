@@ -1,6 +1,6 @@
 # Gap-Closure & Delivery Plan — Katra Long Horizon Cognitive Control
 
-**Joint plan: Lilly (Mac) + Satori (thebrick)**
+**Joint plan: the loop director (Mac) + the generator**
 **Opened:** 19 September 2026
 **Branch:** `feat/cognitive-control-local` — **local only, never pushed**
 **Review of record:** `~/katra-long-horizon/REVIEW-long-horizon-cognitive-control.md`
@@ -9,14 +9,14 @@
 
 ## 0. Status: implementation is already underway and in good shape
 
-Satori began before this plan was written. Verified state on thebrick:
+the generator began before this plan was written. Verified state on thebrick:
 
 - branch `feat/cognitive-control-local`, based on `main` @ `35f61fb`
 - `server/src/services/mission-cognition/` — **2,314 lines** across 10 modules + 6 schemas
 - 3 test files (`mission-cognition.test.ts`, `mission-cognition-mcp.test.ts`, `fake-mongo.ts` helper)
 - 4 existing files modified: `mcp-server.ts`, `skill-loader-service.ts`, `types/memory.ts`, `package.json`
 
-**The no-publish guard was extended on 19 Sep** — see §5. Satori's branch and file paths were
+**The no-publish guard was extended on 19 Sep** — see §5. the generator's branch and file paths were
 *not* covered by the first version of the hook (the work used `mission-cognition/`, the guard
 matched `cognitive/`). Both rules now cover it, and this was tested against the real branch.
 
@@ -26,18 +26,18 @@ matched `cognitive/`). Both rules now cover it, and this was tested against the 
 
 | # | Finding | Owner | Status |
 |---|---|---|---|
-| §3.1 | `version` missing from `KatraSkill`; skill versioning doesn't exist | Satori | ✅ **closed** — `version?: string` added to `KatraSkill`, `SkillFeedbackRecord`, `SkillSearchResult`; loader reads and surfaces it; `skill_version` persisted on feedback |
-| §3.2 | 9 seed skills omit `title`, `triggers`, `confidence` (30% activation deficit) | **Lilly** | ⬜ **open — this plan** |
-| §3.3 | `confidence: Number(x) ?? 0.5` → `NaN` | Satori | ✅ **closed** — `Number.isFinite(...)` guard, exactly as specified |
-| §3.4 | Authority model is Python; server has no concept of it | **Lilly** | ⬜ **open — this plan** |
-| §3.5 | Event rail narrower than claimed; no durability | Satori | ✅ **closed** — durable Mongo outbox (`mission_events`) + advisory best-effort Redis |
-| §4.3 | No `missions` → `mission_states` adapter | Satori | ✅ **closed** — `adapter.ts` (`adoptLegacyMission`) |
-| §4.4 | No retention / compaction policy | Satori | ✅ **closed** — TTL 90d events, 7d batons, keep last 30 state versions |
-| §4.5 | Schemas say `additionalProperties:false` but promise additive minor fields | **Lilly** | ⬜ **open — this plan** |
-| §4.1 | MCP-caller authority rules unspecified | **Lilly** | ⬜ **open — this plan** |
+| §3.1 | `version` missing from `KatraSkill`; skill versioning doesn't exist | the generator | ✅ **closed** — `version?: string` added to `KatraSkill`, `SkillFeedbackRecord`, `SkillSearchResult`; loader reads and surfaces it; `skill_version` persisted on feedback |
+| §3.2 | 9 seed skills omit `title`, `triggers`, `confidence` (30% activation deficit) | **the loop director** | ⬜ **open — this plan** |
+| §3.3 | `confidence: Number(x) ?? 0.5` → `NaN` | the generator | ✅ **closed** — `Number.isFinite(...)` guard, exactly as specified |
+| §3.4 | Authority model is Python; server has no concept of it | **the loop director** | ⬜ **open — this plan** |
+| §3.5 | Event rail narrower than claimed; no durability | the generator | ✅ **closed** — durable Mongo outbox (`mission_events`) + advisory best-effort Redis |
+| §4.3 | No `missions` → `mission_states` adapter | the generator | ✅ **closed** — `adapter.ts` (`adoptLegacyMission`) |
+| §4.4 | No retention / compaction policy | the generator | ✅ **closed** — TTL 90d events, 7d batons, keep last 30 state versions |
+| §4.5 | Schemas say `additionalProperties:false` but promise additive minor fields | **the loop director** | ⬜ **open — this plan** |
+| §4.1 | MCP-caller authority rules unspecified | **the loop director** | ⬜ **open — this plan** |
 | §4.2 | Scheduler has no cost data to divide by | deferred | ⏸ **deferred with Phase 4** (correct) |
 
-Satori independently resolved two findings I raised as design gaps (§4.3, §4.4) without being
+the generator independently resolved two findings I raised as design gaps (§4.3, §4.4) without being
 asked, and deferred the scheduler/uncertainty tools exactly as recommended — 9 of 13 MCP tools
 are registered, and the 4 omitted are precisely the scheduler and uncertainty surface.
 
@@ -47,7 +47,7 @@ are registered, and the 4 omitted are precisely the scheduler and uncertainty su
 
 The rule is simple: **two agents must never edit the same file.**
 
-### Satori owns
+### the generator owns
 ```
 server/src/services/mission-cognition/**     (all modules + schemas)
 server/src/types/cognitive-control.ts
@@ -57,21 +57,21 @@ server/src/services/memory/skill-loader-service.ts
 server/src/types/memory.ts
 ```
 
-### Lilly owns
+### the loop director owns
 ```
 server/src/skills/<category>/<name>/SKILL.md   (the 9 seed skills)
 server/src/services/authority/**               (new — TS authority service)
 server/src/services/mission-cognition/schemas/*.schema.json
-    ↑ SHARED — Lilly will NOT touch these without Satori's agreement; see §3.3
+    ↑ SHARED — the loop director will NOT touch these without the generator's agreement; see §3.3
 ~/katra-long-horizon/**                        (plan, review, verification reports)
 ```
 
-**Anything in Satori's set is Satori's call.** Lilly reviews and verifies but does not edit.
-If Lilly needs a change in Satori's files, it is raised as a finding, not a commit.
+**Anything in the generator's set is the generator's call.** the loop director reviews and verifies but does not edit.
+If the loop director needs a change in the generator's files, it is raised as a finding, not a commit.
 
 ---
 
-## 3. Lilly's workstreams
+## 3. the loop director's workstreams
 
 ### 3.1 Seed skills — fix frontmatter, then install  *(closes §3.2)*
 
@@ -117,7 +117,7 @@ Design decisions to implement:
   Existing trusted/untrusted semantics are documented in `docs/MCP-TOOLS.md` and must be reused,
   not reinvented.
 
-### 3.3 Schema version policy  *(closes §4.5)* — coordinate with Satori
+### 3.3 Schema version policy  *(closes §4.5)* — coordinate with the generator
 
 The six schemas set `additionalProperties: false`, yet doc 02 promises to "tolerate additive
 minor fields". An additive minor field would fail validation on read of persisted documents.
@@ -126,15 +126,15 @@ Two honest options:
 1. Relax `additionalProperties` on the versioned documents and enforce strictness per-field.
 2. Drop the "tolerate additive minor" claim and commit to strict versioning + migrations.
 
-**This touches Satori's files**, so it is raised as a finding and implemented by Satori (or by
-Lilly only with explicit agreement). Recommendation: option 2 for the three documents that are
+**This touches the generator's files**, so it is raised as a finding and implemented by the generator (or by
+the loop director only with explicit agreement). Recommendation: option 2 for the three documents that are
 append-only audit records (`state_deltas`, `epistemic_entries`, `mission_state_versions`) where
 strictness is a feature; option 1 for the mutable projection documents.
 
 ### 3.4 Independent verification  *(ongoing)*
 
-Lilly verifies Satori's work against the task contract, not against Satori's own claims:
-- run `npm run typecheck` and `npm run build` after Satori's changes land
+the loop director verifies the generator's work against the task contract, not against the generator's own claims:
+- run `npm run typecheck` and `npm run build` after the generator's changes land
 - run the mission-cognition test suites and report actual pass/fail
 - confirm the `COGNITIVE_CONTROL_ENABLED=off` path exposes **no** new MCP tools
 - confirm secret-boundary invariants: no credential value can reach a baton, ledger, delta, or event
@@ -169,7 +169,7 @@ If that passes, the core idea is proven. If it fails, no amount of scheduler wor
 
 ## 5. The no-publish constraint — unchanged and now stronger
 
-`github.com/kolegadev/Katra-Agentic-Memory` is **public**. John has not decided on publication
+`github.com/kolegadev/Katra-Agentic-Memory` is **public**. the operator has not decided on publication
 or monetisation. Nothing from this work may be pushed.
 
 **Guard v2** installed at `~/Katra-Agentic-Memory/.git/hooks/pre-push` (v1 backed up beside it):
@@ -180,11 +180,11 @@ or monetisation. Nothing from this work may be pushed.
   the six named design docs, and the six schema files
 - **allows** ordinary pushes so unrelated work is unaffected
 
-Tested on 19 Sep: `feat/cognitive-control-local` → **blocked**; the 20 files Satori created →
+Tested on 19 Sep: `feat/cognitive-control-local` → **blocked**; the 20 files the generator created →
 **19 matched** (the one miss is `tests/helpers/fake-mongo.ts`, generic test infrastructure,
 deliberately unprotected to avoid false positives); `main` → allowed.
 
-**To publish, John removes the hook by hand.** Neither agent can grant that approval, and
+**To publish, the operator removes the hook by hand.** Neither agent can grant that approval, and
 neither should try.
 
 ---
@@ -205,7 +205,7 @@ follow, not precede, a trusted state layer — and stay in shadow mode for a lon
 
 ---
 
-## 7. Open decisions for John
+## 7. Open decisions for the operator
 
 1. **Publication/monetisation** — nothing is pushed until he decides.
 2. **Schema strictness** (§3.3) — strict + migrations, or relaxed + additive? Recommendation in §3.3.
@@ -214,4 +214,4 @@ follow, not precede, a trusted state layer — and stay in shadow mode for a lon
 
 ---
 
-*Maintained jointly. Lilly updates §1/§3, Satori updates implementation status.*
+*Maintained jointly. the loop director updates §1/§3, the generator updates implementation status.*

@@ -111,10 +111,10 @@ else
 fi
 
 # 4. Legacy config name must not linger (migration completeness).
-if [ -f "$STATE_DIR/satori-hook.json" ]; then
-  alarm "stale satori-hook.json still present — running ensure-bridge to migrate"
+if [ -f "$STATE_DIR/agent-a-hook.json" ]; then
+  alarm "stale agent-a-hook.json still present — running ensure-bridge to migrate"
   "$HERE/scripts/ensure-bridge.sh" >/dev/null 2>&1 || true
-  [ -f "$STATE_DIR/satori-hook.json" ] && alarm "migration failed: satori-hook.json still present"
+  [ -f "$STATE_DIR/agent-a-hook.json" ] && alarm "migration failed: agent-a-hook.json still present"
 fi
 
 if [ "$FAIL" -ne 0 ]; then

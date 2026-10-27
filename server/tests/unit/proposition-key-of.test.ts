@@ -18,8 +18,8 @@ describe('propositionKeyOf — semantic-fact re-wording is an occurrence', () =>
   });
 
   it('keys the filler sentence that dominated the store', () => {
-    const a = propositionKeyOf('fact: The user associated with this session is satori.');
-    const b = propositionKeyOf('The user associated with this session, is Satori');
+    const a = propositionKeyOf('fact: The user associated with this session is agent-a.');
+    const b = propositionKeyOf('The user associated with this session, is agent-a');
     expect(a).toBe(b);
   });
 

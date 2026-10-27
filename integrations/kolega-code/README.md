@@ -267,7 +267,7 @@ compaction.
 
 A ritual that re-injects stale content is worse than none: it answers "what
 was I doing?" with last week's news. Five rules keep the content current
-(2026-09-25, after John reported the wake reading as "legacy, stale
+(2026-09-25, after the operator reported the wake reading as "legacy, stale
 information"):
 
 1. **The recap leads every reset.** After `/clear` or `/compress` the context
@@ -346,7 +346,7 @@ cd integrations/kolega-code
 printf '{"hook_event_name":"SessionStart","session_id":"t1"}' | .venv/bin/python scripts/hook_runner.py
 ```
 
-## Wake-ritual deployment points (2026-09-23 re-implementation, John's directive)
+## Wake-ritual deployment points (2026-09-23 re-implementation, the operator's directive)
 
 The wake ritual (identity + memory bootstrap) is re-asserted at FOUR points:
 
@@ -406,6 +406,6 @@ incident: empty 58-byte envelope, no signal). Three layers:
 ## Migration
 
 `ensure-bridge.sh` retires the pre-`f9b5031` config filename: any
-`satori-hook.json` is copied to `katra-hook.json` when the new name is
+`agent-a-hook.json` is copied to `katra-hook.json` when the new name is
 missing and renamed to `*.migrated-<ts>` when both exist. A machine holding
 only the old name silently fell through to defaulted config — never allow it.

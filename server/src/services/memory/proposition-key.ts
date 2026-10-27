@@ -1,11 +1,11 @@
 /**
  * Proposition keys — the delta-capture rule for distilled episodic events.
  *
- * Why this exists (2026-10-21, John + Lilly): the episodic store re-derives the
+ * Why this exists (2026-10-21, the operator + the loop director): the episodic store re-derives the
  * same propositions whenever a session is re-read. Each copy carries a fresh
  * `extracted_at`, and the content hash hashes the WHOLE payload, so it never
  * matches: the rows accumulate as near-clones — same meaning, new timestamp,
- * often a paraphrase ("Get from Satori …" then "Obtain from Satori …").
+ * often a paraphrase ("Get from the generator …" then "Obtain from the generator …").
  *
  * Measured on 2026-10-21 before this rule: the description-bearing event types
  * held 946,688 rows that collapse to 437,026 propositions — 53.8% redundant —

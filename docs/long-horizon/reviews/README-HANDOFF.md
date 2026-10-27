@@ -1,6 +1,6 @@
 # Katra Long Horizon Cognitive Control — handoff landing
 
-Received from John, 19 September 2026. Reviewed by Lilly the same day.
+Received from the operator, 19 September 2026. Reviewed by the loop director the same day.
 
 **⚠️ This directory is deliberately OUTSIDE the git working tree. Do not commit it, do not
 copy it into a repository, do not push it. See the constraint in the review.**
@@ -9,7 +9,7 @@ copy it into a repository, do not push it. See the constraint in the review.**
 
 ```
 README-HANDOFF.md                              ← you are here
-REVIEW-long-horizon-cognitive-control.md       ← READ THIS FIRST (Lilly's independent review)
+REVIEW-long-horizon-cognitive-control.md       ← READ THIS FIRST (the loop director's independent review)
 MANIFEST.sha256                                ← integrity hashes for every file
 
 handoff/                                       ← the design package, as received
@@ -56,4 +56,4 @@ describes a capability step whose publication/monetisation decision has **not** 
 - A `pre-push` hook in the repo refuses to push that branch — the constraint is mechanical,
   not a matter of discipline.
 - Do not add design docs to `docs/` on a pushed line of history.
-- Publication is a deliberate act requiring John's explicit approval.
+- Publication is a deliberate act requiring the operator's explicit approval.

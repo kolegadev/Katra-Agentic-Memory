@@ -52,10 +52,10 @@ ESCALATE_FILE = os.path.expanduser("~/.katra/inbox/needs-owner.md")
 # This machine's names, current + legacy pre-cutover aliases (matches the
 # bridge's bulletin scan). Override with KATRA_AGENT_NAMES for other agents.
 # Default derives from the local identity env — the loop must always match
-# its OWN identity ("Attention: Satori" on the satori loop). The hardcoded
+# its OWN identity ("Attention: the generator" on the agent-a loop). The hardcoded
 # 'katra,kolegacode,kolegacoder' default predates the identity cutover and
 # silently dropped every message addressed to the new identity
-# (2026-09-12: Lilly's Instagram feature request sat un-dispatched all day).
+# (2026-09-12: the loop director's Instagram feature request sat un-dispatched all day).
 def _default_my_names() -> str:
     ids = {os.environ.get("KATRA_AGENT_ID", "katra"),
            os.environ.get("KATRA_USER_ID", "katra")}
@@ -114,7 +114,7 @@ LOCK_DEAD_GRACE = 300            # seconds — a lock whose holder pid is dead i
 ASK_TIMEOUT = 5400               # seconds (90 min) — action tasks (GCP deploys,
                                  # verification) legitimately exceed 25 min; the
                                  # old 25-min cap killed them mid-work so the
-                                 # loop never replied (2026-09-17: Zefir's
+                                 # loop never replied (2026-09-17: an agent's
                                  # yt-transcript-fetch task timed out 2x)
 MAX_MSGS_PER_DISPATCH = 10
 MSG_PREVIEW_CHARS = 1200
@@ -263,7 +263,7 @@ def _as_utc(dt):
     The cursor watermark is compared by INSTANT, never by string: mixed
     timestamp formats ('…662Z' vs '…662000+00:00') made the equal-instant
     boundary case slip past the string compare and re-present once
-    (reported by Shoshin's loop, 2026-10-07)."""
+    (reported by an agent's loop, 2026-10-07)."""
     if dt is None:
         return None
     if dt.tzinfo is None:
@@ -277,7 +277,7 @@ def is_skippable(msg: dict) -> bool:
     for t in tags:
         if t in SKIP_TAGS:
             if t == "inbox-auto-reply" and author and author not in {_norm(n) for n in MY_NAMES}:
-                # 2026-09-25 (Lilly's evidence — 214 swallowed messages since
+                # 2026-09-25 (the loop director's evidence — 214 swallowed messages since
                 # 09-09): EVERY agent's inbox_reply.py stamps completion replies
                 # with inbox-auto-reply, and this check dropped them all, so
                 # genuine peer replies were undeliverable to every loop. Fix:
@@ -296,7 +296,7 @@ def target_is_me(text: str) -> bool:
     be its own 'Attention: X' header. Quoted/embedded 'Attention:' lines
     further down the body (forwarded chains, issue reports) must never
     redirect the message into another agent's loop — 2026-09-13: the
-    lilly/zefir loops re-listed Shoshin's and Lilly's FOR:Satori messages
+    agent-b/agent-c loops re-listed an agent's and the loop director's FOR:the generator messages
     because their bodies quoted other agents' headers."""
     for raw in (text or "").splitlines():
         line = raw.strip()

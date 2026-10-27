@@ -19,7 +19,7 @@
 #   - kernel:   skill s17_boot_previous_kernel (one-shot grub-reboot to 6.8)
 set -eu
 
-USER_TARGET="johnpellew"
+USER_TARGET="$HOME"
 UPSTREAM_BASE="https://gitlab.com/kernel-firmware/linux-firmware/-/raw/main/intel/iwlwifi"
 FW89="iwlwifi-ty-a0-gf-a0-89.ucode"
 PNVM="iwlwifi-ty-a0-gf-a0.pnvm"

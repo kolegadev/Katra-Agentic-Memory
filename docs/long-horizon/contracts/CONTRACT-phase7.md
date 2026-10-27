@@ -1,8 +1,8 @@
 # CONTRACT.md — Phase 7: Dashboard and Operations (FINAL PHASE)
 
-**Loop:** `new-code` · **Director/Verifier:** Lilly · **Generator:** Satori
+**Loop:** `new-code` · **Director/Verifier:** the loop director · **Generator:** the generator
 **Branch:** `feat/cognitive-control-local` — **LOCAL ONLY, never pushed**
-**Authority:** John, explicit — *"once complete have Satori start the final Phase 7"* (2026-09-20)
+**Authority:** the operator, explicit — *"once complete have the generator start the final Phase 7"* (2026-09-20)
 **Opened:** 2026-09-20 · **Predecessor:** the Phase 6 green ref (set on grading)
 
 > ## ⛔ NOT OPEN YET
@@ -183,7 +183,7 @@ believed by someone who never saw the machinery underneath.
 
 - **Green ref:** the Phase 6 graded ref. `f797550` (Phase 5) remains a standing fallback.
 - **Image tags:** verify a tag contains what its name claims before relying on it.
-- Max **3 attempts**, then revert and escalate to John.
+- Max **3 attempts**, then revert and escalate to the operator.
 - Generator commits frequently; Verifier never edits `mission-cognition/**` or `dashboard/**`.
 - Every iteration posts a Katra work-log.
 
@@ -191,7 +191,7 @@ believed by someone who never saw the machinery underneath.
 
 ## 9. WHAT PHASE 7 DOES NOT DO
 
-- It does **not** push. Ever. Publication is John's decision and nothing leaves the machine.
+- It does **not** push. Ever. Publication is the operator's decision and nothing leaves the machine.
 - It does **not** mutate mission cognition, allocation, or activation from any view.
 - It does **not** bypass the flags, the authority classes, the evidence gate, or the kill switch.
 - It does **not** touch `autonomous-executive.ts` beyond the Phase 6 change.

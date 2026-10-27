@@ -33,12 +33,12 @@ function seedMission(overrides: Partial<MissionState> = {}): MissionState {
     title: 'Phase 4 test mission',
     intent: 'test',
     status: 'active',
-    owner_id: 'satori',
+    owner_id: 'agent-a',
     success_criteria: [{ id: 'c1', description: 'x', status: 'unmet' }],
     authority_class: 'B',
     objectives: [
-      { id: 'o1', description: 'Objective one', status: 'pending', owner_id: 'satori', dependency_ids: [] },
-      { id: 'o2', description: 'Objective two', status: 'blocked', owner_id: 'satori', dependency_ids: ['o1'] },
+      { id: 'o1', description: 'Objective one', status: 'pending', owner_id: 'agent-a', dependency_ids: [] },
+      { id: 'o2', description: 'Objective two', status: 'blocked', owner_id: 'agent-a', dependency_ids: ['o1'] },
     ],
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
@@ -129,7 +129,7 @@ describe('scheduler service (criteria 6, 7, 14, 15)', () => {
     process.env.COGNITIVE_SCHEDULER_MODE = 'shadow';
     seedMission();
     FAKE_DB.collection('epistemic_entries').docs.push(
-      { entry_id: 'u1', mission_id: 'ph4_mission', entry_type: 'uncertainty', status: 'active', statement: 'u', author_id: 'satori' },
+      { entry_id: 'u1', mission_id: 'ph4_mission', entry_type: 'uncertainty', status: 'active', statement: 'u', author_id: 'agent-a' },
     );
     FAKE_DB.collection('system_settings').docs.push({
       key: 'client_keys', value: { a: { user_id: 'agent-a' }, b: { user_id: 'agent-b' } },
@@ -208,7 +208,7 @@ describe('flag gating (criteria 10, 11, 13)', () => {
     delete process.env.COGNITIVE_SCHEDULER_MODE;
     process.env.COGNITIVE_CONTROL_ENABLED = 'write';
     await expect(
-      dispatchSchedulerTool('explain_scheduler_decision', { mission_id: 'x' }, { user_id: 'satori', trusted: true }),
+      dispatchSchedulerTool('explain_scheduler_decision', { mission_id: 'x' }, { user_id: 'agent-a', trusted: true }),
     ).rejects.toThrow('Unknown tool: explain_scheduler_decision');
     delete process.env.COGNITIVE_CONTROL_ENABLED;
   });

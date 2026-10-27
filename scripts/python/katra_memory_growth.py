@@ -187,7 +187,7 @@ def verdict_text(d_docs: int, d_prop: int, d_occ: int) -> str:
 
 def render(m: dict, base: dict | None) -> str:
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%MZ")
-    lines = [f"# MEMORY GROWTH {stamp} — delta-capture check (Lilly; for the 07:30Z review)"]
+    lines = [f"# MEMORY GROWTH {stamp} — delta-capture check (the loop director; for the 07:30Z review)"]
     lines.append(
         f"- store: {m['docs_total']:,} episodic docs | {m['prop_rows']:,} propositions | "
         f"{m['occurrence_total']:,} represented occurrences | {m['cursors']} session cursors"

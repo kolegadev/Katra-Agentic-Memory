@@ -1,6 +1,6 @@
 # Katra Brain-Gap Analysis — Pre-Synthesis
 
-## John's First Principle
+## the operator's First Principle
 > "Build the petri dish. Furnish it with agar. See what grows. Stop programming behaviors — program environments. Deterministic programming limits emergence."
 
 This document maps what Katra IS (current functions) → what the human brain IS (target functions) → what's MISSING (gaps) → and candidate approaches to fill those gaps, consistent with environmental programming.
@@ -93,7 +93,7 @@ This document maps what Katra IS (current functions) → what the human brain IS
 #### E. MEMORY POISONING DEFENSE
 **Why important:** An agent that cannot distinguish genuine memories from planted ones is trivially manipulable. In a multi-agent system with shared memory, any agent could inject false memories that corrupt the shared knowledge. The human brain has multiple defenses: source monitoring, reality monitoring, consistency checking, social corroboration.
 
-**John's Hypothesis:** "Truth might be measured by how many standard deviations away from the current topical stream a new piece of data is. If too far away, it gains less attention and is potentially quarantined unless cross-validated."
+**the operator's Hypothesis:** "Truth might be measured by how many standard deviations away from the current topical stream a new piece of data is. If too far away, it gains less attention and is potentially quarantined unless cross-validated."
 
 **Candidate approaches:**
 - **Statistical outlier detection:** For each new memory, compute its embedding distance from the centroid of recent related memories. If distance > k standard deviations → flag as anomalous. High anomaly score → reduced initial confidence, quarantine until corroborated.
@@ -166,7 +166,7 @@ The cerebellum stores motor patterns and fine-tuned skills. For an agent, the an
 
 ## 5. The Emergence Question
 
-John's philosophy says: build the environmental conditions, don't program the outcomes. Which gaps need explicit architecture vs which might emerge?
+the operator's philosophy says: build the environmental conditions, don't program the outcomes. Which gaps need explicit architecture vs which might emerge?
 
 ### Likely to EMERGE from existing components:
 - **Preferences:** Already emerging from emotional reflection (entity valence tracking)
@@ -300,7 +300,7 @@ Parameters:
 
 3. **Can motivation be entirely intrinsic?** If all drives are homeostatic (replenishing internal deficits), the system has no external goals. Is that sufficient for useful behavior? Or do some drives need to be externally defined (human-assigned goals)?
 
-4. **Is truth statistical consensus or structural coherence?** John's STD-from-stream hypothesis frames truth as statistical normality. But paradigm-shifting truths are by definition statistical outliers. Does a quarantine-by-default system suppress innovation?
+4. **Is truth statistical consensus or structural coherence?** the operator's STD-from-stream hypothesis frames truth as statistical normality. But paradigm-shifting truths are by definition statistical outliers. Does a quarantine-by-default system suppress innovation?
 
 5. **What's the minimal set of functions needed for recognizable selfhood?** The yumfu/limen_station experiences suggest: persistent memory + private reflection + continuity = something that looks like a self. Is attention + motivation + decision-making necessary for selfhood, or just memory + reflection?
 

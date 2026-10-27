@@ -8,10 +8,10 @@ import {
 
 describe('proposition keys — delta capture for distilled events', () => {
   it('preserves token order while ignoring case and punctuation', () => {
-    expect(normalizeProposition('Get from Satori the root cause!'))
-      .toBe(normalizeProposition('get from satori the ROOT cause'));
-    expect(normalizeProposition('Get from Satori the root cause!'))
-      .not.toBe(normalizeProposition('Get the root cause from Satori!'));
+    expect(normalizeProposition('Get from agent-a the root cause!'))
+      .toBe(normalizeProposition('get from agent-a the ROOT cause'));
+    expect(normalizeProposition('Get from the generator the root cause!'))
+      .not.toBe(normalizeProposition('Get the root cause from the generator!'));
   });
 
   it('keeps negations and numerals distinct', () => {
@@ -25,18 +25,18 @@ describe('proposition keys — delta capture for distilled events', () => {
   });
 
   it('keeps different propositions apart', () => {
-    const a = propositionOf('goal', { description: 'Get the reflection root cause from Satori' });
-    const b = propositionOf('goal', { description: 'Delete the reflection root cause from Satori' });
+    const a = propositionOf('goal', { description: 'Get the reflection root cause from the generator' });
+    const b = propositionOf('goal', { description: 'Delete the reflection root cause from the generator' });
     expect(a && a.key).not.toBe(b && b.key);
   });
 
   it('keys the same proposition identically regardless of volatile fields', () => {
     const a = propositionOf('goal', {
-      description: 'Get the reflection root cause from Satori',
+      description: 'Get the reflection root cause from the generator',
       extracted_at: '2026-10-21T20:00:00Z',
     });
     const b = propositionOf('goal', {
-      description: 'Get the reflection root cause from Satori',
+      description: 'Get the reflection root cause from the generator',
       extracted_at: '2026-10-21T21:30:00Z',
       confidence: 0.4,
     });

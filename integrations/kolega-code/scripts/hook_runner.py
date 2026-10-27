@@ -122,7 +122,7 @@ def _config_sanity_check() -> None:
 
         cfg = load_config()
         if not cfg.api_key:
-            _write_alarm("config", "api_key is empty — bridge config is defaulted or missing (pre-f9b5031 satori-hook.json rename?)")
+            _write_alarm("config", "api_key is empty — bridge config is defaulted or missing (pre-f9b5031 agent-a-hook.json rename?)")
             return
         url = cfg.mcp_url or ""
         if "localhost" in url or "127.0.0.1" in url:
@@ -479,7 +479,7 @@ async def _run_bootstrap(event: SimpleNamespace, session_id: str):
 # The escalation path joins TWO bundles: the full bootstrap and the ordinary
 # query-retrieval context. Both carry the two sections the formatter marks as
 # query-independent identity state — the inter-agent bulletin and the
-# reflection — so the post-reset payload emitted each of them twice. John's
+# reflection — so the post-reset payload emitted each of them twice. the operator's
 # first live wake (2026-09-25) shipped 7 <katra-memory> blocks: bulletin and
 # reflection verbatim twice, 28.9 kB, the repetition itself reading as noise.
 #

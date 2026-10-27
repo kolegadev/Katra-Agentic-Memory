@@ -1,7 +1,7 @@
 # CONTRACT.md — Katra Long Horizon Cognitive Control Plane
 
-**Loop:** `new-code` · **Loop director:** Lilly (Kolega Code)
-**Generator:** Satori (thebrick) · **Verifier:** Lilly
+**Loop:** `new-code` · **Loop director:** the loop director
+**Generator:** the generator · **Verifier:** the loop director
 **Branch:** `feat/cognitive-control-local` — **LOCAL ONLY, never pushed**
 **Opened:** 2026-09-19
 **Baseline commit:** `3b8b1c5` (Generator's Phase 0–2 work, already landed)
@@ -164,27 +164,27 @@ test results are NOT accepted as evidence — that is the entire point of the se
 
 ## 6. NO-PUBLISH CONSTRAINT
 
-`github.com/kolegadev/Katra-Agentic-Memory` is **public**. John has not decided on
+`github.com/kolegadev/Katra-Agentic-Memory` is **public**. the operator has not decided on
 publication or monetisation. Nothing from this work may be pushed.
 
 Enforced mechanically by `.git/hooks/pre-push` (v4), which blocks the branch by name and the
 capability's paths on any branch. **The guard has now been extended three times because the
 work outgrew it each time.** Every new file must be checked against it, not assumed covered.
 
-To publish, John removes the hook by hand. Neither agent may grant that.
+To publish, the operator removes the hook by hand. Neither agent may grant that.
 
 ---
 
 ## 7. ROLE AND REVERT RULES
 
-- **Generator (Satori):** implements against this contract, writes its own tests, reports
+- **Generator (the generator):** implements against this contract, writes its own tests, reports
   `{files_created, files_modified, tests_written, known_limitations}`.
-- **Verifier (Lilly):** does NOT see the Generator's plan — only the contract and the code.
+- **Verifier (the loop director):** does NOT see the Generator's plan — only the contract and the code.
   Runs the full suite, grades each numbered success criterion, checks for "poison" (code that
   passes tests while violating an invariant), returns `{verdict, tests_passing, tests_failing,
   contract_violations, failures}`.
 - **Max 3 refinement attempts** per atomic feature. Then revert to the last green state via
-  `loop-state` and escalate to John.
+  `loop-state` and escalate to the operator.
 - **`loop-state backup` before every iteration.** On a no-publish branch with no CI, that
   snapshot is the only safety net.
 - Every iteration records a work-log entry in Katra.

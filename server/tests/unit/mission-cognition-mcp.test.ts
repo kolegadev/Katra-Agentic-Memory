@@ -19,7 +19,7 @@ import { handleCognitiveTool, dispatchCognitiveTool, COGNITIVE_TOOL_DEFS } from 
 import type { CallerIdentity } from '../../src/utils/caller-identity.js';
 
 const FAKE_DB = new FakeDb();
-const trusted: CallerIdentity = { user_id: 'satori', trusted: true };
+const trusted: CallerIdentity = { user_id: 'agent-a', trusted: true };
 const untrusted: CallerIdentity = { user_id: 'client-agent', trusted: false };
 
 function txt(result: { type: string; text: string }[]): string {
@@ -194,8 +194,8 @@ describe('cognitive control MCP surface (COGNITIVE_CONTROL_ENABLED=write)', () =
       title: 'Continuity proving ground',
       success_criteria: ['continuity proven'],
       objectives: [
-        { id: 'o1', description: 'Establish baseline facts', status: 'pending', owner_id: 'satori' },
-        { id: 'o2', description: 'Build on the baseline', status: 'pending', owner_id: 'satori', dependency_ids: ['o1'] },
+        { id: 'o1', description: 'Establish baseline facts', status: 'pending', owner_id: 'agent-a' },
+        { id: 'o2', description: 'Build on the baseline', status: 'pending', owner_id: 'agent-a', dependency_ids: ['o1'] },
       ],
     }, trusted);
     const missionId = (txt(created).match(/`(ms_[^`]+)`/) ?? [])[1];
@@ -216,7 +216,7 @@ describe('cognitive control MCP surface (COGNITIVE_CONTROL_ENABLED=write)', () =
     const r = txt(resume);
     expect(r).toContain('v3');
     expect(r).toContain('Owner:');
-    expect(r).toContain('satori');
+    expect(r).toContain('agent-a');
     expect(r).toContain('Checkpoint:');
     expect(r).toContain('Changed since checkpoint:');
     expect(r).toContain('1 accepted delta');

@@ -160,7 +160,7 @@ cd server && npx vitest run tests/unit/vault/capability.test.ts && npm test && n
 - Audit via the store's writeAudit path (reuse the same helper the store uses —
   do not reimplement).
 
-## AMENDMENTS (2026-09-04, live team testing with John)
+## AMENDMENTS (2026-09-04, live team testing with the operator)
 1. `CapabilityInput.injectScheme?: string` — when present, the outbound header
    value is `"<scheme> <secret>"` (e.g. `Bearer <PAT>`); absent → raw secret.
    Discovered when a valid GitHub PAT (stored as a team secret) returned 401

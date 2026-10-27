@@ -1,8 +1,8 @@
 # CONTRACT.md — Phase 6: Controlled Activation (THE FIRST PHASE THAT CAN TOUCH REAL ALLOCATION)
 
-**Loop:** `new-code` · **Director/Verifier:** Lilly · **Generator:** Satori
+**Loop:** `new-code` · **Director/Verifier:** the loop director · **Generator:** the generator
 **Branch:** `feat/cognitive-control-local` — **LOCAL ONLY, never pushed**
-**Authority:** John, explicit — *"Ok then when completed Phase 5 get Satori to proceed with Phase 6"* (2026-09-19)
+**Authority:** the operator, explicit — *"Ok then when completed Phase 5 get the generator to proceed with Phase 6"* (2026-09-19)
 **Opened:** 2026-09-19 · **Predecessor:** the Phase 5 green ref (to be set on grading)
 
 > ## ⛔ NOT OPEN YET
@@ -125,7 +125,7 @@ Numbered, testable, graded PASS/FAIL with evidence by the Verifier.
 15. `autonomous-executive.ts` changes comply with the §3 rule. Enumerated, additive, justified.
 16. With the flag `off`, the allocator's output is **byte-identical to the pre-Phase-6 baseline** over a fixed
     input fixture. This test is written **before** any allocator change.
-17. **`NO PUSH`** remains absolute. Guard v4 armed and blocking. Publication is John's decision alone.
+17. **`NO PUSH`** remains absolute. Guard v4 armed and blocking. Publication is the operator's decision alone.
 18. **Deployment acceptance through the image path** (the Phase 5 criterion-25 discipline carries forward):
     at least one criterion verified via `/app/build` in the running container, not a mounted source tree.
 
@@ -214,7 +214,7 @@ phases specifically so that this moment would not be a guess.
 - **Green ref:** the Phase 5 graded ref. `86a71fc` (Phase 4) remains a standing fallback.
 - **Image tags:** verify each tag actually contains what it claims before relying on it. Phase 4's image is gone;
   a rebuild from a git ref is the fallback when no tag exists.
-- Max **3 attempts**, then revert and escalate to John.
+- Max **3 attempts**, then revert and escalate to the operator.
 - **One phase at a time, graded between.** Phase 7 does not start until Phase 6 is graded.
 - Generator commits frequently; Verifier never edits `mission-cognition/**`.
 - Every iteration posts a Katra work-log.
@@ -223,7 +223,7 @@ phases specifically so that this moment would not be a guess.
 
 ## 9. WHAT PHASE 6 DOES NOT DO
 
-- It does **not** push. Ever. Publication is John's decision and nothing leaves the machine.
+- It does **not** push. Ever. Publication is the operator's decision and nothing leaves the machine.
 - It does **not** activate globally — per-mission opt-in only.
 - It does **not** produce externally-visible effects without a human gate.
 - It does **not** re-open `llm-service.ts`.

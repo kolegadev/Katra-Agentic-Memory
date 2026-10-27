@@ -282,7 +282,7 @@ class QueryOrchestrationService {
     }
 
     // Specific entity names and topics - prioritize episodic memories about known entities
-    if (need.match(/\b(john|smith|techcorp|jaguar|porting|head|cylinder|reddit|posting|automation|marketing|campaign)\b/)) {
+    if (need.match(/\b(the operator|smith|techcorp|jaguar|porting|head|cylinder|reddit|posting|automation|marketing|campaign)\b/)) {
       types.push('episodic');
       types.push('entity');
       types.push('semantic');

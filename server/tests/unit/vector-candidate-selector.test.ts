@@ -50,7 +50,7 @@ function fakeCollection(recentDocs: FakeDoc[], textHits: FakeDoc[] = [], opts: {
   return { collection, calls };
 }
 
-const SCOPE = { $or: [{ user_id: 'lilly' }, { shared_id: 'my-team' }] };
+const SCOPE = { $or: [{ user_id: 'agent-b' }, { shared_id: 'my-team' }] };
 
 describe('selectVectorCandidates', () => {
   it('always requests documents newest-first, never storage order', async () => {

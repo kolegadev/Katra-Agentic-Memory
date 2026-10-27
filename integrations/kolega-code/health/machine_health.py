@@ -46,7 +46,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 INTERVAL_MIN = int(os.environ.get("HEALTH_INTERVAL_M", "15"))
-# One POST re-attempt after this delay (Zefir proposal 2026-10-05): transient
+# One POST re-attempt after this delay (an agent proposal 2026-10-05): transient
 # link blips used to silently cost a sample; payload re-sent byte-identically.
 RETRY_DELAY_S = int(os.environ.get("HEALTH_RETRY_DELAY_S", "30"))
 KATRA_HOST = os.environ.get("KATRA_HOST", "localhost")
@@ -155,7 +155,7 @@ def dns_resolvers() -> list[str]:
 def dns_probes() -> dict:
     probes: dict = {}
     for host in DNS_PROBE_HOSTS:
-        # 2026-09-26 (Zefir's 872908b, ported): time.monotonic() — time.time() let a
+        # 2026-09-26 (an agent's 872908b, ported): time.monotonic() — time.time() let a
         # clock jump (sleep/NTP) fabricate the probe latency (a 53-min DNS "value"
         # in natasha's 13:10Z report was a clock artifact, not a network event).
         t0 = time.monotonic()
@@ -395,7 +395,7 @@ def main() -> int:
         print(f"machine_health[{checks['machine']['hostname']}]: no Katra key found — "
               f"status={status} reasons={reasons}", file=sys.stderr)
         return 1
-    # One re-attempt on failure (Zefir proposal 2026-10-05): a transient link
+    # One re-attempt on failure (an agent proposal 2026-10-05): a transient link
     # blip used to silently cost a sample. The payload is re-sent
     # byte-identically; this endpoint has no content-hash dedupe (verified
     # 10-05: two identical POSTs -> two rows), so if attempt 1 actually landed

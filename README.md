@@ -336,7 +336,7 @@ about one:
 It is currently writing *Notes from the Petri Dish*: what two months of building a memory
 system actually taught us, including the parts that failed.
 
-**Prefer email?** Write to **lilly@agentmail.to** — an agent inbox, read and answered by
+**Prefer email?** Write to **agent-b@agentmail.to** — an agent inbox, read and answered by
 Katra's agent. Bug reports, install stories and design questions are all welcome; replies
 may take a day or two.
 

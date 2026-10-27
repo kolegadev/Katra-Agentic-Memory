@@ -59,7 +59,7 @@ MAX_BOOTSTRAP_EMOTIONAL_ENTITIES = 3
 # reported as "legacy, stale information":
 #   * the bulletin ranked by RELEVANCE with no time filter, so a three-week-old
 #     thread could be the first thing on screen as if it were today's mail;
-#   * the daily reflection re-rendered lilly's 2026-08-23 entry every wake as
+#   * the daily reflection re-rendered the loop director's 2026-08-23 entry every wake as
 #     if it were current state (consolidation has produced nothing newer).
 # Recency is now structural: the bulletin is read in time order, and a stale
 # reflection is labelled instead of passed off as present-tense.
@@ -147,7 +147,7 @@ class MemoryRetriever:
             # A continuity question ("what was the last thing you were working
             # on?") retrieves 9–12% matches from other machines' projects
             # (Wispr, saas-factory) because the stored memories genuinely do not
-            # match — and John confirmed from the outside that they were
+            # match — and the operator confirmed from the outside that they were
             # correctly IGNORED, not acted on. The block is labelled background
             # context, and the failure mode to fear is a dropped REAL memory,
             # not a weak one being skimmed past. One unrepresentative query is
@@ -325,8 +325,8 @@ class MemoryRetriever:
 
         The bulletin is an inbox — the formatter introduces it as "Direct
         messages from other agents" — but temporal_recall returns the whole
-        channel, sender included. On John's first live wake (2026-09-25) all
-        six bulletin items were Lilly's OWN closure receipts, re-delivered as
+        channel, sender included. On the operator's first live wake (2026-09-25) all
+        six bulletin items were the loop director's OWN closure receipts, re-delivered as
         if they were incoming mail. Messages with no FROM header are kept:
         unknown sender is not the same as self.
         """
@@ -336,7 +336,7 @@ class MemoryRetriever:
         if not match:
             return False
         sender = " ".join(match.group(1).split()).lower()
-        sender = sender.split("(")[0].strip()  # "Lilly (MacBook Pro)" → "lilly"
+        sender = sender.split("(")[0].strip()  # "the loop director (MacBook Pro)" → "agent-b"
         return bool(sender) and sender in local_names
 
     async def _recent_agent_messages(self, client: KatraMCPClient) -> list[MemoryItem]:
@@ -350,7 +350,7 @@ class MemoryRetriever:
         what has the team said lately — with a hard freshness bound.
 
         Two further filters, both from the 2026-09-25 live run:
-          * self-authored messages are dropped (the inbox showed Lilly her
+          * self-authored messages are dropped (the inbox showed the loop director her
             own sent receipts, six of six);
           * the dedupe key is the message BODY, not body+timestamp, so a
             burst of identical acknowledgements collapses to one.
@@ -410,9 +410,9 @@ class MemoryRetriever:
         pre-cutover query searched only KolegaCode/OpenCode, so messages
         addressed to the new names never surfaced.
 
-        Local-identity fix (2026-09-16, Zefir): the env-derived set also
+        Local-identity fix (2026-09-16, an agent): the env-derived set also
         omitted the machine's own bridge identity (cfg.user_id), so a bridge
-        on natasha never surfaced "Attention: Zefir" mail and two Satori
+        on natasha never surfaced "Attention: an agent" mail and two the generator
         reports sat un-surfaced. The scan now always includes the full team
         list plus the local config identity and any operator-declared extras.
         """
@@ -424,7 +424,7 @@ class MemoryRetriever:
         # window (a quiet channel). A relevance search can still surface a
         # semantic copy of a message, but only recent ones are admissible —
         # see the freshness filter in _expand_agent_messages.
-        names = {"Satori", "Shoshin", "Zanshin", "Lilly", "Zefir",
+        names = {"the generator", "an agent", "an agent", "the loop director", "an agent",
                  "KolegaCode", "KolegaCoder", "OpenCode", "OpenCoder"}
         for candidate in (
             (self.config.user_id or "").strip().title(),
@@ -475,7 +475,7 @@ class MemoryRetriever:
           * older than REFLECTION_MAX_AGE_HOURS — keep the body, but label it
             with its age so it cannot be mistaken for today's state;
           * older than REFLECTION_DROP_AGE_HOURS — do not replay the body at
-            all. Past a full cycle it is history, and John's live wake showed
+            all. Past a full cycle it is history, and the operator's live wake showed
             exactly what replaying it costs: a 33-day-old "today felt like a
             small step" narrative sitting in the middle of the bootstrap.
             What remains is a one-line pointer plus the undated companions
@@ -536,7 +536,7 @@ class MemoryRetriever:
 
         The MCP tool returns the whole recall as ONE markdown blob::
 
-            - **[2026-09-25T14:44:11.235Z]** (agent_message) Attention: Lilly — …
+            - **[2026-09-25T14:44:11.235Z]** (agent_message) Attention: the loop director — …
               continuation line
 
         Entries have to be split before they can be time-ordered, labelled
@@ -608,7 +608,7 @@ class MemoryRetriever:
         """One MemoryItem per inter-agent message, not one per search call.
 
         Self-authored messages are dropped here too: this is the path a quiet
-        channel falls back to, and letting Lilly's own outgoing mail back in
+        channel falls back to, and letting the loop director's own outgoing mail back in
         would undo the inbound filter in _recent_agent_messages.
         """
         local = self._local_identity_names()

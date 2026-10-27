@@ -2,7 +2,7 @@
 // Review §3.5: the existing Redis rail is a consolidation output bus, so the
 // durable record is Mongo (mission_events) and Redis publish is advisory.
 // The Redis client is a single lazily-created process-lifetime connection
-// (Lilly review note 2026-09-19: per-event connect/publish/quit churn removed).
+// (the loop director review note 2026-09-19: per-event connect/publish/quit churn removed).
 // Part of the no-publish branch feat/cognitive-control-local.
 import { randomUUID } from 'node:crypto';
 import type { Db } from 'mongodb';

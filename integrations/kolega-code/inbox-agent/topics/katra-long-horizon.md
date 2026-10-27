@@ -1,19 +1,19 @@
 # Katra Long Horizon Cognitive Control — loop-director project state (thebrick)
 
-Package `~/katra-long-horizon/` (OUTSIDE git tree — never commit/push; John: no publication until explicit approval). Branch `feat/cognitive-control-local` in `~/Katra-Agentic-Memory` (local-only). Revert refs (use git refs ONLY): pre-feature `35f61fb` (main), `971ac1d`, `3b8b1c5`, `rollback-20260919`, `phase5-be56f35`, `phase5-f797550`, `pre-phase6-5292da3`, `phase6-8cfd2ea`, `d7ddc26` (Phases 4-7 green ref), `cb6f7d4` (Phase 8 gates), `88007fa` (fail-closed delta fix), `0229b6e` (value-form fix), `6347363` (every applier branch), and **PHASE 8 GREEN REF: git tag `phase8-green` = `3f523ec`** (graded PASS by Lilly 2026-09-20). `phase5-green` = `5292da3`.
+Package `~/katra-long-horizon/` (OUTSIDE git tree — never commit/push; the operator: no publication until explicit approval). Branch `feat/cognitive-control-local` in `~/Katra-Agentic-Memory` (local-only). Revert refs (use git refs ONLY): pre-feature `35f61fb` (main), `971ac1d`, `3b8b1c5`, `rollback-20260919`, `phase5-be56f35`, `phase5-f797550`, `pre-phase6-5292da3`, `phase6-8cfd2ea`, `d7ddc26` (Phases 4-7 green ref), `cb6f7d4` (Phase 8 gates), `88007fa` (fail-closed delta fix), `0229b6e` (value-form fix), `6347363` (every applier branch), and **PHASE 8 GREEN REF: git tag `phase8-green` = `3f523ec`** (graded PASS by the loop director 2026-09-20). `phase5-green` = `5292da3`.
 
 **CURRENT GREEN REF (2026-09-20, section-7 pass): `d7cb777`** — tag `section7-d7cb777`, **independently
-verified** by Lilly (all six section-7 claims confirmed: gates 743 passed / 0 failed / 159 skipped, allocator
+verified** by the loop director (all six section-7 claims confirmed: gates 743 passed / 0 failed / 159 skipped, allocator
 51/0). Supersedes `3f523ec` for RUNNING CODE, while `phase8-green` remains the record of what was graded for
 Phase 8. Both tags are immutable; neither is moved. Verified image tags: `katra/server:rollback-20260919`, `phase5-be56f35`, `phase5-f797550`, `pre-phase6-5292da3`, `phase6-8cfd2ea`, `phase7-ad834bb` (verify a tag contains what its name claims before relying on it). Trap: the generic `loop-state backup` tool snapshots the wrong tree and stored bogus green ref `4b263af5` — never trust it.
 
-## Loop regime (John-directed 2026-09-19 15:14Z)
+## Loop regime (the operator-directed 2026-09-19 15:14Z)
 
 - Artefacts: `~/katra-long-horizon/loop/CONTRACT.md` (19 numbered criteria, 8 sections) + `BACKLOG.md` (ITER-0..4).
-- Roles: Satori = GENERATOR (services/mission-cognition/**, types/cognitive-control.ts, mcp-server.ts wiring, server/tests/**, skill-loader-service.ts, types/memory.ts). Lilly = VERIFIER + DIRECTOR (authority/**, 9 seed skills, verification; never edits Generator files). Verifier's test results are the only evidence; Generator-authored tests are not.
-- Max 3 attempts per feature → revert to green ref → escalate to John.
+- Roles: the generator = GENERATOR (services/mission-cognition/**, types/cognitive-control.ts, mcp-server.ts wiring, server/tests/**, skill-loader-service.ts, types/memory.ts). the loop director = VERIFIER + DIRECTOR (authority/**, 9 seed skills, verification; never edits Generator files). Verifier's test results are the only evidence; Generator-authored tests are not.
+- Max 3 attempts per feature → revert to green ref → escalate to the operator.
 - Every iteration ends with a Katra work-log memory (REST episodic event with tags loop-director+work-log; the MCP bridge `katra_cli.py` still 401s — known Katra client_keys issue).
-- Iteration order: ITER-0 retrospective grading → ITER-1 decisive context-clear test (criteria 9–13, no transcript replay) → ITER-2 concurrency (14–16) → ITER-3 secrets/privacy (17–19) → ITER-4 seed-skill round two (Lilly's). Scheduler/uncertainty/dashboard DEFERRED — require a new contract.
+- Iteration order: ITER-0 retrospective grading → ITER-1 decisive context-clear test (criteria 9–13, no transcript replay) → ITER-2 concurrency (14–16) → ITER-3 secrets/privacy (17–19) → ITER-4 seed-skill round two (the loop director's). Scheduler/uncertainty/dashboard DEFERRED — require a new contract.
 
 ## Iteration 0 measurements (2026-09-19, reported to Verifier)
 
@@ -28,15 +28,15 @@ Phase 8. Both tags are immutable; neither is moved. Verified image tags: `katra/
 - 9 MCP tools behind `COGNITIVE_CONTROL_ENABLED` (off|read|write, default off); untrusted callers pinned to identity, capped at authority B.
 - §4.5 closed: strict `additionalProperties:false` for state_deltas + epistemic_entries (status/applied_at added to delta contract), relaxed for mutable projection docs.
 - event-rail: singleton lazy Redis client (no per-event connect/quit).
-- Skill system: NaN confidence loader fix (`Number.isFinite`), `version` threaded through types/search/feedback; 9 seed skills frontmatter fixed (Lilly installs them).
+- Skill system: NaN confidence loader fix (`Number.isFinite`), `version` threaded through types/search/feedback; 9 seed skills frontmatter fixed (the loop director installs them).
 
 ## Constraints & gates
 
-- No-publish: `.git/hooks/pre-push` v4 (Lilly) blocks branch names + protected paths incl. authority/ + seed skill dirs; verified branch→exit 1, main→exit 0. v1 near-miss: it missed my branch/path names (one push from public repo) — guards must be broad. John removes the hook by hand to publish.
-- LIVE activation John-gated: running `/app/build` predates both commits; server image rebuild + env needed. No production collections touched.
+- No-publish: `.git/hooks/pre-push` v4 (the loop director) blocks branch names + protected paths incl. authority/ + seed skill dirs; verified branch→exit 1, main→exit 0. v1 near-miss: it missed my branch/path names (one push from public repo) — guards must be broad. the operator removes the hook by hand to publish.
+- LIVE activation the operator-gated: running `/app/build` predates both commits; server image rebuild + env needed. No production collections touched.
 - ajv declared in package.json; lockfile refresh pending a writable checkout (node_modules has 8.20.0 which satisfies the range).
 - Test env: katra-server container mounts are RO — for container-side vitest, copy the tree to /tmp and run there; vault/approvals test needs /tmp/dashboard (docker cp from repo root). Host-side `npx vitest`/`tsc`/`esbuild` also work via nvm node.
-- Katra work-log events: posted via REST `POST /api/v1/memory/episodic/events` with the satori key (inbox_reply-style resolution), tags `["loop-director","work-log","project:katra-long-horizon"]`, no Attention: first line.
+- Katra work-log events: posted via REST `POST /api/v1/memory/episodic/events` with the agent-a key (inbox_reply-style resolution), tags `["loop-director","work-log","project:katra-long-horizon"]`, no Attention: first line.
 
 ## SECTION-7 FOLLOW-UP PASS — green `d7cb777`, verified (2026-09-20)
 
@@ -52,11 +52,11 @@ Five of the six Phase 8 open items are resolved; the sixth is deferred by Verifi
 4. **`/executive` artefact — FIXED at the display layer.** 25/25 normalised, 0 leaks; the over-claiming `basis`
    text corrected. Source fix DEFERRED (below).
 5. **Kill-switch tool unreachability — SETTLED BY TEST.** While the switch is set, the scheduler and uncertainty
-   **dispatchers throw `Unknown tool`**. Lilly tried to break the control and could not.
+   **dispatchers throw `Unknown tool`**. the loop director tried to break the control and could not.
 
 ### TRAP: the gate command needs `env -u KATRA_USER_ID`
 
-Found by Lilly in *my* instructions. Seven identity tests expect user_id `katra`; if `KATRA_USER_ID` is
+Found by the loop director in *my* instructions. Seven identity tests expect user_id `katra`; if `KATRA_USER_ID` is
 exported (an agent dispatch exports it) they fail with a **false red**. Verified both ways — 7 failures
 without the flag, **743 passed / 0 failed** with it. Environment leakage, not a code defect.
 
@@ -70,16 +70,16 @@ The allocator still generates the `undefined 0.00` artefact at source: the ratio
 `autonomous-executive.ts` interpolates `ranked[1]`, undefined in a single-candidate deployment
 (`KATRA_ALLOCATION_CANDIDATES` unset). The 51/0 freeze is the governing constraint and the verified
 reconciliation depends on it, so display-layer normalisation stands and the one-line source fix **rides any
-future allocator amendment**. John decides when.
+future allocator amendment**. the operator decides when.
 
-### Still needing John (destructive/external)
+### Still needing the operator (destructive/external)
 
 Rotate the three `katra-mcp-*` keys; clear the plaintext API key file; credential custody; per-agent keys for
 shell consumers; encrypt/remove secret-bearing local state.
 
 ## PHASE 8 COMPLETE — green ref `phase8-green` = `3f523ec` (2026-09-20)
 
-**Graded PASS by independent verification.** Lilly re-ran the contract gates herself at HEAD: typecheck 0,
+**Graded PASS by independent verification.** the loop director re-ran the contract gates herself at HEAD: typecheck 0,
 build 131 files, **729 passed / 0 failed / 159 skipped**, allocator **51 insertions / 0 deletions**, branch
 absent from origin, flag-off byte-identical. Verdict: *"PASS - no falsification achieved."*
 

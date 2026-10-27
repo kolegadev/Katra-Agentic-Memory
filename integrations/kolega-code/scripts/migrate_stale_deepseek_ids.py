@@ -76,7 +76,7 @@ PROFILES = {
     # (found by the post-migration verification sweep).
     "thebrick2": [
         "~/Projects/data-maid/src/maid/search.py",
-        "~/Projects/satori-scrape/tests/test_clicker.py",
+        "~/Projects/agent-a-scrape/tests/test_clicker.py",
         "~/Katra-Agentic-Memory/server/src/services/infrastructure/llm-service.ts",
         "~/Katra-Agentic-Memory/server/src/mcp-server.ts",
         "~/Katra-Agentic-Memory/server/src/routes/admin-routes.ts",

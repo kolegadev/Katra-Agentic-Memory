@@ -304,7 +304,7 @@ Running the same model twice rarely does.
 
 ## Provenance
 
-Adapted from *SPR Prompt Models for Mathematical Problem Solving* (John Pellew,
+Adapted from *SPR Prompt Models for Mathematical Problem Solving* (the operator Pellew,
 `~/Downloads/`). All six models, their phase chains, their `CONNECT` / `ITERATE` edges,
 their distinctive operators, and the five cross-cutting stances are preserved from the
 source.

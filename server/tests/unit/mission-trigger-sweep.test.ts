@@ -34,7 +34,7 @@ function seedMission(id: string, overrides: Record<string, any> = {}): void {
     title: id,
     intent: 'test',
     status: 'active',
-    owner_id: 'satori',
+    owner_id: 'agent-a',
     success_criteria: [],
     authority_class: 'B',
     created_at: ago(40),

@@ -13,7 +13,7 @@ describe('proposition key parity — runtime and compaction scripts', () => {
     expect([...scriptKey.STOPWORDS].sort()).toEqual([...PROPOSITION_STOPWORDS].sort());
 
     const samples = [
-      'Get from Satori the root cause!',
+      'Get from the generator the root cause!',
       'The check did not fail on thebrick server',
       'Version 1 shipped on thebrick server',
       'Upgrade kolega-code from 0.42.0 to 0.45.0 on thebrick',

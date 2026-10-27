@@ -179,7 +179,7 @@ def assess(events: list[dict], window_hours: int) -> dict:
             for h, r in (((e.get("content") or {}).get("checks") or {}).get("dns_probes") or {}).items()
             if not r.get("ok")
         ]
-        # Reason attribution (2026-09-26, Zefir's correction): the problem line
+        # Reason attribution (2026-09-26, an agent's correction): the problem line
         # used to show only `dns fails` — a machine degraded by katra
         # unreachability or bridge alarms then read as a DNS story whenever any
         # probe in the window had failed. Record the samples' OWN reasons.

@@ -1,6 +1,6 @@
 // LLM usage ledger — REAL cost measurement (Phase 4 §2, option a).
 // Mirrors kolega-code's runtime usage ledger (llm/ledger.py) in TypeScript,
-// per Lilly's resolved-prerequisite directive (event_5f716a7a):
+// per the loop director's resolved-prerequisite directive (event_5f716a7a):
 //   1. attribution by context scope: AsyncLocalStorage origin (Node's
 //      equivalent of ContextVar) — child scopes shadow, teardown restores
 //      automatically when the async context exits (no manual reset bug).

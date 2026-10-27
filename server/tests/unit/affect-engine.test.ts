@@ -60,7 +60,7 @@ function fresh(identity: string) {
 
 beforeEach(() => {
   process.env.KATRA_AFFECT_ENABLED = '1';
-  process.env.KATRA_AFFECT_IDENTITIES = 'shoshin,test-identity,test-a,test-b,test-c,test-d,test-e,test-f,test-g,test-h,test-i,test-j,test-k,test-l';
+  process.env.KATRA_AFFECT_IDENTITIES = 'test-identity,test-a,test-b,test-c,test-d,test-e,test-f,test-g,test-h,test-i,test-j,test-k,test-l';
 });
 
 afterEach(() => {
@@ -542,16 +542,16 @@ describe('the gate', () => {
   });
 
   it('is inert for an identity that is not allowlisted', async () => {
-    process.env.KATRA_AFFECT_IDENTITIES = 'shoshin';
+    process.env.KATRA_AFFECT_IDENTITIES = 'test-identity';
     const state = await engine.getState('some-other-agent');
     expect(state.enabled).toBe(false);
-    expect(engine.isEnabled('shoshin')).toBe(true);
+    expect(engine.isEnabled('test-identity')).toBe(true);
     expect(engine.isEnabled('some-other-agent')).toBe(false);
   });
 
   it('refuses a self-report when off, with a named reason', async () => {
     delete process.env.KATRA_AFFECT_ENABLED;
-    const result = await engine.recordSelfReport('shoshin', 0.5, 0.5);
+    const result = await engine.recordSelfReport('agent', 0.5, 0.5);
     expect(result.accepted).toBe(false);
     expect(result.reason).toBeTruthy();
   });

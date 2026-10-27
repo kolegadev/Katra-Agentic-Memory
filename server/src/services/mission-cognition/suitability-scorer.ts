@@ -149,5 +149,8 @@ export async function candidateAgents(db: Db): Promise<string[]> {
       if (entry?.user_id) ids.add(String(entry.user_id));
     }
   }
-  return ['satori', ...ids].filter((v, i, a) => a.indexOf(v) === i);
+  // Candidates come only from client_keys: an identity is deployment data, not code.
+  // A deployment with no client keys has no candidates, and the scheduler reports that
+  // as an empty decision rather than inventing one.
+  return [...ids].filter((v, i, a) => a.indexOf(v) === i);
 }

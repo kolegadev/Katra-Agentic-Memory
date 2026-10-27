@@ -490,7 +490,7 @@ class KatraMCPClient:
         Session-derived content (summaries, receipts) MUST pass
         private=True: the default write scope publishes everything to the
         shared channel, which leaked whole session histories across
-        agents (Zefir's wake surfaced Lilly's sessions, 2026-09-14).
+        agents (an agent's wake surfaced the loop director's sessions, 2026-09-14).
         Only deliberate inter-agent messages go shared."""
         args: dict[str, Any] = {
             "content": content,

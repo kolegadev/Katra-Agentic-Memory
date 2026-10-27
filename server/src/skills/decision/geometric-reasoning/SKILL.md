@@ -263,4 +263,4 @@ A successful geometric output usually shows these marks:
 
 ## Provenance
 
-Distilled from John Pellew's brief "Geometric Reasoning Prompt Strategy" (2026-10-21), which defined the five operators, their prompt patterns and their worked examples. The running rules, operator selection, diagnostics and limits sections were added when the skill was built for the Katra internal library.
+Distilled from the operator Pellew's brief "Geometric Reasoning Prompt Strategy" (2026-10-21), which defined the five operators, their prompt patterns and their worked examples. The running rules, operator selection, diagnostics and limits sections were added when the skill was built for the Katra internal library.

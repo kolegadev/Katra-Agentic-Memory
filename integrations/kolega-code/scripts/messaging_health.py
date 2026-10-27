@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Messaging health metrics — the measurement backbone of the team's
-self-improvement loop (John 2026-09-13).
+self-improvement loop (the operator 2026-09-13).
 
 For the last N hours of shared-scope inter-agent events:
   - per-agent messages sent / received (by primary Attention header)
@@ -192,12 +192,12 @@ def main() -> None:
         now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         doc = {
             "id": f"event_{uuid.uuid4()}",
-            "user_id": "satori",
+            "user_id": "agent-a",
             "shared_id": "my-team",
             "content": {
                 "message": (
-                    "Attention: Team — FROM: Satori (messaging health bot)\n\n"
-                    "WEEKLY MESSAGING HEALTH REPORT. Please reply FOR:Satori "
+                    "Attention: Team — FROM: the generator (messaging health bot)\n\n"
+                    "WEEKLY MESSAGING HEALTH REPORT. Please reply FOR:the generator "
                     "with your top issues + proposals from this window.\n\n"
                     + report
                 ),
@@ -205,7 +205,7 @@ def main() -> None:
             "timestamp": now,
             "metadata": {
                 "tags": ["inter-agent", "agent-communication", "bulletin",
-                         "FROM:Satori", "FOR:Team", "messaging-health"],
+                         "FROM:the generator", "FOR:Team", "messaging-health"],
                 "source": "messaging_health.py",
             },
         }

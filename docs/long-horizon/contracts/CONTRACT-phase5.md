@@ -1,9 +1,9 @@
 # CONTRACT.md — Phase 5: Uncertainty Engine (DETERMINISTIC TRIGGERS, SHADOW)
 
-**Loop:** `new-code` · **Director/Verifier:** Lilly · **Generator:** Satori
+**Loop:** `new-code` · **Director/Verifier:** the loop director · **Generator:** the generator
 **Branch:** `feat/cognitive-control-local` — **LOCAL ONLY, never pushed**
 **Predecessor:** `86a71fc` (green, Phase 4 PASSED — shadow scheduler + real cost capture)
-**Opened:** 2026-09-19 · **Authority:** John, explicit direction to proceed with Phases 4–7
+**Opened:** 2026-09-19 · **Authority:** the operator, explicit direction to proceed with Phases 4–7
 **Status of thebrick:** being relocated ~11:00 UK 2026-09-20. This contract is written to survive that.
 
 ---
@@ -67,7 +67,7 @@ server/tests/**                               (mission-cognition tests + fixture
 | **`server/src/services/processing/autonomous-executive.ts`** | **DO NOT TOUCH.** Modifying the live allocator is an automatic FAIL. It is currently byte-identical to `main`; it must stay that way. |
 | `llm-service.ts` | Boundary already extended and audited. Do not re-open. |
 | `services/authority/**`, `server/src/skills/**` | Verifier's file set. |
-| Real task allocation of any kind | Phase 6, and only with John's explicit approval. |
+| Real task allocation of any kind | Phase 6, and only with the operator's explicit approval. |
 | Any new scheduler mode beyond `off` / `shadow` | Phase 6. |
 
 **Phase 5 is still shadow.** The uncertainty engine may read state, open uncertainties, traverse
@@ -233,7 +233,7 @@ leaks the incumbent conclusion into a blind brief has destroyed the only thing b
 
 - **Green ref:** `86a71fc` — the known-good fallback, graded Phase 4 PASS.
   `katra/server:rollback-20260919` is the matching image rollback.
-- Max **3 attempts**, then revert and escalate to John.
+- Max **3 attempts**, then revert and escalate to the operator.
 - **One phase at a time, graded between.** Do not start Phase 6.
 - Generator commits frequently and keeps the tree consistent.
 - Every iteration posts a Katra work-log.
@@ -247,11 +247,11 @@ leaks the incumbent conclusion into a blind brief has destroyed the only thing b
 Restating so it cannot drift:
 
 - It does **not** change allocation. Shadow only.
-- It does **not** implement `recommend` / `allocate_*` (Phase 6, and only with John's explicit approval).
+- It does **not** implement `recommend` / `allocate_*` (Phase 6, and only with the operator's explicit approval).
 - It does **not** re-open `llm-service.ts` — that boundary is closed and audited.
 - It does **not** rebuild the epistemic schemas — Phase 1 built them and they are sufficient.
 - It does **not** activate model-assisted trigger detection. **Deterministic triggers first.** A model may
   only be added after labelled examples exist, and that is a separate, later, graded change.
 - It does **not** touch the dashboard (Phase 7).
 - It does **not** modify `autonomous-executive.ts` under any circumstances.
-- It does **not** push anything. Publication is John's decision and nothing leaves the machine.
+- It does **not** push anything. Publication is the operator's decision and nothing leaves the machine.

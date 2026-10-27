@@ -1,8 +1,8 @@
 # CONTRACT.md — Phase 8: Evaluation and Skill Evolution (FINAL)
 
-**Loop:** `new-code` · **Director/Verifier:** Lilly · **Generator:** Satori
+**Loop:** `new-code` · **Director/Verifier:** the loop director · **Generator:** the generator
 **Branch:** `feat/cognitive-control-local` — **LOCAL ONLY, never pushed**
-**Authority:** John, explicit — *"if passes then tell Satori to proceed with Phase 8 … I want to get to the go live and small test before thebrick move"* (2026-09-20)
+**Authority:** the operator, explicit — *"if passes then tell the generator to proceed with Phase 8 … I want to get to the go live and small test before thebrick move"* (2026-09-20)
 **Opened:** 2026-09-20 · **Predecessor:** the Phase 7 green ref (set on grading)
 
 > ## ⛔ NOT OPEN UNTIL PHASE 7 IS GRADED
@@ -26,7 +26,7 @@ bypassed; attempting to skip it is exactly the failure six phases were built to 
 of "go live" for now: the tools become reachable to real clients for the first time, the nine views go live
 against real missions, and shadow decisions begin accumulating toward the gate.
 
-**The small test John asked for** — one real mission, end to end, through the real MCP entrypoint:
+**The small test the operator asked for** — one real mission, end to end, through the real MCP entrypoint:
 create a mission → submit deltas → generate a work item → run a shadow pass → read the explanation back →
 checkpoint → resume from the mission id alone. Every step through the **container's own code path**, and
 allocation provably untouched before and after.
@@ -196,7 +196,7 @@ written down rather than quietly dropped.
 
 - **Green ref:** the Phase 7 graded ref. `8cfd2ea` (Phase 6) stands as a fallback.
 - **Image tags:** verify a tag contains what its name claims before relying on it.
-- Max **3 attempts**, then revert and escalate to John.
+- Max **3 attempts**, then revert and escalate to the operator.
 - Verifier never edits `mission-cognition/**`; findings are reported, not patched.
 - Every iteration posts a Katra work-log.
 

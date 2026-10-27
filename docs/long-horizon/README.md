@@ -49,8 +49,11 @@ If you need the delivered copies, they remain in the original package, whose int
   defaulted to `/home/<user>/Katra-Agentic-Memory`. They now use `$HOME` / `$KATRA_REPO`, because the
   repository's CI privacy lint fails on absolute home paths in tracked files. No behaviour changes:
   the same default resolves, and the env overrides still win.
-* **Nothing else was edited.** The documents are as delivered, including their phase-scoped numbers.
-  A number quoted in a phase contract is a claim about that phase's rules, not a current result.
+* **Personal and agent names were removed.** People and agents are referred to by role — "the
+  operator", "the generator", "the loop director", "an agent" — and identity values in the harness are
+  neutral ids. The substance, the dates and the numbers are untouched: a number quoted in a phase
+  contract is still a claim about that phase's rules, not a current result. The rule is enforced by
+  `scripts/check-no-personal-names.sh` in CI, so it cannot rot back.
 
 ## What this is not
 

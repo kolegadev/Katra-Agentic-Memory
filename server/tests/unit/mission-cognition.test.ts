@@ -43,7 +43,7 @@ function baseMission(overrides: Partial<MissionState> = {}): MissionState {
     title: 'Test Mission',
     intent: 'Prove continuity invariants.',
     status: 'active',
-    owner_id: 'satori',
+    owner_id: 'agent-a',
     success_criteria: [{ id: 'c1', description: 'invariants hold', status: 'unmet' }],
     authority_class: 'B',
     created_at: new Date().toISOString(),
@@ -59,7 +59,7 @@ function claimDelta(base: number, idemKey: string, statement: string, extra: Par
     entry_type: 'claim',
     statement,
     status: 'accepted',
-    author_id: 'satori',
+    author_id: 'agent-a',
     confidence: 0.6,
   };
   return {
@@ -67,7 +67,7 @@ function claimDelta(base: number, idemKey: string, statement: string, extra: Par
     idempotency_key: idemKey,
     mission_id: 'test_mission_1',
     base_mission_version: base,
-    author_id: 'satori',
+    author_id: 'agent-a',
     delta_type: 'CLAIM_ADDED',
     operations: [{ op: 'add', path: '/ledger_refs/-', value: statement.slice(0, 12) }],
     ledger_entries: [entry],
@@ -95,7 +95,7 @@ describe('schema registry', () => {
   it('keeps append-only audit contracts strict (plan §3.3 split)', () => {
     const delta = {
       schema_version: '1.0', delta_id: 'd1', idempotency_key: 'idem-key-x1', mission_id: 'm',
-      base_mission_version: 1, author_id: 'satori', delta_type: 'CLAIM_ADDED',
+      base_mission_version: 1, author_id: 'agent-a', delta_type: 'CLAIM_ADDED',
       operations: [{ op: 'add', path: '/x', value: 1 }], rationale: 'r', confidence: 0.5,
       created_at: new Date().toISOString(),
     };
@@ -117,12 +117,12 @@ describe('schema registry', () => {
 describe('mission state + state deltas', () => {
   it('advances versions monotonically and applies a delta exactly once (idempotency)', async () => {
     await missions.createMissionState(baseMission());
-    const d1 = await deltas.submitDelta(claimDelta(1, 'idem-key-1', 'The sky is blue.'), { actorId: 'satori' });
+    const d1 = await deltas.submitDelta(claimDelta(1, 'idem-key-1', 'The sky is blue.'), { actorId: 'agent-a' });
     expect(d1.status).toBe('accepted');
     const s2 = await missions.getMissionState('test_mission_1');
     expect(s2!.version).toBe(2);
     // exact-once: same idempotency key returns the original accepted result
-    const dup = await deltas.submitDelta(claimDelta(1, 'idem-key-1', 'The sky is blue.'), { actorId: 'satori' });
+    const dup = await deltas.submitDelta(claimDelta(1, 'idem-key-1', 'The sky is blue.'), { actorId: 'agent-a' });
     expect(dup.status).toBe('accepted');
     expect(dup.delta_id).toBe(d1.delta_id);
     const sAgain = await missions.getMissionState('test_mission_1');
@@ -130,8 +130,8 @@ describe('mission state + state deltas', () => {
   });
   it('routes a stale-base delta to conflict and drops neither proposal', async () => {
     await missions.createMissionState(baseMission());
-    await deltas.submitDelta(claimDelta(1, 'idem-key-a', 'claim A'), { actorId: 'satori' });
-    const stale = await deltas.submitDelta(claimDelta(1, 'idem-key-b', 'claim B (stale base)'), { actorId: 'satori' });
+    await deltas.submitDelta(claimDelta(1, 'idem-key-a', 'claim A'), { actorId: 'agent-a' });
+    const stale = await deltas.submitDelta(claimDelta(1, 'idem-key-b', 'claim B (stale base)'), { actorId: 'agent-a' });
     expect(stale.status).toBe('conflict');
     const all = await deltas.listDeltas('test_mission_1');
     expect(all.length).toBe(2); // both recorded, neither dropped
@@ -148,16 +148,16 @@ describe('epistemic ledger', () => {
   it('never overwrites confidence — history records prior/next/reason/actor', async () => {
     const e = await ledger.appendEntry({
       schema_version: '1.0', mission_id: 'test_mission_1', entry_type: 'assumption',
-      statement: 'Network egress is reliable.', status: 'accepted', author_id: 'satori', confidence: 0.5,
+      statement: 'Network egress is reliable.', status: 'accepted', author_id: 'agent-a', confidence: 0.5,
     });
-    const updated = await ledger.updateConfidence(e.entry_id, 0.8, 'observed 429s', 'satori');
+    const updated = await ledger.updateConfidence(e.entry_id, 0.8, 'observed 429s', 'agent-a');
     expect(updated!.confidence).toBe(0.8);
     expect(updated!.confidence_history).toHaveLength(1);
-    expect(updated!.confidence_history![0]).toMatchObject({ prior: 0.5, next: 0.8, reason: 'observed 429s', actor_id: 'satori' });
+    expect(updated!.confidence_history![0]).toMatchObject({ prior: 0.5, next: 0.8, reason: 'observed 429s', actor_id: 'agent-a' });
   });
   it('terminates dependency traversal even with cycles', async () => {
-    const a = await ledger.appendEntry({ schema_version: '1.0', mission_id: 'test_mission_1', entry_type: 'claim', statement: 'a', status: 'accepted', author_id: 'satori', confidence: 0.5, depends_on: ['id-b'] });
-    await ledger.appendEntry({ schema_version: '1.0', mission_id: 'test_mission_1', entry_id: 'id-b', entry_type: 'claim', statement: 'b', status: 'accepted', author_id: 'satori', confidence: 0.5, depends_on: [a.entry_id] });
+    const a = await ledger.appendEntry({ schema_version: '1.0', mission_id: 'test_mission_1', entry_type: 'claim', statement: 'a', status: 'accepted', author_id: 'agent-a', confidence: 0.5, depends_on: ['id-b'] });
+    await ledger.appendEntry({ schema_version: '1.0', mission_id: 'test_mission_1', entry_id: 'id-b', entry_type: 'claim', statement: 'b', status: 'accepted', author_id: 'agent-a', confidence: 0.5, depends_on: [a.entry_id] });
     const closure = await ledger.dependencyClosure(a.entry_id);
     expect(closure.entry_ids).toContain('id-b');
     expect(closure.cycle).toBe(true);
@@ -167,8 +167,8 @@ describe('epistemic ledger', () => {
 describe('cognitive baton', () => {
   it('blind batons withhold incumbent decision/claim material', async () => {
     await missions.createMissionState(baseMission());
-    const dec = await ledger.appendEntry({ schema_version: '1.0', mission_id: 'test_mission_1', entry_type: 'decision', statement: 'We chose design X.', status: 'accepted', author_id: 'satori', confidence: 0.9 });
-    const ev = await ledger.appendEntry({ schema_version: '1.0', mission_id: 'test_mission_1', entry_type: 'evidence', statement: 'Benchmark shows 2x throughput.', status: 'accepted', author_id: 'satori', confidence: 0.8 });
+    const dec = await ledger.appendEntry({ schema_version: '1.0', mission_id: 'test_mission_1', entry_type: 'decision', statement: 'We chose design X.', status: 'accepted', author_id: 'agent-a', confidence: 0.9 });
+    const ev = await ledger.appendEntry({ schema_version: '1.0', mission_id: 'test_mission_1', entry_type: 'evidence', statement: 'Benchmark shows 2x throughput.', status: 'accepted', author_id: 'agent-a', confidence: 0.8 });
     await db.collection('mission_states').updateOne({ mission_id: 'test_mission_1' }, { $set: { ledger_refs: [dec.entry_id, ev.entry_id] } });
     const blind = await batons.compileBaton({
       schema_version: '1.0', mission_id: 'test_mission_1', mission_version: 1, recipient_id: 'worker-1',
@@ -187,14 +187,14 @@ describe('cognitive baton', () => {
   });
   it('revokes stale batons when the mission version advances', async () => {
     await missions.createMissionState(baseMission());
-    await deltas.submitDelta(claimDelta(1, 'idem-key-c', 'claim'), { actorId: 'satori' }); // -> v2
+    await deltas.submitDelta(claimDelta(1, 'idem-key-c', 'claim'), { actorId: 'agent-a' }); // -> v2
     const b = await batons.issueBaton({
       schema_version: '1.0', mission_id: 'test_mission_1', mission_version: 2, recipient_id: 'worker-1',
       mode: 'execute', objective: 'Do work.', deliverable: 'delta',
       expires_at: new Date(Date.now() + 3600e3).toISOString(),
     });
     expect(await batons.getBaton(b.baton_id)).not.toBeNull();
-    await deltas.submitDelta(claimDelta(2, 'idem-key-d', 'another claim'), { actorId: 'satori' }); // -> v3
+    await deltas.submitDelta(claimDelta(2, 'idem-key-d', 'another claim'), { actorId: 'agent-a' }); // -> v3
     expect(await batons.getBaton(b.baton_id)).toBeNull(); // revoked, not silently overwritable
   });
 });
@@ -202,10 +202,10 @@ describe('cognitive baton', () => {
 describe('checkpoint + deterministic rebuild', () => {
   it('rebuilds state from checkpoint + accepted deltas', async () => {
     await missions.createMissionState(baseMission());
-    await deltas.submitDelta(claimDelta(1, 'idem-key-e', 'e'), { actorId: 'satori' }); // v2
-    await missions.checkpointMission('test_mission_1', 'satori'); // checkpoint v2
-    await deltas.submitDelta(claimDelta(2, 'idem-key-f', 'f'), { actorId: 'satori' }); // v3
-    await deltas.submitDelta(claimDelta(3, 'idem-key-g', 'g'), { actorId: 'satori' }); // v4
+    await deltas.submitDelta(claimDelta(1, 'idem-key-e', 'e'), { actorId: 'agent-a' }); // v2
+    await missions.checkpointMission('test_mission_1', 'agent-a'); // checkpoint v2
+    await deltas.submitDelta(claimDelta(2, 'idem-key-f', 'f'), { actorId: 'agent-a' }); // v3
+    await deltas.submitDelta(claimDelta(3, 'idem-key-g', 'g'), { actorId: 'agent-a' }); // v4
     const current = await missions.getMissionState('test_mission_1');
     const rebuilt = await missions.rebuildFromCheckpoint('test_mission_1');
     expect(rebuilt!.version).toBe(current!.version);
@@ -216,7 +216,7 @@ describe('checkpoint + deterministic rebuild', () => {
 describe('legacy mission adapter', () => {
   it('maps a legacy mission to a v1 mission state and is idempotent', async () => {
     FAKE_DB.collection('memory_missions').docs.push({
-      _id: 'legacy_1', user_id: 'johnpellew', status: 'ACTIVE', meta_goal: 'Ship the thing',
+      _id: 'legacy_1', user_id: '$HOME', status: 'ACTIVE', meta_goal: 'Ship the thing',
       task_tree: [
         { id: 't1', description: 'Plan', status: 'IN_PROGRESS' },
         { id: 't2', description: 'Build', status: 'PENDING' },
@@ -229,7 +229,7 @@ describe('legacy mission adapter', () => {
     expect(adopted.status).toBe('active');
     expect(adopted.authority_class).toBe('B');
     expect(adopted.objectives).toHaveLength(2);
-    expect(adopted.objectives![0]).toMatchObject({ id: 't1', status: 'in_progress', owner_id: 'johnpellew' });
+    expect(adopted.objectives![0]).toMatchObject({ id: 't1', status: 'in_progress', owner_id: '$HOME' });
     expect(adopted.success_criteria![0].description).toBe('Ship the thing');
     const again = await adoptLegacyMission(db, 'legacy_1');
     expect(again.version).toBe(1); // no second copy

@@ -10,13 +10,13 @@ test('normalisation preserves negation, numerals and order', () => {
   assert.notEqual(normalizeProposition('did not fail'), normalizeProposition('did fail'));
   assert.notEqual(normalizeProposition('version 1'), normalizeProposition('version 2'));
   assert.notEqual(normalizeProposition('get root cause'), normalizeProposition('get cause root'));
-  assert.equal(normalizeProposition('Get from Satori!'), 'get satori');
+  assert.equal(normalizeProposition('Get from the generator!'), 'get agent-a');
 });
 
 test('semantic key matches the runtime rule', () => {
   assert.equal(
-    semanticPropositionKey('fact: The user associated with this session is satori.'),
-    'the user associated session satori',
+    semanticPropositionKey('fact: The user associated with this session is agent-a.'),
+    'the user associated session agent-a',
   );
   assert.equal(semanticPropositionKey('done'), null);
   assert.notEqual(
@@ -26,8 +26,8 @@ test('semantic key matches the runtime rule', () => {
 });
 
 test('episodic key is sha256(type:normalized).slice(0,32)', () => {
-  const key = episodicPropositionKey('goal', 'Get the reflection root cause from Satori');
+  const key = episodicPropositionKey('goal', 'Get the reflection root cause from the generator');
   assert.match(key, /^[0-9a-f]{32}$/);
-  assert.equal(key, episodicPropositionKey('goal', 'get the reflection root cause from satori'));
-  assert.notEqual(key, episodicPropositionKey('goal', 'Get the root cause from Satori'));
+  assert.equal(key, episodicPropositionKey('goal', 'get the reflection root cause from agent-a'));
+  assert.notEqual(key, episodicPropositionKey('goal', 'Get the root cause from the generator'));
 });

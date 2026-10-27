@@ -170,20 +170,20 @@ else
 fi
 
 # 3c. 2026-09-23 migration (directive item e): retire the pre-f9b5031
-#     config filename. A machine with ONLY satori-hook.json silently falls
+#     config filename. A machine with ONLY agent-a-hook.json silently falls
 #     through to defaulted config (the dead-MacBook incident) — never allow
 #     that state to persist.
-LEGACY_CFG="$STATE_DIR/satori-hook.json"
+LEGACY_CFG="$STATE_DIR/agent-a-hook.json"
 if [ -f "$LEGACY_CFG" ]; then
   if [ ! -f "$HOOK_CFG" ]; then
     cp "$LEGACY_CFG" "$HOOK_CFG" && chmod 600 "$HOOK_CFG" \
-      && ok "migrated satori-hook.json -> katra-hook.json (chmod 600)" \
+      && ok "migrated agent-a-hook.json -> katra-hook.json (chmod 600)" \
       || bad "migration copy failed"
   fi
   if [ -f "$HOOK_CFG" ]; then
     mv "$LEGACY_CFG" "$LEGACY_CFG.migrated-$(date +%Y%m%d-%H%M%S)" \
-      && ok "retired stale satori-hook.json (renamed)" \
-      || bad "could not retire satori-hook.json"
+      && ok "retired stale agent-a-hook.json (renamed)" \
+      || bad "could not retire agent-a-hook.json"
   fi
 fi
 

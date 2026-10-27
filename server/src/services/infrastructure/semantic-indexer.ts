@@ -696,7 +696,7 @@ class SemanticIndexer {
     // Named entity patterns
     const entityPatterns = [
       /\b(jaguar|e-type|series\s+\d+|xke)\b/gi,
-      /\b(sarah\s+wilson|john\s+smith|dr\.\s+\w+)\b/gi,
+      /\b(sarah\s+wilson|the operator\s+smith|dr\.\s+\w+)\b/gi,
       /\b(techcorp|dataflow|reddit|linkedin)\b/gi,
       /\b(\d{4}\s+\w+|\w+\s+\d{4})\b/g // Years with models
     ];

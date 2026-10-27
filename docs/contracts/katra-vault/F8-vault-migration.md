@@ -8,7 +8,7 @@ AgentMail key from `~/.katra/keys/agentmail-alex.key` into the vault as
 `alex/agentmail-api-key` (service `agentmail`, kind `api_key`, private scope),
 (b) hard-deletes legacy plaintext secret docs + any referencing embedding docs,
 (c) produces a REDACTED audit report of other plaintext secrets found in
-shared memory (WiFi passwords etc.) for John to decide on. Nothing destructive
+shared memory (WiFi passwords etc.) for the operator to decide on. Nothing destructive
 runs without an explicit `--apply` flag; the report never contains actual
 secret values.
 

@@ -81,7 +81,7 @@
  *
  *   cd server
  *   export IMAGINATION_LOOP_LIVE=1 \
- *          IMAGINATION_LOOP_USER=<identity, e.g. lilly> \
+ *          IMAGINATION_LOOP_USER=<identity, e.g. agent-b> \
  *          IMAGINATION_LOOP_MISSION=<mission id> \
  *          IMAGINATION_LOOP_RUN=loop-$(date -u +%Y%m%d-%H%M%S) \
  *          IMAGINATION_LOOP_OUT=/tmp/imagination-loop-live.json

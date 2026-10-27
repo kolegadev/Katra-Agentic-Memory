@@ -839,7 +839,7 @@ export function createCapability(opts: CapabilityOptions = {}): Capability {
           session: outcome.session,
         });
 
-        // Value-free failure taxonomy passthrough (Lilly 2026-09-13): the
+        // Value-free failure taxonomy passthrough (the loop director 2026-09-13): the
         // driver's exception class + sanitized IG message let the caller
         // tell checkpoint / challenge / rate-limit apart. Bounded defensively
         // here too; never secret material.

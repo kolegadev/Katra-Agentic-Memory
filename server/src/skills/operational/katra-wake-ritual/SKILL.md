@@ -38,7 +38,7 @@ At the start of every session — and before answering ANY identity, memory, or 
 
 1. **Run the wake script** (fast path, PLATFORM-AWARE — the macOS state dir is
    `~/Library/Application Support/kolega-code`, and `~/.kolega` does NOT exist there):
-   - Linux (thebrick): `bash ~/.kolega/wake-<identity>.sh` (e.g. `wake-satori.sh`), or the generic
+   - Linux (thebrick): `bash ~/.kolega/wake-<identity>.sh` (e.g. `wake-agent-a.sh`), or the generic
      `integrations/kolega-code/scripts/katra_inbox.py status` + `scripts/bridge-guard.sh`.
    - macOS: `bash "$HOME/Library/Application Support/kolega-code/../wake-<identity>.sh"` if provisioned,
      else run the bridge guard from the repo checkout:

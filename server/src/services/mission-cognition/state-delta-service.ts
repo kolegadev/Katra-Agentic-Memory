@@ -142,7 +142,7 @@ export function applyDeltaToState(state: MissionState, delta: StateDelta, now?: 
       // straight to the collection). Reading `op0.status` alone made this a
       // guaranteed no-op — and, because the guard demanded that same forbidden
       // field, the delta could not be expressed at all: every attempt was
-      // refused as an additional property. Found by Satori, 2026-10-21.
+      // refused as an additional property. Found by the generator, 2026-10-21.
       const rawStatus = op0?.value ?? op0?.status;
       if (typeof rawStatus === 'string' && rawStatus) {
         next.status = rawStatus as MissionState['status'];
@@ -171,7 +171,7 @@ export function applyDeltaToState(state: MissionState, delta: StateDelta, now?: 
       // wrote it, and the class guard at the foot of assertTargetsResolve
       // refused the operation by name rather than discarding it silently.
       // The guard was right; the owner was missing. A mission cannot be
-      // governed by a stop condition it cannot store. (Satori, 2026-10-23.)
+      // governed by a stop condition it cannot store. (the generator, 2026-10-23.)
       const raw = op0?.value;
       const list = Array.isArray(raw)
         ? raw
@@ -260,7 +260,7 @@ const OBJECTIVE_TARGETED: ReadonlySet<DeltaType> = new Set<DeltaType>([
  * unknown delta_type reached applyDeltaToState, matched no `case`, fell into
  * `default:` — and was recorded `accepted` with the version advanced and no
  * state change. That is the same silent-no-op class the comments in this file
- * describe, one level up. Found by Satori, 2026-10-21.
+ * describe, one level up. Found by the generator, 2026-10-21.
  */
 export const DELTA_TYPES = [
   'CLAIM_ADDED', 'EVIDENCE_ADDED', 'ASSUMPTION_CHALLENGED',

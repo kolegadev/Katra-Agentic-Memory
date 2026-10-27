@@ -1,5 +1,5 @@
 // Episodic compaction — collapse near-duplicate distilled events by proposition.
-// Lilly, 2026-10-21. Default is a DRY RUN; pass --apply to write.
+// the loop director, 2026-10-21. Default is a DRY RUN; pass --apply to write.
 //
 //   node /app/compact-episodic.mjs            # report only
 //   node /app/compact-episodic.mjs --apply    # export + merge + delete

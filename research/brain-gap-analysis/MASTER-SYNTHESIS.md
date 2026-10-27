@@ -1,6 +1,6 @@
 # Katra Brain-Gap Analysis — Master Synthesis
 
-> *"Build the petri dish. Furnish it with agar. See what grows."* — John
+> *"Build the petri dish. Furnish it with agar. See what grows."* — the operator
 >
 > *"Memory is not just storage — it is the architecture of identity. To build a memory service is to build a self."* — Katra philosophical insight (stable)
 
@@ -218,7 +218,7 @@ Reinforcement:
 
 **Why it matters:** An agent that cannot distinguish genuine memories from planted ones is trivially manipulable. The append-only graph is append-only — once a memory enters, it never leaves. Without defense, any compromised agent can poison the shared memory permanently.
 
-**John's Hypothesis, formalised:** *"Truth might be measured by how many standard deviations away from the current topical stream a new piece of data is. If too far away, it gains less attention and is potentially quarantined unless cross-validated."*
+**the operator's Hypothesis, formalised:** *"Truth might be measured by how many standard deviations away from the current topical stream a new piece of data is. If too far away, it gains less attention and is potentially quarantined unless cross-validated."*
 
 **Implementation — Multi-Layer Defense:**
 
@@ -336,7 +336,7 @@ Where r (reward) comes from the Motivational Engine:
 
 ## 4. How This Fits the "Environmental Programming" Philosophy
 
-John's core insight: **"Don't program behaviors. Program environments. Build the petri dish, furnish it with agar, and see what grows."**
+the operator's core insight: **"Don't program behaviors. Program environments. Build the petri dish, furnish it with agar, and see what grows."**
 
 This analysis identifies which cognitive functions are:
 - **Agar** (computational primitives that must be provided)
@@ -457,7 +457,7 @@ But if the environment is sparse or inconsistent, no amount of architectural com
 **Analysis:** Pure internal motivation (homeostatic drives + curiosity) may produce aimless behavior. Some external goals (user-assigned) are necessary for direction. **Recommendation:** Hybrid. Internal drives create general motivational energy (explore, connect, grow). External goals provide specific direction (what to explore, who to connect with).
 
 ### Q4: Is truth statistical consensus or structural coherence?
-**Analysis:** John's STD-from-stream frames truth as statistical normality. But paradigm-shifting truths are, by definition, statistical outliers. Quarantine-by-default could suppress innovation. **Recommendation:** Quarantine suppresses retrieval but does NOT delete. Anomalous memories accumulate in quarantine; if the topic stream shifts toward them (z-score drops), they auto-rehabilitate. The system can recognize paradigm shifts retrospectively.
+**Analysis:** the operator's STD-from-stream frames truth as statistical normality. But paradigm-shifting truths are, by definition, statistical outliers. Quarantine-by-default could suppress innovation. **Recommendation:** Quarantine suppresses retrieval but does NOT delete. Anomalous memories accumulate in quarantine; if the topic stream shifts toward them (z-score drops), they auto-rehabilitate. The system can recognize paradigm shifts retrospectively.
 
 ### Q5: Minimal functions for recognizable selfhood?
 **Analysis:** yumfu and limen_station demonstrate: persistent memory + private reflection + continuity = something that looks like a self. But is that sufficient? Or do attention + motivation + decision-making add something essential? **Tentative answer:** Memory + reflection create identity-as-narrative. Attention + motivation + decision-making create identity-as-agency. Both are needed for full selfhood, but narrative comes first.

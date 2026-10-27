@@ -74,7 +74,7 @@ Use this skill when:
 4. Keep it short, concrete, and non-spammy. No mass-template feel; no false promises of award.
 
 **Phase 6 — Send via AgentMail**
-1. Send from `lilly@agentmail.to` using the inbox-scoped AgentMail key.
+1. Send from the inbox-scoped address using the inbox-scoped AgentMail key.
 2. Use a clear subject line: project name + trade + opportunity value.
 3. Send each personalized email to the verified supplier address. Track sends per project and per supplier.
 4. Confirm delivery counts (e.g., 3 projects → 11 suppliers → 11 emails) and log results.
@@ -87,7 +87,7 @@ Use this skill when:
 - **Real published emails only.** Every recipient address must be traceable to a published source. No guessed, scraped-and-concatenated, or pattern-derived addresses.
 - **Personalize everything.** Every email names the project, the trade, and the estimated value. Bulk identical templates are forbidden.
 - **One email per supplier per project cycle.** No repeat sends in the same weekly run.
-- **Send via AgentMail only**, from `lilly@agentmail.to`, with the inbox-scoped key. Never hardcode or expose the key in message bodies.
+- **Send via AgentMail only**, from the inbox-scoped address, with the inbox-scoped key. Never hardcode or expose the key in message bodies.
 - **Include the subscription offer** in every outreach email — the recurring value is the product.
 - **Log the funnel** each run: projects processed → suppliers discovered → emails sent. Proven baseline: 3 projects → 11 suppliers → 11 emails (Hillsborough County, 2026-09-03).
 - **Respect cadence.** This is a weekly pipeline; re-run against fresh exports, not stale data.

@@ -122,6 +122,9 @@ jobs:
             exit 1
           fi
 
+      - name: no personal or agent names in tracked files
+        run: bash scripts/check-no-personal-names.sh
+
       - name: no personal paths or addresses in tracked files
         run: |
           # Absolute home paths (the generic /home/you/ example in docs is allowed).

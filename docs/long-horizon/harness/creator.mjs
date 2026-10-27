@@ -1,7 +1,7 @@
 // Iteration 1 decisive-test harness — PHASE A: creator.
 // A fresh node process that builds mission state in REAL Katra Mongo via the
 // cognitive-control services, then exits. It prints ONLY the mission_id.
-// Harness defect fixes (Lilly review 2026-09-19):
+// Harness defect fixes (the loop director review 2026-09-19):
 //   #3 env-configurable build dir (KATRA_BUILD_DIR; default /repos/katra-server/build)
 //   #4 non-destructive .env load (never overwrite already-set vars)
 //   #1 no forced REDIS_URL (container env carries the right one)
@@ -40,12 +40,12 @@ const state = await missions.createMissionState({
   title: 'Iteration-1 decisive context-clear test',
   intent: 'Prove a mission survives a total context clear without transcript replay.',
   status: 'active',
-  owner_id: 'satori',
+  owner_id: 'agent-a',
   success_criteria: [{ id: 'c1', description: 'resume reconstructs state from stores only', status: 'unmet' }],
   authority_class: 'B',
   objectives: [
-    { id: 'o1', description: 'Establish baseline facts about egress throttling', status: 'in_progress', owner_id: 'satori', dependency_ids: [] },
-    { id: 'o2', description: 'Design the fix for the throttled path', status: 'pending', owner_id: 'satori', dependency_ids: ['o1'] },
+    { id: 'o1', description: 'Establish baseline facts about egress throttling', status: 'in_progress', owner_id: 'agent-a', dependency_ids: [] },
+    { id: 'o2', description: 'Design the fix for the throttled path', status: 'pending', owner_id: 'agent-a', dependency_ids: ['o1'] },
   ],
 });
 
@@ -55,17 +55,17 @@ const d1 = await deltas.submitDelta({
   idempotency_key: `iter1-claim-${missionId}`,
   mission_id: missionId,
   base_mission_version: 1,
-  author_id: 'satori',
+  author_id: 'agent-a',
   delta_type: 'CLAIM_ADDED',
   operations: [{ op: 'add', path: '/ledger_refs/-', value: 'claim-baseline' }],
   ledger_entries: [{
     schema_version: '1.0', mission_id: missionId, entry_type: 'claim',
     statement: 'YouTube caption endpoints are IP-throttled from Montenegro and GCP egress; audio download is not.',
-    status: 'accepted', author_id: 'satori', confidence: 0.9,
+    status: 'accepted', author_id: 'agent-a', confidence: 0.9,
   }],
   rationale: 'baseline observation',
   confidence: 0.9,
-}, { actorId: 'satori' });
+}, { actorId: 'agent-a' });
 
 // delta 2: open an uncertainty (v2 -> v3)
 const d2 = await deltas.submitDelta({
@@ -73,21 +73,21 @@ const d2 = await deltas.submitDelta({
   idempotency_key: `iter1-uncertainty-${missionId}`,
   mission_id: missionId,
   base_mission_version: 2,
-  author_id: 'satori',
+  author_id: 'agent-a',
   delta_type: 'UNCERTAINTY_OPENED',
   operations: [{ op: 'add', path: '/ledger_refs/-', value: 'uncertainty-egress' }],
   ledger_entries: [{
     schema_version: '1.0', mission_id: missionId, entry_type: 'uncertainty',
     statement: 'Whether the throttling is per-IP or per-region (affects fix design).',
-    status: 'active', author_id: 'satori', confidence: 0.5,
+    status: 'active', author_id: 'agent-a', confidence: 0.5,
     information_needed: ['a second egress IP to compare against'],
   }],
   rationale: 'fix design depends on unknown scope of throttling',
   confidence: 0.5,
-}, { actorId: 'satori' });
+}, { actorId: 'agent-a' });
 
 // checkpoint at v3
-await missions.checkpointMission(missionId, 'satori');
+await missions.checkpointMission(missionId, 'agent-a');
 
 // delta 3 AFTER the checkpoint (v3 -> v4): new evidence lands while context is "lost"
 const d3 = await deltas.submitDelta({
@@ -95,17 +95,17 @@ const d3 = await deltas.submitDelta({
   idempotency_key: `iter1-evidence-${missionId}`,
   mission_id: missionId,
   base_mission_version: 3,
-  author_id: 'satori',
+  author_id: 'agent-a',
   delta_type: 'EVIDENCE_ADDED',
   operations: [{ op: 'add', path: '/ledger_refs/-', value: 'evidence-egress' }],
   ledger_entries: [{
     schema_version: '1.0', mission_id: missionId, entry_type: 'evidence',
     statement: 'A second egress IP reproduces the 429 — throttling is per-IP, not per-region.',
-    status: 'accepted', author_id: 'satori', confidence: 0.85,
+    status: 'accepted', author_id: 'agent-a', confidence: 0.85,
   }],
   rationale: 'discriminating evidence for the open uncertainty',
   confidence: 0.85,
-}, { actorId: 'satori' });
+}, { actorId: 'agent-a' });
 
 console.log(`CREATOR_OK mission_id=${missionId} deltas=${[d1.status, d2.status, d3.status].join(',')}`);
 await conn.close_connection();

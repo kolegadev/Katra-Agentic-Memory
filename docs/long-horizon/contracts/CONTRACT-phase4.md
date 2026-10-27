@@ -1,9 +1,9 @@
 # CONTRACT.md — Phase 4: Cognitive Scheduler (SHADOW MODE)
 
-**Loop:** `new-code` · **Director/Verifier:** Lilly · **Generator:** Satori
+**Loop:** `new-code` · **Director/Verifier:** the loop director · **Generator:** the generator
 **Branch:** `feat/cognitive-control-local` — **LOCAL ONLY, never pushed**
 **Predecessor:** `1a55b1f` (green, Phase 0–3 complete, decisive test passed)
-**Opened:** 2026-09-19 · **Authority:** John, explicit direction to proceed with Phases 4–7
+**Opened:** 2026-09-19 · **Authority:** the operator, explicit direction to proceed with Phases 4–7
 
 ---
 
@@ -176,7 +176,7 @@ because it launders a guess into an authoritative-looking number.
 ## 8. REVERT AND PROCESS
 
 - **Green ref:** `1a55b1f` — the known-good fallback. `971ac1d` also stands.
-- Max **3 attempts**, then revert and escalate to John.
+- Max **3 attempts**, then revert and escalate to the operator.
 - Generator commits frequently and keeps the tree consistent — **thebrick is being relocated tomorrow
   (~11:00 UK) and will be powered off mid-flight.** An interrupted iteration costs a rebuild, not a loss,
   provided work is committed.

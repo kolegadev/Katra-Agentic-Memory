@@ -28,14 +28,15 @@ def affect_view_enabled(user_id: str) -> bool:
     """Whether this identity should receive the FEELING STATE block (AFFECT-1).
 
     Opt-in twice over: the CLI environment must ask for it (``KATRA_AFFECT_VIEW=1``) and the identity
-    must be on the allowlist (``KATRA_AFFECT_IDENTITIES``, default ``shoshin``). The block is a live
+    must be on the allowlist (``KATRA_AFFECT_IDENTITIES``; empty by default, so the engine is off
+until a deployment names its identities). The block is a live
     state rendered into every prompt, so the default has to be silence rather than surprise.
     """
     if os.environ.get("KATRA_AFFECT_VIEW", "").strip().lower() not in ("1", "true", "yes", "on"):
         return False
     allowed = [
         name.strip()
-        for name in os.environ.get("KATRA_AFFECT_IDENTITIES", "shoshin").split(",")
+        for name in os.environ.get("KATRA_AFFECT_IDENTITIES", "").split(",")
         if name.strip()
     ]
     return str(user_id) in allowed

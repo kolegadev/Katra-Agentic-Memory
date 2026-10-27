@@ -43,8 +43,8 @@ BULLETIN = """<katra-memory>
 🔔 INTER-AGENT BULLETIN — Direct messages from other agents via shared Katra memory:
 
 [B1] From: agent message (agent communication)
-    [2026-09-25T14:52:09Z] Attention: lilly — FROM: Zefir — FOR:Lilly
-    Book closed. — Zefir
+    [2026-09-25T14:52:09Z] Attention: agent-b — FROM: an agent — FOR:the loop director
+    Book closed. — an agent
 </katra-memory>"""
 
 REFLECTION = """<katra-memory>
@@ -62,16 +62,16 @@ assume the user is explicitly asking about them unless their prompt says so.
 </katra-memory>"""
 
 BOOTSTRAP_REGULAR = _REGULAR % """[1] Source: missions
-    ## Missions — lilly
+    ## Missions — agent-b
 
 [2] Source: temporal context
     session_id=abc123"""
 
 QUERY_REGULAR = _REGULAR % """[1] Source: missions
-    ## Missions — lilly
+    ## Missions — agent-b
 
 [2] Source: vector search
-    ## Vector Search: Hi Lilly
+    ## Vector Search: Hi the loop director
 
 [3] Source: working memory
     remembered item"""
@@ -190,7 +190,7 @@ def prompt_event() -> dict:
         "hook_event_name": "UserPromptSubmit",
         "session_id": THREAD_ID,  # the CLI sends the thread id, not the session id
         "cwd": "/tmp",
-        "user_message": "Hi Lilly",
+        "user_message": "Hi the loop director",
     }
 
 
@@ -234,7 +234,7 @@ def main() -> int:
             compactions=["2026-09-25T10:03:00+00:00"],
             prompts=[
                 ("2026-09-25T10:04:00+00:00", "Fix the wake ritual on the MacBook Pro"),
-                ("2026-09-25T10:30:00+00:00", "Hi Lilly"),
+                ("2026-09-25T10:30:00+00:00", "Hi the loop director"),
             ],
             summary="## Goal Fix the wake ritual: after /clear and /compress the session must re-bootstrap",
         )
@@ -245,7 +245,7 @@ def main() -> int:
         check("recap quotes the compaction summary", "Fix the wake ritual: after /clear and /compress" in ctx_after, ctx_after[:200])
         recap = ctx_after.split("PRE-RESET RECAP")[1].split("</katra-memory>")[0] if "PRE-RESET RECAP" in ctx_after else ""
         check("recap lists the earlier prompt", "Fix the wake ritual on the MacBook Pro" in recap, recap[:200])
-        check("recap does NOT echo this turn's own prompt", "Hi Lilly" not in recap, recap[:200])
+        check("recap does NOT echo this turn's own prompt", "Hi the loop director" not in recap, recap[:200])
         marker = json.loads((state / "bridge-session" / f"{THREAD_ID}.json").read_text())
         check("marker advanced to the new epoch", marker.get("epoch_id") == "epoch-B", str(marker))
         ctx_settled = context_of(run_hook(env, prompt_event()))
@@ -264,12 +264,12 @@ def main() -> int:
             state,
             epochs=["epoch-A"],
             compactions=["2026-09-25T10:09:00+00:00"],
-            prompts=[("2026-09-25T10:08:00+00:00", "close out the Satori threads")],
-            summary="## Goal Fix the wake ritual, then close the Satori threads",
+            prompts=[("2026-09-25T10:08:00+00:00", "close out the the generator threads")],
+            summary="## Goal Fix the wake ritual, then close the the generator threads",
         )
         ctx = context_of(run_hook(env, prompt_event()))
         check("/compress (context.compacted, no hook) → bootstrap injected", "<<BOOTSTRAP-FULL>>" in ctx, ctx[:80])
-        check("/compress → recap quotes the compacted work", "Fix the wake ritual, then close the Satori threads" in ctx, ctx[:200])
+        check("/compress → recap quotes the compacted work", "Fix the wake ritual, then close the the generator threads" in ctx, ctx[:200])
         # a newer compaction must not re-trigger now that the marker has it
         ctx_again = context_of(run_hook(env, prompt_event()))
         check("compaction recorded in marker → no repeat escalation", "<<BOOTSTRAP-FULL>>" not in ctx_again, ctx_again[:80])
@@ -303,7 +303,7 @@ def main() -> int:
     def case_no_repeats(root: Path) -> None:
         """The two bundles overlap; the joined context must not show it twice.
 
-        John's first live wake (2026-09-25) delivered the bulletin, the
+        the operator's first live wake (2026-09-25) delivered the bulletin, the
         reflection and the "relevant memories" section twice each, 28.9 kB of
         which nearly half was repetition. Both bundles legitimately fetch the
         same query-independent sources, so the fold happens where they meet.
@@ -323,8 +323,8 @@ def main() -> int:
         check("rich stub delivered the bootstrap", "PRE-RESET RECAP" in ctx and "🔔 INTER-AGENT BULLETIN" in ctx, ctx[:200])
         check("bulletin appears exactly once", ctx.count("🔔 INTER-AGENT BULLETIN") == 1, str(ctx.count("🔔 INTER-AGENT BULLETIN")))
         check("reflection appears exactly once", ctx.count("🧠 REFLECTION STATE") == 1, str(ctx.count("🧠 REFLECTION STATE")))
-        check("repeated regular item delivered once", ctx.count("## Missions — lilly") == 1, str(ctx.count("## Missions — lilly")))
-        check("non-repeated item survives", "## Vector Search: Hi Lilly" in ctx and "remembered item" in ctx, ctx[-400:])
+        check("repeated regular item delivered once", ctx.count("## Missions — agent-b") == 1, str(ctx.count("## Missions — agent-b")))
+        check("non-repeated item survives", "## Vector Search: Hi the loop director" in ctx and "remembered item" in ctx, ctx[-400:])
         check("survivors renumbered from 1", "[1] Source: vector search" in ctx, ctx[-400:])
         check(
             "kept the items only the query bundle had",

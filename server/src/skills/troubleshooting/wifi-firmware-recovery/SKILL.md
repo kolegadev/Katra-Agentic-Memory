@@ -96,7 +96,7 @@ writes commands.
 
 - If the wrapper scripts are missing, `/etc/sudoers.d/net-agent` lacks the
   `net-agent-*.sh` lines, or a firmware file needs replacing by hand: these
-  need John's sudo password (`sudo bash install.sh --grant-user johnpellew`
+  need the operator's sudo password (`sudo bash install.sh --grant-user $HOME`
   in `~/Katra-Agentic-Memory/integrations/offline-reconnect/` reinstalls
   grants + wrappers).
 - Hard-blocked radio or dead hardware: physical power-cycle + `rfkill list`

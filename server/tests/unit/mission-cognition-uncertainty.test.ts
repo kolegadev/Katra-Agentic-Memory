@@ -36,7 +36,7 @@ function seedMission(overrides: Partial<MissionState> = {}): MissionState {
     title: 'Phase 5 test mission',
     intent: 'test',
     status: 'active',
-    owner_id: 'satori',
+    owner_id: 'agent-a',
     success_criteria: [{ id: 'c1', description: 'x', status: 'unmet' }],
     authority_class: 'B',
     created_at: new Date().toISOString(),
@@ -51,7 +51,7 @@ function seedEntry(e: Record<string, any>): void {
   FAKE_DB.collection('epistemic_entries').docs.push({
     mission_id: 'ph5_mission',
     status: 'accepted',
-    author_id: 'satori',
+    author_id: 'agent-a',
     confidence: 0.5,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
@@ -68,8 +68,8 @@ describe('trigger detectors — all nine, deterministic, no model calls (criteri
     seedMission({ created_at: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString() });
     // (a) repeated failure + stable/rising confidence — firing
     seedEntry({ entry_id: 'h1', entry_type: 'hypothesis', status: 'active', confidence: 0.9, statement: 'h', confidence_history: [
-      { prior: 0.8, next: 0.9, reason: 'x', actor_id: 'satori', at: 't1' },
-      { prior: 0.9, next: 0.9, reason: 'x', actor_id: 'satori', at: 't2' },
+      { prior: 0.8, next: 0.9, reason: 'x', actor_id: 'agent-a', at: 't1' },
+      { prior: 0.9, next: 0.9, reason: 'x', actor_id: 'agent-a', at: 't2' },
     ] });
     for (let i = 0; i < 3; i++) seedEntry({ entry_id: `f${i}`, entry_type: 'experiment', status: 'rejected', statement: 'failed', depends_on: ['h1'] });
     // (b) high confidence unsupported — firing
@@ -102,7 +102,7 @@ describe('trigger detectors — all nine, deterministic, no model calls (criteri
     seedMission();
     // (a) near-miss: 2 failures (below threshold)
     seedEntry({ entry_id: 'h1', entry_type: 'hypothesis', status: 'active', confidence: 0.5, statement: 'h', confidence_history: [
-      { prior: 0.8, next: 0.5, reason: 'x', actor_id: 'satori', at: 't1' }, // falling confidence
+      { prior: 0.8, next: 0.5, reason: 'x', actor_id: 'agent-a', at: 't1' }, // falling confidence
     ] });
     for (let i = 0; i < 2; i++) seedEntry({ entry_id: `f${i}`, entry_type: 'experiment', status: 'rejected', statement: 'failed', depends_on: ['h1'] });
     // (b) near-miss: high confidence WITH direct evidence
@@ -203,7 +203,7 @@ describe('dependency traversal (criteria 5-7)', () => {
       { work_item_id: 'w1', mission_id: 'ph5_mission', status: 'queued', description: 'work on dec' },
       { work_item_id: 'w2', mission_id: 'ph5_mission', status: 'queued', description: 'work on other' },
     );
-    const result = await invalidateDecision(db, 'ph5_mission', 'dec', 'satori', 'assumption proven false');
+    const result = await invalidateDecision(db, 'ph5_mission', 'dec', 'agent-a', 'assumption proven false');
     expect(result.dependent_entry_ids).toContain('dep1');
     expect(result.dependent_entry_ids).not.toContain('other');
     expect(result.suspended_work_items).toBe(1); // only w1 — scoped, never the whole mission
@@ -305,11 +305,11 @@ describe('experiment registry (criteria 18-19)', () => {
     seedMission();
     seedEntry({ entry_id: 'h1', entry_type: 'hypothesis', status: 'accepted', statement: 'per-IP' });
     seedEntry({ entry_id: 'h2', entry_type: 'hypothesis', status: 'accepted', statement: 'per-region' });
-    const exp = await proposeExperiment(db, 'ph5_mission', 'satori', 'Test a second egress IP', ['h1', 'h2']);
+    const exp = await proposeExperiment(db, 'ph5_mission', 'agent-a', 'Test a second egress IP', ['h1', 'h2']);
     expect(exp.depends_on).toEqual(['h1', 'h2']); // which hypotheses it separates (18)
     const listed = await listExperiments(db, 'ph5_mission');
     expect(listed.map(e => e.entry_id)).toContain(exp.entry_id);
-    const resolved = await resolveExperiment(db, 'ph5_mission', exp.entry_id, 'satori', {
+    const resolved = await resolveExperiment(db, 'ph5_mission', exp.entry_id, 'agent-a', {
       summary: 'second IP also 429',
       contradicts_entry_id: 'h2',
     });
@@ -347,12 +347,12 @@ describe('safety (criteria 22-24)', () => {
     delete process.env.COGNITIVE_SCHEDULER_MODE;
     process.env.COGNITIVE_CONTROL_ENABLED = 'write';
     await expect(
-      dispatchUncertaintyTool('evaluate_triggers', { mission_id: 'x' }, { user_id: 'satori', trusted: true }),
+      dispatchUncertaintyTool('evaluate_triggers', { mission_id: 'x' }, { user_id: 'agent-a', trusted: true }),
     ).rejects.toThrow('Unknown tool: evaluate_triggers');
     process.env.COGNITIVE_SCHEDULER_MODE = 'shadow';
     process.env.COGNITIVE_CONTROL_ENABLED = 'off';
     await expect(
-      dispatchUncertaintyTool('list_uncertainties', { mission_id: 'x' }, { user_id: 'satori', trusted: true }),
+      dispatchUncertaintyTool('list_uncertainties', { mission_id: 'x' }, { user_id: 'agent-a', trusted: true }),
     ).rejects.toThrow('Unknown tool: list_uncertainties');
     delete process.env.COGNITIVE_SCHEDULER_MODE;
     delete process.env.COGNITIVE_CONTROL_ENABLED;

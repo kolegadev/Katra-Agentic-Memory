@@ -31,7 +31,7 @@ services:
       # generates one. Note this is only read on FIRST initialisation of the
       # data volume — see docs/DEPLOYMENT.md → "Rotating credentials".
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASS:?MONGO_PASS is not set — run ./install.sh, or set it in .env}
-    # 2026-10-16 (Satori, incident thebrick-oom-churn): cap the WiredTiger cache.
+    # 2026-10-16 (the generator, incident thebrick-oom-churn): cap the WiredTiger cache.
     # Unbounded, mongod targeted ~12.4 GB (50% of host) and sat at ~10 GB RSS,
     # feeding the chronic global-OOM churn (17 container restarts by 10-16; two
     # kills 4 minutes apart while this line was written). 4 GB comfortably holds

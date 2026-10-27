@@ -30,7 +30,7 @@ python3 dispatcher/dispatch.py --dry-run        # full loop, mutations skipped
 
 ## Install
 
-Katra/docker needs no sudo on thebrick (native docker engine, johnpellew is
+Katra/docker needs no sudo on thebrick (native docker engine, $HOME is
 in the `docker` group — colima is NOT installed). The toolbox's host-network
 commands (rfkill, systemctl, resolvectl, modprobe) live outside docker and
 need root — granted once, then everything runs passwordless as your user:

@@ -1,6 +1,6 @@
 # Attention Mechanisms & Salience — Brain Gap Analysis for Katra
 
-> *"Build environmental programming — the petri dish. Don't program deterministic behaviors. Create the conditions for attention to emerge."* — John Pellew
+> *"Build environmental programming — the petri dish. Don't program deterministic behaviors. Create the conditions for attention to emerge."* — the operator Pellew
 
 ---
 
@@ -626,7 +626,7 @@ This is the most consequential architectural decision for Katra's attention syst
 - **Realistic emulation of human cognition**: Forces prioritization — the system must choose what matters most, which is exactly what drives emergent behavior
 - **Prevents context pollution**: The agent's working memory / context window doesn't get flooded with "medium importance" memories
 - **Forces salience function to be genuinely good**: A bottleneck means the salience function *matters* — bad ranking degrades agent performance, creating selection pressure toward better salience computation
-- **Aligns with John's philosophy**: "Don't program deterministic behaviors. Create the conditions." A bottleneck creates the *condition* of scarcity, forcing the system to develop meaningful prioritization
+- **Aligns with the operator's philosophy**: "Don't program deterministic behaviors. Create the conditions." A bottleneck creates the *condition* of scarcity, forcing the system to develop meaningful prioritization
 
 **Disadvantages:**
 - **Information loss**: Truly important memories might be filtered out by an imperfect salience function

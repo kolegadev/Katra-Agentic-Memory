@@ -8,7 +8,7 @@ encrypted per-identity enrollment, QR-URI issuance, short-lived session tokens
 issued only against a valid TOTP code, replay protection, revocation, and the
 per-identity auth policy table. This feature delivers the mechanism and policy
 lookup; ENFORCEMENT (requiring sessions on the existing MCP/REST paths) is a
-separate cutover step (policy flag `require_totp` default false — John flips
+separate cutover step (policy flag `require_totp` default false — the operator flips
 it when the team is enrolled).
 
 ## Boundaries — MUST NOT touch

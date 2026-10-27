@@ -1,5 +1,5 @@
 // Structured-decision compaction: gas_law_train_decision, keyed by (cell, action).
-// Lilly, 2026-10-21. DRY RUN by default; --apply exports then merges.
+// the loop director, 2026-10-21. DRY RUN by default; --apply exports then merges.
 //
 //   node /app/compact-gaslaw.mjs
 //   node /app/compact-gaslaw.mjs --apply

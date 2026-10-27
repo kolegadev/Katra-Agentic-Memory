@@ -88,9 +88,9 @@ export const AFFECT_SUCCESS_GAIN = 0.35;
 export const AFFECT_SUCCESS_CAP_OFFSET = 0.5;
 
 /**
- * A state key: the identity, optionally scoped to a context (`shoshin#sentry-cwe`).
+ * A state key: the identity, optionally scoped to a context (`agent#sentry-cwe`).
  *
- * The state was per identity, and an identity is not a project: a campaign running on shoshin's
+ * The state was per identity, and an identity is not a project: a campaign running on an agent's
  * behalf voted in the same election as the session that was thinking, and volume won. A context
  * gives a caller its own state without a second collection or a schema migration — the key is just
  * another `user_id` value, so the existing unique index still holds one document per key.
@@ -311,7 +311,7 @@ export function feltLabel(valence: number, arousal: number): string {
 }
 
 function readIdentities(): string[] {
-  return (process.env.KATRA_AFFECT_IDENTITIES || 'shoshin')
+  return (process.env.KATRA_AFFECT_IDENTITIES || '')
     .split(',').map(name => name.trim()).filter(Boolean);
 }
 
@@ -334,7 +334,7 @@ export class AffectEngine {
     if (String(process.env.KATRA_AFFECT_ENABLED || '0') !== '1') return false;
     if (!identity) return true;
     const allowed = readIdentities();
-    // A scoped key (`shoshin#sentry-cwe`) is enabled when its identity is, so adding a context never
+    // A scoped key (`agent#sentry-cwe`) is enabled when its identity is, so adding a context never
     // requires a new allow-list entry; an entry may also name the scoped key explicitly.
     return allowed.includes(identity) || allowed.includes(baseIdentityOf(identity));
   }

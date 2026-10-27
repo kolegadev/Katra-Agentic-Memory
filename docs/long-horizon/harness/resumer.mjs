@@ -2,7 +2,7 @@
 // A GENUINELY FRESH process: its ONLY input is the mission_id argv.
 // No creator transcript, no shared file, no conversation history — everything
 // below comes from Mission State + checkpoint + accepted deltas + ledger.
-// Harness defect fixes (Lilly review 2026-09-19): env-configurable build dir,
+// Harness defect fixes (the loop director review 2026-09-19): env-configurable build dir,
 // non-destructive env load, no forced REDIS_URL, explicit process.exit.
 import { readFileSync, existsSync } from 'node:fs';
 

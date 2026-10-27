@@ -73,10 +73,10 @@ function baseMission(overrides: Partial<MissionState> = {}): MissionState {
     title: 'Constraint addition',
     intent: 'Prove a constraint operation either lands or is refused.',
     status: 'active',
-    owner_id: 'satori',
+    owner_id: 'agent-a',
     success_criteria: [{ id: 'c1', description: 'first criterion', status: 'unmet' }],
     objectives: [
-      { id: 'o1', description: 'first objective', status: 'in_progress', owner_id: 'satori', dependency_ids: [] },
+      { id: 'o1', description: 'first objective', status: 'in_progress', owner_id: 'agent-a', dependency_ids: [] },
     ],
     constraints: [C1],
     authority_class: 'B',
@@ -98,7 +98,7 @@ function delta(
     idempotency_key: idemKey,
     mission_id: 'test_mission_constraints',
     base_mission_version: base,
-    author_id: 'satori',
+    author_id: 'agent-a',
     delta_type,
     operations: operations as StateDeltaDraft['operations'],
     ledger_entries,
@@ -123,7 +123,7 @@ describe('constraint addition is a real, applicable effect', () => {
     await fresh();
     const d = await deltas.submitDelta(
       delta(1, 'cadd-ok-0001', 'CONSTRAINT_ADDED', [{ op: 'add', path: '/constraints/-', value: C5 }]),
-      { actorId: 'satori' },
+      { actorId: 'agent-a' },
     );
     expect(d.status).toBe('accepted');
 
@@ -138,7 +138,7 @@ describe('constraint addition is a real, applicable effect', () => {
     await fresh();
     const d = await deltas.submitDelta(
       delta(1, 'cadd-bare-0001', 'CONSTRAINT_ADDED', [{ op: 'add', path: '/constraints', value: C5 }]),
-      { actorId: 'satori' },
+      { actorId: 'agent-a' },
     );
     expect(d.status).toBe('accepted');
     expect((await missions.getMissionState('test_mission_constraints'))!.constraints!.map(c => c.id))
@@ -149,11 +149,11 @@ describe('constraint addition is a real, applicable effect', () => {
     await fresh();
     await deltas.submitDelta(
       delta(1, 'cadd-dup-0001', 'CONSTRAINT_ADDED', [{ op: 'add', path: '/constraints/-', value: C5 }]),
-      { actorId: 'satori' },
+      { actorId: 'agent-a' },
     );
     await deltas.submitDelta(
       delta(2, 'cadd-dup-0002', 'CONSTRAINT_ADDED', [{ op: 'add', path: '/constraints/-', value: { ...C5, description: 'restated' } }]),
-      { actorId: 'satori' },
+      { actorId: 'agent-a' },
     );
     const s = await missions.getMissionState('test_mission_constraints');
     expect(s!.constraints!.map(c => c.id)).toEqual(['C1', 'C5']);
@@ -173,7 +173,7 @@ describe('constraint addition is a real, applicable effect', () => {
       await expect(
         deltas.submitDelta(
           delta(1, `cadd-bad-000${i}`, 'CONSTRAINT_ADDED', [{ op: 'add', path: '/constraints/-', value }]),
-          { actorId: 'satori' },
+          { actorId: 'agent-a' },
         ),
       ).rejects.toThrow(/CONSTRAINT_ADDED requires/);
     }
@@ -187,7 +187,7 @@ describe('constraint addition is a real, applicable effect', () => {
     await expect(
       deltas.submitDelta(
         delta(1, 'cadd-path-0001', 'CONSTRAINT_ADDED', [{ op: 'add', path: '/objectives/o1/status', value: C5 }]),
-        { actorId: 'satori' },
+        { actorId: 'agent-a' },
       ),
     ).rejects.toThrow(/requires path \/constraints/);
     expect((await missions.getMissionState('test_mission_constraints'))!.version).toBe(1);
@@ -229,13 +229,13 @@ describe('the class guard: no operation rides along unapplied', () => {
             entry_type: 'evidence',
             statement: 'PVNP-LOOP-MARKER-C8 — must not be silently dropped.',
             status: 'accepted',
-            author_id: 'satori',
+            author_id: 'agent-a',
             confidence: 0.9,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           }] as StateDeltaDraft['ledger_entries'],
         ),
-        { actorId: 'satori' },
+        { actorId: 'agent-a' },
       ),
     ).rejects.toThrow(/no applier\s+branch can apply that path|no applier branch can apply that path/);
 
@@ -260,13 +260,13 @@ describe('the class guard: no operation rides along unapplied', () => {
             entry_type: 'decision',
             statement: 'arbitrary path must not be silently accepted',
             status: 'accepted',
-            author_id: 'satori',
+            author_id: 'agent-a',
             confidence: 0.9,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           }] as StateDeltaDraft['ledger_entries'],
         ),
-        { actorId: 'satori' },
+        { actorId: 'agent-a' },
       ),
     ).rejects.toThrow(/no applier branch can apply that path/);
     expect((await missions.getMissionState('test_mission_constraints'))!.version).toBe(1);
@@ -286,13 +286,13 @@ describe('the class guard: no operation rides along unapplied', () => {
           entry_type: 'contradiction',
           statement: 'decision invalidated for the test',
           status: 'active',
-          author_id: 'satori',
+          author_id: 'agent-a',
           confidence: 1,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         }] as StateDeltaDraft['ledger_entries'],
       ),
-      { actorId: 'satori' },
+      { actorId: 'agent-a' },
     );
     expect(d.status).toBe('accepted');
     // The marker is NOT applied to state — documented, not accidental.
@@ -324,13 +324,13 @@ describe('the class guard: no operation rides along unapplied', () => {
           entry_type: 'evidence',
           statement: 'ledger-only delta',
           status: 'accepted',
-          author_id: 'satori',
+          author_id: 'agent-a',
           confidence: 0.9,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         }] as StateDeltaDraft['ledger_entries'],
       ),
-      { actorId: 'satori' },
+      { actorId: 'agent-a' },
     );
     expect(d.status).toBe('accepted');
     const s = await missions.getMissionState('test_mission_constraints');

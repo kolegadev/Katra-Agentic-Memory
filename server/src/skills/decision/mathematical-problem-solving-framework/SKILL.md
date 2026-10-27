@@ -213,5 +213,5 @@ Work the list in order; do not repeat the same attempt with more determination.
 ## Provenance
 
 Adapted from *Enhanced Mathematical Problem-Solving Framework for IMO-style Problems*
-(John Pellew, `~/Downloads/`). Converted to skill form; the phase order, technique
+(the operator Pellew, `~/Downloads/`). Converted to skill form; the phase order, technique
 inventory, number taxonomy, and stuck-protocol are preserved from the source.
