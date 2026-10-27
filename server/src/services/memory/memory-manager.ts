@@ -98,6 +98,11 @@ export class MemoryManager {
       { user_id: 1, proposition_key: 1, shared_id: 1 },
       { name: 'semantic_proposition_scoped', background: true },
     );
+    await createIndexSafely(
+      'semantic_facts',
+      { user_id: 1, proposition_norm: 1, shared_id: 1 },
+      { name: 'semantic_proposition_norm_scoped', background: true },
+    );
     await createIndexSafely('semantic_facts', { confidence: -1 });
     await createIndexSafely('semantic_facts', { content: 'text' });
     await createIndexSafely('semantic_facts', { embedding: 1 }, { sparse: true });
@@ -379,7 +384,9 @@ export class MemoryManager {
         ...factFields,
         user_id: userId,
         content_hash: contentHash,
-        ...(propositionKey ? { proposition_key: propositionKey } : {}),
+        ...(propositionKey
+          ? { proposition_key: propositionKey, proposition_norm: propositionKey }
+          : {}),
         // Persisted content length (code points) so hot-path queries
         // (embed-candidate selection, memory-integrity checks) can filter by
         // it with an index instead of a $expr strLenCP full-collection scan.

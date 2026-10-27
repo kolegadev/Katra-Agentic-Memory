@@ -124,9 +124,10 @@ Survivors carry `proposition_key`, `occurrences`, `first_seen_at`,
 
 ## Operating notes
 
-- Index `proposition_lookup` on `(user_id, event_type, proposition_key)` makes
-  the merge lookup cheap; it is created by `compact-episodic.mjs --apply`, so
-  the current store does not have it until that run happens.
+- Index `proposition_lookup` on `(user_id, event_type, proposition_key,
+  shared_id)` makes the merge lookup cheap; the runtime creates it at startup,
+  and `compact-episodic.mjs --apply` ensures the same shape on an existing
+  store.
 - `scripts` (in the run history): `compact-episodic.mjs` (dry run by default,
   `--apply` to write), `compact-gaslaw.mjs`, and `compact-semantic.mjs`. All
   three finish the export stream before deleting.
@@ -177,9 +178,11 @@ script now maps `created_at` → `first_seen_at` and `updated_at` →
 `last_seen_at`, and `compact-semantic.mjs --repair-timestamps --apply` rebuilds
 the rows written before that fix.
 
-The compaction also writes the plain normalised proposition string as
-`proposition_key` — the same value `propositionKeyOf` writes at runtime — not a
-SHA-256 hash, so a compacted row can still be matched by the next merge.
+The compaction also writes the plain normalised proposition string to both
+`proposition_key` and `proposition_norm` — the same value `propositionKeyOf`
+writes at runtime — not a SHA-256 hash, so a compacted row can still be matched
+by the next merge. The runtime merge reads both field names for the same
+reason: rows written before the field rename carry `proposition_norm`.
 
 ### The paraphrase experiment — a negative result, kept on the record
 

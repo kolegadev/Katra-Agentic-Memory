@@ -202,7 +202,8 @@ describe('MemoryManager.add_semantic_fact — proposition merge', () => {
       user_id: 'u1',
       shared_id: 'team-a',
     });
-    expect(typeof find.filter.proposition_key).toBe('string');
+    expect(typeof find.filter.$or[0].proposition_key).toBe('string');
+    expect(find.filter.$or[1].proposition_norm).toBe(find.filter.$or[0].proposition_key);
 
     const merge = state.updates.find(entry => entry.filter?._id === 'fact-1');
     expect(merge).toBeDefined();

@@ -118,7 +118,16 @@ export function buildEpisodicMergeUpdate(
   return { update, merged };
 }
 
-/** Scope a semantic merge to the exact owner and shared scope. */
+/**
+ * Scope a semantic merge to the exact owner and shared scope.
+ *
+ * Both `proposition_key` and `proposition_norm` are matched because the two
+ * write paths have used both names: the deployed runtime wrote
+ * `proposition_norm`, the branch writes `proposition_key`, and compaction has
+ * historically written a hash to `proposition_key`. Matching either (with the
+ * same plain normal form) lets old and new rows merge without waiting for a
+ * backfill.
+ */
 export function semanticPropositionFilter(
   fact: Pick<SemanticMergeFact, 'shared_id'>,
   userId: string,
@@ -126,8 +135,11 @@ export function semanticPropositionFilter(
 ): Record<string, unknown> {
   return {
     user_id: userId,
-    proposition_key: propositionKey,
     shared_id: fact.shared_id ?? null,
+    $or: [
+      { proposition_key: propositionKey },
+      { proposition_norm: propositionKey },
+    ],
   };
 }
 

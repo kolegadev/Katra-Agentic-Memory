@@ -129,6 +129,7 @@ for (const g of groups.values()) {
       update: {
         $set: {
           proposition_key: g.key,
+          proposition_norm: g.key,
           occurrences: g.rows.length,
           first_seen_at: new Date(kept.ts),
           last_seen_at: new Date(last.last || last.ts),

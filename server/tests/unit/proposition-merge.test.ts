@@ -108,12 +108,16 @@ describe('episodic proposition merge', () => {
 });
 
 describe('semantic proposition merge', () => {
-  it('scopes the merge by shared_id', () => {
-    expect(semanticPropositionFilter({ shared_id: 'team-a' }, 'u1', 'k1')).toMatchObject({
+  it('scopes the merge by shared_id and matches both runtime fields', () => {
+    const filter = semanticPropositionFilter({ shared_id: 'team-a' }, 'u1', 'k1');
+    expect(filter).toMatchObject({
       user_id: 'u1',
-      proposition_key: 'k1',
       shared_id: 'team-a',
     });
+    expect(filter.$or).toEqual([
+      { proposition_key: 'k1' },
+      { proposition_norm: 'k1' },
+    ]);
     expect(semanticPropositionFilter({}, 'u1', 'k1').shared_id).toBeNull();
   });
 
