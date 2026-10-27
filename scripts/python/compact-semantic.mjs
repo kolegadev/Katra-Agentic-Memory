@@ -88,9 +88,12 @@ for await (const d of coll.find({}, { projection: { content: 1, user_id: 1, shar
   g.rows.push({ _id: d._id, ts: created || new Date(0), last: updated || created || new Date(0), text });
 }
 
-let dupGroups = 0, redundant = 0;
-for (const g of groups.values()) { if (g.rows.length > 1) { dupGroups++; redundant += g.rows.length - 1; } }
-console.log(`scanned ${scanned} -> ${groups.size} propositions; duplicate groups ${dupGroups}; redundant ${redundant}`);
+// rows to delete = rows.length - 1 per group: the documents the apply removes.
+// Named for what it measures; the occurrence surplus does not exist here because
+// the semantic merge sets occurrences to the merged row count.
+let dupGroups = 0, rowsToDelete = 0;
+for (const g of groups.values()) { if (g.rows.length > 1) { dupGroups++; rowsToDelete += g.rows.length - 1; } }
+console.log(`scanned ${scanned} -> ${groups.size} propositions; groups with duplicates: ${dupGroups}; rows to delete: ${rowsToDelete}`);
 
 if (!APPLY) {
   console.log('\nDRY RUN — nothing written.');

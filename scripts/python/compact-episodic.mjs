@@ -77,15 +77,21 @@ for (const type of mergeable) {
   }
 }
 
-let groupsWithDupes = 0, redundant = 0;
+// Two different quantities are easy to confuse here:
+//   occurrence surplus = sum(occurrences) - 1 per group: events absorbed into
+//                        the survivor's occurrence counter;
+//   rows to delete     = rows.length - 1 per group: documents the apply removes.
+// Print both rather than labelling the occurrence count "redundant rows".
+let groupsWithDupes = 0, occurrenceSurplus = 0, rowSurplus = 0;
 for (const g of groups.values()) {
   if (g.rows.length > 1) {
     groupsWithDupes++;
-    redundant += g.rows.reduce((a, r) => a + r.occ, 0) - 1;
+    occurrenceSurplus += g.rows.reduce((a, r) => a + r.occ, 0) - 1;
+    rowSurplus += g.rows.length - 1;
   }
 }
 console.log(`scanned ${scanned} docs -> ${groups.size} propositions`);
-console.log(`groups with duplicates: ${groupsWithDupes}; redundant rows: ${redundant} (${(100 * redundant / Math.max(1, scanned)).toFixed(1)}% of scanned)`);
+console.log(`groups with duplicates: ${groupsWithDupes}; occurrence surplus: ${occurrenceSurplus}; rows to delete: ${rowSurplus} (${(100 * rowSurplus / Math.max(1, scanned)).toFixed(1)}% of scanned)`);
 
 if (!APPLY) {
   console.log('\nDRY RUN — nothing written. Re-run with --apply to export and merge.');
