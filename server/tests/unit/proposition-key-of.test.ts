@@ -2,11 +2,19 @@ import { describe, it, expect } from 'vitest';
 import { propositionKeyOf } from '../../src/services/memory/proposition-key.js';
 
 describe('propositionKeyOf — semantic-fact re-wording is an occurrence', () => {
-  it('keys the same proposition identically across case, punctuation and word order', () => {
+  it('keys the same proposition identically across case and punctuation', () => {
     const a = propositionKeyOf('Upgrade kolega-code from 0.42.0 to 0.45.0 on thebrick.');
-    const b = propositionKeyOf('on thebrick upgrade KOLEGA code to 0.45.0 from 0.42.0');
+    const b = propositionKeyOf('upgrade KOLEGA code from 0.42.0 to 0.45.0 on thebrick');
     expect(a).toBeTruthy();
     expect(a).toBe(b);
+  });
+
+  it('keeps reordered arguments and negations apart', () => {
+    const a = propositionKeyOf('Upgrade kolega-code from 0.42.0 to 0.45.0 on thebrick');
+    const reordered = propositionKeyOf('Upgrade on thebrick kolega code from 0.42.0 to 0.45.0');
+    const negated = propositionKeyOf('Do not upgrade kolega-code from 0.42.0 to 0.45.0 on thebrick');
+    expect(a).not.toBe(reordered);
+    expect(a).not.toBe(negated);
   });
 
   it('keys the filler sentence that dominated the store', () => {

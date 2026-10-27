@@ -13,7 +13,8 @@ import { llmService } from '../infrastructure/llm-service.js';
 import type { Db, Collection } from 'mongodb';
 import { ValenceTagger } from '../processing/valence-tagger.js';
 import { assertVaultCollectionAllowed } from '../vault/denylist.js';
-import { descriptionOf, propositionOf } from './proposition-key.js';
+import { propositionOf } from './proposition-key.js';
+import { episodicPropositionFilter, buildEpisodicMergeUpdate } from './proposition-merge.js';
 
 /**
  * Cascade Detection Circuit Breaker
@@ -165,7 +166,7 @@ export interface StoredEpisodicEvent extends EpisodicEventData {
   occurrences?: number;
   first_seen_at?: Date;
   last_seen_at?: Date;
-  variants?: Array<{ text: string; seen_at: Date }>;
+  variants?: Array<{ text: string; seen_at: Date; session_id?: string; shared_id?: string | null }>;
 }
 
 export interface EventCreationResult {
@@ -289,49 +290,22 @@ export class EpisodicEventManager {
     // propositions — 53.8% redundant. See services/memory/proposition-key.ts.
     const proposition = propositionOf(eventData.event_type, eventData.content);
     if (proposition) {
-      const priorDocument = await this.collection.findOne({
-        user_id: eventData.user_id,
-        event_type: eventData.event_type,
-        proposition_key: proposition.key,
-      });
+      const priorDocument = await this.collection.findOne(
+        episodicPropositionFilter(eventData, proposition.key),
+      );
       const prior = priorDocument as unknown as StoredEpisodicEvent | null;
       if (prior) {
-        const priorDescription = descriptionOf(prior.content) || '';
-        const incoming = descriptionOf(eventData.content) || '';
-        const variants = Array.isArray((prior as any).variants) ? (prior as any).variants : [];
-        const seen = new Date();
-        // A row written before this rule carries no `occurrences`; $inc would
-        // count it from zero and report 1 for the second sighting. The pipeline
-        // form treats "absent" as the one occurrence it already represents.
-        const update: any[] = [
-          {
-            $set: {
-              occurrences: { $add: [{ $ifNull: ['$occurrences', 1] }, 1] },
-              last_seen_at: eventData.timestamp || seen,
-              'metadata.updated_at': seen,
-              'metadata.last_accessed_at': seen,
-            },
-          },
-        ];
-        if (proposition.strategy === 'latest') {
-          // Structured decisions: the newest rationale is the current evidence.
-          update.push({ $set: { content: eventData.content } });
-        } else if (incoming && incoming !== priorDescription &&
-            !variants.some((v: any) => v && v.text === incoming)) {
-          update.push({
-            $set: {
-              variants: {
-                $concatArrays: [
-                  { $ifNull: ['$variants', []] },
-                  [{ text: incoming, seen_at: seen }],
-                ],
-              },
-            },
-          });
-        }
+        const { update, merged } = buildEpisodicMergeUpdate(
+          prior,
+          eventData,
+          proposition,
+          contentHash,
+          idempotencyKey,
+          new Date(),
+        );
         await this.collection.updateOne({ _id: (prior as any)._id }, update);
         return {
-          event: { ...prior, occurrences: ((prior as any).occurrences || 1) + 1 },
+          event: merged as StoredEpisodicEvent,
           was_duplicate: true,
           duplicate_of: prior.id,
           action_taken: 'merged_proposition',

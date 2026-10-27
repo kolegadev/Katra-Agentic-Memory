@@ -73,6 +73,8 @@ export interface SemanticFact {
   content: string;
   source: string;
   confidence: number;
+  tags?: string[];
+  shared_id?: string;
   metadata?: Record<string, any>;
   created_at: Date;
   embedding?: number[];

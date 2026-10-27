@@ -12,6 +12,7 @@ import { createWriteStream, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { createGzip } from 'node:zlib';
 import { once } from 'node:events';
+import { normalizeProposition, episodicPropositionKey } from './proposition-key.mjs';
 
 const APPLY = process.argv.includes('--apply');
 const URI = process.env.MONGODB_URI || 'mongodb://localhost:27017';
@@ -26,17 +27,6 @@ const RAW_EVENT_TYPES = new Set([
   'gas_law_watcher_cycle', 'heartbeat_action', 'executive_action', 'action',
   'tool_call', 'system',
 ]);
-const STOPWORDS = new Set([
-  'a', 'an', 'and', 'or', 'but', 'of', 'to', 'in', 'on', 'for', 'with', 'from',
-  'by', 'at', 'as', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'that',
-  'this', 'these', 'those', 'it', 'its', 'via', 'into', 'over', 'under', 'then',
-  'than', 'which', 'who', 'whom', 'has', 'have', 'had', 'do', 'does', 'did',
-  'not', 'no', 'so', 'if', 'when', 'while', 'after', 'before', 'about',
-]);
-
-const normalize = s => String(s || '')
-  .toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/)
-  .filter(w => w && w.length > 1 && !STOPWORDS.has(w)).sort().join(' ');
 
 function descriptionOf(content) {
   if (!content) return null;
@@ -47,11 +37,6 @@ function descriptionOf(content) {
   }
   return null;
 }
-
-// key must equal sha256(`${event_type}:${normalized}`).slice(0,32)
-import { createHash } from 'node:crypto';
-const keyOf = (type, normalized) =>
-  createHash('sha256').update(`${type}:${normalized}`).digest('hex').slice(0, 32);
 
 const client = new MongoClient(URI);
 await client.connect();
@@ -80,13 +65,15 @@ for (const type of mergeable) {
     scanned++;
     const desc = descriptionOf(d.content);
     if (!desc || desc.length < 12) continue;
-    const norm = normalize(desc);
+    const norm = normalizeProposition(desc);
     const tokens = norm ? norm.split(' ').length : 0;
     if (tokens < 4) continue;
-    const key = `${d.user_id}\u0000${d.event_type}\u0000${keyOf(d.event_type, norm)}`;
+    const keyHash = episodicPropositionKey(d.event_type, desc);
+    if (!keyHash) continue;
+    const key = `${d.user_id}\u0000${d.event_type}\u0000${keyHash}`;
     let g = groups.get(key);
     if (!g) { g = { rows: [] }; groups.set(key, g); }
-    g.rows.push({ _id: d._id, ts: d.timestamp || new Date(0), desc, occ: d.occurrences || 1, key: keyOf(d.event_type, norm) });
+    g.rows.push({ _id: d._id, ts: d.timestamp || new Date(0), desc, occ: d.occurrences || 1, key: keyHash });
   }
 }
 

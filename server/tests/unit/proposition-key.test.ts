@@ -7,9 +7,21 @@ import {
 } from '../../src/services/memory/proposition-key.js';
 
 describe('proposition keys — delta capture for distilled events', () => {
-  it('ignores word order, case and punctuation', () => {
+  it('preserves token order while ignoring case and punctuation', () => {
     expect(normalizeProposition('Get from Satori the root cause!'))
-      .toBe(normalizeProposition('ROOT cause: get the Satori from'));
+      .toBe(normalizeProposition('get from satori the ROOT cause'));
+    expect(normalizeProposition('Get from Satori the root cause!'))
+      .not.toBe(normalizeProposition('Get the root cause from Satori!'));
+  });
+
+  it('keeps negations and numerals distinct', () => {
+    const negated = propositionOf('goal', { description: 'The check did not fail on thebrick server' });
+    const plain = propositionOf('goal', { description: 'The check did fail on thebrick server' });
+    expect(negated?.key).not.toBe(plain?.key);
+
+    const one = propositionOf('goal', { description: 'Version 1 shipped on thebrick server' });
+    const two = propositionOf('goal', { description: 'Version 2 shipped on thebrick server' });
+    expect(one?.key).not.toBe(two?.key);
   });
 
   it('keeps different propositions apart', () => {

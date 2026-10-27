@@ -7,7 +7,13 @@ import { get_database } from '../../database/connection.js';
 import { ObjectId } from 'mongodb';
 import { generateContentHash, generateIdempotencyKey, stableContentHash } from '../infrastructure/content-hash-utils.js';
 import { MemoryDecayService } from '../processing/memory-decay-service.js';
-import { propositionKeyOf } from './proposition-key.js';
+import { propositionKeyOf, propositionOf } from './proposition-key.js';
+import {
+  episodicPropositionFilter,
+  buildEpisodicMergeUpdate,
+  semanticPropositionFilter,
+  buildSemanticMergeUpdate,
+} from './proposition-merge.js';
 import type { 
   EpisodicEvent, 
   KnowledgeNode, 
@@ -126,25 +132,61 @@ export class MemoryManager {
   // EPISODIC MEMORY METHODS
   async store_event(event: Omit<EpisodicEvent, 'id' | 'timestamp'>): Promise<string> {
     const db = get_database();
-    
-    const contentHash = generateContentHash({
-      event_type: event.event_type,
-      content: event.content,
-      user_id: event.user_id,
-      session_id: event.session_id,
-    });
+    const incoming = event as Omit<EpisodicEvent, 'id' | 'timestamp'> & { timestamp?: Date };
+    const timestamp = incoming.timestamp || new Date();
 
-    const episodicEvent: EpisodicEvent = {
-      ...event,
+    const contentHash = generateContentHash({
+      event_type: incoming.event_type,
+      content: incoming.content,
+      user_id: incoming.user_id,
+      session_id: incoming.session_id,
+    });
+    const idempotencyKey = generateIdempotencyKey(incoming as any, contentHash);
+    const proposition = propositionOf(incoming.event_type, incoming.content);
+
+    // The proposition merge used to live only in EpisodicEventManager.createEvent.
+    // Dispatch-service writes extracted description events through this method, so
+    // without the same rule those rows never receive a proposition_key (the live
+    // 666-rows/0-propositions window). Apply the same merge here, scoped by
+    // shared_id so a private and a communal fact never collapse together.
+    if (proposition) {
+      const prior = await db.collection('episodic_events').findOne(
+        episodicPropositionFilter(incoming, proposition.key),
+      );
+      if (prior) {
+        const { update, merged } = buildEpisodicMergeUpdate(
+          prior,
+          incoming,
+          proposition,
+          contentHash,
+          idempotencyKey,
+          new Date(),
+        );
+        await db.collection('episodic_events').updateOne({ _id: (prior as any)._id }, update);
+        return String(merged.id || (prior as any)._id);
+      }
+    }
+
+    const episodicEvent = {
+      ...incoming,
       id: this.generateId(),
-      timestamp: new Date(),
+      timestamp,
       content_hash: contentHash,
-      idempotency_key: generateIdempotencyKey(event, contentHash),
+      idempotency_key: idempotencyKey,
+      ...(proposition
+        ? {
+            proposition_key: proposition.key,
+            occurrences: 1,
+            first_seen_at: timestamp,
+            last_seen_at: timestamp,
+            variants: [],
+          }
+        : {}),
       metadata: {
-        ...((event as any).metadata || {}),
+        ...((incoming as any).metadata || {}),
         processed: false,
       },
-    };
+    } as EpisodicEvent;
 
     const result = await db.collection('episodic_events').insertOne(episodicEvent);
     return result.insertedId.toString();
@@ -296,18 +338,22 @@ export class MemoryManager {
       const propositionKey = propositionKeyOf(fact.content);
       if (propositionKey) {
         const existing = await db.collection('semantic_facts').findOne(
-          { user_id: userId, proposition_key: propositionKey },
+          semanticPropositionFilter(fact, userId, propositionKey),
           { projection: { _id: 1 } },
         );
         if (existing?._id) {
           await db.collection('semantic_facts').updateOne(
             { _id: existing._id },
-            {
-              $inc: { extraction_count: 1 },
-              $set: { updated_at: new Date() },
-              $addToSet: { variants: fact.content },
-            },
+            buildSemanticMergeUpdate(fact),
           );
+          // The early return used to skip lineage: record the new source event
+          // before returning so the merged fact keeps a bidirectional trail.
+          if (fact.metadata?.extraction_context?.source_event_id) {
+            await this.add_derived_fact_to_event(
+              fact.metadata.extraction_context.source_event_id,
+              existing._id.toString(),
+            );
+          }
           return existing._id.toString();
         }
       }
@@ -329,7 +375,7 @@ export class MemoryManager {
       };
 
       const result = await db.collection('semantic_facts').findOneAndUpdate(
-        { content_hash: contentHash },
+        { content_hash: contentHash, shared_id: fact.shared_id ?? null },
         {
           $set: factDocument,
           $setOnInsert: { created_at: new Date() },

@@ -58,6 +58,11 @@ Measured collapse under an order-insensitive normal form:
 | other (161 mergeable types) | 21,902 | 21,613 | 1.3% |
 | **total (all 167 mergeable types)** | **946,688** | **437,026** | **53.8%** |
 
+Those percentages were measured under the original sort-and-drop normal form.
+The 2026-10-27 rule (below) is deliberately more conservative: negations,
+numerals and token order now distinguish propositions, so some of those groups
+split rather than merge.
+
 The extreme case: *"katra-server was restarted to recover from an unhealthy
 state."* was stored **4,759 times**.
 
@@ -66,22 +71,34 @@ state."* was stored **4,759 times**.
 A distilled event's identity is its **proposition**, not its bytes
 (`server/src/services/memory/proposition-key.ts`).
 
-- Normalise the description: lowercase, strip punctuation, drop stopwords, sort
-  the remaining tokens. Sorting makes "X from Y" and "Y from X" the same
-  proposition; the cost is that word order no longer distinguishes meaning,
-  which is acceptable for short extracted statements.
+- Normalise the description: lowercase, strip punctuation, drop stopwords, and
+  keep the remaining tokens **in order**. Negations (`not`, `no`) and
+  one-character numerals are content, not noise: "did not fail" and "did fail",
+  and "version 1" and "version 2", must not share a key. The cost is that a
+  re-wording which reorders the tokens no longer merges; that is the safer
+  failure. (Changed 2026-10-27 from the original sort-and-drop rule; keys
+  written before that date are a different generation and are re-keyed by the
+  compaction scripts.)
 - Hash `event_type + normalised text`. Volatile fields — timestamps, ids,
   extraction metadata — are deliberately excluded, because they are exactly what
   made every copy unique.
-- On write, if an event with the same `(user_id, event_type, proposition_key)`
-  exists, **merge**: `occurrences += 1`, `last_seen_at` advances, and a new
-  wording is appended to `variants` (first wording is canonical).
+- On write, if an event with the same `(user_id, event_type, proposition_key,
+  shared_id)` exists, **merge**: `occurrences += 1`, `last_seen_at` advances,
+  the latest session and shared scope are kept, and a new wording is appended to
+  `variants` with its session, shared scope and time; variants are capped at
+  five (first wording is canonical). On the `latest` strategy the survivor also
+  refreshes `content_hash`, `idempotency_key` and clears `metadata.processed`,
+  so the new rationale is not treated as already processed.
 - A minimum of four content tokens is required for prose. Shorter descriptions
   are too generic to identify a proposition. (Measured: lowering the bar to 3
   tokens would collapse only 2,294 further rows — not worth the risk.)
 - **Structured decisions** (`gas_law_train_decision`) carry no description but
   identify themselves by `(cell_id, action)`. They merge on that key and keep
   the **latest** rationale, because the newest evidence is the current truth.
+
+The semantic-fact merge uses the same `shared_id` scope: a re-wording keeps the
+existing fact's confidence, source, tags and metadata (merged, not replaced) and
+records the new source-event lineage before returning.
 
 Raw observation types are never merged: `conversation`, `agent_message`,
 `user_communication`, `machine_health`, `gas_law_watcher_cycle`,
@@ -159,6 +176,10 @@ field got 1970-01-01 as `first_seen_at`/`last_seen_at` — 17,710 rows. The
 script now maps `created_at` → `first_seen_at` and `updated_at` →
 `last_seen_at`, and `compact-semantic.mjs --repair-timestamps --apply` rebuilds
 the rows written before that fix.
+
+The compaction also writes the plain normalised proposition string as
+`proposition_key` — the same value `propositionKeyOf` writes at runtime — not a
+SHA-256 hash, so a compacted row can still be matched by the next merge.
 
 ### The paraphrase experiment — a negative result, kept on the record
 

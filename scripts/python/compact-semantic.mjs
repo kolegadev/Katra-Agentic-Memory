@@ -11,7 +11,7 @@ import { createWriteStream, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { createGzip } from 'node:zlib';
 import { once } from 'node:events';
-import { createHash } from 'node:crypto';
+import { semanticPropositionKey } from './proposition-key.mjs';
 
 const APPLY = process.argv.includes('--apply');
 const REPAIR = process.argv.includes('--repair-timestamps');
@@ -20,15 +20,6 @@ const DB = process.env.DATABASE_NAME || 'katra';
 const EXPORT_DIR = process.env.EXPORT_DIR || '/app/exports';
 mkdirSync(EXPORT_DIR, { recursive: true });
 const OUT = join(EXPORT_DIR, `semantic-merged-${new Date().toISOString().replace(/[:.]/g, '-')}.jsonl.gz`);
-
-const STOPWORDS = new Set([
-  'a','an','and','or','but','of','to','in','on','for','with','from','by','at','as',
-  'is','are','was','were','be','been','being','that','this','these','those','it','its',
-  'via','into','over','under','then','than','which','who','whom','has','have','had',
-  'do','does','did','not','no','so','if','when','while','after','before','about',
-]);
-const normalize = s => String(s || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ')
-  .split(/\s+/).filter(w => w && w.length > 1 && !STOPWORDS.has(w)).sort().join(' ');
 
 const client = new MongoClient(URI);
 await client.connect();
@@ -86,13 +77,13 @@ let scanned = 0;
 for await (const d of coll.find({}, { projection: { content: 1, user_id: 1, created_at: 1, updated_at: 1, timestamp: 1 } })) {
   scanned++;
   const text = typeof d.content === 'string' ? d.content : JSON.stringify(d.content || '');
-  const norm = normalize(text);
-  if (!norm) continue;
+  const proposition = semanticPropositionKey(text);
+  if (!proposition) continue;
   const created = d.created_at || d.timestamp || null;
   const updated = d.updated_at || d.created_at || d.timestamp || null;
-  const key = `${d.user_id || ''}\u0000${normalize(text)}`;
+  const key = `${d.user_id || ''}\u0000${proposition}`;
   let g = groups.get(key);
-  if (!g) { g = { key, rows: [] }; groups.set(key, g); }
+  if (!g) { g = { key: proposition, userKey: d.user_id || '', rows: [] }; groups.set(key, g); }
   g.rows.push({ _id: d._id, ts: created || new Date(0), last: updated || created || new Date(0), text });
 }
 
@@ -124,7 +115,7 @@ for (const g of groups.values()) {
   g.rows.sort((a, b) => new Date(a.ts) - new Date(b.ts));
   const kept = g.rows[0];
   for (const r of g.rows.slice(1)) {
-    await write(JSON.stringify({ merged_into: kept._id, user_key: g.key.split('\u0000')[0], created_at: r.ts, updated_at: r.last, content: r.text }) + '\n');
+    await write(JSON.stringify({ merged_into: kept._id, user_key: g.userKey, created_at: r.ts, updated_at: r.last, content: r.text }) + '\n');
     deletes.push(r._id);
   }
   const last = g.rows[g.rows.length - 1];
@@ -133,7 +124,7 @@ for (const g of groups.values()) {
       filter: { _id: kept._id },
       update: {
         $set: {
-          proposition_key: createHash('sha256').update(g.key).digest('hex').slice(0, 32),
+          proposition_key: g.key,
           occurrences: g.rows.length,
           first_seen_at: new Date(kept.ts),
           last_seen_at: new Date(last.last || last.ts),

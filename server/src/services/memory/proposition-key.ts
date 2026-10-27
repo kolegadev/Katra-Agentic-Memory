@@ -15,11 +15,11 @@
  * instead of a set of distinct recollections.
  *
  * The rule: a distilled event's identity is its proposition, not its bytes.
- * Normalise the description (case, punctuation, word order, stopwords), hash
- * that, and treat a repeat as an OCCURRENCE of the same event — incrementing a
- * counter and recording a variant — instead of inserting a new row. Volatile
- * fields are deliberately excluded, because they are exactly what made every
- * copy unique.
+ * Normalise the description (case, punctuation, stopwords) while preserving
+ * negation, numerals and token order, hash that, and treat a repeat as an
+ * OCCURRENCE of the same event — incrementing a counter and recording a
+ * variant — instead of inserting a new row. Volatile fields are deliberately
+ * excluded, because they are exactly what made every copy unique.
  *
  * This is the episodic equivalent of caching a prefix instead of re-sending the
  * whole context: store the delta, keep one record of the invariant.
@@ -47,14 +47,15 @@ const RAW_EVENT_TYPES = new Set([
 /**
  * Words that carry no propositional content. Kept small and generic on purpose:
  * removing too much would merge distinct facts, which is worse than keeping a
- * duplicate.
+ * duplicate. Negations (`not`, `no`) are deliberately NOT stopwords: "did not
+ * fail" and "did fail" are different propositions.
  */
-const STOPWORDS = new Set([
+export const PROPOSITION_STOPWORDS = new Set([
   'a', 'an', 'and', 'or', 'but', 'of', 'to', 'in', 'on', 'for', 'with', 'from',
   'by', 'at', 'as', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'that',
   'this', 'these', 'those', 'it', 'its', 'via', 'into', 'over', 'under', 'then',
   'than', 'which', 'who', 'whom', 'has', 'have', 'had', 'do', 'does', 'did',
-  'not', 'no', 'so', 'if', 'when', 'while', 'after', 'before', 'about',
+  'so', 'if', 'when', 'while', 'after', 'before', 'about',
 ]);
 
 export interface Proposition {
@@ -83,18 +84,19 @@ export function descriptionOf(content: unknown): string | null {
 }
 
 /**
- * Order-insensitive normal form: lowercased, punctuation stripped, stopwords
- * dropped, tokens sorted. Sorting is what makes "X from Y" and "Y from X" the
- * same proposition; the cost is that word order no longer distinguishes
- * meaning, which is acceptable for short extracted descriptions.
+ * Order-sensitive normal form: lowercased, punctuation stripped, stopwords
+ * dropped, token order preserved. Negations (`not`, `no`) and one-character
+ * tokens (numerals such as `1`) are retained: "did not fail" and "did fail"
+ * must not share a key, and "version 1" and "version 2" must not either. The
+ * cost is that a re-wording which reorders the tokens no longer merges; that is
+ * the safer failure — a duplicate is better than a false merge.
  */
 export function normalizeProposition(text: string): string {
   return String(text || '')
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, ' ')
     .split(/\s+/)
-    .filter(w => w && w.length > 1 && !STOPWORDS.has(w))
-    .sort()
+    .filter(w => w && !PROPOSITION_STOPWORDS.has(w))
     .join(' ');
 }
 
