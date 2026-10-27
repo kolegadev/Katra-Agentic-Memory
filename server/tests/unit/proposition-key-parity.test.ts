@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
 import {
   PROPOSITION_STOPWORDS,
   normalizeProposition,
@@ -21,5 +22,25 @@ describe('proposition key parity — runtime and compaction scripts', () => {
       expect(scriptKey.normalizeProposition(s)).toBe(normalizeProposition(s));
       expect(scriptKey.semanticPropositionKey(s)).toBe(propositionKeyOf(s));
     }
+  });
+
+  it('compaction writes the runtime key, not a SHA-256 of it', () => {
+    const semantic = readFileSync(
+      new URL('../../../scripts/python/compact-semantic.mjs', import.meta.url),
+      'utf8',
+    );
+    const episodic = readFileSync(
+      new URL('../../../scripts/python/compact-episodic.mjs', import.meta.url),
+      'utf8',
+    );
+
+    expect(semantic).toContain("from './proposition-key.mjs'");
+    expect(semantic).toContain('semanticPropositionKey');
+    expect(semantic).toContain('proposition_key: g.key');
+    expect(semantic).not.toMatch(/proposition_key:\s*createHash/);
+
+    expect(episodic).toContain("from './proposition-key.mjs'");
+    expect(episodic).toContain('episodicPropositionKey');
+    expect(episodic).toContain('proposition_key: survivor.key');
   });
 });
