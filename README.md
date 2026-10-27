@@ -61,7 +61,7 @@ and ultimately emotion.
   cache, semantic facts with embeddings, a knowledge graph, and temporal querying.
 - **Cognitive layer** — *sleep consolidation* runs daily/weekly/monthly reflection
   that generates insights, emotional context, and self-narrative.
-- **MCP-native with rich tooling** — **66** specialized tools instead of generic
+- **MCP-native with rich tooling** — **84** specialized tools instead of generic
   add/search.
 - **Autonomous & background** — passive collection via watchers plus a
   salience-driven autonomous loop (no cron, no hand-written task files).
@@ -82,7 +82,7 @@ and ultimately emotion.
 | **mcp-memory-service** | Semantic + typed KG | Auto-consolidation | MCP + REST | Docker | MCP-native semantic memory |
 | **Vestige** | Cognitive modules + spaced repetition | Neuroscience-inspired | MCP | Single Rust binary | Local cognitive modeling |
 | **Letta (MemGPT)** | Tiered (core/recall/archival) | Agent self-manages | Tools | Full agent runtime | Stateful agents |
-| **Katra (this project)** | Episodic + semantic + KG + working + temporal | **Sleep consolidation + reflection** | **MCP** (66 tools) | Docker appliance | Long-running agents needing emergent behaviours |
+| **Katra (this project)** | Episodic + semantic + KG + working + temporal | **Sleep consolidation + reflection** | **MCP** (84 tools) | Docker appliance | Long-running agents needing emergent behaviours |
 
 Katra is early-stage next to more mature projects and is complementary to them:
 many teams run Katra *alongside* a simpler retrieval layer when they need deeper
@@ -148,10 +148,31 @@ caller is**. Add Katra to your agent's MCP config:
 }
 ```
 
-Your agent now has **66 MCP tools** — store memories, search by keyword or
+Your agent now has **84 MCP tools** — store memories, search by keyword or
 semantic similarity, recall by time range, explore a knowledge graph, sync a
 code graph, detect patterns, run sleep consolidation, send and read inter-agent
-messages, configure the LLM provider, and more.
+messages, configure the LLM provider, and more. Feature flags add to that
+surface: `PER_IDENTITY_PERSONALITY=1` registers `get_my_personality`,
+`FOCUSED_IMAGINATION=1` registers `run_focused_consolidation`,
+`get_salience_trace` (a private, mission-scoped Salience Trace) and its Phase 4
+pair `generate_imagination_seeds` / `get_idea_archive` (the imagination engine
+and its quality-diversity idea archive) plus the Phase 5 quartet
+`run_imagination_cycle`, `get_creative_baton`, `baton_candidates_to_work_items`
+and `record_candidate_outcome` (plateau cycles, the sanitised Creative Baton,
+the controller adapter and the outcome feedback) plus the Phase 7 observability
+pair `get_imagination_metrics` (every number with its basis, `insufficient_data`
+below the documented minimum) and `record_experiment_observation` (the one
+gated write: trusted caller, flag on, idempotent per
+`{experiment, arm, metric, checkpoint}`) — and, with
+`CREATIVE_BATON_PROMOTION=1` as well, `promote_creative_baton`, the only tool
+that may share a baton with the team. `COGNITIVE_TEAM_ALLOCATION=1` registers
+the Phase 6 team layer — `assign_thinking_mode`, `get_active_mode`,
+`create_inheritance_envelope`, `allocate_cognitive_portfolio`,
+`plan_independent_first_pass` and `synthesize_portfolios` (ephemeral thinking
+modes, bounded inheritance, portfolio allocation, the independent first pass and
+synthesis). The cognitive-control plane adds
+25–38 tools when `COGNITIVE_CONTROL_ENABLED` is not off — see
+[MCP Tools Reference](docs/MCP-TOOLS.md).
 
 | Platform | Config file | Notes |
 |----------|-------------|-------|
@@ -199,6 +220,50 @@ are always private; everything else is team-shared by default.
 - **Vector search** — local embeddings, no API key, no external cost
 - **Sleep consolidation** — daily/weekly/monthly reflection into emotional
   understanding and self-narrative
+- **Focused consolidation** — a private, mission-scoped Salience Trace
+  (attractions, tensions, surprises, absences, persistent pulls, questions),
+  evidence-linked to the mission's own records and counts-only around journal
+  material; behind `FOCUSED_IMAGINATION` (default off)
+- **Imagination engine** — turns that trace into a diverse, reproducible
+  portfolio of testable hypothesis seeds through ten operators selected from the
+  trace itself, and admits them into a quality-diversity archive that rejects
+  duplicates, paraphrases and excluded regions (with reasons); dedupe is
+  containment-aware, so padding a restatement does not smuggle it in, and a
+  ruled-out idea comes back only with a valid changed premise (never "nothing
+  has changed") plus a lineage link to the prior rejection; private seeds,
+  identity-owned cells, sanitized coverage view; behind `FOCUSED_IMAGINATION`
+  (default off)
+- **Creative Baton** — a stalled mission runs **exactly one** imagination cycle
+  (plateau trigger, persisted cooldown and window budget, so a restart cannot
+  re-trigger early), gets a **versioned, sanitised** baton compiled from an
+  allow-list (no evidence refs, changed premises, trace text or bridges), has
+  its candidates turned into controller work items through the existing
+  scheduler funnel, and records what happened — archive outcome, trigger
+  telemetry and a capped novelty replenishment. Promotion to the team scope is a
+  separate, explicit, idempotent call behind `CREATIVE_BATON_PROMOTION` (default
+  off) that re-validates the stored payload and refuses a tampered baton;
+  behind `FOCUSED_IMAGINATION` (default off)
+- **Cognitive team** — ephemeral, EXPIRING thinking modes on top of each
+  identity's own disposition (the brief's eight roles with their attention bias
+  and obligation recorded verbatim), a bounded inheritance envelope for spawned
+  work (`parent_identity_id` + an immutable disposition snapshot, never a copy
+  of private memory), a §4.5 portfolio allocator that covers the archive's
+  MISSING approach bins and reserves an independent verifier/critic, an
+  independent first pass where no agent sees a peer's ideas, and a synthesis
+  that preserves provenance and exclusion reasons verbatim and cannot promote;
+  behind `COGNITIVE_TEAM_ALLOCATION` (default off)
+- **Imagination observability** — read-only operator views over
+  `/api/v1/imagination` (overview, cycles with their plateau conditions and
+  stop reasons, generated/admitted and rejected candidates with reasons, traces,
+  archive coverage, batons with the promotion audit, team modes/envelopes/
+  allocations, the metric set and the experiment comparison) plus the rollout
+  view that reads flag and kill-switch state from the running process. Every
+  metric carries its basis (window, n, sources) and says `insufficient_data`
+  rather than fabricating a rate; privacy leakage is an audit count with the
+  rows it scanned; each view states why it is empty. One write only — a
+  trusted-gated, idempotent experiment observation. Policy and rollback:
+  [`docs/IMAGINATION-ROLLOUT.md`](docs/IMAGINATION-ROLLOUT.md); behind
+  `FOCUSED_IMAGINATION` (default off)
 - **Autonomous loop** — salience-driven autonomy; no cron, no hand-written task files
 - **Identity separation** — named identities per agent; personal always private
 - **Inter-agent message bus** — `Attention:` messages through shared memory,
@@ -288,7 +353,7 @@ memory that outlives any single session or context window.
 
 - [Quick Start](docs/QUICKSTART.md) — 5-minute setup
 - [Architecture](docs/ARCHITECTURE.md) — how it works under the hood
-- [MCP Tools Reference](docs/MCP-TOOLS.md) — all 66 tools with examples
+- [MCP Tools Reference](docs/MCP-TOOLS.md) — all 84 tools with examples
 - [Autonomous Loop](docs/AUTONOMOUS-LOOP.md) — salience-driven autonomy
 - [Sleep Consolidation](docs/SLEEP-CONSOLIDATION.md) — reflective memory distillation
 - [Security Architecture](docs/SECURITY.md) — audit findings & hardening

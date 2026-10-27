@@ -31,7 +31,13 @@ services:
       # generates one. Note this is only read on FIRST initialisation of the
       # data volume — see docs/DEPLOYMENT.md → "Rotating credentials".
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASS:?MONGO_PASS is not set — run ./install.sh, or set it in .env}
-    command: ["--bind_ip_all", "--auth"]
+    # 2026-10-16 (Satori, incident thebrick-oom-churn): cap the WiredTiger cache.
+    # Unbounded, mongod targeted ~12.4 GB (50% of host) and sat at ~10 GB RSS,
+    # feeding the chronic global-OOM churn (17 container restarts by 10-16; two
+    # kills 4 minutes apart while this line was written). 4 GB comfortably holds
+    # this ~9 GB dataset's hot set. Owner-adjustable: change the value or delete
+    # the flag and run `docker compose up -d mongo` (revert is a one-liner).
+    command: ["--bind_ip_all", "--auth", "--wiredTigerCacheSizeGB", "4"]
     networks:
       - katra-net
     healthcheck:
@@ -96,6 +102,10 @@ services:
       - KATRA_SKILLS_DIR=/app/skills
     volumes:
       - ./server/src/skills:/app/skills
+      # Compaction exports must outlive the container: an export written to the
+      # container's /tmp is lost on the next recreate, which is exactly what
+      # happened to the semantic_facts pass on 2026-10-21.
+      - ./exports:/app/exports
       # Read-only codebase mounts for the Katra-native code graph. The
       # scanner resolves roots on the container filesystem, so host repos
       # must be mounted; use the container paths (/repos/...) as scan roots.

@@ -24,6 +24,22 @@ import type {
   MemorySystemHealth 
 } from '../../types/memory.js';
 
+/**
+ * Events the background processor considers work to do.
+ *
+ * Shared by the fetch and the count deliberately: a count computed from a
+ * filter that had drifted from the fetch would be its own silent bug, which is
+ * exactly the class of defect this constant exists to prevent.
+ */
+export const UNPROCESSED_EVENTS_FILTER = {
+  'metadata.processed': { $ne: true },
+  'metadata.terminal_failure': { $ne: true },
+  // Must have id for processing - content_hash is computed on-the-fly if missing
+  id: { $exists: true, $ne: null },
+  user_id: { $exists: true, $ne: null },
+  session_id: { $exists: true, $ne: null },
+} as const;
+
 export class MemoryManager {
   private static instance: MemoryManager;
   private initialized = false;
@@ -855,19 +871,27 @@ export class MemoryManager {
   async get_unprocessed_events(limit: number = 50): Promise<EpisodicEvent[]> {
     const db = get_database();
     const events = await db.collection('episodic_events')
-      .find({ 
-        'metadata.processed': { $ne: true },
-        'metadata.terminal_failure': { $ne: true },
-        // Must have id for processing — content_hash is computed on-the-fly if missing
-        id: { $exists: true, $ne: null },
-        user_id: { $exists: true, $ne: null },
-        session_id: { $exists: true, $ne: null },
-      })
+      .find(UNPROCESSED_EVENTS_FILTER)
       .sort({ timestamp: 1 })
       .limit(limit)
       .toArray();
-    
+
     return events as any as EpisodicEvent[];
+  }
+
+  /**
+   * Count unprocessed events without materialising them.
+   *
+   * The previous implementation fetched up to 1,000 documents purely to read
+   * `.length`, so any backlog above that was reported as exactly 1,000 - the
+   * metric went blind precisely when the backlog was worst (a real backlog of
+   * 3,367 surfaced as 1,000, a 3.4x under-report). Sharing
+   * UNPROCESSED_EVENTS_FILTER with the fetch also means the count cannot drift
+   * away from what the processor will actually pick up.
+   */
+  async count_unprocessed_events(): Promise<number> {
+    const db = get_database();
+    return await db.collection('episodic_events').countDocuments(UNPROCESSED_EVENTS_FILTER);
   }
 
   // Knowledge Graph Methods (Stub implementations)

@@ -20,6 +20,15 @@ import { get_database } from '../../database/connection.js';
 import { DEFAULT_USER_ID } from '../memory/memory-scope-service.js';
 import { MIN_CONTENT_LENGTH } from '../infrastructure/embedding-service.js';
 import { autonomousActionPipeline } from '../orchestration/autonomous-action-pipeline.js';
+// PHASE 6 (§3 additive): the one deliberate bridge to the cognitive scheduler.
+// Fail-closed by construction — returns the allocation unchanged unless mode is
+// allocate_internal, the mission is opted in, the evidence gate is open, and
+// the hard bound is not breached. No other scheduler state is read here.
+import { maybeGetSchedulerInfluence, persistAllocationCounterfactual } from '../mission-cognition/activation-bridge.js';
+// ITER-11 (§6.1 item 4 / WS-1): the plateau trigger that hangs off THIS tick —
+// flag-gated, identity-scoped and bounded to one cycle per tick, with every
+// failure caught (see `executive-imagination-bridge.ts`).
+import { runExecutiveImaginationSweep } from './executive-imagination-bridge.js';
 
 // Adaptive cadence — like a biological heart:
 //   Survival threat (adrenaline):  2 min  — fastest, existential urgency
@@ -427,6 +436,33 @@ export class AutonomousExecutive {
       } catch (evalErr) {
         console.error('Pipeline evaluation failed:', evalErr);
       }
+
+      // ITER-11 (§6.1 item 4 / WS-1): the PLATEAU TRIGGER inside this existing
+      // tick. Flag-gated (FOCUSED_IMAGINATION, fail-closed), scoped to the
+      // identities this executive already serves, and bounded to at most one
+      // imagination cycle per tick — the sweep evaluates the plateau first and
+      // the cycle's own gates (single-flight → cooldown → window budget →
+      // plateau → claim) still gate every run. It adds no authority of its own
+      // and removes none of this loop's: it runs inside the `ticking`
+      // single-flight guard, after the action/mind-wander path, and any failure
+      // is caught and logged so the tick always continues.
+      try {
+        const sweep = await runExecutiveImaginationSweep({
+          db: get_database(),
+          userIds: [...ALLOCATION_CANDIDATES, LOCAL_AGENT_ID],
+        });
+        if (sweep.enabled) {
+          console.log(
+            `   🎨 Imagination sweep: ${sweep.cycles_run} cycle(s) over ${sweep.missions_evaluated} mission(s)` +
+              (sweep.skipped.length > 0 ? ` (${sweep.skipped.map((row) => row.reason).join(', ')})` : ''),
+          );
+        }
+        for (const failure of sweep.failures) {
+          console.error(`   ⚠️ Imagination sweep failure (${failure.mission_id ?? 'no mission'}): ${failure.error}`);
+        }
+      } catch (sweepErr) {
+        console.error('Executive imagination sweep failed:', sweepErr);
+      }
     } finally {
       this.ticking = false;
     }
@@ -520,6 +556,48 @@ export class AutonomousExecutive {
   }
 
   /**
+   * PHASE 6 (§3 additive, enumerated in the work-log): scheduler influence
+   * hook. The existing pre-activation path is untouched — this method only
+   * ever REPLACES the allocator's choice when every gate holds, and it
+   * returns the original allocation (byte-identical) in every other case.
+   * The counterfactual (what the existing allocator would have done) is
+   * persisted BEFORE the override takes effect; if that write fails the
+   * override is NOT applied (an uninstrumented influence is forbidden, §4.12).
+   */
+  private async maybeInfluenceAllocation(
+    allocation: { agent: string; score: number; confidence: number; rationale: string },
+    entityName: string,
+  ): Promise<{ agent: string; score: number; confidence: number; rationale: string }> {
+    try {
+      const influence = await maybeGetSchedulerInfluence({
+        localUserId: USER_ID,
+        candidates: [...ALLOCATION_CANDIDATES],
+        existingChoice: allocation.agent,
+      });
+      if (!influence) return allocation;
+      const recorded = await persistAllocationCounterfactual({
+        missionId: influence.mission_id,
+        decisionId: influence.decision_id,
+        cycleId: influence.cycle_id,
+        workItemId: influence.work_item_id,
+        chosenAgentId: influence.agent_id,
+        existingAllocatorAgentId: allocation.agent,
+        reason: `Scheduler decision ${influence.decision_id} recommended ${influence.agent_id} for '${entityName}' (mission ${influence.mission_id}); the existing allocator's emotional-proximity scoring chose ${allocation.agent}.`,
+      });
+      if (!recorded) return allocation; // fail closed — no override without a counterfactual
+      return {
+        agent: influence.agent_id,
+        score: allocation.score,
+        confidence: allocation.confidence,
+        rationale: `${allocation.rationale} — SCHEDULER OVERRIDE (mission ${influence.mission_id}, decision ${influence.decision_id}): ${influence.agent_id} replaces ${allocation.agent}; counterfactual recorded.`,
+      };
+    } catch (err: any) {
+      console.warn('   ⚠️ Scheduler influence hook failed (fail closed):', err.message);
+      return allocation;
+    }
+  }
+
+  /**
    * Action path: generate a goal from the dominant deficit,
    * decompose it, select the next action via RL, allocate to agent,
    * and execute.
@@ -594,6 +672,10 @@ export class AutonomousExecutive {
       // ── Agent Allocation with Redundancy ────────────────────
       const entityName = this.extractEntityFromGoal(goalText);
       let allocation = await this.allocateTask(entityName);
+
+      // PHASE 6 (§3 additive): scheduler influence hook — returns the
+      // allocation unchanged unless every activation gate holds.
+      allocation = await this.maybeInfluenceAllocation(allocation, entityName);
 
       // Liveness check: if allocated agent hasn't been active in 6 hours,
       // fall back to the next candidate in the allocation set.

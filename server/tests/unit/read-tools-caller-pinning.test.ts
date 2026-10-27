@@ -43,6 +43,10 @@ const SCOPED_HANDLERS = [
   'handleGetTransactionLog',
   'handleListAssets',
   'handleTriggerReflection',
+  // ITER-4: beliefs and procedural patterns became identity-scoped, so both
+  // readers resolve the caller before they touch the store.
+  'handleGetAgentBeliefs',
+  'handleGetProceduralTemplates',
 ];
 
 describe('read/write tools — caller pinning regression guard', () => {

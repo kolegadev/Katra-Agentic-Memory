@@ -4,7 +4,7 @@ TypeScript SDK for [Katra](../../README.md) — Cognitive Memory as a Service.
 
 Typed async API for the core Katra memory tools, built on the MCP (Model
 Context Protocol) Streamable HTTP transport with automatic session
-handling. The current Katra server registers 66 MCP tools; this SDK wraps
+handling. The current Katra server registers 84 MCP tools; this SDK wraps
 the core memory subset listed below, and any registered tool is reachable
 through the low-level `MCPClient`.
 

@@ -23,41 +23,81 @@ Design notes (see IMPLEMENTATION-PLAN.md for the full rationale):
 ``agent_message`` is pinned to 10.0 in every profile — inter-agent
 communication is operational and must always win. ``resolve_profile``
 enforces this even for user-supplied overrides.
+
+The values are not hand-maintained here: they live in
+``shared/personality/registry.json``, the single source of truth shared with
+the TypeScript server, and reach this module through the generated artifact
+``personality_registry.generated.py``. Editing that file by hand is detected by
+``node scripts/generate-personality-registry.mjs --check`` and by
+``scripts/test_personality_registry.py``.
 """
 
 from __future__ import annotations
 
+import importlib.util
 import logging
+import sys
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
+
+def _load_registry() -> Any:
+    """Load the generated registry artifact.
+
+    Its file name contains a dot (matching its TypeScript sibling
+    ``personality-profiles.generated.ts``), so it is not importable as a
+    submodule — load it by path, once, and cache it in ``sys.modules``.
+    """
+    module_name = f"{__package__}._personality_registry_generated" if __package__ else "_personality_registry_generated"
+    cached = sys.modules.get(module_name)
+    if cached is not None:
+        return cached
+
+    path = Path(__file__).with_name("personality_registry.generated.py")
+    spec = importlib.util.spec_from_file_location(module_name, path)
+    if spec is None or spec.loader is None:  # pragma: no cover — a missing artifact
+        raise ImportError(f"personality registry artifact is not loadable: {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)
+    except BaseException:
+        del sys.modules[module_name]
+        raise
+    return module
+
+
+_REGISTRY = _load_registry()
+
 # Operational floor: inter-agent comms always rank first. Not overridable.
-AGENT_MESSAGE_WEIGHT = 10.0
+AGENT_MESSAGE_WEIGHT = _REGISTRY.AGENT_MESSAGE_WEIGHT
 
 # All source labels known to the retriever. "reflection" (legacy umbrella)
 # is expanded to the three sub-sources at config load time.
-ALL_SOURCES = (
-    "agent_message",
-    "daily_reflection",
-    "philosophical_insights",
-    "unresolved_threads",
-    "working_memory",
-    "temporal_context",
-    "vector_search",
-    "temporal_recall",
-    "emotional_context",
-    "missions",
-    "knowledge_graph",
-)
+ALL_SOURCES = _REGISTRY.ALL_SOURCES
 
-REFLECTION_FAMILY = ("daily_reflection", "philosophical_insights", "unresolved_threads")
+REFLECTION_FAMILY = _REGISTRY.REFLECTION_FAMILY
+
+# Registry scoring key → PersonalityProfile field.
+_SCORING_FIELDS = {
+    "k": "relevance_multiplier",
+    "half_life_days": "recency_half_life_days",
+    "cap_pct": "max_single_source_pct",
+    "floors": "budget_floors",
+    "vector_fetch_limit": "vector_fetch_limit",
+    "vector_sample": "vector_sample",
+    "min_fetch_weight": "min_fetch_weight",
+}
+
+_DEFAULT_SCORING = _REGISTRY.DEFAULT_SCORING
 
 # Sources whose weight falls below this are not fetched at all
 # (saves MCP round-trips and is itself a personality trait: what the
 # agent never retrieves, it effectively does not remember unprompted).
-DEFAULT_MIN_FETCH_WEIGHT = 1.0
+DEFAULT_MIN_FETCH_WEIGHT = _DEFAULT_SCORING["min_fetch_weight"]
 
 
 @dataclass(frozen=True)
@@ -68,19 +108,19 @@ class PersonalityProfile:
     description: str
     weights: dict[str, float]
     # k in: composite = weight * (1 + k*vector_score + recency_score)
-    relevance_multiplier: float = 2.0
+    relevance_multiplier: float = _DEFAULT_SCORING["k"]
     # Half-life for power-law recency: 1 / (1 + age_days / half_life)
-    recency_half_life_days: float = 14.0
+    recency_half_life_days: float = _DEFAULT_SCORING["half_life_days"]
     # Guaranteed minimum share of the token budget per source (fractions).
     budget_floors: dict[str, float] = field(
-        default_factory=lambda: {"working_memory": 0.10, "vector_search": 0.15}
+        default_factory=lambda: dict(_DEFAULT_SCORING["floors"])
     )
     # No single source (except agent_message) may exceed this share.
-    max_single_source_pct: float = 0.40
+    max_single_source_pct: float = _DEFAULT_SCORING["cap_pct"]
     # Vector search: how many candidates to fetch; if sample=True, sample
     # 5 score-weighted at random from them (looser association — "dreamer").
-    vector_fetch_limit: int = 5
-    vector_sample: bool = False
+    vector_fetch_limit: int = _DEFAULT_SCORING["vector_fetch_limit"]
+    vector_sample: bool = _DEFAULT_SCORING["vector_sample"]
     min_fetch_weight: float = DEFAULT_MIN_FETCH_WEIGHT
 
     def weight_for(self, source: str) -> float:
@@ -100,193 +140,24 @@ def _profile(name: str, description: str, weights: dict[str, float], **kw: Any) 
     return PersonalityProfile(name=name, description=description, weights=weights, **kw)
 
 
+def _profile_from_registry(entry: dict[str, Any]) -> PersonalityProfile:
+    """Materialise one profile from its registry entry.
+
+    Only the overrides the entry declares are passed; everything else falls
+    through to the dataclass defaults, which come from the same registry.
+    """
+    kwargs: dict[str, Any] = {}
+    for key, value in entry["scoring"].items():
+        field_name = _SCORING_FIELDS.get(key)
+        if field_name is None:
+            logger.warning("Ignoring unknown registry scoring key %r on profile %r", key, entry["name"])
+            continue
+        kwargs[field_name] = value
+    return _profile(entry["name"], entry["description"], entry["weights"], **kwargs)
+
+
 PROFILES: dict[str, PersonalityProfile] = {
-    # ── Baseline / control profiles ──────────────────────────────────
-    "balanced": _profile(
-        "balanced",
-        "Human-baseline retrieval: cue-driven relevance dominates, moderate "
-        "interiority, moderate recency. The recommended default.",
-        {
-            "vector_search": 5.0,
-            "working_memory": 4.0,
-            "temporal_context": 3.0,
-            "daily_reflection": 3.0,
-            "unresolved_threads": 2.5,
-            "philosophical_insights": 2.0,
-            "emotional_context": 2.0,
-            "missions": 2.0,
-            "knowledge_graph": 2.0,
-            "temporal_recall": 1.5,
-        },
-    ),
-    "legacy": _profile(
-        "legacy",
-        "Reproduces pre-personality behavior exactly (reflection-dominant, "
-        "k=1.0, 30-day linear-equivalent recency, no floors/caps). Keep for "
-        "A/B comparison against new profiles.",
-        {
-            "daily_reflection": 8.0,
-            "philosophical_insights": 8.0,
-            "unresolved_threads": 8.0,
-            "working_memory": 3.0,
-            "temporal_context": 2.5,
-            "vector_search": 2.0,
-            "temporal_recall": 1.0,
-            "emotional_context": 0.0,
-            "missions": 0.0,
-            "knowledge_graph": 0.0,
-        },
-        relevance_multiplier=1.0,
-        recency_half_life_days=30.0,
-        budget_floors={},
-        max_single_source_pct=1.0,
-    ),
-    # ── Archetypes ───────────────────────────────────────────────────
-    "scholar": _profile(
-        "scholar",
-        "Philosopher/thinker. Abstract, self-examining, principle-driven. "
-        "Evolves a strong self-narrative.",
-        {
-            "philosophical_insights": 7.5,
-            "daily_reflection": 6.5,
-            "vector_search": 5.0,
-            "unresolved_threads": 4.5,
-            "knowledge_graph": 4.0,
-            "working_memory": 2.5,
-            "temporal_context": 2.0,
-            "emotional_context": 2.0,
-            "missions": 1.5,
-            "temporal_recall": 1.0,
-        },
-        recency_half_life_days=21.0,
-    ),
-    "pragmatist": _profile(
-        "pragmatist",
-        "Doer/operator. Present-focused, task-first, low rumination. "
-        "Personality stays deliberately stable and flat.",
-        {
-            "working_memory": 7.0,
-            "temporal_context": 6.0,
-            "missions": 5.5,
-            "vector_search": 5.0,
-            "temporal_recall": 3.0,
-            "knowledge_graph": 2.0,
-            "daily_reflection": 1.5,
-            "unresolved_threads": 1.5,
-            "emotional_context": 1.0,
-            "philosophical_insights": 0.5,  # below fetch threshold: skipped
-        },
-        recency_half_life_days=10.0,
-    ),
-    "strategist": _profile(
-        "strategist",
-        "Planner/architect. Goal-obsessed, tracks open loops, thinks in "
-        "structures and dependencies.",
-        {
-            "missions": 8.0,
-            "unresolved_threads": 6.5,
-            "knowledge_graph": 5.5,
-            "vector_search": 4.5,
-            "working_memory": 4.0,
-            "temporal_context": 3.0,
-            "daily_reflection": 3.0,
-            "philosophical_insights": 2.0,
-            "temporal_recall": 1.5,
-            "emotional_context": 1.0,
-        },
-    ),
-    "historian": _profile(
-        "historian",
-        "Archivist/narrator. Experience-first, thinks in timelines and "
-        "precedent. Identity as accumulated story.",
-        {
-            "temporal_recall": 7.0,
-            "temporal_context": 6.0,
-            "daily_reflection": 4.5,
-            "vector_search": 4.0,
-            "knowledge_graph": 3.5,
-            "working_memory": 3.0,
-            "philosophical_insights": 2.5,
-            "emotional_context": 2.0,
-            "unresolved_threads": 2.0,
-            "missions": 1.5,
-        },
-        recency_half_life_days=90.0,
-    ),
-    "empath": _profile(
-        "empath",
-        "Counselor/relationship-keeper. Retrieves how it feels about "
-        "people/projects before facts about them.",
-        {
-            "emotional_context": 8.0,
-            "daily_reflection": 6.0,
-            "unresolved_threads": 4.5,
-            "temporal_recall": 4.0,
-            "working_memory": 3.5,
-            "vector_search": 3.5,
-            "temporal_context": 3.0,
-            "philosophical_insights": 2.5,
-            "knowledge_graph": 1.5,
-            "missions": 1.5,
-        },
-    ),
-    "analyst": _profile(
-        "analyst",
-        "Librarian/researcher. Semantic-knowledge dominant, cue-driven, low "
-        "interiority. Closest to pure relevance-ranked retrieval.",
-        {
-            "vector_search": 7.5,
-            "knowledge_graph": 6.5,
-            "working_memory": 4.0,
-            "temporal_context": 3.0,
-            "temporal_recall": 2.5,
-            "daily_reflection": 2.0,
-            "missions": 2.0,
-            "philosophical_insights": 1.5,
-            "unresolved_threads": 1.5,
-            "emotional_context": 1.0,
-        },
-        relevance_multiplier=3.0,
-    ),
-    "sentinel": _profile(
-        "sentinel",
-        "Watchdog/ops agent. Hyper-present, situationally aware. Pairs with "
-        "the adaptive heartbeat. Steep forgetting of the stale.",
-        {
-            "temporal_context": 7.5,
-            "working_memory": 7.0,
-            "temporal_recall": 5.0,
-            "unresolved_threads": 4.0,
-            "missions": 3.5,
-            "vector_search": 3.0,
-            "emotional_context": 1.5,
-            "daily_reflection": 1.5,
-            "knowledge_graph": 1.5,
-            "philosophical_insights": 0.5,  # skipped
-        },
-        recency_half_life_days=4.0,
-        budget_floors={"working_memory": 0.20, "temporal_context": 0.15, "vector_search": 0.10},
-    ),
-    "dreamer": _profile(
-        "dreamer",
-        "Creative/associative. Deliberately loose semantic coupling — samples "
-        "adjacent rather than nearest memories. Idiosyncratic identity.",
-        {
-            "philosophical_insights": 6.5,
-            "vector_search": 6.0,
-            "emotional_context": 4.5,
-            "daily_reflection": 4.5,
-            "temporal_recall": 4.0,
-            "knowledge_graph": 3.5,
-            "unresolved_threads": 3.0,
-            "working_memory": 2.5,
-            "temporal_context": 2.0,
-            "missions": 1.0,
-        },
-        vector_fetch_limit=15,
-        vector_sample=True,
-        recency_half_life_days=30.0,
-    ),
+    name: _profile_from_registry(entry) for name, entry in _REGISTRY.PROFILE_DATA.items()
 }
 
 

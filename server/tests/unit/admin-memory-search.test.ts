@@ -4,8 +4,9 @@
  * Regression: the no-user_id path used to return recent events and ignore
  * query/collection entirely. These tests lock in that query+collection filtering
  * works with or without user_id, a bogus query returns 0 results, the legacy
- * no-query recency fallback is preserved, and semantic vector matches are merged
- * ahead of keyword results when the embedding model is ready.
+ * no-query recency fallback is preserved, collection aliases resolve, hits
+ * expose id/_id/score, and deterministic keyword hits (literal known-item pass
+ * first) rank ahead of semantic augmentation when the embedding model is ready.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -22,6 +23,7 @@ const h = vi.hoisted(() => {
     semantic_facts: [
       { _id: 's1', user_id: 'agent-a', created_at: new Date('2026-09-09T12:00:00Z'), content: 'OPERATING RULE (operator): TEAM COLLABORATION' },
       { _id: 's2', user_id: 'agent-c', created_at: new Date('2026-09-08T12:00:00Z'), content: 'wifi fix for the office network' },
+      { _id: 's3', user_id: 'agent-a', created_at: new Date('2026-09-07T12:00:00Z'), content: 'TEAM COLLABORATION stored. yes' },
     ],
     knowledge_nodes: [
       { _id: 'k1', user_id: 'system', updated_at: new Date('2026-09-09T09:00:00Z'), name: 'OPERATING RULE' },
@@ -48,7 +50,22 @@ const h = vi.hoisted(() => {
     if (!filter || Object.keys(filter).length === 0) return true;
     if (filter.$and) return filter.$and.every((f: any) => matchesFilter(doc, f));
     if (filter.$or) return filter.$or.some((f: any) => matchesFilter(doc, f));
+    if (filter.$text) {
+      const search = String(filter.$text.$search || '').toLowerCase();
+      const tokens = search
+        .split(/\s+/)
+        .map((t) => t.replace(/[^a-z0-9]/g, ''))
+        .filter((t) => t.length >= 2);
+      const hay = [
+        doc.content && typeof doc.content === 'object' ? doc.content.message : doc.content,
+        doc.name,
+        doc.narrative,
+        doc.fact,
+      ].filter(Boolean).join(' ').toLowerCase();
+      if (!tokens.some((t) => hay.includes(t))) return false;
+    }
     for (const [k, v] of Object.entries(filter)) {
+      if (k === '$text' || k === '$and' || k === '$or') continue;
       const parts = k.split('.');
       let val: any = doc;
       for (const p of parts) val = val == null ? undefined : val[p];
@@ -149,6 +166,44 @@ describe('admin /memory-search — query+collection honored without user_id', ()
     expect(body.results.every((r: any) => r.collection === 'semantic')).toBe(true);
   });
 
+  it('collection ALIASES resolve to the real collections (episodic -> episodic_events)', async () => {
+    const res = await search({ query: 'OPERATING', collection: 'episodic' });
+    const body = await res.json();
+    expect(body.results.length).toBeGreaterThan(0);
+    expect(body.results.every((r: any) => r.collection === 'episodic')).toBe(true);
+  });
+
+  it('known-item literal query ranks the exact document first', async () => {
+    const res = await search({ query: 'OPERATING RULE: TEAM COLLABORATION stored.' });
+    const body = await res.json();
+    expect(body.results[0]._id).toBe('e1');
+  });
+
+  it('facts literal hit outranks episodic token hits in collection=all (R29 facts-arm)', async () => {
+    const res = await search({ query: 'OPERATING RULE (operator): TEAM COLLABORATION' });
+    const body = await res.json();
+    expect(body.results[0]._id).toBe('s1');
+    expect(body.results.some((r: any) => r._id === 'e1')).toBe(true);
+  });
+
+  it('literal prefix matches (document opening with the query) outrank deeper literal matches', async () => {
+    // e1 CONTAINS 'TEAM COLLABORATION stored.' mid-content; s3 OPENS with it.
+    // s3 must rank first even though episodic_events is iterated first.
+    const res = await search({ query: 'TEAM COLLABORATION stored.' });
+    const body = await res.json();
+    expect(body.results[0]._id).toBe('s3');
+    expect(body.results.some((r: any) => r._id === 'e1')).toBe(true);
+  });
+
+  it('every hit exposes id/_id/score', async () => {
+    const res = await search({ query: 'OPERATING', collection: 'episodic_events' });
+    const body = await res.json();
+    const first = body.results[0];
+    expect(first._id).toBe('e1');
+    expect(first.id).toBe('e1');
+    expect('score' in first).toBe(true);
+  });
+
   it('legacy no-query recency fallback returns recent docs across collections', async () => {
     const res = await search({});
     const body = await res.json();
@@ -169,7 +224,7 @@ describe('admin /memory-search — hybrid semantic augmentation', () => {
     h.embedding.searchSimilar.mockReset();
   });
 
-  it('merges semantic matches ahead of keyword results when the model is ready', async () => {
+  it('ranks deterministic keyword hits ahead of semantic augmentation, merged and deduped', async () => {
     h.embedding.isReady = true;
     h.embedding.searchSimilar.mockImplementation(async (col: string) => {
       if (col === 'semantic_facts') {
@@ -180,8 +235,14 @@ describe('admin /memory-search — hybrid semantic augmentation', () => {
 
     const res = await search({ query: 'collaboration rules' });
     const body = await res.json();
-    expect(body.results.length).toBeGreaterThan(0);
-    expect(body.results[0].content).toBe('teamwork makes the dream work');
+    const contents: string[] = body.results.map((r: any) => r.content);
+    // Semantic augmentation is still merged in full...
+    expect(contents).toContain('teamwork makes the dream work');
+    // ...but exact keyword hits come first: a known-item match must survive
+    // the limit slice (R29 D12).
+    expect(contents[0]).toContain('TEAM COLLABORATION');
+    // No duplicates across the two passes.
+    expect(new Set(contents).size).toBe(contents.length);
   });
 
   it('falls back to keyword-only when the embedding model is unavailable', async () => {

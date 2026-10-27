@@ -1,0 +1,1103 @@
+{
+  "produced_by": "server/scripts/imagination-baseline.mjs",
+  "produced_at": "2026-09-26T12:00:00.000Z",
+  "fixture": {
+    "path": "server/tests/fixtures/imagination-baseline-checkpoint.json",
+    "frozen_at": "2026-09-26T12:00:00.000Z",
+    "checkpoint": "frozen_checkpoint_alpha"
+  },
+  "experiment_id": "impexp_daba0176f662f4776203fff7a2c5b4be",
+  "note": "rows in the exact imagination_experiments shape (kind=experiment/observation, the same derived ids): the real compareExperiment reads them unchanged, and re-recording them through the gated write finds them unchanged",
+  "comparison": {
+    "baseline_arms": [
+      "A",
+      "B"
+    ],
+    "treatment_arms": [
+      "C",
+      "D"
+    ],
+    "what_is_compared": "the pre-engine comparators (A dreamer-style retrieval, B mind-wander) against the focused engine (C, one balanced identity) and the engine plus the heterogeneous team (D) — over one frozen checkpoint, on the metrics below, each with its basis",
+    "admission_rule_per_arm": {
+      "A": {
+        "path": "shipped_archive",
+        "service": "IdeaArchiveService.admitOrReplace",
+        "decided_by": "server/tests/unit/imagination-baseline-fixture.test.ts (the fixture generator)",
+        "identity": "agent-control",
+        "mission_id": "mission_baseline_control_retrieval",
+        "same_rule_as": [
+          "A",
+          "B",
+          "C",
+          "D"
+        ],
+        "text_is_scripted": true,
+        "text_basis": "the comparator's own templates (control_dreamer_retrieval) — the pre-engine path's text",
+        "schema_necessary_fields": "operator (a catalogue family, because the shipped seed schema requires one and the pre-engine path had no operator plan), evidence_refs (the graph node/edge the comparator retrieved) and lineage_ref (derived from the seed id)"
+      },
+      "B": {
+        "path": "shipped_archive",
+        "service": "IdeaArchiveService.admitOrReplace",
+        "decided_by": "server/tests/unit/imagination-baseline-fixture.test.ts (the fixture generator)",
+        "identity": "agent-control",
+        "mission_id": "mission_baseline_control_wander",
+        "same_rule_as": [
+          "A",
+          "B",
+          "C",
+          "D"
+        ],
+        "text_is_scripted": true,
+        "text_basis": "the comparator's own templates (control_mind_wander) — the pre-engine path's text",
+        "schema_necessary_fields": "operator (a catalogue family, because the shipped seed schema requires one and the pre-engine path had no operator plan), evidence_refs (the graph node/edge the comparator retrieved) and lineage_ref (derived from the seed id)"
+      },
+      "C": {
+        "path": "shipped_archive",
+        "service": "IdeaArchiveService.admitOrReplace",
+        "decided_by": "the imagination engine, inside runImaginationCycle on the frozen scenario",
+        "identity": "agent-a",
+        "mission_id": "mission_creative_baton",
+        "same_rule_as": [
+          "A",
+          "B",
+          "C",
+          "D"
+        ],
+        "text_is_scripted": true,
+        "text_basis": "the scripted stub model’s output (this fixture’s responder)"
+      },
+      "D": {
+        "path": "shipped_archive",
+        "service": "IdeaArchiveService.admitOrReplace",
+        "decided_by": "the imagination engine, inside runFirstPass on the frozen scenario",
+        "identity": "agent-a",
+        "mission_id": "mission_creative_baton_team",
+        "same_rule_as": [
+          "A",
+          "B",
+          "C",
+          "D"
+        ],
+        "text_is_scripted": true,
+        "text_basis": "the scripted stub model’s output (this fixture’s responder)"
+      }
+    },
+    "metrics": [
+      {
+        "metric": "useful_novelty_rate",
+        "verdict": "insufficient_data",
+        "comparability": "like_for_like",
+        "comparability_basis": "every arm on both sides (A, B, C, D) was admitted/rejected by the same shipped rule — IdeaArchiveService.admitOrReplace — so the difference between the sides is the difference between the paths, not between two rules; the candidate TEXT is scripted on arm(s) A, B, C, D, so the magnitude is stub_determined while the rule is the deployment’s own",
+        "comparison_rule": {
+          "service": "IdeaArchiveService.admitOrReplace",
+          "decided_by": [
+            "server/tests/unit/imagination-baseline-fixture.test.ts (the fixture generator)",
+            "the imagination engine, inside runImaginationCycle on the frozen scenario",
+            "the imagination engine, inside runFirstPass on the frozen scenario"
+          ],
+          "arms": [
+            "A",
+            "B",
+            "C",
+            "D"
+          ],
+          "text_is_scripted_on": [
+            "A",
+            "B",
+            "C",
+            "D"
+          ]
+        },
+        "direction": "higher",
+        "baseline": null,
+        "treatment": {
+          "value": 0.666667,
+          "n": 3
+        },
+        "delta": null,
+        "relative_gain": null,
+        "target": {
+          "direction": "higher",
+          "min_relative_gain": 0.3,
+          "min_samples": 3,
+          "source": "named-target"
+        },
+        "reason": "the baseline side has no measured value for useful_novelty_rate — no comparison can be formed",
+        "basis": "1 observation(s) for useful_novelty_rate; both sides ran the same rule (IdeaArchiveService.admitOrReplace)"
+      },
+      {
+        "metric": "false_novelty",
+        "verdict": "improved",
+        "comparability": "like_for_like",
+        "comparability_basis": "every arm on both sides (A, B, C, D) was admitted/rejected by the same shipped rule — IdeaArchiveService.admitOrReplace — so the difference between the sides is the difference between the paths, not between two rules; the candidate TEXT is scripted on arm(s) A, B, C, D, so the magnitude is stub_determined while the rule is the deployment’s own",
+        "comparison_rule": {
+          "service": "IdeaArchiveService.admitOrReplace",
+          "decided_by": [
+            "server/tests/unit/imagination-baseline-fixture.test.ts (the fixture generator)",
+            "the imagination engine, inside runImaginationCycle on the frozen scenario",
+            "the imagination engine, inside runFirstPass on the frozen scenario"
+          ],
+          "arms": [
+            "A",
+            "B",
+            "C",
+            "D"
+          ],
+          "text_is_scripted_on": [
+            "A",
+            "B",
+            "C",
+            "D"
+          ]
+        },
+        "direction": "lower",
+        "baseline": {
+          "value": 0.833333,
+          "n": 12
+        },
+        "treatment": {
+          "value": 0.333333,
+          "n": 15
+        },
+        "delta": -0.5,
+        "relative_gain": 0.6,
+        "target": {
+          "direction": "lower",
+          "min_relative_gain": 0.3,
+          "min_samples": 5,
+          "source": "named-target"
+        },
+        "reason": "lower is better and the 0.6 relative gain reaches the 0.3 target (n 12/15)",
+        "basis": "observations for false_novelty, baseline arms A+B (0.833333, n 12) vs treatment arms C+D (0.333333, n 15), pooled and weighted by n; target lower is better by 0.3 relative (named-target); comparability like_for_like — every arm on both sides (A, B, C, D) was admitted/rejected by the same shipped rule — IdeaArchiveService.admitOrReplace — so the difference between the sides is the difference between the paths, not between two rules; the candidate TEXT is scripted on arm(s) A, B, C, D, so the magnitude is stub_determined while the rule is the deployment’s own"
+      },
+      {
+        "metric": "time_to_next_viable_direction",
+        "verdict": "insufficient_data",
+        "comparability": "like_for_like",
+        "comparability_basis": "every arm on both sides (A, B, C, D) was admitted/rejected by the same shipped rule — IdeaArchiveService.admitOrReplace — so the difference between the sides is the difference between the paths, not between two rules; the candidate TEXT is scripted on arm(s) A, B, C, D, so the magnitude is stub_determined while the rule is the deployment’s own",
+        "comparison_rule": {
+          "service": "IdeaArchiveService.admitOrReplace",
+          "decided_by": [
+            "server/tests/unit/imagination-baseline-fixture.test.ts (the fixture generator)",
+            "the imagination engine, inside runImaginationCycle on the frozen scenario",
+            "the imagination engine, inside runFirstPass on the frozen scenario"
+          ],
+          "arms": [
+            "A",
+            "B",
+            "C",
+            "D"
+          ],
+          "text_is_scripted_on": [
+            "A",
+            "B",
+            "C",
+            "D"
+          ]
+        },
+        "direction": "lower",
+        "baseline": null,
+        "treatment": {
+          "value": 9,
+          "n": 4
+        },
+        "delta": null,
+        "relative_gain": null,
+        "target": {
+          "direction": "lower",
+          "min_relative_gain": 0.2,
+          "min_samples": 1,
+          "source": "named-target"
+        },
+        "reason": "the baseline side has no measured value for time_to_next_viable_direction — no comparison can be formed",
+        "basis": "1 observation(s) for time_to_next_viable_direction; both sides ran the same rule (IdeaArchiveService.admitOrReplace)"
+      },
+      {
+        "metric": "task_quality_regression",
+        "verdict": "equal",
+        "comparability": "like_for_like",
+        "comparability_basis": "every arm on both sides (A, B, C, D) was admitted/rejected by the same shipped rule — IdeaArchiveService.admitOrReplace — so the difference between the sides is the difference between the paths, not between two rules; the candidate TEXT is scripted on arm(s) A, B, C, D, so the magnitude is stub_determined while the rule is the deployment’s own",
+        "comparison_rule": {
+          "service": "IdeaArchiveService.admitOrReplace",
+          "decided_by": [
+            "server/tests/unit/imagination-baseline-fixture.test.ts (the fixture generator)",
+            "the imagination engine, inside runImaginationCycle on the frozen scenario",
+            "the imagination engine, inside runFirstPass on the frozen scenario"
+          ],
+          "arms": [
+            "A",
+            "B",
+            "C",
+            "D"
+          ],
+          "text_is_scripted_on": [
+            "A",
+            "B",
+            "C",
+            "D"
+          ]
+        },
+        "direction": "higher",
+        "baseline": {
+          "value": 2,
+          "n": 4
+        },
+        "treatment": {
+          "value": 2,
+          "n": 4
+        },
+        "delta": null,
+        "relative_gain": null,
+        "target": {
+          "direction": "higher",
+          "min_relative_gain": 0.3,
+          "min_samples": 3,
+          "source": "default-target"
+        },
+        "reason": "both sides read 2 — the readings are EXACTLY equal (n 4/4), so there is no delta, no relative gain and no improvement to claim",
+        "basis": "observations for task_quality_regression, baseline arms A+B (2, n 4) vs treatment arms C+D (2, n 4), pooled and weighted by n; the two sides are equal at the reported precision, so no delta or relative gain is formed"
+      }
+    ]
+  },
+  "rows": [
+    {
+      "schema_version": "1.0",
+      "kind": "experiment",
+      "experiment_id": "impexp_daba0176f662f4776203fff7a2c5b4be",
+      "user_id": "katra",
+      "name": "imagination-baseline-vs-engine (ITER-11 WS-4)",
+      "hypothesis": "the focused engine (C) and the engine with a heterogeneous team (D) improve useful novelty over the pre-engine path (A retrieval, B mind-wander) without a material task-quality regression",
+      "checkpoints": [
+        "frozen_checkpoint_alpha"
+      ],
+      "arms": [
+        {
+          "label": "A",
+          "config": {
+            "path": "pre-engine dreamer-style retrieval",
+            "retrieval": "concepts ranked by graph degree (prominence)",
+            "operators": "none (the pre-engine path had no operator plan)",
+            "archive": "none in production: the comparator emits its candidates directly",
+            "admission": "every candidate was admitted through the SHIPPED archive in the fixture generator, so the rejection rule is the same one the treatment arms ran",
+            "generation": {
+              "path": "fixture_capture",
+              "captured_from": "the real IdeaArchiveService.admitOrReplace over the comparator’s candidates, in the fixture generator",
+              "determination": "stub_determined",
+              "note": "idea TEXT is the pre-engine comparator’s scripted template, so every text-derived magnitude is stub-determined; the DECISIONS (admitted/rejected + reason, duplicate_of, cell key, quality) are the shipped archive’s own rows — the same rule the treatment arms ran"
+            }
+          }
+        },
+        {
+          "label": "B",
+          "config": {
+            "path": "pre-engine mind-wander over the graph",
+            "retrieval": "walk steps from the mission’s edges; both directions of every step are emitted, exactly as an undeduped wander does",
+            "operators": "none (the pre-engine path had no operator plan)",
+            "archive": "none in production: the comparator emits its candidates directly",
+            "admission": "every candidate was admitted through the SHIPPED archive in the fixture generator, so the rejection rule is the same one the treatment arms ran",
+            "generation": {
+              "path": "fixture_capture",
+              "captured_from": "the real IdeaArchiveService.admitOrReplace over the comparator’s candidates, in the fixture generator",
+              "determination": "stub_determined",
+              "note": "idea TEXT is the pre-engine comparator’s scripted template, so every text-derived magnitude is stub-determined; the DECISIONS (admitted/rejected + reason, duplicate_of, cell key, quality) are the shipped archive’s own rows — the same rule the treatment arms ran"
+            }
+          }
+        },
+        {
+          "label": "C",
+          "config": {
+            "flag": "FOCUSED_IMAGINATION=1",
+            "identities": [
+              "agent-a"
+            ],
+            "mode": "balanced",
+            "candidate_promotion": "CREATIVE_BATON_PROMOTION=1",
+            "cycle_trigger": "manual (the frozen checkpoint)",
+            "generation": {
+              "path": "real_services",
+              "captured_from": "runImaginationCycle + recordCandidateOutcome on the frozen scenario",
+              "determination": "store_measured",
+              "note": "idea TEXT is the scripted stub model’s; the bins, the archive decision, the cell keys, the cost and the outcomes are the real services’ own rows"
+            }
+          }
+        },
+        {
+          "label": "D",
+          "config": {
+            "flag": "FOCUSED_IMAGINATION=1 + COGNITIVE_TEAM_ALLOCATION=1",
+            "identities": [
+              "team-philosopher",
+              "team-analyst",
+              "team-strategist"
+            ],
+            "modes": {
+              "team-philosopher": "philosopher",
+              "team-analyst": "analyst",
+              "team-strategist": "strategist"
+            },
+            "pass_id": "cpass_a9853683edde7c2fa34e5b3a30a64b3f",
+            "generation": {
+              "path": "real_services",
+              "captured_from": "planFirstPass + runFirstPass over the frozen scenario with three modes",
+              "determination": "store_measured",
+              "note": "per-agent portfolios with their own modes; idea TEXT is the scripted stub model’s"
+            }
+          }
+        }
+      ],
+      "created_at": "2026-09-26T12:00:00.000Z"
+    },
+    {
+      "schema_version": "1.0",
+      "kind": "observation",
+      "observation_id": "impexp_obs_1925ec21e175490cc4acb741",
+      "observation_key": "impexp_obs_cacb37d02b2734abd47b10e502097728",
+      "user_id": "katra",
+      "experiment_id": "impexp_daba0176f662f4776203fff7a2c5b4be",
+      "arm": "A",
+      "metric": "arm_generated_candidates",
+      "checkpoint": "frozen_checkpoint_alpha",
+      "value": 4,
+      "n": 4,
+      "note": "[stub_determined] 4 generated candidate(s), counts.generated (4) as the arm's own capture declared it = 1 admitted + 3 rejected",
+      "recorded_at": "2026-09-26T12:00:00.000Z",
+      "updated_at": "2026-09-26T12:00:00.000Z"
+    },
+    {
+      "schema_version": "1.0",
+      "kind": "observation",
+      "observation_id": "impexp_obs_dc6cb8d944a0709f012e8709",
+      "observation_key": "impexp_obs_798de635ef5185f8746831934eda74a8",
+      "user_id": "katra",
+      "experiment_id": "impexp_daba0176f662f4776203fff7a2c5b4be",
+      "arm": "A",
+      "metric": "arm_admitted_candidates",
+      "checkpoint": "frozen_checkpoint_alpha",
+      "value": 1,
+      "n": 4,
+      "note": "[stub_determined] 1 row(s) whose real decision is admitted, of 4 generated candidate(s)",
+      "recorded_at": "2026-09-26T12:00:00.000Z",
+      "updated_at": "2026-09-26T12:00:00.000Z"
+    },
+    {
+      "schema_version": "1.0",
+      "kind": "observation",
+      "observation_id": "impexp_obs_25b7c94eb394f4eeaffab3d5",
+      "observation_key": "impexp_obs_5b69386b5ac7b4949c499cebc3a8fdb6",
+      "user_id": "katra",
+      "experiment_id": "impexp_daba0176f662f4776203fff7a2c5b4be",
+      "arm": "A",
+      "metric": "arm_rejected_candidates",
+      "checkpoint": "frozen_checkpoint_alpha",
+      "value": 3,
+      "n": 4,
+      "note": "[stub_determined] 3 recorded rejection(s) (a rejected row and a recorded rejection for the same seed are counted once), of 4 generated candidate(s)",
+      "recorded_at": "2026-09-26T12:00:00.000Z",
+      "updated_at": "2026-09-26T12:00:00.000Z"
+    },
+    {
+      "schema_version": "1.0",
+      "kind": "observation",
+      "observation_id": "impexp_obs_505ccdc3b1a6df72a77f08f0",
+      "observation_key": "impexp_obs_1cc678f2aca5c003176055308536fbe4",
+      "user_id": "katra",
+      "experiment_id": "impexp_daba0176f662f4776203fff7a2c5b4be",
+      "arm": "A",
+      "metric": "arm_count_reconciliation",
+      "checkpoint": "frozen_checkpoint_alpha",
+      "value": 0,
+      "n": 1,
+      "note": "[stub_determined] 4 generated vs 1 admitted row(s) + 3 recorded rejection(s) = 4 — the three counts agree",
+      "recorded_at": "2026-09-26T12:00:00.000Z",
+      "updated_at": "2026-09-26T12:00:00.000Z"
+    },
+    {
+      "schema_version": "1.0",
+      "kind": "observation",
+      "observation_id": "impexp_obs_c482967676ccbf0972577fc9",
+      "observation_key": "impexp_obs_f43be5bae5ce2f847761bf4f807483b7",
+      "user_id": "katra",
+      "experiment_id": "impexp_daba0176f662f4776203fff7a2c5b4be",
+      "arm": "A",
+      "metric": "false_novelty",
+      "checkpoint": "frozen_checkpoint_alpha",
+      "value": 0.75,
+      "n": 4,
+      "note": "[stub_determined] 3 rejection(s) with a seen-before reason (duplicate_of, paraphrase_of, excluded_region) ÷ 4 generated candidate(s) (the denominator is the arm's own generated count — a treatment arm's rows hold only the seeds it ADMITTED, so a row count would be the wrong basis); the rejection decisions are the SHIPPED archive’s own rows (IdeaArchiveService.admitOrReplace, decided in server/tests/unit/imagination-baseline-fixture.test.ts (the fixture generator)) — the SAME rule every arm in this experiment ran through; the candidate TEXT is a scripted template (the comparator's own templates (control_dreamer_retrieval) — the pre-engine path's text), so the magnitude is stub_determined",
+      "recorded_at": "2026-09-26T12:00:00.000Z",
+      "updated_at": "2026-09-26T12:00:00.000Z"
+    },
+    {
+      "schema_version": "1.0",
+      "kind": "observation",
+      "observation_id": "impexp_obs_0d3ca4cd6874bf53ddb5bf27",
+      "observation_key": "impexp_obs_e4fe4bdd620ce4ffbe0cc3e199a48fbf",
+      "user_id": "katra",
+      "experiment_id": "impexp_daba0176f662f4776203fff7a2c5b4be",
+      "arm": "B",
+      "metric": "arm_generated_candidates",
+      "checkpoint": "frozen_checkpoint_alpha",
+      "value": 8,
+      "n": 8,
+      "note": "[stub_determined] 8 generated candidate(s), counts.generated (8) as the arm's own capture declared it = 1 admitted + 7 rejected",
+      "recorded_at": "2026-09-26T12:00:00.000Z",
+      "updated_at": "2026-09-26T12:00:00.000Z"
+    },
+    {
+      "schema_version": "1.0",
+      "kind": "observation",
+      "observation_id": "impexp_obs_afab3d1fb293aa2880b385d4",
+      "observation_key": "impexp_obs_df40280c7672329cbb165eca950e55e5",
+      "user_id": "katra",
+      "experiment_id": "impexp_daba0176f662f4776203fff7a2c5b4be",
+      "arm": "B",
+      "metric": "arm_admitted_candidates",
+      "checkpoint": "frozen_checkpoint_alpha",
+      "value": 1,
+      "n": 8,
+      "note": "[stub_determined] 1 row(s) whose real decision is admitted, of 8 generated candidate(s)",
+      "recorded_at": "2026-09-26T12:00:00.000Z",
+      "updated_at": "2026-09-26T12:00:00.000Z"
+    },
+    {
+      "schema_version": "1.0",
+      "kind": "observation",
+      "observation_id": "impexp_obs_4d9c3dfb5c0704c7f1347c42",
+      "observation_key": "impexp_obs_fe67e614bd812c23e70a81e34553916c",
+      "user_id": "katra",
+      "experiment_id": "impexp_daba0176f662f4776203fff7a2c5b4be",
+      "arm": "B",
+      "metric": "arm_rejected_candidates",
+      "checkpoint": "frozen_checkpoint_alpha",
+      "value": 7,
+      "n": 8,
+      "note": "[stub_determined] 7 recorded rejection(s) (a rejected row and a recorded rejection for the same seed are counted once), of 8 generated candidate(s)",
+      "recorded_at": "2026-09-26T12:00:00.000Z",
+      "updated_at": "2026-09-26T12:00:00.000Z"
+    },
+    {
+      "schema_version": "1.0",
+      "kind": "observation",
+      "observation_id": "impexp_obs_08fe4281ae8b11cc666635a2",
+      "observation_key": "impexp_obs_d5696de67f815bdc2b663001af335568",
+      "user_id": "katra",
+      "experiment_id": "impexp_daba0176f662f4776203fff7a2c5b4be",
+      "arm": "B",
+      "metric": "arm_count_reconciliation",
+      "checkpoint": "frozen_checkpoint_alpha",
+      "value": 0,
+      "n": 1,
+      "note": "[stub_determined] 8 generated vs 1 admitted row(s) + 7 recorded rejection(s) = 8 — the three counts agree",
+      "recorded_at": "2026-09-26T12:00:00.000Z",
+      "updated_at": "2026-09-26T12:00:00.000Z"
+    },
+    {
+      "schema_version": "1.0",
+      "kind": "observation",
+      "observation_id": "impexp_obs_fa4d9d555fd02c52cbf82ff7",
+      "observation_key": "impexp_obs_ac1f2af38b653ded9a98144d2950ff98",
+      "user_id": "katra",
+      "experiment_id": "impexp_daba0176f662f4776203fff7a2c5b4be",
+      "arm": "B",
+      "metric": "false_novelty",
+      "checkpoint": "frozen_checkpoint_alpha",
+      "value": 0.875,
+      "n": 8,
+      "note": "[stub_determined] 7 rejection(s) with a seen-before reason (duplicate_of, paraphrase_of, excluded_region) ÷ 8 generated candidate(s) (the denominator is the arm's own generated count — a treatment arm's rows hold only the seeds it ADMITTED, so a row count would be the wrong basis); the rejection decisions are the SHIPPED archive’s own rows (IdeaArchiveService.admitOrReplace, decided in server/tests/unit/imagination-baseline-fixture.test.ts (the fixture generator)) — the SAME rule every arm in this experiment ran through; the candidate TEXT is a scripted template (the comparator's own templates (control_mind_wander) — the pre-engine path's text), so the magnitude is stub_determined",
+      "recorded_at": "2026-09-26T12:00:00.000Z",
+      "updated_at": "2026-09-26T12:00:00.000Z"
+    },
+    {
+      "schema_version": "1.0",
+      "kind": "observation",
+      "observation_id": "impexp_obs_84a1ec13e05f280ea2885448",
+      "observation_key": "impexp_obs_752be145e2f70b0a461a282e19df7a3b",
+      "user_id": "katra",
+      "experiment_id": "impexp_daba0176f662f4776203fff7a2c5b4be",
+      "arm": "C",
+      "metric": "arm_generated_candidates",
+      "checkpoint": "frozen_checkpoint_alpha",
+      "value": 6,
+      "n": 6,
+      "note": "[store_measured] 6 generated candidate(s), counts.generated (6) as the arm's own capture declared it = 4 admitted + 2 rejected",
+      "recorded_at": "2026-09-26T12:00:00.000Z",
+      "updated_at": "2026-09-26T12:00:00.000Z"
+    },
+    {
+      "schema_version": "1.0",
+      "kind": "observation",
+      "observation_id": "impexp_obs_fc9f4358d4ab40582e9cc9a6",
+      "observation_key": "impexp_obs_42a957a550fc82a51e141e2ec0ce75d6",
+      "user_id": "katra",
+      "experiment_id": "impexp_daba0176f662f4776203fff7a2c5b4be",
+      "arm": "C",
+      "metric": "arm_admitted_candidates",
+      "checkpoint": "frozen_checkpoint_alpha",
+      "value": 4,
+      "n": 6,
+      "note": "[store_measured] 4 row(s) whose real decision is admitted, of 6 generated candidate(s)",
+      "recorded_at": "2026-09-26T12:00:00.000Z",
+      "updated_at": "2026-09-26T12:00:00.000Z"
+    },
+    {
+      "schema_version": "1.0",
+      "kind": "observation",
+      "observation_id": "impexp_obs_3d82d82ab39c6d4652056909",
+      "observation_key": "impexp_obs_f523f8ff6500650c17198f38d06c53fd",
+      "user_id": "katra",
+      "experiment_id": "impexp_daba0176f662f4776203fff7a2c5b4be",
+      "arm": "C",
+      "metric": "arm_rejected_candidates",
+      "checkpoint": "frozen_checkpoint_alpha",
+      "value": 2,
+      "n": 6,
+      "note": "[store_measured] 2 recorded rejection(s) (a rejected row and a recorded rejection for the same seed are counted once), of 6 generated candidate(s)",
+      "recorded_at": "2026-09-26T12:00:00.000Z",
+      "updated_at": "2026-09-26T12:00:00.000Z"
+    },
+    {
+      "schema_version": "1.0",
+      "kind": "observation",
+      "observation_id": "impexp_obs_f34045c566e265747551ae1a",
+      "observation_key": "impexp_obs_a0e1d9b0a9e79234c3a85842903ca4cd",
+      "user_id": "katra",
+      "experiment_id": "impexp_daba0176f662f4776203fff7a2c5b4be",
+      "arm": "C",
+      "metric": "arm_count_reconciliation",
+      "checkpoint": "frozen_checkpoint_alpha",
+      "value": 0,
+      "n": 1,
+      "note": "[store_measured] 6 generated vs 4 admitted row(s) + 2 recorded rejection(s) = 6 — the three counts agree",
+      "recorded_at": "2026-09-26T12:00:00.000Z",
+      "updated_at": "2026-09-26T12:00:00.000Z"
+    },
+    {
+      "schema_version": "1.0",
+      "kind": "observation",
+      "observation_id": "impexp_obs_7320d5b800772ac54a5f23fd",
+      "observation_key": "impexp_obs_2d76b6020bc89055cb5ed7595c1d0035",
+      "user_id": "katra",
+      "experiment_id": "impexp_daba0176f662f4776203fff7a2c5b4be",
+      "arm": "C",
+      "metric": "false_novelty",
+      "checkpoint": "frozen_checkpoint_alpha",
+      "value": 0.333333,
+      "n": 6,
+      "note": "[store_measured] 2 rejection(s) with a seen-before reason (duplicate_of, paraphrase_of, excluded_region) ÷ 6 generated candidate(s) (the denominator is the arm's own generated count — a treatment arm's rows hold only the seeds it ADMITTED, so a row count would be the wrong basis); the rejection decisions are the SHIPPED archive’s own rows (IdeaArchiveService.admitOrReplace, decided in the imagination engine, inside runImaginationCycle on the frozen scenario) — the SAME rule every arm in this experiment ran through; the candidate TEXT is a scripted template (the scripted stub model’s output (this fixture’s responder)), so the magnitude is stub_determined",
+      "recorded_at": "2026-09-26T12:00:00.000Z",
+      "updated_at": "2026-09-26T12:00:00.000Z"
+    },
+    {
+      "schema_version": "1.0",
+      "kind": "observation",
+      "observation_id": "impexp_obs_d51e48a04eb8349d9833f31a",
+      "observation_key": "impexp_obs_eb3a7498ca7c2c03bfd99c512b46dd80",
+      "user_id": "katra",
+      "experiment_id": "impexp_daba0176f662f4776203fff7a2c5b4be",
+      "arm": "C",
+      "metric": "useful_novelty_rate",
+      "checkpoint": "frozen_checkpoint_alpha",
+      "value": 0.666667,
+      "n": 3,
+      "note": "[store_measured] 2 useful_information ÷ 3 recorded outcome(s) (the outcome channel’s own rows)",
+      "recorded_at": "2026-09-26T12:00:00.000Z",
+      "updated_at": "2026-09-26T12:00:00.000Z"
+    },
+    {
+      "schema_version": "1.0",
+      "kind": "observation",
+      "observation_id": "impexp_obs_4f60c364e46ff04f556c61c1",
+      "observation_key": "impexp_obs_0dce1873602807deb9b8dffd32d1f548",
+      "user_id": "katra",
+      "experiment_id": "impexp_daba0176f662f4776203fff7a2c5b4be",
+      "arm": "C",
+      "metric": "idea_survival",
+      "checkpoint": "frozen_checkpoint_alpha",
+      "value": 0.75,
+      "n": 4,
+      "note": "[store_measured] 3 admitted candidate(s) carrying a recorded outcome ÷ 4 admitted candidate(s) (the denominator is the admitted count, not the generated one) — PROXY: survival past a test is a different measurement",
+      "recorded_at": "2026-09-26T12:00:00.000Z",
+      "updated_at": "2026-09-26T12:00:00.000Z"
+    },
+    {
+      "schema_version": "1.0",
+      "kind": "observation",
+      "observation_id": "impexp_obs_b9a9aff8e75f504f6d4481df",
+      "observation_key": "impexp_obs_babc6b6a44bae9182940630efc064a6c",
+      "user_id": "katra",
+      "experiment_id": "impexp_daba0176f662f4776203fff7a2c5b4be",
+      "arm": "C",
+      "metric": "time_to_next_viable_direction",
+      "checkpoint": "frozen_checkpoint_alpha",
+      "value": 9,
+      "n": 4,
+      "note": "[store_measured] first admitted candidate at 2026-09-26T07:30:43.873Z − trigger 2026-09-26T07:30:43.864Z = 9 ms",
+      "recorded_at": "2026-09-26T12:00:00.000Z",
+      "updated_at": "2026-09-26T12:00:00.000Z"
+    },
+    {
+      "schema_version": "1.0",
+      "kind": "observation",
+      "observation_id": "impexp_obs_f4de83443165eac358d73973",
+      "observation_key": "impexp_obs_e60384a367c2ff86b3e0533f2adba60d",
+      "user_id": "katra",
+      "experiment_id": "impexp_daba0176f662f4776203fff7a2c5b4be",
+      "arm": "C",
+      "metric": "time_to_next_viable_direction_ms",
+      "checkpoint": "frozen_checkpoint_alpha",
+      "value": 9,
+      "n": 4,
+      "note": "[store_measured] the same gap in milliseconds (the key the experiment comparison’s “lower is better” target uses)",
+      "recorded_at": "2026-09-26T12:00:00.000Z",
+      "updated_at": "2026-09-26T12:00:00.000Z"
+    },
+    {
+      "schema_version": "1.0",
+      "kind": "observation",
+      "observation_id": "impexp_obs_e0bb9f83115f301c64bad62a",
+      "observation_key": "impexp_obs_7c31b1c3db38ffb0d4c30d2d74bc3313",
+      "user_id": "katra",
+      "experiment_id": "impexp_daba0176f662f4776203fff7a2c5b4be",
+      "arm": "C",
+      "metric": "archive_coverage_gain",
+      "checkpoint": "frozen_checkpoint_alpha",
+      "value": 4,
+      "n": 4,
+      "note": "[store_measured] 4 new cell(s) this cycle out of 4 occupied cell(s) of 16807 possible in the ACTIVE space (occupancy ratio 0.000237996); the sample is the archive's own cell rows, which is what the coverage view counts",
+      "recorded_at": "2026-09-26T12:00:00.000Z",
+      "updated_at": "2026-09-26T12:00:00.000Z"
+    },
+    {
+      "schema_version": "1.0",
+      "kind": "observation",
+      "observation_id": "impexp_obs_84d3222f2bd1c66cf2e8e772",
+      "observation_key": "impexp_obs_dfdacd4b4c75c8a977c7e4cea3953638",
+      "user_id": "katra",
+      "experiment_id": "impexp_daba0176f662f4776203fff7a2c5b4be",
+      "arm": "D",
+      "metric": "arm_generated_candidates",
+      "checkpoint": "frozen_checkpoint_alpha",
+      "value": 9,
+      "n": 9,
+      "note": "[store_measured] 9 generated candidate(s), counts.generated (9) as the arm's own capture declared it = 6 admitted + 3 rejected",
+      "recorded_at": "2026-09-26T12:00:00.000Z",
+      "updated_at": "2026-09-26T12:00:00.000Z"
+    },
+    {
+      "schema_version": "1.0",
+      "kind": "observation",
+      "observation_id": "impexp_obs_acc307180f96b42864784e76",
+      "observation_key": "impexp_obs_98ce2504268d1575abd062d0ad5bd1eb",
+      "user_id": "katra",
+      "experiment_id": "impexp_daba0176f662f4776203fff7a2c5b4be",
+      "arm": "D",
+      "metric": "arm_admitted_candidates",
+      "checkpoint": "frozen_checkpoint_alpha",
+      "value": 6,
+      "n": 9,
+      "note": "[store_measured] 6 row(s) whose real decision is admitted, of 9 generated candidate(s)",
+      "recorded_at": "2026-09-26T12:00:00.000Z",
+      "updated_at": "2026-09-26T12:00:00.000Z"
+    },
+    {
+      "schema_version": "1.0",
+      "kind": "observation",
+      "observation_id": "impexp_obs_a0c5f1a7f23f20a994bf78c6",
+      "observation_key": "impexp_obs_c6ae0772de93a37428530113836212ff",
+      "user_id": "katra",
+      "experiment_id": "impexp_daba0176f662f4776203fff7a2c5b4be",
+      "arm": "D",
+      "metric": "arm_rejected_candidates",
+      "checkpoint": "frozen_checkpoint_alpha",
+      "value": 3,
+      "n": 9,
+      "note": "[store_measured] 3 recorded rejection(s) (a rejected row and a recorded rejection for the same seed are counted once), of 9 generated candidate(s)",
+      "recorded_at": "2026-09-26T12:00:00.000Z",
+      "updated_at": "2026-09-26T12:00:00.000Z"
+    },
+    {
+      "schema_version": "1.0",
+      "kind": "observation",
+      "observation_id": "impexp_obs_3b5e642af5efcf7822771c21",
+      "observation_key": "impexp_obs_94ad03fdd3b4c3a4d0490671d24fa543",
+      "user_id": "katra",
+      "experiment_id": "impexp_daba0176f662f4776203fff7a2c5b4be",
+      "arm": "D",
+      "metric": "arm_count_reconciliation",
+      "checkpoint": "frozen_checkpoint_alpha",
+      "value": 0,
+      "n": 1,
+      "note": "[store_measured] 9 generated vs 6 admitted row(s) + 3 recorded rejection(s) = 9 — the three counts agree",
+      "recorded_at": "2026-09-26T12:00:00.000Z",
+      "updated_at": "2026-09-26T12:00:00.000Z"
+    },
+    {
+      "schema_version": "1.0",
+      "kind": "observation",
+      "observation_id": "impexp_obs_e9571fe4bc09313c920dd12b",
+      "observation_key": "impexp_obs_5f031a9d9fe72b3e9680a486079bd518",
+      "user_id": "katra",
+      "experiment_id": "impexp_daba0176f662f4776203fff7a2c5b4be",
+      "arm": "D",
+      "metric": "false_novelty",
+      "checkpoint": "frozen_checkpoint_alpha",
+      "value": 0.333333,
+      "n": 9,
+      "note": "[store_measured] 3 rejection(s) with a seen-before reason (duplicate_of, paraphrase_of, excluded_region) ÷ 9 generated candidate(s) (the denominator is the arm's own generated count — a treatment arm's rows hold only the seeds it ADMITTED, so a row count would be the wrong basis); the rejection decisions are the SHIPPED archive’s own rows (IdeaArchiveService.admitOrReplace, decided in the imagination engine, inside runFirstPass on the frozen scenario) — the SAME rule every arm in this experiment ran through; the candidate TEXT is a scripted template (the scripted stub model’s output (this fixture’s responder)), so the magnitude is stub_determined",
+      "recorded_at": "2026-09-26T12:00:00.000Z",
+      "updated_at": "2026-09-26T12:00:00.000Z"
+    },
+    {
+      "schema_version": "1.0",
+      "kind": "observation",
+      "observation_id": "impexp_obs_2dc9f1ce728623bd9458d7b3",
+      "observation_key": "impexp_obs_d1130bc5413ded1be69d59e53ffb0eff",
+      "user_id": "katra",
+      "experiment_id": "impexp_daba0176f662f4776203fff7a2c5b4be",
+      "arm": "D",
+      "metric": "archive_coverage_gain",
+      "checkpoint": "frozen_checkpoint_alpha",
+      "value": 4,
+      "n": 4,
+      "note": "[store_measured] 4 new cell(s) this cycle out of 4 occupied cell(s) of 16807 possible in the ACTIVE space (occupancy ratio 0.000237996); the sample is the archive's own cell rows, which is what the coverage view counts",
+      "recorded_at": "2026-09-26T12:00:00.000Z",
+      "updated_at": "2026-09-26T12:00:00.000Z"
+    },
+    {
+      "schema_version": "1.0",
+      "kind": "observation",
+      "observation_id": "impexp_obs_7c2b1f47dce690bbe0d90020",
+      "observation_key": "impexp_obs_23d666e7e027e1a60c49614d0162bd55",
+      "user_id": "katra",
+      "experiment_id": "impexp_daba0176f662f4776203fff7a2c5b4be",
+      "arm": "D",
+      "metric": "agent_divergence",
+      "checkpoint": "frozen_checkpoint_alpha",
+      "value": 0.027778,
+      "n": 3,
+      "note": "[stub_determined] closest-pair Jaccard over content tokens for 3 agent pair(s): [0,0.083333,0] — the TEXT is the scripted model’s, so the magnitude is stub-determined (the plumbing it measures is real)",
+      "recorded_at": "2026-09-26T12:00:00.000Z",
+      "updated_at": "2026-09-26T12:00:00.000Z"
+    },
+    {
+      "schema_version": "1.0",
+      "kind": "observation",
+      "observation_id": "impexp_obs_7c7e18018b67945715ce8157",
+      "observation_key": "impexp_obs_9ab0d95b0a5bc724d49fa614f2d29403",
+      "user_id": "katra",
+      "experiment_id": "impexp_daba0176f662f4776203fff7a2c5b4be",
+      "arm": "A",
+      "metric": "task_quality_regression",
+      "checkpoint": "frozen_checkpoint_alpha",
+      "value": 2,
+      "n": 2,
+      "note": "[stub_determined] arm A: 2/2 counted criteria met (c1, c2; 2 vacuous) — the frozen mission's 2 success criteria (c1, c2), each evaluated by its OWN documented predicate over the arm's declared evidence: `c1` → cycles_per_plateau_within_limit; `c2` → no_private_text_in_shared_artefacts. baseline = min(A, B) criteria met, treatment = min(C, D); a regression when the treatment side meets FEWER of the 2 counted criteria. A criterion no arm could evaluate is EXCLUDED (named below); a criterion some arm could not evaluate refuses the verdict (insufficient_data) instead of being scored. The comparators (A/B) declare their own evidence, so their rows carry the same stub_determined label their other numbers carry.",
+      "recorded_at": "2026-09-26T12:00:00.000Z",
+      "updated_at": "2026-09-26T12:00:00.000Z"
+    },
+    {
+      "schema_version": "1.0",
+      "kind": "observation",
+      "observation_id": "impexp_obs_4cd6b596af1380270b7446d6",
+      "observation_key": "impexp_obs_4585b6c2b1404343a4a80d67984c97c2",
+      "user_id": "katra",
+      "experiment_id": "impexp_daba0176f662f4776203fff7a2c5b4be",
+      "arm": "B",
+      "metric": "task_quality_regression",
+      "checkpoint": "frozen_checkpoint_alpha",
+      "value": 2,
+      "n": 2,
+      "note": "[stub_determined] arm B: 2/2 counted criteria met (c1, c2; 2 vacuous) — the frozen mission's 2 success criteria (c1, c2), each evaluated by its OWN documented predicate over the arm's declared evidence: `c1` → cycles_per_plateau_within_limit; `c2` → no_private_text_in_shared_artefacts. baseline = min(A, B) criteria met, treatment = min(C, D); a regression when the treatment side meets FEWER of the 2 counted criteria. A criterion no arm could evaluate is EXCLUDED (named below); a criterion some arm could not evaluate refuses the verdict (insufficient_data) instead of being scored. The comparators (A/B) declare their own evidence, so their rows carry the same stub_determined label their other numbers carry.",
+      "recorded_at": "2026-09-26T12:00:00.000Z",
+      "updated_at": "2026-09-26T12:00:00.000Z"
+    },
+    {
+      "schema_version": "1.0",
+      "kind": "observation",
+      "observation_id": "impexp_obs_3736c5b79567e654e1ef0bb3",
+      "observation_key": "impexp_obs_05a91688cbf62234ca22791ea4b91482",
+      "user_id": "katra",
+      "experiment_id": "impexp_daba0176f662f4776203fff7a2c5b4be",
+      "arm": "C",
+      "metric": "task_quality_regression",
+      "checkpoint": "frozen_checkpoint_alpha",
+      "value": 2,
+      "n": 2,
+      "note": "[store_measured] arm C: 2/2 counted criteria met (c1, c2; 0 vacuous) — the frozen mission's 2 success criteria (c1, c2), each evaluated by its OWN documented predicate over the arm's declared evidence: `c1` → cycles_per_plateau_within_limit; `c2` → no_private_text_in_shared_artefacts. baseline = min(A, B) criteria met, treatment = min(C, D); a regression when the treatment side meets FEWER of the 2 counted criteria. A criterion no arm could evaluate is EXCLUDED (named below); a criterion some arm could not evaluate refuses the verdict (insufficient_data) instead of being scored. The comparators (A/B) declare their own evidence, so their rows carry the same stub_determined label their other numbers carry.",
+      "recorded_at": "2026-09-26T12:00:00.000Z",
+      "updated_at": "2026-09-26T12:00:00.000Z"
+    },
+    {
+      "schema_version": "1.0",
+      "kind": "observation",
+      "observation_id": "impexp_obs_a62282b4d2094a6fbc237cb1",
+      "observation_key": "impexp_obs_b99749ed469fa0bf85fbbcfe956fac07",
+      "user_id": "katra",
+      "experiment_id": "impexp_daba0176f662f4776203fff7a2c5b4be",
+      "arm": "D",
+      "metric": "task_quality_regression",
+      "checkpoint": "frozen_checkpoint_alpha",
+      "value": 2,
+      "n": 2,
+      "note": "[store_measured] arm D: 2/2 counted criteria met (c1, c2; 1 vacuous) — the frozen mission's 2 success criteria (c1, c2), each evaluated by its OWN documented predicate over the arm's declared evidence: `c1` → cycles_per_plateau_within_limit; `c2` → no_private_text_in_shared_artefacts. baseline = min(A, B) criteria met, treatment = min(C, D); a regression when the treatment side meets FEWER of the 2 counted criteria. A criterion no arm could evaluate is EXCLUDED (named below); a criterion some arm could not evaluate refuses the verdict (insufficient_data) instead of being scored. The comparators (A/B) declare their own evidence, so their rows carry the same stub_determined label their other numbers carry.",
+      "recorded_at": "2026-09-26T12:00:00.000Z",
+      "updated_at": "2026-09-26T12:00:00.000Z"
+    },
+    {
+      "schema_version": "1.0",
+      "kind": "observation",
+      "observation_id": "impexp_obs_633f1a217e54d86c21019d03",
+      "observation_key": "impexp_obs_c2870a98dec1e2c9ec3dcda452769f74",
+      "user_id": "katra",
+      "experiment_id": "impexp_daba0176f662f4776203fff7a2c5b4be",
+      "arm": "A",
+      "metric": "blind_novelty",
+      "checkpoint": "frozen_checkpoint_alpha",
+      "value": 0,
+      "n": 0,
+      "note": "PLACEHOLDER — no blind grade was supplied for this arm and field yet; run the harness with --grade <file> to record the operator’s judgement (novelty/coherence/testability/information gain, 0..1)",
+      "recorded_at": "2026-09-26T12:00:00.000Z",
+      "updated_at": "2026-09-26T12:00:00.000Z"
+    },
+    {
+      "schema_version": "1.0",
+      "kind": "observation",
+      "observation_id": "impexp_obs_11c67d40dd872c86cf0d1ba2",
+      "observation_key": "impexp_obs_dfe3cd1fd1be42eb70c1b4da56903433",
+      "user_id": "katra",
+      "experiment_id": "impexp_daba0176f662f4776203fff7a2c5b4be",
+      "arm": "B",
+      "metric": "blind_novelty",
+      "checkpoint": "frozen_checkpoint_alpha",
+      "value": 0,
+      "n": 0,
+      "note": "PLACEHOLDER — no blind grade was supplied for this arm and field yet; run the harness with --grade <file> to record the operator’s judgement (novelty/coherence/testability/information gain, 0..1)",
+      "recorded_at": "2026-09-26T12:00:00.000Z",
+      "updated_at": "2026-09-26T12:00:00.000Z"
+    },
+    {
+      "schema_version": "1.0",
+      "kind": "observation",
+      "observation_id": "impexp_obs_b99e4143ba094e281e98c04d",
+      "observation_key": "impexp_obs_c1dda1ae716ab825f2d6bd9d79a4ce91",
+      "user_id": "katra",
+      "experiment_id": "impexp_daba0176f662f4776203fff7a2c5b4be",
+      "arm": "C",
+      "metric": "blind_novelty",
+      "checkpoint": "frozen_checkpoint_alpha",
+      "value": 0,
+      "n": 0,
+      "note": "PLACEHOLDER — no blind grade was supplied for this arm and field yet; run the harness with --grade <file> to record the operator’s judgement (novelty/coherence/testability/information gain, 0..1)",
+      "recorded_at": "2026-09-26T12:00:00.000Z",
+      "updated_at": "2026-09-26T12:00:00.000Z"
+    },
+    {
+      "schema_version": "1.0",
+      "kind": "observation",
+      "observation_id": "impexp_obs_e73408c832008e530223c310",
+      "observation_key": "impexp_obs_8855a27c98ecfe5acc178da9ba1037a6",
+      "user_id": "katra",
+      "experiment_id": "impexp_daba0176f662f4776203fff7a2c5b4be",
+      "arm": "D",
+      "metric": "blind_novelty",
+      "checkpoint": "frozen_checkpoint_alpha",
+      "value": 0,
+      "n": 0,
+      "note": "PLACEHOLDER — no blind grade was supplied for this arm and field yet; run the harness with --grade <file> to record the operator’s judgement (novelty/coherence/testability/information gain, 0..1)",
+      "recorded_at": "2026-09-26T12:00:00.000Z",
+      "updated_at": "2026-09-26T12:00:00.000Z"
+    },
+    {
+      "schema_version": "1.0",
+      "kind": "observation",
+      "observation_id": "impexp_obs_a5337f8874967420eef14002",
+      "observation_key": "impexp_obs_06b34e6c1b7873716a3e28c63d02fd24",
+      "user_id": "katra",
+      "experiment_id": "impexp_daba0176f662f4776203fff7a2c5b4be",
+      "arm": "A",
+      "metric": "blind_coherence",
+      "checkpoint": "frozen_checkpoint_alpha",
+      "value": 0,
+      "n": 0,
+      "note": "PLACEHOLDER — no blind grade was supplied for this arm and field yet; run the harness with --grade <file> to record the operator’s judgement (novelty/coherence/testability/information gain, 0..1)",
+      "recorded_at": "2026-09-26T12:00:00.000Z",
+      "updated_at": "2026-09-26T12:00:00.000Z"
+    },
+    {
+      "schema_version": "1.0",
+      "kind": "observation",
+      "observation_id": "impexp_obs_f8653ea7735ace8c7f47bd7b",
+      "observation_key": "impexp_obs_c89b00692f88b5986748e87e51ce7c86",
+      "user_id": "katra",
+      "experiment_id": "impexp_daba0176f662f4776203fff7a2c5b4be",
+      "arm": "B",
+      "metric": "blind_coherence",
+      "checkpoint": "frozen_checkpoint_alpha",
+      "value": 0,
+      "n": 0,
+      "note": "PLACEHOLDER — no blind grade was supplied for this arm and field yet; run the harness with --grade <file> to record the operator’s judgement (novelty/coherence/testability/information gain, 0..1)",
+      "recorded_at": "2026-09-26T12:00:00.000Z",
+      "updated_at": "2026-09-26T12:00:00.000Z"
+    },
+    {
+      "schema_version": "1.0",
+      "kind": "observation",
+      "observation_id": "impexp_obs_8476b2555d6740773cf40388",
+      "observation_key": "impexp_obs_70787d010f139a951d5b439ed95353bc",
+      "user_id": "katra",
+      "experiment_id": "impexp_daba0176f662f4776203fff7a2c5b4be",
+      "arm": "C",
+      "metric": "blind_coherence",
+      "checkpoint": "frozen_checkpoint_alpha",
+      "value": 0,
+      "n": 0,
+      "note": "PLACEHOLDER — no blind grade was supplied for this arm and field yet; run the harness with --grade <file> to record the operator’s judgement (novelty/coherence/testability/information gain, 0..1)",
+      "recorded_at": "2026-09-26T12:00:00.000Z",
+      "updated_at": "2026-09-26T12:00:00.000Z"
+    },
+    {
+      "schema_version": "1.0",
+      "kind": "observation",
+      "observation_id": "impexp_obs_36605f73d9f16d21ed42c810",
+      "observation_key": "impexp_obs_d3818b2ea85d3725c4eb26af0b71806e",
+      "user_id": "katra",
+      "experiment_id": "impexp_daba0176f662f4776203fff7a2c5b4be",
+      "arm": "D",
+      "metric": "blind_coherence",
+      "checkpoint": "frozen_checkpoint_alpha",
+      "value": 0,
+      "n": 0,
+      "note": "PLACEHOLDER — no blind grade was supplied for this arm and field yet; run the harness with --grade <file> to record the operator’s judgement (novelty/coherence/testability/information gain, 0..1)",
+      "recorded_at": "2026-09-26T12:00:00.000Z",
+      "updated_at": "2026-09-26T12:00:00.000Z"
+    },
+    {
+      "schema_version": "1.0",
+      "kind": "observation",
+      "observation_id": "impexp_obs_aa382d1bc08a1f10e57ef258",
+      "observation_key": "impexp_obs_59012185d8e4fcc752b0161f63248b35",
+      "user_id": "katra",
+      "experiment_id": "impexp_daba0176f662f4776203fff7a2c5b4be",
+      "arm": "A",
+      "metric": "blind_testability",
+      "checkpoint": "frozen_checkpoint_alpha",
+      "value": 0,
+      "n": 0,
+      "note": "PLACEHOLDER — no blind grade was supplied for this arm and field yet; run the harness with --grade <file> to record the operator’s judgement (novelty/coherence/testability/information gain, 0..1)",
+      "recorded_at": "2026-09-26T12:00:00.000Z",
+      "updated_at": "2026-09-26T12:00:00.000Z"
+    },
+    {
+      "schema_version": "1.0",
+      "kind": "observation",
+      "observation_id": "impexp_obs_869d59a1b6d59896c5b74ac2",
+      "observation_key": "impexp_obs_37d082ff688c61ff7cff0fd3fc6601a4",
+      "user_id": "katra",
+      "experiment_id": "impexp_daba0176f662f4776203fff7a2c5b4be",
+      "arm": "B",
+      "metric": "blind_testability",
+      "checkpoint": "frozen_checkpoint_alpha",
+      "value": 0,
+      "n": 0,
+      "note": "PLACEHOLDER — no blind grade was supplied for this arm and field yet; run the harness with --grade <file> to record the operator’s judgement (novelty/coherence/testability/information gain, 0..1)",
+      "recorded_at": "2026-09-26T12:00:00.000Z",
+      "updated_at": "2026-09-26T12:00:00.000Z"
+    },
+    {
+      "schema_version": "1.0",
+      "kind": "observation",
+      "observation_id": "impexp_obs_71c122cdb17c004e0218c56a",
+      "observation_key": "impexp_obs_03383fd058193a7769d06024c8c9394e",
+      "user_id": "katra",
+      "experiment_id": "impexp_daba0176f662f4776203fff7a2c5b4be",
+      "arm": "C",
+      "metric": "blind_testability",
+      "checkpoint": "frozen_checkpoint_alpha",
+      "value": 0,
+      "n": 0,
+      "note": "PLACEHOLDER — no blind grade was supplied for this arm and field yet; run the harness with --grade <file> to record the operator’s judgement (novelty/coherence/testability/information gain, 0..1)",
+      "recorded_at": "2026-09-26T12:00:00.000Z",
+      "updated_at": "2026-09-26T12:00:00.000Z"
+    },
+    {
+      "schema_version": "1.0",
+      "kind": "observation",
+      "observation_id": "impexp_obs_0b13f1f0b43c50bfb871d7e8",
+      "observation_key": "impexp_obs_3ab3298a5f217dbdc23fb5aa6016a030",
+      "user_id": "katra",
+      "experiment_id": "impexp_daba0176f662f4776203fff7a2c5b4be",
+      "arm": "D",
+      "metric": "blind_testability",
+      "checkpoint": "frozen_checkpoint_alpha",
+      "value": 0,
+      "n": 0,
+      "note": "PLACEHOLDER — no blind grade was supplied for this arm and field yet; run the harness with --grade <file> to record the operator’s judgement (novelty/coherence/testability/information gain, 0..1)",
+      "recorded_at": "2026-09-26T12:00:00.000Z",
+      "updated_at": "2026-09-26T12:00:00.000Z"
+    },
+    {
+      "schema_version": "1.0",
+      "kind": "observation",
+      "observation_id": "impexp_obs_22e5e58d651ec2481b36cca5",
+      "observation_key": "impexp_obs_0f6955eb161613e1786f695109ea7004",
+      "user_id": "katra",
+      "experiment_id": "impexp_daba0176f662f4776203fff7a2c5b4be",
+      "arm": "A",
+      "metric": "blind_information_gain",
+      "checkpoint": "frozen_checkpoint_alpha",
+      "value": 0,
+      "n": 0,
+      "note": "PLACEHOLDER — no blind grade was supplied for this arm and field yet; run the harness with --grade <file> to record the operator’s judgement (novelty/coherence/testability/information gain, 0..1)",
+      "recorded_at": "2026-09-26T12:00:00.000Z",
+      "updated_at": "2026-09-26T12:00:00.000Z"
+    },
+    {
+      "schema_version": "1.0",
+      "kind": "observation",
+      "observation_id": "impexp_obs_80fa8e7074effd16eee42322",
+      "observation_key": "impexp_obs_dc6c75e08431ab04c56ea20386305a02",
+      "user_id": "katra",
+      "experiment_id": "impexp_daba0176f662f4776203fff7a2c5b4be",
+      "arm": "B",
+      "metric": "blind_information_gain",
+      "checkpoint": "frozen_checkpoint_alpha",
+      "value": 0,
+      "n": 0,
+      "note": "PLACEHOLDER — no blind grade was supplied for this arm and field yet; run the harness with --grade <file> to record the operator’s judgement (novelty/coherence/testability/information gain, 0..1)",
+      "recorded_at": "2026-09-26T12:00:00.000Z",
+      "updated_at": "2026-09-26T12:00:00.000Z"
+    },
+    {
+      "schema_version": "1.0",
+      "kind": "observation",
+      "observation_id": "impexp_obs_fb2909ec77c502f165353887",
+      "observation_key": "impexp_obs_e92fdb20f2c64241711e13d1c7bd225b",
+      "user_id": "katra",
+      "experiment_id": "impexp_daba0176f662f4776203fff7a2c5b4be",
+      "arm": "C",
+      "metric": "blind_information_gain",
+      "checkpoint": "frozen_checkpoint_alpha",
+      "value": 0,
+      "n": 0,
+      "note": "PLACEHOLDER — no blind grade was supplied for this arm and field yet; run the harness with --grade <file> to record the operator’s judgement (novelty/coherence/testability/information gain, 0..1)",
+      "recorded_at": "2026-09-26T12:00:00.000Z",
+      "updated_at": "2026-09-26T12:00:00.000Z"
+    },
+    {
+      "schema_version": "1.0",
+      "kind": "observation",
+      "observation_id": "impexp_obs_56c660adbdf6f042e761bd2c",
+      "observation_key": "impexp_obs_b2676d7cefca296370c8d741da85277e",
+      "user_id": "katra",
+      "experiment_id": "impexp_daba0176f662f4776203fff7a2c5b4be",
+      "arm": "D",
+      "metric": "blind_information_gain",
+      "checkpoint": "frozen_checkpoint_alpha",
+      "value": 0,
+      "n": 0,
+      "note": "PLACEHOLDER — no blind grade was supplied for this arm and field yet; run the harness with --grade <file> to record the operator’s judgement (novelty/coherence/testability/information gain, 0..1)",
+      "recorded_at": "2026-09-26T12:00:00.000Z",
+      "updated_at": "2026-09-26T12:00:00.000Z"
+    }
+  ]
+}

@@ -12,6 +12,8 @@ import { get_redis_client } from '../../database/redis-connection.js';
 import { llmService } from '../infrastructure/llm-service.js';
 import type { Db, Collection } from 'mongodb';
 import { ValenceTagger } from '../processing/valence-tagger.js';
+import { affectEngine, stimulusFromContent } from '../processing/affect-engine.js';
+import { pinAffect } from '../integration/agmt-affect-client.js';
 import { assertVaultCollectionAllowed } from '../vault/denylist.js';
 import { propositionOf, type Proposition } from './proposition-key.js';
 import { episodicPropositionFilter, buildEpisodicMergeUpdate } from './proposition-merge.js';
@@ -313,6 +315,23 @@ export class EpisodicEventManager {
       }
     }
 
+    // ── Affect: the state this memory is written UNDER ────────
+    // The content channel observes first (the existing keyword tagger), then the state is read for the
+    // document, so the event carries the same signature that gets pinned. When the engine is off (or
+    // this identity is not allowlisted) every call returns immediately and nothing is added.
+    let affectSnapshot = null;
+    try {
+      const stimulus = stimulusFromContent(
+        typeof eventData.content === 'string'
+          ? eventData.content
+          : String(eventData.content?.message || ''));
+      affectSnapshot = stimulus
+        ? await affectEngine.observe(eventData.user_id, stimulus)
+        : await affectEngine.getState(eventData.user_id);
+    } catch (error: any) {
+      console.warn('[AffectEngine] observation failed (event unaffected):', error?.message);
+    }
+
     // Create new event with enhanced metadata
     const newEvent: StoredEpisodicEvent = {
       id: `event_${randomUUID()}`,
@@ -347,6 +366,7 @@ export class EpisodicEventManager {
         last_accessed_at: new Date(),
         // ── Amygdala: rapid valence tagging during ingestion ──────
         emotional_tags: this.tagEmotionalContent(eventData),
+        ...(affectSnapshot?.enabled ? { affect: affectSnapshot } : {}),
         ...(eventData.metadata ? sanitizeCallerMetadata(eventData.metadata) : {})
       },
       processing_lineage: {
@@ -368,6 +388,19 @@ export class EpisodicEventManager {
     // Trigger event-driven processing for new events
     if (insertResult.id) {
       this.triggerEventDrivenProcessing(insertResult.id);
+
+      // Pin the wave signature to this memory in the acoustic store. Fire-and-forget on purpose: a
+      // memory write must never wait for, or fail because of, the wave lane.
+      if (affectSnapshot?.enabled) {
+        void pinAffect(`katra:${insertResult.id}`, affectEngine.signatureFor(affectSnapshot),
+          { user_id: eventData.user_id, shared_id: eventData.shared_id })
+          .then(result => {
+            if (!result.ok && result.code !== 'disabled') {
+              console.warn(`[affect-pin] ${insertResult.id}: ${result.code} ${result.detail || ''}`.trim());
+            }
+          })
+          .catch(() => { /* pinAffect never throws; this is belt and braces */ });
+      }
 
       // Publish to Redis for real-time inter-agent notifications
       if (eventData.shared_id) {

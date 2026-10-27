@@ -38,7 +38,53 @@ const TRUSTED_KATRA: CallerIdentity = { user_id: 'katra', trusted: true };
 
 describe('resolveWriteScope — personal kinds are forced private', () => {
   it('exposes the contract personal kinds list', () => {
-    expect(PERSONAL_KINDS).toEqual(['journal', 'reflection', 'emotional', 'insight']);
+    // ITER-5 added the focused-consolidation pair: the mission-scoped Salience
+    // Trace and its run ledger are personal by construction
+    // (CONTRACT-iter5-focused-consolidation.md, boundaries) and are listed here
+    // by the collection each entry protects. ITER-6 added the imagination
+    // engine's seeds, lineages and run ledger the same way — and deliberately
+    // NOT `idea_archive_cells`, which is identity-owned but mission-indexed and
+    // therefore written with the policy's explicit private opt-out instead.
+    // ITER-7 added the cycle state row, the cycle ledger and the candidate
+    // outcome rows the same way — and deliberately NOT `creative_batons` (the
+    // compiled baton is the one artifact this feature may share, written
+    // privately at compile time and promoted by the gated promoter) nor
+    // `creative_baton_promotions` (the team-scoped audit of that promotion).
+    // ITER-8 added the cognitive team's three stores: a mode assignment is one
+    // identity's own working disposition on a mission, an inheritance envelope
+    // is the parent's own bounded grant to a spawned scope, and a cognitive
+    // portfolio (allocation / first pass / synthesis) names which of ITS
+    // candidates an evaluator will look at. Nothing in that iteration writes a
+    // shared scope at all.
+    // ITER-11 added three more, all identity-owned records about one identity's
+    // own work: the failure signatures a mission's candidates leave behind (the
+    // input of the Learn step), the bounded personality delta PROPOSALS, and
+    // the deprecation-telemetry counters of the legacy personality path. None of
+    // them is ever shared.
+    expect(PERSONAL_KINDS).toEqual([
+      'journal',
+      'reflection',
+      'emotional',
+      'insight',
+      'salience_traces',
+      'focused_consolidation_runs',
+      'idea_seeds',
+      'idea_lineages',
+      'imagination_runs',
+      'imagination_cycle_states',
+      'imagination_cycles',
+      'idea_candidate_outcomes',
+      'thinking_mode_assignments',
+      'inheritance_envelopes',
+      'cognitive_portfolios',
+      'idea_failure_signatures',
+      'personality_delta_proposals',
+      'personality_deprecation_events',
+      'salience_inputs',
+    ]);
+    expect(PERSONAL_KINDS).not.toContain('idea_archive_cells');
+    expect(PERSONAL_KINDS).not.toContain('creative_batons');
+    expect(PERSONAL_KINDS).not.toContain('creative_baton_promotions');
   });
 
   it.each(PERSONAL_KINDS)('%s → shared_id null even when shared is requested', (kind) => {

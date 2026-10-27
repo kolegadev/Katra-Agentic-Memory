@@ -31,3 +31,7 @@ server/src/graphify-out/
 graphify-out/
 **/SKILL.md.bak
 tmp/*
+# Editor/tool backups and large memory exports: never publish these.
+*.bak-*
+*.bak
+/exports/

@@ -91,53 +91,69 @@ export class SleepConsolidationService {
   private async checkAndRunOverdue(): Promise<void> {
     // Load persisted last-run times from DB on first call (survives restarts)
     await this.loadLastRuns();
-    
+
+    // A run is single-flight (the service consolidates one identity at a
+    // time), so do not start a second sweep while one is already active.
+    if (this.processing) {
+      console.log('⏭️ consolidation overdue check skipped — run in progress');
+      return;
+    }
+
     const now = new Date();
     const periods: Array<'daily' | 'weekly' | 'monthly'> = ['daily', 'weekly', 'monthly'];
+    const userIds = await this.getIdentityIds();
+
     for (const period of periods) {
-      const lastRun = this.lastRunTimes.get(period);
+      for (const userId of userIds) {
+        const lastRun = this.lastRunFor(period, userId);
 
-      // If never run, check if we're past the scheduled time
-      if (lastRun === undefined) {
-        const scheduled = new Date(now);
-        if (period === 'daily') {
-          scheduled.setHours(2, 0, 0, 0); // 2AM
-          // If it's past 2AM, the scheduled time has already passed — run now
-          if (now.getHours() >= 2) {
-            console.log(`⏰ ${period} first run (past scheduled ${scheduled.toISOString()}), running...`);
-            this.runConsolidation(period).catch((err) =>
-              console.error(`❌ ${period} consolidation failed:`, err)
-            );
+        // If this identity has never run this period, check whether the
+        // scheduled time has passed. Weekly/monthly wait for their timers.
+        if (lastRun === undefined) {
+          if (period === 'daily' && now.getHours() >= 2) {
+            console.log(`⏰ ${period} first run for ${userId} (past 02:00), running...`);
+            await this.runConsolidation(period, userId);
           }
+          continue;
         }
-        continue;
-      }
 
-      const threshold = period === 'daily' ? 25 * 60 * 60 * 1000  // 25h
-                      : period === 'weekly' ? 8 * 24 * 60 * 60 * 1000  // 8d
-                      : 32 * 24 * 60 * 60 * 1000;  // monthly: 32d
-      if (now.getTime() - lastRun > threshold) {
-        console.log(`⏰ ${period} consolidation overdue (last: ${new Date(lastRun).toISOString()}), running...`);
-        this.runConsolidation(period).catch((err) =>
-          console.error(`❌ ${period} consolidation failed:`, err)
-        );
+        const threshold = period === 'daily' ? 25 * 60 * 60 * 1000  // 25h
+                        : period === 'weekly' ? 8 * 24 * 60 * 60 * 1000  // 8d
+                        : 32 * 24 * 60 * 60 * 1000;  // monthly: 32d
+        if (now.getTime() - lastRun > threshold) {
+          console.log(`⏰ ${period} consolidation overdue for ${userId} (last: ${new Date(lastRun).toISOString()}), running...`);
+          await this.runConsolidation(period, userId);
+        }
       }
     }
   }
 
   private lastRunTimes: Map<string, number> = new Map();
+  // Legacy rows written before 2026-10-22 have no user_id and represented one
+  // global run (the default identity). Keep them as a fallback so a deploy
+  // does not make every identity look overdue at once.
+  private legacyLastRunTimes: Map<string, number> = new Map();
   private lastRunTimesLoaded = false;
 
-  private async persistLastRun(period: string, timestamp: number): Promise<void> {
+  private runKey(period: string, userId: string): string {
+    return `${period}:${userId}`;
+  }
+
+  private lastRunFor(period: string, userId: string): number | undefined {
+    return this.lastRunTimes.get(this.runKey(period, userId))
+      ?? this.legacyLastRunTimes.get(period);
+  }
+
+  private async persistLastRun(period: string, userId: string, timestamp: number): Promise<void> {
     try {
       const db = get_database();
       await db.collection('consolidation_runs').updateOne(
-        { period_type: period },
+        { period_type: period, user_id: userId },
         { $set: { last_run_at: new Date(timestamp), updated_at: new Date() } },
         { upsert: true }
       );
     } catch (err: any) {
-      console.warn(`⚠️ Failed to persist ${period} last run:`, err.message);
+      console.warn(`⚠️ Failed to persist ${period} last run for ${userId}:`, err.message);
     }
   }
 
@@ -150,8 +166,13 @@ export class SleepConsolidationService {
         if (doc.period_type && doc.last_run_at) {
           const ts = new Date(doc.last_run_at).getTime();
           if (!isNaN(ts)) {
-            this.lastRunTimes.set(doc.period_type, ts);
-            console.log(`📅 Loaded ${doc.period_type} last run: ${new Date(ts).toISOString()}`);
+            if (doc.user_id) {
+              this.lastRunTimes.set(this.runKey(doc.period_type, doc.user_id), ts);
+              console.log(`📅 Loaded ${doc.period_type} last run for ${doc.user_id}: ${new Date(ts).toISOString()}`);
+            } else {
+              this.legacyLastRunTimes.set(doc.period_type, ts);
+              console.log(`📅 Loaded legacy ${doc.period_type} last run: ${new Date(ts).toISOString()}`);
+            }
           }
         }
       }
@@ -161,19 +182,68 @@ export class SleepConsolidationService {
     this.lastRunTimesLoaded = true;
   }
 
+  /**
+   * Identities that should receive a reflection. The default identity is
+   * always included; named identities come from the per-user identity
+   * registry, and identities that already have a reflection are kept even if
+   * their registry row is missing. System user_ids that never established an
+   * identity are deliberately excluded.
+   */
+  private async getIdentityIds(): Promise<string[]> {
+    const ids = new Set<string>([DEFAULT_USER_ID]);
+    try {
+      const db = get_database();
+      const docs = await db.collection('system_settings')
+        .find({ key: /^agent_identity/ }, { projection: { key: 1 } })
+        .toArray();
+      for (const doc of docs) {
+        const key = String(doc.key || '');
+        if (key === 'agent_identity') {
+          ids.add(DEFAULT_USER_ID);
+        } else if (key.startsWith('agent_identity:')) {
+          const uid = key.slice('agent_identity:'.length).trim();
+          if (uid) ids.add(uid);
+        }
+      }
+
+      const journalUsers: unknown[] = await db.collection('reflective_journals').distinct('user_id');
+      for (const value of journalUsers) {
+        if (typeof value === 'string' && value.trim()) ids.add(value);
+      }
+    } catch (err: any) {
+      console.warn('⚠️ Failed to enumerate identities:', err.message);
+    }
+    return Array.from(ids).sort();
+  }
+
+  /**
+   * Run one period for every identity, sequentially: runConsolidation shares
+   * a single global `processing` flag, so concurrent calls would be skipped.
+   */
+  private async runConsolidationAllIdentities(period: 'daily' | 'weekly' | 'monthly'): Promise<void> {
+    const userIds = await this.getIdentityIds();
+    console.log(`🌙 ${period} consolidation across ${userIds.length} identities: ${userIds.join(', ')}`);
+    for (const userId of userIds) {
+      const result = await this.runConsolidation(period, userId);
+      if (!result.success) {
+        console.error(`❌ ${period} consolidation failed for ${userId}: ${result.error}`);
+      }
+    }
+  }
+
   private schedulePeriod(key: string, hour: number, minute: number): void {
     const MAX_DELAY = 2147483647;
     const ms = Math.min(this.msUntil(hour, minute), MAX_DELAY);
     console.log(`   ⏰ Next ${key} in ${Math.round(ms / 60000)} minutes (${new Date(Date.now() + ms).toISOString()})`);
     const timer = setTimeout(() => {
-      this.runConsolidation(key as 'daily').catch((err) =>
+      this.runConsolidationAllIdentities(key as 'daily').catch((err) =>
         console.error(`❌ ${key} consolidation failed:`, err)
       );
       const reschedule = () => {
         let next = 24 * 60 * 60 * 1000; // 24h — fits in 32-bit
         if (next > MAX_DELAY) next = MAX_DELAY;
         this.timers.set(key, setTimeout(() => {
-          this.runConsolidation(key as 'daily').catch((err) =>
+          this.runConsolidationAllIdentities(key as 'daily').catch((err) =>
             console.error(`❌ ${key} consolidation failed:`, err)
           );
           reschedule();
@@ -188,14 +258,14 @@ export class SleepConsolidationService {
     const MAX_DELAY = 2147483647;
     const ms = Math.min(this.msUntilNextDayOfWeek(dayOfWeek, hour, minute), MAX_DELAY);
     const timer = setTimeout(() => {
-      this.runConsolidation('weekly').catch((err) =>
+      this.runConsolidationAllIdentities('weekly').catch((err) =>
         console.error(`❌ ${key} consolidation failed:`, err)
       );
       const reschedule = () => {
         let next = this.msUntilNextDayOfWeek(dayOfWeek, hour, minute);
         if (next > MAX_DELAY) next = MAX_DELAY;
         this.timers.set(key, setTimeout(() => {
-          this.runConsolidation('weekly').catch((err) =>
+          this.runConsolidationAllIdentities('weekly').catch((err) =>
             console.error(`❌ ${key} consolidation failed:`, err)
           );
           reschedule();
@@ -219,7 +289,7 @@ export class SleepConsolidationService {
         }, MAX_DELAY));
         return;
       }
-      this.runConsolidation('monthly').catch((err) =>
+      this.runConsolidationAllIdentities('monthly').catch((err) =>
         console.error(`❌ ${key} consolidation failed:`, err)
       );
       // Recursive setTimeout with 32-bit safe delay cap
@@ -228,7 +298,7 @@ export class SleepConsolidationService {
         if (next > MAX_DELAY) next = MAX_DELAY;
         console.log(`   ⏰ Next ${key} in ${Math.round(next / 60000)} minutes`);
         this.timers.set(key, setTimeout(() => {
-          this.runConsolidation('monthly').catch((err) =>
+          this.runConsolidationAllIdentities('monthly').catch((err) =>
             console.error(`❌ ${key} consolidation failed:`, err)
           );
           reschedule();
@@ -319,8 +389,8 @@ export class SleepConsolidationService {
       if (data.event_count === 0 && data.session_count === 0) {
         console.log(`🌙 No activity in ${period} period, skipping consolidation`);
         // Still record successful run (no data is a valid outcome)
-        this.lastRunTimes.set(period, Date.now());
-        this.persistLastRun(period, Date.now()).catch(() => {});
+        this.lastRunTimes.set(this.runKey(period, userId), Date.now());
+        this.persistLastRun(period, userId, Date.now()).catch(() => {});
         return {
           success: true,
           period_type: period,
@@ -356,8 +426,8 @@ export class SleepConsolidationService {
       this.recordEntityReflectionOutcomes(llmOutput, selectedEntities);
 
       // Record successful run (only on success, so safety net can retry on failure)
-      this.lastRunTimes.set(period, Date.now());
-      this.persistLastRun(period, Date.now()).catch(() => {});
+      this.lastRunTimes.set(this.runKey(period, userId), Date.now());
+      this.persistLastRun(period, userId, Date.now()).catch(() => {});
       
       console.log(`✅ ${period} consolidation complete in ${Date.now() - startTime}ms`);
 
@@ -380,6 +450,18 @@ export class SleepConsolidationService {
         // Pass sleep-specific metadata through extension
         __sleep_consolidation: { period, narrative: llmOutput.narrative, emotionalArcs: llmOutput.emotional_arc },
       } as any).catch(err => console.error('[SleepConsolidation] bus publish failed:', err));
+      // ── Affect: the night's half of the loop ──────────────────
+      // The design note's REM model: desensitise the day's extremes halfway back to the baseline and
+      // re-set the baseline to the day's median. Runs after the reflection, so the arc it describes is
+      // the state the day was actually lived in rather than the damped one.
+      try {
+        const affect = await import('./affect-engine.js');
+        const damped = await affect.affectEngine.consolidate(userId);
+        if (damped.damped) console.log(`🌊 Affect consolidated for ${userId} (REM damping applied)`);
+      } catch (affectError: any) {
+        console.warn('[SleepConsolidation] affect consolidate failed (reflection unaffected):',
+          affectError?.message);
+      }
       return result;
 
     } catch (error: any) {
@@ -936,8 +1018,8 @@ RULES:
 
     if (batchResults.length === 0) {
       console.log(`🌙 No batch results for ${period} consolidation`);
-      this.lastRunTimes.set(period, Date.now());
-      this.persistLastRun(period, Date.now()).catch(() => {});
+      this.lastRunTimes.set(this.runKey(period, userId), Date.now());
+      this.persistLastRun(period, userId, Date.now()).catch(() => {});
       return {
         success: true,
         period_type: period,
@@ -990,8 +1072,8 @@ RULES:
     const result = await this.storeResults(synthesisOutput, aggregatedData, userId, periodStart, now, period);
 
     // Record successful run
-    this.lastRunTimes.set(period, Date.now());
-    this.persistLastRun(period, Date.now()).catch(() => {});
+    this.lastRunTimes.set(this.runKey(period, userId), Date.now());
+    this.persistLastRun(period, userId, Date.now()).catch(() => {});
 
     console.log(`✅ ${period} batched consolidation complete in ${Date.now() - startTime}ms (${batchResults.length} batches)`);
 

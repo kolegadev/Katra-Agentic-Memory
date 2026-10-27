@@ -10,6 +10,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,23 @@ DEFAULT_MAX_CONTEXT_TOKENS = 5000
 DEFAULT_CACHE_TTL_SECONDS = 30
 DEFAULT_PERSONALITY = "balanced"
 DEFAULT_SOURCES = ["reflection", "working_memory", "temporal_context", "vector_search", "temporal_recall"]
+
+
+def affect_view_enabled(user_id: str) -> bool:
+    """Whether this identity should receive the FEELING STATE block (AFFECT-1).
+
+    Opt-in twice over: the CLI environment must ask for it (``KATRA_AFFECT_VIEW=1``) and the identity
+    must be on the allowlist (``KATRA_AFFECT_IDENTITIES``, default ``shoshin``). The block is a live
+    state rendered into every prompt, so the default has to be silence rather than surprise.
+    """
+    if os.environ.get("KATRA_AFFECT_VIEW", "").strip().lower() not in ("1", "true", "yes", "on"):
+        return False
+    allowed = [
+        name.strip()
+        for name in os.environ.get("KATRA_AFFECT_IDENTITIES", "shoshin").split(",")
+        if name.strip()
+    ]
+    return str(user_id) in allowed
 
 # When True, the active personality (profile + weight/scoring overrides +
 # budget) is fetched from the Katra server's REST admin API and takes
@@ -35,9 +53,20 @@ _SOURCE_EXPANSIONS = {
 }
 
 # Module-level cache for the server-fetched personality config so we don't
-# hit the REST API on every single prompt. (value, fetched_at) keyed by URL.
+# hit the REST API on every single prompt. (payload, fetched_at), keyed by
+# "<REST base>|<user_id>" — the identity is part of the key, so two identities
+# on one REST base never share a personality entry.
 _SERVER_PERSONALITY_CACHE: dict[str, tuple[dict, float]] = {}
 _SERVER_PERSONALITY_TTL_SECONDS = 60.0
+
+# When a personality fetch was last reported as rejected, per cache key. The
+# rejection must be visible to an operator (the hook used to fall back to the
+# local personality in silence) without flooding the log once per prompt, so a
+# warning is emitted at most once per TTL window per identity.
+_SERVER_PERSONALITY_WARNED_AT: dict[str, float] = {}
+
+# `origin` values the server reports for a resolved personality record.
+_SERVER_PERSONALITY_ORIGINS = ("identity", "legacy", "default")
 
 
 def _expand_sources(sources: list[str]) -> list[str]:
@@ -78,6 +107,13 @@ class BridgeConfig:
     # When True, the dashboard-managed personality on the server overrides
     # the local personality/weights/scoring/budget (fail-open to local).
     sync_personality_from_server: bool = DEFAULT_SYNC_PERSONALITY_FROM_SERVER
+    # ── Provenance of the server-synced personality ────────────────
+    # Reported by the server with the fetched record; both are None while the
+    # locally-configured personality is in force. Diagnostics only — nothing
+    # in the retrieval path reads them. Appended last (with defaults) so every
+    # existing positional construction keeps its meaning.
+    personality_version: int | None = None
+    personality_origin: str | None = None
 
     def __post_init__(self) -> None:
         raw_sources = list(self.sources) if self.sources else list(DEFAULT_SOURCES)
@@ -174,36 +210,114 @@ def _rest_base_from_mcp(mcp_url: str) -> str | None:
         return None
 
 
-def _fetch_server_personality(cfg: BridgeConfig) -> dict | None:
-    """Fetch the dashboard-managed personality config from the server.
+def _warn_personality_rejected(cache_key: str, status: int, now: float) -> None:
+    """Log a rejected personality sync at most once per TTL window per key.
 
-    Cached for _SERVER_PERSONALITY_TTL_SECONDS. Fail-open: returns None on
-    any error so the caller falls back to the local file config.
+    The server answers 401/403 when the bridge key is unknown or is not mapped
+    to the identity it asked for. That used to be invisible (the hook quietly
+    kept the local personality); it must reach an operator, but a bridge on a
+    rejected key would otherwise write a warning on every single prompt.
+
+    The key embeds the identity, which is configuration input: it is rendered
+    with `%r`, so a crafted `user_id` (a newline, a fake log record) is escaped
+    into a single line and cannot forge a log entry.
+    """
+    last = _SERVER_PERSONALITY_WARNED_AT.get(cache_key)
+    if last is not None and (now - last) < _SERVER_PERSONALITY_TTL_SECONDS:
+        return
+    _SERVER_PERSONALITY_WARNED_AT[cache_key] = now
+    logger.warning(
+        "Personality sync rejected the bridge key (HTTP %s for %r) — the server "
+        "did not serve this identity's record, so the hook is continuing with "
+        "the locally-configured personality; check that the bridge api_key is "
+        "mapped to this user_id",
+        status,
+        cache_key,
+    )
+
+
+def _fetch_server_personality(cfg: BridgeConfig, client: Any = None) -> dict | None:
+    """Fetch the dashboard-managed personality for the bridge's OWN identity.
+
+    `client` is an injectable seam — anything offering `get(url, headers=...)`
+    works, so tests need no HTTP library. When it is None an
+    `httpx.Client(timeout=3.0)` is constructed, exactly as before (httpx stays
+    the optional transport: it is imported lazily, inside the branch that uses
+    it, so the bridge imports without it).
+
+    The request names the caller (`?user_id=<cfg.user_id>`) and presents the
+    bridge key (`Authorization: Bearer <cfg.api_key>`); an empty key sends no
+    Authorization header at all — never a bare `Bearer `. This is what makes
+    the caller-pinned admin endpoint serve this identity's record.
+
+    Results are cached for _SERVER_PERSONALITY_TTL_SECONDS under
+    "<REST base>|<user_id>", so two identities never share an entry. The cached
+    payload is the server's `config` object plus the server-reported `origin`
+    and `version` when it supplies them.
+
+    In this iteration the identity in the request line is URL-encoded
+    (`urllib.parse.quote(identity, safe='')`), so a `user_id` containing `&`,
+    `=`, `#` or a space stays ONE parameter value and cannot inject extra query
+    parameters (e.g. a second `user_id` naming another identity).
+
+    Fail-open, always: any failure (unreachable server, 5xx, garbage body, a
+    rejected key) returns None and never raises, so the caller keeps the
+    locally-configured personality. A 401/403 is logged as a warning (rate-
+    limited to one per TTL window per cache key, with the identity escaped);
+    everything else stays at debug — the hook runs on every prompt and must not
+    be noisy.
     """
     rest_base = _rest_base_from_mcp(cfg.mcp_url)
     if not rest_base:
         return None
 
+    cache_key = f"{rest_base}|{cfg.user_id}"
     now = time.time()
-    cached = _SERVER_PERSONALITY_CACHE.get(rest_base)
+    cached = _SERVER_PERSONALITY_CACHE.get(cache_key)
     if cached and (now - cached[1]) < _SERVER_PERSONALITY_TTL_SECONDS:
         return cached[0]
 
-    url = f"{rest_base}/admin/personality"
+    url = f"{rest_base}/admin/personality?user_id={quote(cfg.user_id, safe='')}"
+    headers = {"Authorization": f"Bearer {cfg.api_key}"} if cfg.api_key else {}
     try:
-        import httpx
+        if client is None:
+            import httpx
 
-        with httpx.Client(timeout=3.0) as client:
-            resp = client.get(url)
-            resp.raise_for_status()
-            data = resp.json()
-        if not isinstance(data, dict) or not data.get("success"):
+            with httpx.Client(timeout=3.0) as owned_client:
+                resp = owned_client.get(url, headers=headers)
+        else:
+            resp = client.get(url, headers=headers)
+
+        status = getattr(resp, "status_code", 0)
+        if status in (401, 403):
+            _warn_personality_rejected(cache_key, status, now)
             return None
-        server_cfg = data.get("config") or {}
-        _SERVER_PERSONALITY_CACHE[rest_base] = (server_cfg, now)
-        return server_cfg
+        if status >= 400:
+            logger.debug("Server personality fetch HTTP %s for %s (using local)", status, cache_key)
+            return None
+
+        data = resp.json()
+        if not isinstance(data, dict) or not data.get("success"):
+            logger.debug("Server personality response for %s was not a success payload", cache_key)
+            return None
+        server_cfg = data.get("config")
+        if not isinstance(server_cfg, dict):
+            logger.debug("Server personality response for %s carried no config object", cache_key)
+            return None
+
+        payload = dict(server_cfg)
+        # Surface the server-owned provenance next to the values it describes.
+        origin = data.get("origin")
+        if origin in _SERVER_PERSONALITY_ORIGINS:
+            payload["origin"] = origin
+        version = data.get("version")
+        if isinstance(version, int) and not isinstance(version, bool):
+            payload["version"] = version
+
+        _SERVER_PERSONALITY_CACHE[cache_key] = (payload, now)
+        return payload
     except Exception as exc:  # noqa: BLE001 - fail open to local config
-        logger.debug("Server personality fetch failed (using local): %s", exc)
+        logger.debug("Server personality fetch failed for %s (using local): %s", cache_key, exc)
         return None
 
 
@@ -225,8 +339,22 @@ def _apply_server_personality(cfg: BridgeConfig) -> BridgeConfig:
     scoring = server.get("scoring")
     budget = server.get("max_context_tokens")
 
+    # Provenance, as reported by the server (None when it reports neither):
+    # which record the personality came from, and its write version.
+    version = server.get("version")
+    if not (isinstance(version, int) and not isinstance(version, bool)):
+        version = cfg.personality_version
+    origin = server.get("origin")
+    if origin not in _SERVER_PERSONALITY_ORIGINS:
+        origin = cfg.personality_origin
+
     if cfg.debug:
-        logger.info("Personality synced from server: %s", personality)
+        logger.debug(
+            "Personality synced from server: %s (version=%s, origin=%s)",
+            personality,
+            version,
+            origin,
+        )
 
     return BridgeConfig(
         mcp_url=cfg.mcp_url,
@@ -244,6 +372,8 @@ def _apply_server_personality(cfg: BridgeConfig) -> BridgeConfig:
         source_weights=dict(source_weights) if isinstance(source_weights, dict) else cfg.source_weights,
         scoring=dict(scoring) if isinstance(scoring, dict) else cfg.scoring,
         sync_personality_from_server=cfg.sync_personality_from_server,
+        personality_version=version,
+        personality_origin=origin,
     )
 
 

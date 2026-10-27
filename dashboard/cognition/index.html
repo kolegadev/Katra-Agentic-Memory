@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Katra — Cognitive Control Dashboard (Phase 7)</title>
+<style>
+:root{--bg:#0b0b0e;--bg2:#141419;--bg3:#1c1c23;--border:#2a2a33;--text:#e4e4e7;--text2:#a1a1aa;--text3:#71717a;
+--accent:#818cf8;--green:#22c55e;--red:#ef4444;--amber:#f59e0b;--mono:'SF Mono','Fira Code',monospace}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.5}
+a{color:var(--accent)}
+header{display:flex;align-items:center;gap:14px;padding:12px 20px;background:var(--bg2);border-bottom:1px solid var(--border);flex-wrap:wrap}
+header h1{font-size:1.1rem;font-weight:700;color:var(--accent);letter-spacing:-.02em}
+header .sub{font-size:.72rem;color:var(--text3)}
+.spacer{flex:1}
+.badge{font-size:.7rem;padding:2px 8px;border-radius:20px;background:var(--bg3);color:var(--text2)}
+.badge.off{background:#3f1717;color:var(--red)}
+.badge.on{background:#12351e;color:var(--green)}
+.banner{padding:10px 20px;font-size:.85rem;border-bottom:1px solid var(--border);background:#1f1508;color:var(--amber)}
+main{display:flex;min-height:calc(100vh - 57px)}
+nav{width:210px;flex-shrink:0;background:var(--bg2);border-right:1px solid var(--border);padding:12px 8px;overflow-y:auto}
+nav button{display:block;width:100%;text-align:left;background:none;border:none;color:var(--text2);padding:8px 12px;border-radius:6px;cursor:pointer;font-size:.85rem;font-family:inherit;margin-bottom:2px}
+nav button:hover{color:var(--text);background:var(--bg3)}
+nav button.active{color:var(--accent);background:rgba(129,140,248,.1);font-weight:600}
+section.view{flex:1;padding:20px;overflow-y:auto;display:none}
+section.view.active{display:block}
+h2{font-size:1rem;font-weight:650;margin-bottom:4px}
+h3{font-size:.9rem;font-weight:600;margin:14px 0 6px}
+p.hint{font-size:.78rem;color:var(--text3);margin-bottom:10px}
+table{width:100%;border-collapse:collapse;margin:8px 0 14px;font-size:.8rem}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);vertical-align:top}
+th{color:var(--text3);font-weight:600;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em}
+tr:hover td{background:var(--bg3)}
+.mono{font-family:var(--mono);font-size:.75rem}
+.basis{font-size:.7rem;color:var(--text3);margin:2px 0 12px}
+.basis::before{content:'basis: '}
+.note{font-size:.78rem;color:var(--amber);background:#1f1508;border:1px solid #3a2a08;border-radius:6px;padding:8px 10px;margin:8px 0}
+.empty{font-size:.8rem;color:var(--text3);padding:12px;border:1px dashed var(--border);border-radius:6px;margin:8px 0}
+input[type=password],input[type=text],select{padding:6px 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg3);color:var(--text);font-family:inherit;font-size:.85rem;min-width:280px}
+button.primary{padding:7px 14px;border:none;border-radius:6px;background:var(--accent);color:#0b0b0e;font-weight:600;cursor:pointer;font-family:inherit;font-size:.85rem}
+button.primary:hover{opacity:.9}
+button.ghost{padding:6px 12px;border:1px solid var(--border);border-radius:6px;background:var(--bg3);color:var(--text2);cursor:pointer;font-family:inherit;font-size:.8rem}
+button.ghost:hover{color:var(--text)}
+.kv{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;margin:10px 0}
+.kv .card{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:12px}
+.kv .card .k{font-size:.68rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)}
+.kv .card .v{font-size:1.05rem;font-weight:650;margin-top:2px;word-break:break-word}
+.tag{display:inline-block;font-size:.68rem;padding:1px 7px;border-radius:10px;background:var(--bg3);color:var(--text2);margin-right:4px}
+.tag.agree{background:#12351e;color:var(--green)}
+.tag.diverge{background:#3f1717;color:var(--red)}
+.authbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<header>
+  <h1>🧭 Cognitive Control Dashboard</h1>
+  <span class="sub">read-only operations surface · Phase 7 · every number traces to a stored record</span>
+  <span class="spacer"></span>
+  <span id="planeBadge" class="badge">plane: —</span>
+  <span id="modeBadge" class="badge">mode: —</span>
+  <span id="killBadge" class="badge">kill switch: —</span>
+  <div class="authbar">
+    <input type="password" id="keyInput" placeholder="API key (any valid key; admin not required)">
+    <button class="primary" id="setKeyBtn">Connect</button>
+    <a href="/dashboard/">← admin dashboard</a>
+  </div>
+</header>
+<div id="banner"></div>
+<main>
+  <nav id="nav"></nav>
+  <section class="view" id="view-status"></section>
+  <section class="view" id="view-missions"></section>
+  <section class="view" id="view-mission"></section>
+  <section class="view" id="view-activation"></section>
+  <section class="view" id="view-operations"></section>
+  <section class="view" id="view-executive"></section>
+  <section class="view" id="view-imagination"></section>
+</main>
+<script>
+'use strict';
+const API = '/api/v1/cognition';
+let KEY = sessionStorage.getItem('ckey') || localStorage.getItem('ckey') || '';
+document.getElementById('keyInput').value = KEY;
+
+function authHeaders(){ return { 'Authorization': 'Bearer ' + KEY }; }
+async function api(path, opts){
+  const r = await fetch(API + path, Object.assign({ headers: authHeaders() }, opts || {}));
+  if (r.status === 401) { showBanner('401 — the API key was rejected. Paste a valid key (a client key works; the admin key is not required) and press Connect.', true); }
+  if (r.status === 403) { showBanner('403 — this caller may not perform that action (custodian controls require a trusted caller).', true); }
+  const body = await r.json().catch(() => ({}));
+  return { status: r.status, body };
+}
+function showBanner(msg, isErr){
+  const b = document.getElementById('banner');
+  if (!msg) { b.innerHTML = ''; b.style.display = 'none'; return; }
+  b.style.display = 'block';
+  b.textContent = msg;
+}
+function basisLine(text){ return text ? '<div class="basis">' + esc(text) + '</div>' : ''; }
+function noteLine(text){ return text ? '<div class="note">' + esc(text) + '</div>' : ''; }
+function esc(s){
+  return String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+}
+function fmt(s){
+  return s ? String(s).replace('T',' ').replace('Z',' UTC').slice(0,19) : '—';
+}
+
+const NAV = [
+  ['status','Status & flags'],
+  ['missions','Missions'],
+  ['activation','Activation'],
+  ['operations','Operations (custodian)'],
+  ['executive','Why is it doing this?'],
+];
+// ITER-9: the imagination observability views. They live on /api/v1/imagination
+// and are read-only except the ONE gated experiment-observation write.
+const IMG_API = '/api/v1/imagination';
+const IMG_NAV = [
+  ['img-overview','Imagination: overview'],
+  ['img-cycles','Imagination: cycles'],
+  ['img-traces','Imagination: traces'],
+  ['img-archive','Imagination: archive'],
+  ['img-batons','Imagination: batons'],
+  ['img-team','Imagination: team'],
+  ['img-metrics','Imagination: metrics'],
+  ['img-experiments','Imagination: experiments'],
+  ['img-rollout','Imagination: rollout'],
+];
+let currentMission = null;
+let imgView = 'overview';
+let imgCycle = null;
+function buildNav(){
+  const nav = document.getElementById('nav');
+  nav.innerHTML = NAV.map(([id,label]) => '<button data-view="'+id+'">'+esc(label)+'</button>').join('')
+    + '<div class="basis" style="margin:10px 0 4px">imagination (read-only)</div>'
+    + IMG_NAV.map(([id,label]) => '<button data-view="'+id+'">'+esc(label)+'</button>').join('')
+    + (currentMission ? '<button class="active" data-view="mission">Mission: '+esc(currentMission)+'</button>' : '');
+  nav.querySelectorAll('button').forEach(b => b.onclick = () => show(b.dataset.view));
+}
+function show(view){
+  document.querySelectorAll('section.view').forEach(s => s.classList.remove('active'));
+  const section = view.indexOf('img-') === 0 ? 'imagination' : view;
+  document.getElementById('view-' + section).classList.add('active');
+  document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.view === view));
+  if (view === 'status') renderStatus();
+  if (view === 'missions') renderMissions();
+  if (view === 'mission') renderMission();
+  if (view === 'activation') renderActivation();
+  if (view === 'operations') renderOperations();
+  if (view === 'executive') renderExecutive();
+  if (view.indexOf('img-') === 0) { imgView = view.slice(4); renderImagination(); }
+}
+
+async function connect(){
+  KEY = document.getElementById('keyInput').value.trim();
+  sessionStorage.setItem('ckey', KEY);
+  const { status, body } = await api('/status');
+  if (status === 200) { showBanner(''); buildNav(); show('status'); }
+  else { showBanner('Could not connect: HTTP ' + status, true); }
+}
+document.getElementById('setKeyBtn').onclick = connect;
+
+// ── Status ────────────────────────────────────────────────────────────────
+async function renderStatus(){
+  const { body } = await api('/status');
+  const gate = body.evidence_gate || {};
+  document.getElementById('planeBadge').textContent = 'plane: ' + body.plane;
+  document.getElementById('planeBadge').className = 'badge ' + (body.plane === 'off' ? 'off' : 'on');
+  document.getElementById('modeBadge').textContent = 'mode: ' + body.scheduler_mode;
+  document.getElementById('killBadge').textContent = 'kill switch: ' + (body.kill_switch ? 'ARMED' : 'clear');
+  document.getElementById('view-status').innerHTML = '<h2>Status &amp; flags</h2><p class="hint">Live flags and the evidence gate, read from the running process and stored records.</p>'
+    + '<div class="kv">'
+    + kv('Cognitive plane', body.plane === 'off' ? 'OFF — views disabled by flag (no back door)' : body.plane)
+    + kv('Scheduler mode', body.scheduler_mode)
+    + kv('Kill switch', body.kill_switch ? 'ARMED (COGNITIVE_ACTIVATION_KILL_SWITCH=1) — mode forced off' : 'clear')
+    + kv('Activation hard bound', String(body.hard_bound ?? '—'))
+    + kv('Evidence gate', gate.open ? 'OPEN' : 'closed')
+    + kv('Evidenced decisions', String(gate.qualifying_decisions ?? 0) + ' / ' + (gate.threshold ?? 50))
+    + kv('Agreement rate', gate.agreement_rate === null ? 'n/a (no observations)' : (gate.agreement_rate * 100).toFixed(1) + '%')
+    + kv('Human-read acknowledgement', gate.acknowledged ? 'recorded' : 'not recorded')
+    + '</div>'
+    + '<div class="note">' + esc(gate.reason || '') + '</div>'
+    + basisLine(gate.basis || 'evidence gate state computed from stored records (scheduler_decisions + activation_ledger)')
+    + (body.plane === 'off' ? '<div class="empty">COGNITIVE_CONTROL_ENABLED=off — cognitive views are disabled by flag. This is the designed pre-activation state, not a fault.</div>' : '');
+}
+function kv(k, v){ return '<div class="card"><div class="k">' + esc(k) + '</div><div class="v">' + esc(v) + '</div></div>'; }
+
+// ── Missions ──────────────────────────────────────────────────────────────
+async function renderMissions(){
+  const { body } = await api('/missions');
+  if (body.plane === 'off') { document.getElementById('view-missions').innerHTML = '<h2>Missions</h2><div class="empty">' + esc(body.reason) + '</div>'; return; }
+  const rows = body.missions || [];
+  document.getElementById('view-missions').innerHTML = '<h2>Missions</h2><p class="hint">Missions visible to this caller (trusted callers see all; client keys see their own and shared-scope missions).</p>'
+    + (rows.length === 0 ? '<div class="empty">No missions visible — empty with stated reason (§4.4).</div>' :
+      '<table><tr><th>Mission</th><th>Status</th><th>Version</th><th>Authority</th><th>Owner</th><th>Updated</th><th></th></tr>'
+      + rows.map(m => '<tr><td>' + esc(m.title) + ' <span class="mono">(' + esc(m.mission_id) + ')</span></td><td>' + esc(m.status) + '</td><td>' + m.version + '</td><td>' + esc(m.authority_class) + '</td><td>' + esc(m.owner_id) + '</td><td>' + fmt(m.updated_at) + '</td><td><button class="ghost" data-mid="' + esc(m.mission_id) + '">open</button></td></tr>').join('')
+      + '</table>')
+    + basisLine('mission_states, read from stored records');
+  document.querySelectorAll('#view-missions button[data-mid]').forEach(b => b.onclick = () => { currentMission = b.dataset.mid; buildNav(); show('mission'); });
+}
+
+// ── Mission detail (tabs) ─────────────────────────────────────────────────
+const MISSION_TABS = [
+  ['overview','Overview + timeline'], ['objectives','Objectives + graph'], ['epistemics','Claims & evidence'],
+  ['uncertainties','Uncertainties + triggers'], ['work','Work & leases'], ['scheduler','Scheduler'],
+  ['batons','Batons'], ['skills','Skills'],
+];
+let missionTab = 'overview';
+async function renderMission(){
+  const el = document.getElementById('view-mission');
+  if (!currentMission) { el.innerHTML = '<h2>Mission</h2><div class="empty">Select a mission from the Missions view.</div>'; return; }
+  const { status, body } = await api('/missions/' + encodeURIComponent(currentMission) + '/' + missionTab);
+  if (status === 404) { el.innerHTML = '<h2>Mission</h2><div class="empty">Mission not found or not visible to this caller.</div>'; return; }
+  const tabsHtml = MISSION_TABS.map(([id,label]) => '<button class="ghost' + (id === missionTab ? '" style="border-color:var(--accent);color:var(--accent)' : '"') + ' data-tab="' + id + '">' + label + '</button>').join(' ');
+  let html = '<h2>Mission <span class="mono">' + esc(currentMission) + '</span></h2><p class="hint">' + tabsHtml + '</p>' + renderMissionTab(missionTab, body);
+  el.innerHTML = html;
+  el.querySelectorAll('button[data-tab]').forEach(b => b.onclick = () => { missionTab = b.dataset.tab; renderMission(); });
+}
+function renderMissionTab(tab, b){
+  if (b.plane === 'off') return '<div class="empty">' + esc(b.reason) + '</div>';
+  switch (tab) {
+    case 'overview': {
+      const m = b.mission || {};
+      return '<div class="kv">' + kv('Title', m.title) + kv('Status', m.status) + kv('Version', m.version) + kv('Authority', m.authority_class)
+        + kv('Owner', m.owner_id) + kv('Checkpoint', m.checkpoint_id ?? 'none') + kv('Phase', m.phase ?? '—') + '</div>'
+        + '<h3>Version timeline (checkpoints)</h3>' + tableOrEmpty(b.version_timeline, ['Version','Checkpoint','Created'], v => ['v' + v.version, v.checkpoint_id, fmt(v.created_at)])
+        + '<h3>Recent state deltas</h3>' + tableOrEmpty(b.deltas?.recent, ['Delta','Type','Status','Base version','Created'], d => [d.delta_id, d.delta_type, d.status, d.base_mission_version, fmt(d.created_at)])
+        + '<h3>Recent mission events</h3>' + tableOrEmpty(b.events?.recent, ['Event','Type','Summary','At'], e => [e.event_id, e.event_type, e.summary, fmt(e.created_at)])
+        + basisLine(b.checkpoint_basis) + basisLine(b.deltas?.basis) + basisLine(b.events?.basis) + noteLine(b.note);
+    }
+    case 'objectives': {
+      const objs = b.objectives || [];
+      return '<h3>Objectives</h3>' + tableOrEmpty(objs, ['ID','Description','Status','Owner','Depends on'], o => [o.id, o.description, o.status, o.owner_id, (o.dependency_ids||[]).join(', ')])
+        + '<h3>Dependency edges</h3>' + tableOrEmpty(b.edges, ['From','To','Kind'], e => [e.from, e.to, e.kind])
+        + basisLine(b.basis) + noteLine(b.note);
+    }
+    case 'epistemics': {
+      const types = ['claim','evidence','assumption','decision','contradiction','hypothesis','uncertainty','experiment','result'];
+      let html = '';
+      for (const t of types) {
+        const rows = b.entries?.[t] || [];
+        html += '<h3>' + t + ' (' + rows.length + ')</h3>'
+          + tableOrEmpty(rows, ['Entry','Statement','Status','Confidence','Author','Depends on'], e => [e.entry_id, e.statement, e.status, e.confidence, e.author_id, (e.depends_on||[]).join(', ')]);
+      }
+      return html + basisLine(b.basis) + noteLine(b.note);
+    }
+    case 'uncertainties':
+      return '<h3>Uncertainty register</h3>' + tableOrEmpty(b.uncertainties, ['Entry','Statement','Status','Confidence','Consequence if false'], u => [u.entry_id, u.statement, u.status, u.confidence, u.consequence_if_false ?? '—'])
+        + '<h3>Trigger history</h3>' + tableOrEmpty(b.trigger_history, ['Trigger','Outcome','Token cost','Fired'], t => [t.trigger, t.outcome, t.token_cost + ' (' + t.cost_basis + ')', fmt(t.fired_at)])
+        + basisLine(b.basis) + noteLine(b.note);
+    case 'work':
+      return '<h3>Work queue</h3>' + tableOrEmpty(b.queue, ['Item','Description','Mode','Status','Trigger','Cost','Basis'], w => [w.work_item_id, w.description, w.mode, w.status, w.trigger, w.cost, w.cost_basis])
+        + '<h3>Leases (batons)</h3>' + tableOrEmpty(b.leases, ['Baton','Mode','Recipient','Expires','Revoked'], l => [l.baton_id, l.mode, l.recipient_id, fmt(l.expires_at), l.revoked ? 'yes' : 'no'])
+        + '<h3>Blockers</h3>' + (b.blockers?.length ? b.blockers.map(x => '<span class="tag">' + esc(x) + '</span>').join('') : '<div class="empty">No blocked items.</div>')
+        + basisLine(b.basis) + noteLine(b.note);
+    case 'scheduler': {
+      const decisions = b.decisions || [];
+      let html = '<h3>Decisions (newest first) — mode: ' + esc(b.mode) + '</h3>';
+      for (const d of decisions) {
+        html += '<div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin:10px 0">'
+          + '<strong>' + esc(d.decision_id) + '</strong> · ' + fmt(d.created_at) + ' · mode ' + esc(d.scheduler_mode) + ' · cost basis ' + esc(d.cost_basis) + '<br>'
+          + '<em>' + esc(d.rationale) + '</em>'
+          + '<h3 style="margin-top:8px">Ranked candidates</h3>'
+          + tableOrEmpty(d.ranked_candidates, ['#','Work item','Agent','Priority','Suitability','Combined','Top factors'], (c,i) => [i+1, c.work_item_id, c.agent_id, c.priority.toFixed(2), c.suitability.toFixed(2), c.combined.toFixed(2), (c.feature_contributions||[]).slice(0,3).map(f=>f.feature+'='+Number(f.value).toFixed(2)).join(' · ')])
+          + '<h3 style="margin-top:8px">Exclusions</h3>'
+          + tableOrEmpty(d.exclusions, ['Work item','Agent','Reason'], e => [e.work_item_id, e.agent_id, e.reason])
+          + '<div style="margin-top:8px">Recommended: ' + (d.recommended ? esc(d.recommended.agent_id) + ' for ' + esc(d.recommended.work_item_id) : 'none') + '</div>'
+          + '<div>Allocator observation: ' + (d.allocator_observation ? esc(d.allocator_observation.agent_id ?? 'no allocation') + ' (' + esc(d.allocator_observation.source) + ')' : 'not observed') + '</div>'
+          + '<div>Shadow comparison: <span class="tag ' + (d.shadow_comparison === 'agreed' ? 'agree' : d.shadow_comparison === 'diverged' ? 'diverge' : '') + '">' + esc(d.shadow_comparison) + '</span></div>'
+          + (d.counterfactual ? '<div style="margin-top:6px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:8px"><strong>Counterfactual:</strong> the existing allocator would have chosen <strong>' + esc(d.counterfactual.existing_allocator_agent_id) + '</strong>; the scheduler\'s choice <strong>' + esc(d.counterfactual.chosen_agent_id) + '</strong> was taken (' + (d.counterfactual.influenced ? 'influenced' : 'not influenced') + ').<br><em>' + esc(d.counterfactual.reason) + '</em></div>' : '')
+          + '</div>';
+      }
+      return html + basisLine(b.basis) + noteLine(b.note);
+    }
+    case 'batons': {
+      let html = '<h3>Batons (secret-shaped material redacted before display)</h3>';
+      for (const b of b.batons || []) {
+        html += '<div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin:10px 0">'
+          + '<strong>' + esc(b.baton.baton_id) + '</strong> · mode ' + esc(b.baton.mode) + ' · to ' + esc(b.baton.recipient_id) + ' · issued ' + fmt(b.baton.issued_at)
+          + (b.redactions ? ' <span class="tag diverge">' + 'redacted' + '</span>' : '')
+          + '<div>Blindness: ' + (b.blindness_summary.enabled ? 'enabled — withholds [' + b.blindness_summary.withheld_classes.join(', ') + ']' : 'not enabled') + '</div>'
+          + '<pre class="mono" style="background:var(--bg2);padding:8px;border-radius:6px;overflow:auto;max-height:260px">' + esc(JSON.stringify(b.baton, null, 2)) + '</pre>'
+          + '</div>';
+      }
+      return html + basisLine(b.basis) + noteLine(b.note);
+    }
+    case 'skills':
+      return '<h3>Skill versions (from batons)</h3>' + tableOrEmpty(Object.entries(b.skill_versions || {}).flatMap(([skill, uses]) => uses.map(u => ({skill, ...u}))), ['Skill','Version','Last used on','Used by baton'], s => [s.skill, s.version, fmt(s.last_used_on), s.used_by_baton])
+        + '<h3>Challenge-mode batons</h3>' + tableOrEmpty(b.challenge_state, ['Baton','Recipient','Issued'], c => [c.baton_id, c.recipient_id, fmt(c.issued_at)])
+        + '<h3>Skill feedback (latest)</h3>' + tableOrEmpty(b.feedback_outcomes, ['At','Outcome'], f => [fmt(f.created_at), f.outcome])
+        + '<h3>Canary</h3><div class="empty">' + esc(b.canary.reason) + '</div>'
+        + basisLine(b.basis) + noteLine(b.note);
+  }
+  return '';
+}
+function tableOrEmpty(rows, headers, cells){
+  if (!rows || rows.length === 0) return '<div class="empty">Nothing to show — empty with stated reason (§4.4).</div>';
+  return '<table><tr>' + headers.map(h => '<th>' + esc(h) + '</th>').join('') + '</tr>'
+    + rows.map((r, i) => '<tr>' + cells(r, i).map(c => '<td>' + esc(c) + '</td>').join('') + '</tr>').join('') + '</table>';
+}
+
+// ── Activation ────────────────────────────────────────────────────────────
+async function renderActivation(){
+  const { body } = await api('/activation');
+  document.getElementById('view-activation').innerHTML = '<h2>Activation</h2><p class="hint">Mode, evidence gate, opt-ins, ledger, and counterfactuals — read only.</p>'
+    + '<div class="kv">' + kv('Plane', body.plane) + kv('Scheduler mode', body.scheduler_mode) + kv('Kill switch', body.kill_switch ? 'ARMED' : 'clear')
+    + kv('Evidence gate', body.evidence_gate.open ? 'OPEN' : 'closed') + kv('Evidenced decisions', body.evidence_gate.qualifying_decisions + ' / ' + body.evidence_gate.threshold)
+    + kv('Agreement', body.evidence_gate.agreement_rate === null ? 'n/a' : (body.evidence_gate.agreement_rate*100).toFixed(1)+'%') + '</div>'
+    + '<div class="note">' + esc(body.evidence_gate.reason) + '</div>'
+    + '<h3>Mission opt-ins</h3>' + tableOrEmpty(body.opt_ins, ['Mission','Owner','Opted in by','Reason','Revoked'], o => [o.mission_id, o.owner_id, o.opted_in_by, o.reason, o.revoked_at ? 'yes (' + fmt(o.revoked_at) + ')' : 'no'])
+    + '<h3>Activation ledger (latest)</h3>' + tableOrEmpty(body.ledger, ['At','Kind','Actor','From → To','Reason'], l => [fmt(l.created_at), l.kind, l.actor_id, (l.mode_from||'—') + ' → ' + (l.mode_to||'—'), l.reason])
+    + '<h3>Counterfactuals</h3>' + tableOrEmpty(body.counterfactuals, ['At','Mission','Chosen','Existing allocator would have chosen','Influenced','Why'], c => [fmt(c.recorded_at), c.mission_id, c.chosen_agent_id, c.existing_allocator_agent_id, c.influenced ? 'yes' : 'no', c.reason])
+    + basisLine(body.basis);
+}
+
+// ── Operations (custodian) ────────────────────────────────────────────────
+async function renderOperations(){
+  const { body } = await api('/operations');
+  if (body.plane === 'off') { document.getElementById('view-operations').innerHTML = '<h2>Operations</h2><div class="empty">' + esc(body.reason) + '</div>'; return; }
+  const rows = (body.missions || []).map(m => '<tr><td>' + esc(m.title) + ' <span class="mono">(' + esc(m.mission_id) + ')</span></td><td>v' + m.current_version + '</td><td>' + (m.latest_checkpoint_version === null ? '—' : 'v' + m.latest_checkpoint_version) + '</td><td>' + m.checkpoint_count + '</td><td>' + m.accepted_deltas + '</td><td>' + m.proposed_deltas + '</td><td>' + m.replay_pending + '</td><td><span class="tag ' + (m.integrity === 'consistent' ? 'agree' : m.integrity === 'lagging' ? 'diverge' : '') + '">' + esc(m.integrity) + '</span></td><td>' + fmt(m.last_trigger_evaluation_at) + '</td><td><input type="text" id="rb-' + esc(m.mission_id) + '" style="display:none"><button class="ghost" data-rebuild="' + esc(m.mission_id) + '">rebuild</button></td></tr>').join('');
+  document.getElementById('view-operations').innerHTML = '<h2>Operations — integrity, projection lag, reconstruction</h2>'
+    + '<table><tr><th>Mission</th><th>Current</th><th>Latest checkpoint</th><th>Checkpoints</th><th>Accepted deltas</th><th>Proposed</th><th>Replay pending</th><th>Integrity</th><th>Last trigger eval</th><th>Custodian</th></tr>' + rows + '</table>'
+    + basisLine((body.missions || []).length ? body.missions[0].basis : 'mission_state_versions + state_deltas + trigger_evaluations, read from stored records')
+    + '<h3>Reconstruction &amp; backup</h3><div class="note">' + esc(body.reconstruction.mechanism) + '</div><p class="hint">' + esc(body.reconstruction.basis) + '</p>'
+    + '<p class="hint">' + esc(body.reconstruction.rebuild_control) + ' Rebuild is idempotent and every run is audited in custodian_audit.</p>'
+    + noteLine(body.note);
+  document.querySelectorAll('#view-operations button[data-rebuild]').forEach(b => b.onclick = async () => {
+    if (!confirm('Rebuild mission ' + b.dataset.rebuild + ' from checkpoint + accepted deltas? This is audited and idempotent.')) return;
+    const { status, body: r } = await api('/operations/rebuild', { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify({ mission_id: b.dataset.rebuild }) });
+    alert(status === 200 ? (r.changed ? 'Rebuilt: changed fields ' + (r.changed_fields || []).join(', ') + ' (version ' + r.version + ')' : 'Rebuild ran: ' + (r.reason || 'no change')) : (r.error || 'failed'));
+    renderOperations();
+  });
+}
+
+// ── Executive: why is it doing this ───────────────────────────────────────
+async function renderExecutive(){
+  const { body } = await api('/executive');
+  document.getElementById('view-executive').innerHTML = '<h2>Why is the system doing its current work?</h2>'
+    + '<p class="hint">The executive\'s own factual action log: what goal it set, who it allocated to, why, and what happened. No journal, reflection, or emotional content is reachable here.</p>'
+    + tableOrEmpty(body.actions, ['At','Goal','Action','Allocated to','Allocation rationale','Result'], a => [fmt(a.timestamp), a.goal ?? '—', a.action ?? '—', a.allocated_to ?? '—', a.allocation_rationale ?? '—', a.result ? (a.result.success ? '✅ ' : '❌ ') + a.result.summary : '—'])
+    + basisLine(body.basis) + noteLine(body.note);
+}
+
+// ═══════════ IMAGINATION (ITER-9) ═══════════
+// Read-only views over /api/v1/imagination. Every number renders with its basis,
+// every list renders an explicit empty state naming WHY it is empty, and the one
+// write (an experiment observation) is issued only from the experiments view.
+const IMG_VIEWS = ['overview','cycles','traces','archive','batons','team','metrics','experiments','rollout'];
+const IMG_METRIC_KEYS = [
+  ['useful_novelty_rate','Useful novelty rate'],
+  ['archive_coverage_gain','Archive coverage gain'],
+  ['idea_survival','Idea survival (proxy)'],
+  ['time_to_next_viable_direction','Time to next viable direction'],
+  ['false_novelty','False novelty'],
+  ['agent_divergence','Agent divergence'],
+  ['agent_divergence_same_mode_control','Agent divergence — same-mode control'],
+  ['cost_of_novelty','Cost of novelty'],
+];
+let imgExperiment = null;
+async function imgApi(path){
+  const r = await fetch(IMG_API + path, { headers: authHeaders() });
+  if (r.status === 403) { showBanner('403 — this caller may not read that view or perform that write (the experiment write needs a trusted caller and FOCUSED_IMAGINATION=on).', true); }
+  const body = await r.json().catch(() => ({}));
+  return { status: r.status, body };
+}
+function imgQuery(extra){
+  const el = document.getElementById('imgMission');
+  const mission = el && el.value ? el.value.trim() : '';
+  const parts = [];
+  if (mission) parts.push('mission_id=' + encodeURIComponent(mission));
+  if (extra) parts.push(extra);
+  return parts.length ? ('?' + parts.join('&')) : '';
+}
+async function renderImagination(){
+  const el = document.getElementById('view-imagination');
+  const tab = imgView === 'cycle' ? 'cycles' : imgView === 'compare' ? 'experiments' : imgView;
+  const tabsHtml = IMG_VIEWS.map(v => '<button class="ghost' + (v === tab ? '" style="border-color:var(--accent);color:var(--accent)' : '"') + ' data-img="' + v + '">' + esc(v) + '</button>').join(' ');
+  let path = '/' + imgView;
+  if (imgView === 'cycle') path = '/cycles/' + encodeURIComponent(imgCycle || '');
+  if (imgView === 'compare') path = '/experiments/compare?experiment_id=' + encodeURIComponent(imgExperiment || '');
+  else path += imgQuery();
+  const { status, body } = await imgApi(path);
+  let html = '<h2>Imagination — ' + esc(tab) + '</h2>'
+    + '<p class="hint">' + tabsHtml + '</p>'
+    + '<p class="hint">Optional mission filter for the mission-scoped views: <input type="text" id="imgMission" placeholder="mission_id" value="' + esc((document.getElementById('imgMission') || {}).value || '') + '"> '
+    + '<button class="ghost" id="imgReload">reload</button> <span class="basis">read-only surface — no view runs a cycle, promotes a baton or changes a mode</span></p>';
+  if (status === 404 && imgView === 'compare') {
+    html += imgEmpty((body && body.reason) || 'No comparison is available for that experiment.');
+  } else {
+    html += imgViewHtml(imgView, body);
+  }
+  el.innerHTML = html;
+  el.querySelectorAll('button[data-img]').forEach(b => b.onclick = () => { imgView = b.dataset.img; renderImagination(); });
+  const reload = document.getElementById('imgReload');
+  if (reload) reload.onclick = () => renderImagination();
+  el.querySelectorAll('button[data-cycle]').forEach(b => b.onclick = () => { imgCycle = b.dataset.cycle; imgView = 'cycle'; renderImagination(); });
+  el.querySelectorAll('button[data-compare]').forEach(b => b.onclick = () => { imgExperiment = b.dataset.compare; imgView = 'compare'; renderImagination(); });
+  el.querySelectorAll('button[data-observe]').forEach(b => b.onclick = () => recordObservation(b.dataset.observe));
+}
+async function recordObservation(experimentId){
+  const arm = prompt('Arm label for this observation (e.g. control or treatment):', 'control');
+  if (!arm) return;
+  const metric = prompt('Metric (e.g. useful_novelty_rate):', 'useful_novelty_rate');
+  if (!metric) return;
+  const value = Number(prompt('Value (a number):', '0'));
+  const n = Number(prompt('n (how many samples this value is based on):', '1'));
+  if (!isFinite(value) || !isFinite(n) || n < 1) { alert('value must be a number and n a positive integer'); return; }
+  const checkpoint = prompt('Checkpoint (blank = the experiment\'s first):', '') || undefined;
+  const r = await fetch(IMG_API + '/experiments/observations', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ experiment_id: experimentId, arm: arm, metric: metric, value: value, n: n, ...(checkpoint ? { checkpoint: checkpoint } : {}) }),
+  });
+  const body = await r.json().catch(() => ({}));
+  alert(r.status === 200 ? (body.unchanged ? 'Already recorded — nothing written (idempotent per {experiment, arm, metric, checkpoint}).' : 'Observation recorded.') : ('Refused: ' + (body.reason || body.error || r.status)));
+  renderImagination();
+}
+function imgKv(pairs){
+  return '<div class="kv">' + pairs.map(([k, v]) => '<div class="card"><div class="k">' + esc(k) + '</div><div class="v">' + esc(v) + '</div></div>').join('') + '</div>';
+}
+function imgTable(rows, headers, cells){
+  if (!rows || rows.length === 0) return imgEmpty('Nothing to show — empty with a stated reason (see the note below).');
+  return '<table><tr>' + headers.map(h => '<th>' + esc(h) + '</th>').join('') + '</tr>'
+    + rows.map((r, i) => '<tr>' + cells(r, i).map(c => '<td>' + esc(c) + '</td>').join('') + '</tr>').join('') + '</table>';
+}
+function imgBasis(text){
+  return '<div class="basis">' + esc(text || 'no basis was reported for this view') + '</div>';
+}
+function imgEmpty(text){
+  return '<div class="empty">' + esc(text || 'No rows were returned and no reason was stated.') + '</div>';
+}
+function imgTag(text, cls){
+  return '<span class="tag ' + esc(cls || '') + '">' + esc(text) + '</span>';
+}
+function imgPrivacy(p){
+  if (!p) return imgEmpty('No privacy indicator was returned for this view.');
+  return '<div class="kv">'
+    + '<div class="card"><div class="k">Scope</div><div class="v">' + imgTag(p.scope, p.scope === 'private' ? 'agree' : '') + '</div></div>'
+    + '<div class="card"><div class="k">Private rows</div><div class="v">' + esc(p.private_rows) + '</div></div>'
+    + '<div class="card"><div class="k">Shared rows</div><div class="v">' + esc(p.shared_rows) + '</div></div>'
+    + '<div class="card"><div class="k">Raw reflections included</div><div class="v">' + esc(String(p.raw_reflections_included)) + '</div></div>'
+    + '</div>' + imgBasis(p.basis);
+}
+function imgMetric(label, m){
+  if (!m) return '';
+  const ok = m.status === 'ok';
+  return '<tr><td>' + esc(label) + '</td><td>' + imgTag(m.status, ok ? 'agree' : 'diverge') + '</td>'
+    + '<td class="mono">' + esc(ok ? JSON.stringify(m.value) : 'insufficient_data') + '</td>'
+    + '<td>' + esc((m.basis && m.basis.sources ? m.basis.sources.join(', ') : '') + ' · n=' + ((m.basis && m.basis.n) != null ? m.basis.n : '—') + ' · minimum=' + ((m.basis && m.basis.minimum) != null ? m.basis.minimum : '—') + ' · window=' + ((m.basis && m.basis.window && m.basis.window.days) != null ? m.basis.window.days + 'd' : '—')) + '</td>'
+    + '<td>' + esc(m.reason || '') + '</td></tr>';
+}
+function imgViewHtml(view, b){
+  if (!b || typeof b !== 'object') return imgEmpty('No payload was returned by the API.');
+  if (b.plane === 'off') {
+    return imgKv([['Flag', (b.flag && b.flag.name ? b.flag.name : 'flag') + ' = off'], ['Plane', 'off']]) + imgEmpty(b.reason);
+  }
+  if (view === 'overview') {
+    return imgKv([['Identity', b.identity], ['Cycles', (b.counts && b.counts.cycles) != null ? b.counts.cycles : '—'], ['Missions', (b.counts && b.counts.missions) != null ? b.counts.missions : '—']])
+      + '<h3>Missions</h3>'
+      + imgTable(b.missions, ['Mission','Cycles','Last cycle','Stop reason','Trigger','Admitted','Rejected','New cells','Cells','Promoted'],
+        m => [m.mission_id, m.cycles, fmt(m.last_cycle_at), m.last_stop_reason, m.last_trigger, m.admitted_total, m.rejected_total, m.new_cells_total, m.cells_total, m.promoted])
+      + imgBasis(b.counts && b.counts.basis) + imgBasis(b.basis) + (b.reason ? imgEmpty(b.reason) : '') + imgPrivacy(b.privacy);
+  }
+  if (view === 'cycles') {
+    return imgTable(b.cycles, ['Cycle','Mission','Status','Stop reason','Trigger','Admitted','Rejected','New cells','Tokens','Promoted','Created',''],
+      c => [c.cycle_id, c.mission_id, c.status, c.stop_reason, c.trigger, c.counts ? c.counts.seeds_admitted : '—', c.counts ? c.counts.seeds_rejected : '—', c.counts ? c.counts.new_cells : '—', c.tokens_spent_this_cycle, c.promoted ? 'yes' : 'no', fmt(c.created_at), 'open'])
+      + (b.cycles || []).map(c => '<button class="ghost" data-cycle="' + esc(c.cycle_id) + '">open ' + esc(c.cycle_id) + '</button>').join(' ')
+      + imgBasis(b.basis) + (b.reason ? imgEmpty(b.reason) : '') + imgPrivacy(b.privacy);
+  }
+  if (view === 'cycle') {
+    if (!b.cycle) return imgEmpty(b.reason);
+    const c = b.cycle;
+    const conds = b.conditions || {};
+    return imgKv([['Cycle', c.cycle_id], ['Mission', c.mission_id], ['Status', c.status], ['Stop reason', c.stop_reason], ['Trigger', c.trigger], ['Forced', String(c.forced)], ['Duration (ms)', c.duration_ms], ['Tokens this cycle', b.tokens ? b.tokens.spent_this_cycle : '—'], ['Baton', c.baton_id || 'none'], ['Promoted', String(c.promoted)]])
+      + '<h3>Why it triggered — plateau conditions with their evidence</h3>'
+      + imgTable(conds.plateau, ['Condition','Met','Evidence'], p => [p.name, p.met ? 'MET' : 'not met', JSON.stringify(p.evidence)])
+      + '<h3>Stop conditions (first met becomes the stop reason)</h3>'
+      + imgTable(conds.stop, ['Condition','Met','Evidence'], p => [p.name, p.met ? 'MET' : 'not met', JSON.stringify(p.evidence)])
+      + imgBasis(conds.basis)
+      + '<h3>Generated — admitted candidates (' + esc((b.generated || {}).count) + ')</h3>'
+      + imgTable((b.generated || {}).admitted, ['Seed','Operator','Cell','Quality','Novelty','Coherence','Testability','Incumbent'], s => [s.seed_id, s.operator, s.cell_key, s.quality, s.novelty_score, s.coherence_score, s.testability_score, s.incumbent ? 'yes' : 'no'])
+      + '<h3>Rejected — with reasons (' + esc((b.rejected || {}).count) + ')</h3>'
+      + imgTable((b.rejected || {}).rows, ['Seed','Operator','Reason','Of','At'], r => [r.seed_id, r.operator, r.reason, r.duplicate_of, fmt(r.at)])
+      + imgBasis('rejections: idea_seeds rows with state=rejected for this cycle, listed with the reason the archive recorded')
+      + '<h3>Tokens / budget</h3><div class="note">' + esc(JSON.stringify(b.tokens)) + '</div>' + imgBasis(b.tokens && b.tokens.basis)
+      + (b.trace_summary ? '<h3>Trace behind the cycle</h3><div class="note">' + esc(JSON.stringify(b.trace_summary.evidence_counts)) + '</div>' + imgBasis(b.trace_summary.basis) : '')
+      + (b.reason ? imgEmpty(b.reason) : '') + imgPrivacy(b.privacy) + imgBasis(b.basis);
+  }
+  if (view === 'traces') {
+    const rows = (b.traces || []).flatMap(t => (t.signals || []).map(s => ({ ...s, trace_id: t.trace_id, mission_id: t.mission_id, created_at: t.created_at })));
+    return imgTable(b.traces, ['Trace','Mission','Cycle','Trigger','Signals','Created'], t => [t.trace_id, t.mission_id, t.cycle_id, t.trigger, (t.signals || []).length, fmt(t.created_at)])
+      + '<h3>Signals (shapes and calibration numbers — never the private text)</h3>'
+      + imgTable(rows, ['Trace','#','Kind','Intensity','Confidence','Valence','Low confidence','Evidence refs'], s => [s.trace_id, s.index, s.kind, s.intensity, s.confidence, s.valence, s.low_confidence ? 'yes' : 'no', s.evidence_ref_count])
+      + '<h3>Evidence counts</h3>'
+      + imgTable((b.traces || []).map(t => ({ trace_id: t.trace_id, ...(t.evidence || {}) })), ['Trace','Total refs','Resolved','Unresolved refs','Unresolved signals'], e => [e.trace_id, e.total_refs, e.resolved_refs, e.unresolved_ref_count, e.unresolved_evidence_count])
+      // ITER-10: /traces carries a view-level basis OBJECT (window, n, sources,
+      // minimum, measurement); it is rendered as one sentence, and the string
+      // form older payloads used still renders as itself.
+      + imgBasis(typeof b.basis === 'object' && b.basis !== null
+        ? String(b.basis.measurement || 'salience_traces') + ' — ' + ((b.basis.sources || []).join(', ') || 'sources not stated')
+          + ' · n=' + String(b.basis.n) + ' · window=' + (b.basis.window && b.basis.window.days != null ? b.basis.window.days + 'd' : 'not windowed')
+        : (b.basis || 'salience_traces — own identity only; signal statement and why-text are never projected'))
+      + (b.reason ? imgEmpty(b.reason) : '') + imgPrivacy(b.privacy);
+  }
+  if (view === 'archive') {
+    const cov = b.coverage || {};
+    return imgKv([['Cells', cov.cells_total], ['New this cycle', cov.new_cells_this_cycle], ['Occupancy', cov.occupancy ? (cov.occupancy.occupied + '/' + cov.occupancy.possible + ' (' + cov.occupancy.ratio + ')') : '—'], ['Cycle', cov.cycle_id || 'none']])
+      + '<h3>Coverage by descriptor dimension</h3>'
+      + Object.keys(cov.cells_by_dimension || {}).map(dim => '<div><strong>' + esc(dim) + ':</strong> ' + esc(Object.keys(cov.cells_by_dimension[dim]).map(k => k + '=' + cov.cells_by_dimension[dim][k]).join(', ')) + '</div>').join('')
+      + '<h3>Gaps</h3>'
+      + imgTable(cov.gaps, ['Dimension','Unoccupied bins'], g => [g.dimension, (g.unoccupied_bins || []).join(', ')])
+      + '<h3>Incumbents (sanitised — bins, counts, quality and ids only)</h3>'
+      + imgTable(b.incumbents, ['Cell','Quality','Seeds','Created in','Last cycle','Incumbent seed'], i => [i.cell_key, i.quality, i.seed_count, i.created_cycle_id, i.last_cycle_id, i.incumbent_seed_id])
+      + imgBasis(b.basis) + (b.reason ? imgEmpty(b.reason) : '') + imgPrivacy(b.privacy);
+  }
+  if (view === 'batons') {
+    return imgKv([['Promotion flag', b.promotion_flag ? 'on' : 'off'], ['Batons', (b.batons || []).length], ['Refusals', (b.refusals || []).length], ['Promotions', (b.promotions || []).length]])
+      + '<h3>Batons (compiled from an allow-list; secret-shaped material is validated before display)</h3>'
+      + imgTable(b.batons, ['Baton','Scope','Mission','Cycle','Candidates','Cues','Excluded regions','Stop reason','Hash','Created'], x => [x.baton_id, x.scope, x.mission_id, x.cycle_id, (x.candidate_portfolio || []).length, (x.attention_targets || []).length, (x.excluded_regions || []).length, x.stop_reason, x.payload_hash, fmt(x.created_at)])
+      + '<h3>Refused by name (a row that no longer matches its hash or schema is never rendered as a baton)</h3>'
+      + imgTable(b.refusals, ['Baton','Code','Reason'], r => [r.baton_id, r.code, r.reason])
+      + '<h3>Promotion audit</h3>'
+      + imgTable(b.promotions, ['Promotion','Baton','Promoted by','Promoted at','Payload hash'], p => [p.promotion_id, p.baton_id, p.promoted_by, fmt(p.promoted_at), p.payload_hash])
+      + imgBasis(b.basis) + (b.reason ? imgEmpty(b.reason) : '') + imgPrivacy(b.privacy)
+      + '<h3>Baton payload (the shareable artefact, exactly as stored)</h3>'
+      + (b.batons || []).map(x => '<pre class="mono" style="background:var(--bg2);padding:8px;border-radius:6px;overflow:auto;max-height:240px">' + esc(JSON.stringify(x, null, 2)) + '</pre>').join('');
+  }
+  if (view === 'team') {
+    return '<h3>Thinking modes (expiring assignments, re-verified)</h3>'
+      + imgTable(b.modes, ['Assignment','Mission','Mode','Status','Started','Expires','Reason','Verified'], m => [m.assignment_id, m.mission_id, m.mode, m.status, fmt(m.started_at), fmt(m.expires_at), m.reason, m.verified ? 'yes' : 'no (' + (m.refusal ? m.refusal.code : '') + ')'])
+      + '<h3>Inheritance envelopes (bounded, immutable references)</h3>'
+      + imgTable(b.envelopes, ['Envelope','Mission','Child','Mode','Profile','Version','Allowed dimensions','Mutations','Expires','Verified'], e => [e.envelope_id, e.mission_id, e.child_label, e.mode, e.disposition_profile, e.disposition_version, (e.allowed_dimensions || []).join(', '), e.mutations, fmt(e.expires_at), e.verified ? 'yes' : 'no (' + (e.refusal ? e.refusal.code : '') + ')'])
+      + '<h3>Allocations (portfolio reports)</h3>'
+      + imgTable(b.allocations, ['Portfolio','Mission','Agents','Verifier','Created'], a => [a.portfolio_id, a.mission_id, (a.agents || []).map(x => x.identity + '/' + x.mode).join(', '), a.verifier_reservation ? a.verifier_reservation.identity : '—', fmt(a.created_at)])
+      + '<h3>Independent first pass</h3>'
+      + imgTable(b.first_pass, ['Portfolio','Mission','Status','Agents (mode · admitted)','Created'], p => [p.portfolio_id, p.mission_id, p.status, (p.agents || []).map(a => a.identity + ' · ' + a.mode + ' · ' + a.seeds_admitted).join('; '), fmt(p.created_at)])
+      + '<h3>Synthesis</h3>'
+      + imgTable(b.synthesis, ['Portfolio','Mission','Candidates','Promoted','Created'], s => [s.portfolio_id, s.mission_id, (s.provenance || []).length, String(s.promoted), fmt(s.created_at)])
+      + imgBasis(b.basis) + (b.reason ? imgEmpty(b.reason) : '') + imgPrivacy(b.privacy);
+  }
+  if (view === 'metrics') {
+    const m = b.metrics || {};
+    const leak = m.privacy_leakage || {};
+    const stab = m.personality_stability || {};
+    const cmp = m.window_comparison || {};
+    return '<h3>Metrics (every number with its basis)</h3>'
+      + '<table><tr><th>Metric</th><th>Status</th><th>Value</th><th>Basis</th><th>Why no value</th></tr>'
+      + IMG_METRIC_KEYS.map(([key, label]) => imgMetric(label, m[key])).join('')
+      + '</table>'
+      + '<h3>Did value improve versus baseline? — ' + imgTag(cmp.verdict || 'no comparison', cmp.verdict === 'improved' ? 'agree' : cmp.verdict === 'not_improved' ? 'diverge' : cmp.verdict === 'equal' ? 'equal' : '') + '</h3>'
+      + imgTable(cmp.metrics, ['Metric','Direction','Target','Baseline','This window','Delta','Relative gain','Verdict','Why'], row => [row.metric, row.direction, row.target ? row.target.min_relative_gain + ' (' + row.target.source + ')' : '—', (row.baseline.value === null ? 'no value' : row.baseline.value) + ', n=' + row.baseline.n, (row.treatment.value === null ? 'no value' : row.treatment.value) + ', n=' + row.treatment.n, row.delta, row.relative_gain, row.verdict, row.reason])
+      + imgBasis(cmp.basis)
+      + '<h3>Privacy leakage — an audit count, with the rows it scanned</h3>'
+      + imgKv([['Flagged', leak.flagged], ['Shared artefacts scanned', leak.shared_artefacts_scanned], ['Markers checked', leak.markers_checked], ['Keys checked', (leak.keys_checked || []).length]])
+      + imgBasis(leak.basis && leak.basis.measurement)
+      + '<h3>Personality stability</h3>'
+      + imgKv([['Violations', stab.violations], ['Envelopes checked', stab.envelopes_checked], ['Assignments checked', stab.assignments_checked], ['By code', JSON.stringify(stab.by_code || {})]])
+      + imgBasis(stab.basis && stab.basis.measurement)
+      + imgBasis(m.basis) + (b.reason ? imgEmpty(b.reason) : '') + imgPrivacy(b.privacy);
+  }
+  if (view === 'experiments') {
+    return imgTable(b.experiments, ['Experiment','Name','Hypothesis','Arms','Checkpoints','Observations','Metrics recorded',''],
+        e => [e.experiment_id, e.name, e.hypothesis, (e.arms || []).map(a => a.label).join(', '), (e.checkpoints || []).join(', '), e.observations, (e.metrics_recorded || []).join(', '), 'compare'])
+      + (b.experiments || []).map(e => '<button class="ghost" data-compare="' + esc(e.experiment_id) + '">compare ' + esc(e.experiment_id) + '</button> <button class="ghost" data-observe="' + esc(e.experiment_id) + '">record observation</button>').join(' ')
+      + imgBasis(b.basis) + imgBasis('write: ' + b.write_path) + (b.reason ? imgEmpty(b.reason) : '') + imgPrivacy(b.privacy);
+  }
+  if (view === 'compare') {
+    const cmp = b.comparison || {};
+    if (!cmp.metrics) return imgEmpty((b && b.reason) || 'No comparison was returned.');
+    return imgKv([['Experiment', cmp.experiment_id], ['Verdict', cmp.verdict], ['Baseline arm(s)', (cmp.baseline_arms || [cmp.baseline_arm]).join(' + ')], ['Treatment arm(s)', (cmp.treatment_arms || [cmp.treatment_arm]).join(' + ')], ['Improved', cmp.counts ? cmp.counts.improved : '—'], ['Not improved', cmp.counts ? cmp.counts.not_improved : '—'], ['Equal', cmp.counts && cmp.counts.equal !== undefined ? cmp.counts.equal : '—'], ['Insufficient data', cmp.counts ? cmp.counts.insufficient_data : '—']])
+      + '<h3>Per metric: baseline vs treatment</h3>'
+      + imgTable(cmp.metrics, ['Metric','Direction','Target','Baseline (mean, n)','Treatment (mean, n)','Delta','Relative gain','Verdict','Why'], m => [m.metric, m.direction, (m.target ? m.target.min_relative_gain + ' (' + m.target.source + ')' : '—'), m.baseline.weighted_mean + ', n=' + m.baseline.n, m.treatment.weighted_mean + ', n=' + m.treatment.n, m.delta, m.relative_gain, m.verdict, m.reason])
+      + imgBasis(cmp.basis) + imgPrivacy(cmp.privacy);
+  }
+  if (view === 'rollout') {
+    return '<h3>Feature flags (read from this process, never hardcoded)</h3>'
+      + imgTable(b.flags, ['Flag','Environment variable','Stage','State'], f => [f.name, f.env_var, f.stage, f.on ? 'on' : 'off'])
+      + '<h3>Kill switches</h3>'
+      + imgTable(b.kill_switches, ['Switch','Environment variable','State','Effect'], k => [k.name, k.env_var, k.armed ? 'ARMED' : 'clear', k.forces])
+      + '<h3>Staged rollout — the gates each stage must pass</h3>'
+      + imgTable(b.stages, ['Stage','Flag','State','Gates','What to watch'], s => [s.stage, s.flag, s.state, (s.gates || []).join(' · '), (s.watched || []).join(' · ')])
+      + '<h3>Rollback</h3>'
+      + imgKv([['Runbook', b.rollback.doc], ['Plane', b.plane], ['Scheduler mode', b.scheduler_mode], ['Kill switch armed', String(b.kill_switch_active)]])
+      + '<pre class="mono" style="background:var(--bg2);padding:8px;border-radius:6px;overflow:auto">' + esc(b.rollback.kill_switch_command + '\n' + b.rollback.flag_off_command + '\n' + b.rollback.code_rollback_command) + '</pre>'
+      + '<div class="note">' + esc(b.rollback.note) + '</div>'
+      + imgBasis(b.basis);
+  }
+  return imgEmpty('No renderer exists for view "' + String(view) + '".');
+}
+
+// boot
+if (KEY) { connect(); } else { buildNav(); show('status'); showBanner('Paste any valid API key (a client key works — the admin key is not required) and press Connect. Reads obey the same visibility rules as the MCP tools.', false); }
+</script>
+</body>
+</html>

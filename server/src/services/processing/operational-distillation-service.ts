@@ -4,6 +4,7 @@
  * Singleton that scans episodic memory for repeatable tool-call patterns,
  * identifies candidate skills, and optionally auto-synthesizes SKILL.md files.
  * Converts Katra's observed procedural patterns into executable skills.
+ * Everything identity-scoped is read for ONE identity at a time (ITER-4).
  */
 
 import { createHash } from 'node:crypto';
@@ -59,19 +60,21 @@ export class OperationalDistillationService {
    * 4. Optionally auto-synthesize via SkillSynthesisService
    * 5. Promote candidates meeting the auto-promote threshold
    */
-  async runDistillation(options?: {
+  async runDistillation(options: {
+    userId: string;
     minObservations?: number;
     autoSynthesize?: boolean;
   }): Promise<DistillationResult> {
-    const minObservations = options?.minObservations ?? 3;
-    const autoSynthesize = options?.autoSynthesize ?? true;
+    const minObservations = options.minObservations ?? 3;
+    const autoSynthesize = options.autoSynthesize ?? true;
     const errors: string[] = [];
     let skillsSynthesized = 0;
     let skillsPromoted = 0;
 
-    // 1. Query SelfModelService for procedural templates (frequency >= 3)
+    // 1. Query SelfModelService for this identity's procedural patterns.
+    //    Identity-scoped: the patterns of the caller, never another identity's.
     const selfModel = SelfModelService.get_instance();
-    const templates: ProceduralTemplate[] = selfModel.getProceduralTemplates();
+    const templates: ProceduralTemplate[] = await selfModel.getProceduralTemplates(options.userId);
 
     // Build a per-tool success-rate lookup from templates
     const toolSuccessRates = new Map<string, number>();
@@ -90,15 +93,14 @@ export class OperationalDistillationService {
       }
     }
 
-    // Determine which tool names from templates have at least one entry with frequency >= 3
+    // Determine which tool names from patterns have at least one entry with
+    // frequency >= minObservations — read through the supported API (the raw
+    // pattern cache is private to the self-model service).
     const lowThresholdTemplates = new Map<string, number>();
-    for (const [key, entry] of (selfModel as any).proceduralPatterns?.entries?.() ?? []) {
-      if (entry.frequency >= minObservations) {
-        const existing = lowThresholdTemplates.get(entry.toolName);
-        if (existing === undefined) {
-          lowThresholdTemplates.set(entry.toolName, entry.avgSuccess);
-        }
-      }
+    const observedPatterns = await selfModel.getProceduralPatterns(options.userId, minObservations);
+    for (const entry of observedPatterns) {
+      if (lowThresholdTemplates.has(entry.toolName)) continue;
+      lowThresholdTemplates.set(entry.toolName, entry.avgSuccess);
     }
 
     // 2. Query episodic events for tool-call sequences

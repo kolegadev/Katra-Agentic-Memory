@@ -23,6 +23,57 @@ export const PERSONAL_KINDS: readonly string[] = [
   'reflection',
   'emotional',
   'insight',
+  // ITER-5 (focused consolidation): the mission-scoped Salience Trace and its
+  // run ledger are personal by construction — a trace is the private reading
+  // of a mission by one identity. Both are listed by the collection they
+  // protect, and the focused-consolidation service resolves every write with
+  // `resolveWriteScope({ kind })` before `stripSharedId`.
+  'salience_traces',
+  'focused_consolidation_runs',
+  // ITER-6 (imagination engine): the hypothesis seeds and their lineage rows
+  // are personal by construction — a seed is one identity's private, evidence-
+  // linked imagination about a mission, and a lineage row is the record of how
+  // it was produced. Both are listed by the collection they protect. NOTE the
+  // deliberate omission: `idea_archive_cells` is NOT here. The archive is
+  // identity-owned but mission-indexed, so it is written with the policy's
+  // explicit `private: true` opt-out instead of being declared a personal
+  // kind (see processing/imagination-collections.ts for the full reading).
+  'idea_seeds',
+  'idea_lineages',
+  'imagination_runs',
+  // ITER-7 (creative baton): the cycle state row, the cycle run ledger and the
+  // candidate-outcome rows are personal by construction — they carry one
+  // identity's cooldown/budget bookkeeping, its cycle history and what it
+  // learned about its own candidates. All three are listed by the collection
+  // they protect. NOTE the deliberate omissions: `creative_batons` (compiled
+  // privately, promoted to a team scope by the gated promoter) and
+  // `creative_baton_promotions` (the audit row of that team artifact) are NOT
+  // personal kinds, because the baton is the one artifact this feature may
+  // share — see processing/creative-baton-collections.ts for the full reading.
+  'imagination_cycle_states',
+  'imagination_cycles',
+  'idea_candidate_outcomes',
+  // ITER-8 (cognitive team): the mode assignments, the inheritance envelopes and
+  // the cognitive portfolios (allocation / first pass / synthesis) are personal
+  // by construction — a mode is one identity's own working disposition on a
+  // mission, an envelope is the parent's own bounded grant to a spawned scope,
+  // and a portfolio names which of ITS candidates an evaluator will look at.
+  // All three are listed by the collection they protect, and nothing in this
+  // iteration writes a shared scope at all: a synthesis carries
+  // `promoted: false`, and promotion remains Phase 5's, on the baton.
+  'thinking_mode_assignments',
+  'inheritance_envelopes',
+  'cognitive_portfolios',
+  // ITER-11 (verification + learning): the failure signatures a mission's
+  // candidates leave behind, the bounded delta PROPOSALS the personality
+  // service computes and the deprecation-telemetry counters of the legacy
+  // personality path are all identity-owned records about one identity's own
+  // work — none of them is ever shared, and none may carry a `shared_id` even
+  // against an explicit shared request.
+  'idea_failure_signatures',
+  'personality_delta_proposals',
+  'personality_deprecation_events',
+  'salience_inputs',
 ];
 
 /** Default shared scope for every non-personal write. */

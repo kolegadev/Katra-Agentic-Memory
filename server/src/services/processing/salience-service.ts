@@ -10,7 +10,13 @@
  * 5 meta-states modulate weight distribution.
  * Bayesian surprise for valence/intensity shifts.
  * Yerkes-Dodson arousal-threshold modulation.
+ *
+ * ITER-11 adds identity stamping + persisted trace-ready inputs WITHOUT
+ * touching the ingestion gate (see the block below for the full reading).
  */
+import type { Db } from 'mongodb';
+import { privateDoc } from './idea-archive-service.js';
+import type { CallerIdentity } from '../../utils/caller-identity.js';
 
 export type MetaState = 'exploration' | 'task_execution' | 'reflection' | 'alert' | 'idle';
 
@@ -71,6 +77,84 @@ const META_AROUSAL: Record<MetaState, number> = {
 };
 
 import { DecisionActionService } from './decision-action-service.js';
+
+// ── ITER-11 (WS-5 item 3): identity stamping + trace-ready inputs ───────────
+//
+// The brief's §6.1 item 2 asks this module to "persist trace-ready signal
+// inputs/results and expose calibrated problem-scoped scoring; do not replace
+// fast ingestion gating". ITER-11 adds exactly that and nothing else:
+//
+//   - `computeStampedSalience` runs the SAME computation as `computeSalience`
+//     (which is untouched) and returns the same result plus an
+//     identity-stamped, persistence-ready row: the six signals, the weights,
+//     the score, the tier and the threshold — NUMBERS ONLY, never a statement,
+//     a narrative or a reflection;
+//   - `persistSalienceInput` / `listTraceReadyInputs` store and read those rows
+//     per identity, bounded (`MAX_TRACE_READY_INPUTS` per identity, oldest
+//     pruned and counted);
+//   - the ingestion gate is untouched: `getProcessingDirective` and every
+//     existing caller behave exactly as before, and nothing in this module
+//     reads the new collection on a hot path. The trace producer (the focused
+//     consolidation service) may CITE the rows; it does not have to.
+//
+// The limit, stated plainly: the rows are per identity and per (optional)
+// mission, but the SERVICE is a process-wide singleton with transient state, so
+// two identities in one process share the meta-state and the recent-score ring
+// exactly as they did before this iteration. The persisted rows are what make
+// the inputs attributable.
+
+/** The collection the trace-ready inputs live in (a personal kind). */
+export const SALIENCE_INPUT_COLLECTION = 'salience_inputs';
+/** How many trace-ready inputs one identity keeps. */
+export const MAX_TRACE_READY_INPUTS = 100;
+
+/** The identity a computation is stamped for. */
+export interface SalienceStamp {
+  user_id: string;
+  mission_id?: string | null;
+}
+
+/** The persisted, identity-stamped view of one salience computation. */
+export interface TraceReadySalienceInput {
+  schema_version: '1.0';
+  kind: 'salience_input';
+  input_id: string;
+  user_id: string;
+  mission_id: string | null;
+  meta_state: MetaState;
+  signals: Record<string, number>;
+  weights: Record<string, number>;
+  score: number;
+  tier: 'high' | 'medium' | 'low';
+  threshold: number;
+  created_at: string;
+}
+
+export interface PersistSalienceInputResult {
+  persisted: boolean;
+  code: 'invalid_args' | 'untrusted_caller' | null;
+  reason: string;
+  row: TraceReadySalienceInput | null;
+  rows: number;
+  pruned: number;
+}
+
+function stableDigest(payload: string): string {
+  // A small, dependency-free digest: the row id is DERIVED from its own
+  // content, so the same computation stamped twice derives the same id.
+  let hash = 2166136261;
+  for (let index = 0; index < payload.length; index += 1) {
+    hash ^= payload.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  const second = `${payload.length}:${payload.slice(0, 32)}`;
+  let hash2 = 2166136261;
+  for (let index = 0; index < second.length; index += 1) {
+    hash2 ^= second.charCodeAt(index);
+    hash2 = Math.imul(hash2, 16777619);
+  }
+  return `${(hash >>> 0).toString(16).padStart(8, '0')}${(hash2 >>> 0).toString(16).padStart(8, '0')}`;
+}
 
 export class SalienceService {
   private static instance: SalienceService;
@@ -280,6 +364,43 @@ export class SalienceService {
     }
   }
 
+  /**
+   * The same computation as `computeSalience`, but STAMPED for one identity and
+   * returned alongside a persistence-ready row (numbers only). The fast
+   * ingestion path keeps calling `computeSalience`; this method exists for the
+   * trace producer, which needs attributable inputs.
+   */
+  computeStampedSalience(
+    params: SalienceParams,
+    stamp: SalienceStamp,
+    at?: string,
+  ): { result: SalienceResult; trace_ready: TraceReadySalienceInput } {
+    const result = this.computeSalience(params);
+    const userId = String(stamp?.user_id ?? '').trim();
+    const missionId = typeof stamp?.mission_id === 'string' && stamp.mission_id.trim().length > 0
+      ? stamp.mission_id.trim()
+      : null;
+    const created = at ?? new Date().toISOString();
+    const payload = `${userId}:${missionId ?? ''}:${result.score}:${result.tier}:${result.meta_state}:${JSON.stringify(result.signals)}`;
+    return {
+      result,
+      trace_ready: {
+        schema_version: '1.0',
+        kind: 'salience_input',
+        input_id: `sal_${stableDigest(payload)}`,
+        user_id: userId,
+        mission_id: missionId,
+        meta_state: result.meta_state,
+        signals: { ...result.signals },
+        weights: { ...result.weights },
+        score: result.score,
+        tier: result.tier,
+        threshold: result.threshold,
+        created_at: created,
+      },
+    };
+  }
+
   private computeMaxGoalSimilarity(embedding: number[]): number {
     let maxSim = 0;
     for (const goalEmb of this.goalEmbeddings.values()) {
@@ -303,4 +424,80 @@ export class SalienceService {
     if (normA === 0 || normB === 0) return 0;
     return dot / (Math.sqrt(normA) * Math.sqrt(normB));
   }
+}
+
+// ── Persistence of the trace-ready inputs (bounded, per identity) ───────────
+
+/**
+ * Store one trace-ready input. Bounded per identity: past
+ * `MAX_TRACE_READY_INPUTS` rows the OLDEST are pruned and counted, so a hot
+ * ingestion loop cannot grow the collection without limit. The row is written
+ * through the write-scope policy, so it can never carry a `shared_id`.
+ */
+export async function persistSalienceInput(
+  db: Db,
+  input: TraceReadySalienceInput,
+  opts: { caller?: CallerIdentity } = {},
+): Promise<PersistSalienceInputResult> {
+  const userId = String(input?.user_id ?? '').trim();
+  if (!db || !userId || !input?.input_id) {
+    return { persisted: false, code: 'invalid_args', reason: 'a database, a user_id and an input_id are required', row: null, rows: 0, pruned: 0 };
+  }
+  if (opts.caller && !opts.caller.trusted && opts.caller.user_id !== userId) {
+    return {
+      persisted: false,
+      code: 'untrusted_caller',
+      reason: `caller '${opts.caller.user_id}' may not persist a salience input for '${userId}'`,
+      row: null,
+      rows: 0,
+      pruned: 0,
+    };
+  }
+  const collection = db.collection(SALIENCE_INPUT_COLLECTION);
+  await collection.updateOne(
+    { input_id: input.input_id, user_id: userId },
+    { $set: privateDoc(SALIENCE_INPUT_COLLECTION, userId, { ...input, user_id: userId }) },
+    { upsert: true },
+  );
+
+  const rows = (await collection
+    .find({ user_id: userId }, { projection: { _id: 0, input_id: 1, created_at: 1 } })
+    .limit(MAX_TRACE_READY_INPUTS * 4)
+    .toArray()) as unknown as Array<{ input_id: string; created_at: string }>;
+  const ordered = [...rows].sort((left, right) =>
+    String(right.created_at ?? '').localeCompare(String(left.created_at ?? '')),
+  );
+  const doomed = ordered.slice(MAX_TRACE_READY_INPUTS);
+  for (const victim of doomed) {
+    await collection.deleteOne({ user_id: userId, input_id: victim.input_id });
+  }
+  return {
+    persisted: true,
+    code: null,
+    reason:
+      `input ${input.input_id} stored${doomed.length > 0 ? ` (${doomed.length} older row(s) pruned to stay within ${MAX_TRACE_READY_INPUTS})` : ''}`,
+    row: input,
+    rows: ordered.length - doomed.length,
+    pruned: doomed.length,
+  };
+}
+
+/** The identity's trace-ready inputs, newest first (bounded read). */
+export async function listTraceReadyInputs(
+  db: Db,
+  userId: string,
+  opts: { missionId?: string | null; limit?: number } = {},
+): Promise<TraceReadySalienceInput[]> {
+  const identity = String(userId ?? '').trim();
+  if (!db || !identity) return [];
+  const limit = Math.min(Math.max(Math.floor(Number(opts.limit) || MAX_TRACE_READY_INPUTS), 1), MAX_TRACE_READY_INPUTS);
+  const filter: Record<string, unknown> = { user_id: identity };
+  if (typeof opts.missionId === 'string' && opts.missionId.trim().length > 0) filter.mission_id = opts.missionId.trim();
+  const rows = (await db
+    .collection(SALIENCE_INPUT_COLLECTION)
+    .find(filter, { projection: { _id: 0 } })
+    .sort({ created_at: -1 })
+    .limit(limit)
+    .toArray()) as unknown as TraceReadySalienceInput[];
+  return rows;
 }

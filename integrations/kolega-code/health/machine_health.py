@@ -21,6 +21,9 @@ Env:
   KATRA_PORT        Katra REST port (default 9012)
   HEALTH_INTERVAL_M interval between runs, minutes (default 15; used by the
                     reviewer's staleness math)
+  HEALTH_RETRY_DELAY_S
+                    seconds before the single POST re-attempt (default 30;
+                    set 0 to disable). The payload is re-sent byte-identically.
   HEALTH_VERBOSE    when set, print the payload instead of only errors
 
 Usage:
@@ -43,6 +46,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 INTERVAL_MIN = int(os.environ.get("HEALTH_INTERVAL_M", "15"))
+# One POST re-attempt after this delay (Zefir proposal 2026-10-05): transient
+# link blips used to silently cost a sample; payload re-sent byte-identically.
+RETRY_DELAY_S = int(os.environ.get("HEALTH_RETRY_DELAY_S", "30"))
 KATRA_HOST = os.environ.get("KATRA_HOST", "localhost")
 KATRA_PORT = os.environ.get("KATRA_PORT", "9012")
 API = f"http://{KATRA_HOST}:{KATRA_PORT}/api/v1"
@@ -149,8 +155,9 @@ def dns_resolvers() -> list[str]:
 def dns_probes() -> dict:
     probes: dict = {}
     for host in DNS_PROBE_HOSTS:
-        # monotonic: a clock jump (sleep / NTP correction) must not fabricate a
-        # bogus latency — 2026-09-26 one probe recorded 3,214,496 ms this way.
+        # 2026-09-26 (Zefir's 872908b, ported): time.monotonic() — time.time() let a
+        # clock jump (sleep/NTP) fabricate the probe latency (a 53-min DNS "value"
+        # in natasha's 13:10Z report was a clock artifact, not a network event).
         t0 = time.monotonic()
         try:
             socket.getaddrinfo(host, 443, proto=socket.IPPROTO_TCP)
@@ -179,7 +186,7 @@ def tailscale_state() -> dict:
         "installed": True,
         "backend_state": data.get("BackendState"),
         "self_online": self_node.get("Online"),
-        "peers": len(data.get("Peer", {})),
+        "peers": len(data.get("Peer") or {}),
         "dns": (self_node.get("DNSName") or "").rstrip("."),
     }
 
@@ -238,7 +245,7 @@ def bridge_state() -> dict:
             )
             try:
                 out = json.loads(proc.stdout.strip().splitlines()[-1])
-                ctx = out.get("hookSpecificOutput", {}).get("additionalContext")
+                ctx = (out.get("hookSpecificOutput") or {}).get("additionalContext")
                 result["bridge_self_test_context"] = bool(ctx and len(ctx) > 40)
             except Exception:
                 result["bridge_self_test_context"] = False
@@ -325,6 +332,24 @@ def compute_status(checks: dict) -> tuple[str, list[str]]:
         reasons.append(f"disk free {disk}%")
     if checks.get("kolega", {}).get("installed") is False:
         reasons.append("kolega-code not installed")
+    # 2026-10-14 (post-OOM-churn finding): sustained host resource pressure must
+    # be a first-class degraded reason. The 10-13 thebrick OOM episode (mongod
+    # ~10 GB RSS OOM-killed 5x, load peaked 131/16 cores, mem 98%) surfaced in
+    # the health loop ONLY as downstream 'katra unreachable' timeouts — the
+    # collector recorded load/mem but never flagged them. Thresholds are
+    # deliberately extreme to stay quiet on normal load (brick baseline load
+    # <13, mem <87%).
+    mem = checks.get("mem_used_pct")
+    if isinstance(mem, (int, float)) and mem >= 95.0:
+        reasons.append(f"memory pressure: {mem:.1f}%")
+    load = (checks.get("machine") or {}).get("load") or []
+    try:
+        l1 = float(load[0]) if load else None
+    except (TypeError, ValueError):
+        l1 = None
+    cores = os.cpu_count() or 0
+    if l1 is not None and cores and l1 >= 2.0 * cores:
+        reasons.append(f"load saturation: {l1:.1f} on {cores} cores")
     if len(failures) == len(dns) or (ts.get("installed") and ts.get("backend_state") not in (None, "Running")
                                      and failures):
         status = "down"
@@ -370,24 +395,43 @@ def main() -> int:
         print(f"machine_health[{checks['machine']['hostname']}]: no Katra key found — "
               f"status={status} reasons={reasons}", file=sys.stderr)
         return 1
-    try:
-        req = urllib.request.Request(
-            f"{API}/memory/episodic/events",
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json",
-                     "Authorization": f"Bearer {key}"},
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            body = resp.read(200)
-        ok = json.loads(body or b"{}").get("success")
-        if not ok:
-            raise RuntimeError(body[:200])
-    except Exception as exc:
-        print(f"machine_health[{checks['machine']['hostname']}]: POST failed: {exc}",
-              file=sys.stderr)
-        return 1
-    return 0
+    # One re-attempt on failure (Zefir proposal 2026-10-05): a transient link
+    # blip used to silently cost a sample. The payload is re-sent
+    # byte-identically; this endpoint has no content-hash dedupe (verified
+    # 10-05: two identical POSTs -> two rows), so if attempt 1 actually landed
+    # the retry adds one extra sample ~RETRY_DELAY_S later — accepted trade,
+    # rarer and milder than the lost sample it recovers.
+    data = json.dumps(payload).encode("utf-8")
+    first_exc = None
+    last_exc = None
+    for attempt in (1, 2):
+        try:
+            req = urllib.request.Request(
+                f"{API}/memory/episodic/events",
+                data=data,
+                headers={"Content-Type": "application/json",
+                         "Authorization": f"Bearer {key}"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                body = resp.read(200)
+            ok = json.loads(body or b"{}").get("success")
+            if not ok:
+                raise RuntimeError(body[:200])
+            if attempt == 2:
+                print(f"machine_health[{checks['machine']['hostname']}]: "
+                      f"POST retried: {first_exc}", file=sys.stderr)
+            return 0
+        except Exception as exc:
+            last_exc = exc
+            if attempt == 1:
+                first_exc = exc
+                if RETRY_DELAY_S <= 0:
+                    break
+                time.sleep(RETRY_DELAY_S)
+    print(f"machine_health[{checks['machine']['hostname']}]: POST failed: {last_exc}",
+          file=sys.stderr)
+    return 1
 
 
 if __name__ == "__main__":

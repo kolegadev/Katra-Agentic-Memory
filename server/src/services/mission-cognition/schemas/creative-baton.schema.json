@@ -1,0 +1,399 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://katra.dev/schemas/creative-baton.schema.json",
+  "title": "Katra Creative Baton",
+  "description": "The SANITISED, versioned context packet a stalled mission's controller picks candidates up from (ITER-7, Phase 5). Privacy: the baton is CONSTRUCTED field by field from an allow-list by creative-baton-compiler.ts — no private seed, trace, lineage or run field rides through, and the fields the brief marks private (evidence refs, changed premises, trace statements, the trace's own why_operationally_relevant, bridge text, parent links) have no place in this schema at all. The one field that may be shared is `shared_id`, stamped ONLY by the gated promoter, never by the compiler. Token discipline: `excluded_regions[].pattern` is a FINGERPRINT (kind + ordinal + a hash of the ruled-out text), never the text. Strictness: `additionalProperties` is FALSE at the top level and on every object in the shape, so an extra key is not merely dropped by the compiler — it fails validation at COMPILE, PROMOTE and READ time. That is deliberately stronger than a hash check: the payload hash is an UNSIGNED digest over the stored document, so a store-level writer can recompute it, and the closed schema is what then refuses the packet.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "creative_baton_version",
+    "baton_id",
+    "user_id",
+    "mission_id",
+    "mission_version",
+    "cycle_id",
+    "trigger",
+    "problem_state_digest",
+    "excluded_regions",
+    "attention_targets",
+    "candidate_portfolio",
+    "coverage_gaps",
+    "coverage_summary",
+    "next_round_budget",
+    "counts",
+    "privacy",
+    "payload_hash",
+    "created_at"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "creative_baton_version": {
+      "description": "The baton FORMAT version (the brief's §4.3 `creative_baton_version`). A stored baton is promoted only if its version is one this deployment can validate.",
+      "const": "1.0"
+    },
+    "baton_id": {
+      "description": "Derived: sha256 over the mission, the cycle, the compiled portfolio's seed ids and the problem-state digest. Never a random UUID.",
+      "type": "string",
+      "minLength": 1
+    },
+    "user_id": {
+      "description": "The identity the baton was compiled FOR. It is the baton's owner until it is promoted; a promotion adds a team scope without moving the identity.",
+      "type": "string",
+      "minLength": 1
+    },
+    "mission_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "mission_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "cycle_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "trigger": {
+      "description": "Why the cycle ran. `type` is the sanitised trigger label; `evidence` names the plateau conditions (and any force) that decided it — labels only, never private text.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "evidence"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "evidence": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        }
+      }
+    },
+    "problem_state_digest": {
+      "description": "The digest of the mission state the trace was built from (ITER-5's, copied verbatim — it is a hash, not private text).",
+      "type": "string",
+      "minLength": 1
+    },
+    "excluded_regions": {
+      "description": "The regions the mission has ruled out, as FINGERPRINTS: kind, ordinal and a hash of the ruled-out text. The text itself never appears here.",
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["pattern", "reason", "unless"],
+        "properties": {
+          "pattern": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 400
+          },
+          "unless": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 400
+          }
+        }
+      }
+    },
+    "attention_targets": {
+      "description": "What the cycle's trace pressed on, as CUES the compiler derives from the signal's kind and calibration numbers (never the signal's private statement or why text).",
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["cue", "why_operationally_relevant"],
+        "properties": {
+          "cue": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "why_operationally_relevant": {
+            "description": "Compiler-derived: which kinds of decision this cue can change and which operator families press on it.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 400
+          },
+          "operator_families": {
+            "type": "array",
+            "maxItems": 10,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 60
+            }
+          }
+        }
+      }
+    },
+    "candidate_portfolio": {
+      "description": "The cycle's eligible candidates, in deterministic quality order. Each entry carries the candidate's own claim, mechanism, cheapest test and scores — the compiled material a controller acts on — and an explicit `privacy_safe: true`.",
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "seed_id",
+          "hypothesis",
+          "mechanism",
+          "descriptor_bins",
+          "novelty_score",
+          "coherence_score",
+          "cheapest_test",
+          "expected_information_gain",
+          "lineage_ref",
+          "privacy_safe"
+        ],
+        "properties": {
+          "seed_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "hypothesis": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "mechanism": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "descriptor_bins": {
+            "description": "The candidate's descriptor tuple, ordered by the ACTIVE descriptor space's dimensions (configurable via IMAGINATION_BINS). The shape is bounded here; `validateCoverageGaps` enforces the space's vocabulary on the gaps.",
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 16,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "novelty_score": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "coherence_score": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "cheapest_test": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "expected_information_gain": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "lineage_ref": {
+            "type": "string",
+            "minLength": 1
+          },
+          "privacy_safe": {
+            "const": true
+          }
+        }
+      }
+    },
+    "coverage_gaps": {
+      "description": "The descriptor bins no cell addresses yet — vocabulary strings and counts only. The compiler RE-VALIDATES every entry against the archive's descriptor vocabulary (the closed defaults, or the space IMAGINATION_BINS configures) and drops (counting) anything outside it, so a marker injected into a gap cannot ride into a shared packet.",
+      "type": "array",
+      "maxItems": 10,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["dimension", "unoccupied_bins"],
+        "properties": {
+          "dimension": {
+            "type": "string",
+            "minLength": 1
+          },
+          "unoccupied_bins": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    },
+    "coverage_summary": {
+      "description": "The bounded scan behind the gaps — cells seen, the scan's limits and whether a bound bit. A bounded scan is never silent.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cells_total", "occupancy_ratio", "scan"],
+      "properties": {
+        "cells_total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "new_cells_this_cycle": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "occupancy_ratio": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "scan": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["cells_limit", "cells_scanned", "seeds_dedupe_limit", "truncated"],
+          "properties": {
+            "cells_limit": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "cells_scanned": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "cells_truncated": {
+              "type": "boolean"
+            },
+            "seeds_dedupe_limit": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "seeds_scanned": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "seeds_truncated": {
+              "type": "boolean"
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    "next_round_budget": {
+      "description": "What the next round is allowed to spend, derived from the plateau rule and this cycle's eligible candidates.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["candidates", "tests"],
+      "properties": {
+        "candidates": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tests": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "counts": {
+      "description": "Planned vs actual, so an empty portfolio is never silent: how many admitted candidates were considered, how many cleared the floor, how many were dropped for carrying an id that is not derived-id-shaped, how many regions/cues were folded in, and how many coverage gaps/bins were dropped for being outside the archive's closed descriptor vocabulary.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["candidates_considered", "candidates_eligible", "excluded_regions", "attention_targets"],
+      "properties": {
+        "candidates_considered": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "candidates_eligible": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "candidates_dropped_unshaped_ids": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "excluded_regions": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "attention_targets": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "coverage_gaps_considered": {
+          "description": "Gaps the coverage view offered (before the vocabulary re-validation).",
+          "type": "integer",
+          "minimum": 0
+        },
+        "coverage_gaps_dropped_unknown_dimension": {
+          "description": "Gaps dropped because their dimension is not one of the archive's DESCRIPTOR_DIMENSIONS.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "coverage_bins_dropped_unknown": {
+          "description": "Bins dropped because they are not in DESCRIPTOR_BINS[dimension].",
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "privacy": {
+      "description": "The baton's own privacy statement. `raw_reflections_included` is const false (a baton that claimed otherwise could not be stored); `shared` is false until the gated promoter stamps a shared scope.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["raw_reflections_included", "shared"],
+      "properties": {
+        "raw_reflections_included": {
+          "const": false
+        },
+        "shared": {
+          "type": "boolean"
+        }
+      }
+    },
+    "payload_hash": {
+      "description": "sha256 over the canonical sanitised payload (the promotion-stamp fields excluded). The promoter recomputes it and refuses a stored baton whose hash no longer matches.",
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "shared_id": {
+      "description": "Stamped ONLY by the gated promoter (`CREATIVE_BATON_PROMOTION`). Absent on every baton the compiler wrote.",
+      "type": "string",
+      "minLength": 1
+    },
+    "promotion_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "promoted_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "promoted_by": {
+      "type": "string",
+      "minLength": 1
+    },
+    "stop_reason": {
+      "description": "Which stop condition of the cycle that compiled this baton fired first (null when none did).",
+      "type": ["string", "null"]
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

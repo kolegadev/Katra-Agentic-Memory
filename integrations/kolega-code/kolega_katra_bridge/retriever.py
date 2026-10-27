@@ -32,7 +32,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable
 
-from .config import BridgeConfig
+from .config import BridgeConfig, affect_view_enabled
 from .katra_client import KatraMCPClient, MemoryItem
 from .personality import PersonalityProfile, resolve_profile
 
@@ -120,6 +120,10 @@ class MemoryRetriever:
             # ── Inter-agent message scan (always runs — operational) ──
             tasks.append(("agent_message", self._fetch_agent_messages(client)))
 
+            # ── The live affect state (AFFECT-1, opt-in per identity) ──
+            if affect_view_enabled(self.config.user_id):
+                tasks.append(("affect_state", client.get_affect_state()))
+
             # ── Reflection family (sleep consolidation outputs) ──
             if active("daily_reflection"):
                 tasks.append(("daily_reflection", client.get_daily_reflection("daily")))
@@ -184,8 +188,7 @@ class MemoryRetriever:
             )
 
         fetched = self._annotate_reflection(fetched)
-        ranked = self._rank_and_dedupe(fetched, query)
-        return self._apply_token_budget(ranked)
+        return self._with_pinned_state(fetched, query)
 
     async def retrieve_bootstrap(
         self,
@@ -213,6 +216,10 @@ class MemoryRetriever:
 
             # --- Inter-agent message scan (always) ---
             tasks.append(("agent_message", self._fetch_agent_messages(client)))
+
+            # --- The live affect state (AFFECT-1, opt-in per identity) ---
+            if affect_view_enabled(self.config.user_id):
+                tasks.append(("affect_state", client.get_affect_state()))
 
             # --- Reflection family (always, unconditional) ---
             tasks.append(("daily_reflection", client.get_daily_reflection("daily")))
@@ -270,8 +277,20 @@ class MemoryRetriever:
             )
 
         fetched = self._annotate_reflection(fetched)
-        ranked = self._rank_and_dedupe(fetched, bootstrap_query)
-        return self._apply_token_budget(ranked)
+        return self._with_pinned_state(fetched, bootstrap_query)
+
+    def _with_pinned_state(self, fetched: list[MemoryItem], query: str) -> list[MemoryItem]:
+        """Rank and budget everything EXCEPT the live feeling, which is pinned to the front.
+
+        The feeling state is not a memory competing for budget: an agent that is over budget should
+        still know how it feels. Measured before this rule: the item was fetched (807 tokens of
+        payload) and then dropped by the budget pass, so the block rendered on bootstrap and
+        disappeared on ordinary turns. Now it bypasses ranking entirely and at most one is kept.
+        """
+        pinned = [item for item in fetched if item.source == "affect_state"][:1]
+        rest = [item for item in fetched if item.source != "affect_state"]
+        ranked = self._rank_and_dedupe(rest, query)
+        return pinned + self._apply_token_budget(ranked)
 
 
     async def _gather(

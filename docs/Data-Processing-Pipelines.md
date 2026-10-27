@@ -18,7 +18,7 @@ Pi5 (Docker, aarch64)
 | File | Purpose |
 |------|---------|
 | `index.js` | Main entry; starts REST API, MCP server, background processor |
-| `mcp-server.js` | 66 MCP tools for memory operations (source: `server/src/mcp-server.ts`) |
+| `mcp-server.js` | 84 MCP tools for memory operations (source: `server/src/mcp-server.ts`) |
 | `services/` | 30+ service modules forming the pipeline |
 
 ---
@@ -358,6 +358,8 @@ Separate Pipelines:
 | `heartbeat_runs` | Autonomous heartbeat tracking |
 | `heartbeat_config` | Heartbeat configuration |
 | `agent_transaction_log` | Action audit trail |
+| `agent_beliefs` | Theory-of-Mind beliefs, one row per `{user_id, entity_name, proposition}` (unique key) |
+| `procedural_patterns` | Observed tool-call patterns, one row per `{user_id, tool_name, input_shape}` (unique key; survives a restart) |
 | `asset_metadata` | Uploaded file metadata |
 | `lease_collection` | Distributed lease management |
 

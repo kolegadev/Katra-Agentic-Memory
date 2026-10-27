@@ -1,0 +1,318 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://katra.dev/schemas/salience-trace.schema.json",
+  "title": "Katra Salience Trace",
+  "description": "A mission-scoped, evidence-linked, calibrated trace of what feels important and why (ITER-5, focused consolidation). Privacy: the trace carries counts and summaries ONLY — no raw journal or reflection text, and no shared scope. Strictness choice: `signals` and each signal's `evidence_refs` have minItems 1 and every calibration value is bounded, so a stored trace can never be unevidenced or out of range; `additionalProperties` stays true at every level because the stored document is CONSTRUCTED field by field from the model output (unknown keys the model emits are dropped, never stored), so extra keys must not make an otherwise-sound trace unstorable. Registered in the mission-cognition schema registry (schema-registry.ts) — the same Ajv2020 instance that validates mission state, deltas, ledger entries, batons and work items — instead of a second validator next to the service.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "trace_id",
+    "run_id",
+    "mission_id",
+    "mission_version",
+    "cycle_id",
+    "user_id",
+    "trigger",
+    "problem_state_digest",
+    "created_at",
+    "signals",
+    "calibration",
+    "evidence",
+    "input_counts",
+    "privacy"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "trace_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "mission_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "mission_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "cycle_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "user_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "trigger": {
+      "type": "string",
+      "minLength": 1
+    },
+    "problem_state_digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "created_at": {
+      "description": "Trace creation time. The read index is { user_id, mission_id, created_at: -1 }; it is never part of the problem_state_digest (which must be a pure function of the gathered inputs).",
+      "type": "string",
+      "format": "date-time"
+    },
+    "signals": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": [
+          "kind",
+          "statement",
+          "why_operationally_relevant",
+          "intensity",
+          "confidence",
+          "valence",
+          "evidence_refs",
+          "low_confidence"
+        ],
+        "properties": {
+          "kind": {
+            "description": "The private-output vocabulary of the brief: what attracts, what tensions, what surprised, what is absent, what pulls persistently, what remains an open question.",
+            "enum": [
+              "attraction",
+              "tension",
+              "surprise",
+              "absence",
+              "persistent_pull",
+              "question"
+            ]
+          },
+          "statement": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "why_operationally_relevant": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "intensity": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "valence": {
+            "type": "number",
+            "minimum": -1,
+            "maximum": 1
+          },
+          "evidence_refs": {
+            "description": "Ids resolvable in the mission's OWN collections: mission_states.mission_id, state_deltas.delta_id, epistemic_entries.entry_id, cognitive_work_items.work_item_id, cognitive_batons.baton_id. A ref that does not resolve is kept, flagged `unresolved_evidence: true` and counted — never silently dropped and never fabricated.",
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "low_confidence": {
+            "type": "boolean"
+          },
+          "unresolved_evidence": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "calibration": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "signal_count",
+        "intensity_max",
+        "intensity_mean",
+        "confidence_mean",
+        "valence_mean",
+        "low_confidence_count",
+        "confidence_floor",
+        "clamped_values"
+      ],
+      "properties": {
+        "signal_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "intensity_max": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "intensity_mean": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "confidence_mean": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "valence_mean": {
+          "type": "number",
+          "minimum": -1,
+          "maximum": 1
+        },
+        "low_confidence_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "confidence_floor": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "clamped_values": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "clamped_by_field": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "by_kind": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "confidence_buckets": {
+          "description": "The confidence distribution in five 0.2-wide buckets; the buckets sum to signal_count.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "total_refs",
+        "resolved_refs",
+        "unresolved_ref_count",
+        "unresolved_evidence_count",
+        "flagged_refs"
+      ],
+      "properties": {
+        "total_refs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "resolved_refs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unresolved_ref_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unresolved_evidence_count": {
+          "description": "Number of SIGNALS carrying at least one unresolvable ref.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "flagged_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "resolvable_collections": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "warning": {
+          "type": "string"
+        }
+      }
+    },
+    "input_counts": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["ledger_entries", "work_items", "accepted_deltas", "fired_triggers"],
+      "properties": {
+        "ledger_entries": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "hypotheses": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "uncertainties": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "decisions": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "work_items": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "accepted_deltas": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "fired_triggers": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "baton_present": {
+          "type": "boolean"
+        },
+        "journal_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reflection_node_count": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "privacy": {
+      "description": "Attestation, written by the service — never by the model. `raw_reflections_included` is false because the gather reads journal/reflection COUNT rows only and the stored trace is built field by field; `shared` is false because the row is written without shared_id.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["raw_reflections_included", "shared"],
+      "properties": {
+        "raw_reflections_included": {
+          "const": false
+        },
+        "shared": {
+          "const": false
+        }
+      }
+    }
+  }
+}

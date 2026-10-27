@@ -17,6 +17,11 @@ jobs:
         working-directory: server
     steps:
       - uses: actions/checkout@v7
+        with:
+          # The bridge's registry check reads the pre-change module out of git
+          # (48ba7e6) to prove no profile value drifted; a shallow clone can
+          # only skip that proof. The history is a few megabytes.
+          fetch-depth: 0
 
       - uses: actions/setup-node@v7
         with:
@@ -29,11 +34,75 @@ jobs:
       - name: Upgrade npm
         run: npm install -g npm@11
 
+      # ── Personality registry ────────────────────────────────────────────
+      # `shared/personality/registry.json` is the single source of truth for the
+      # ten profiles; both runtimes consume generated artifacts from it. These
+      # two checks are dependency-light (stdlib/plain Node), so they run before
+      # `npm ci` and fail fast if the two runtimes would drift apart.
+      - name: Personality registry is fresh
+        working-directory: .
+        run: node scripts/generate-personality-registry.mjs --check
+
+      - name: Personality registry parity (bridge)
+        working-directory: .
+        run: python3 integrations/kolega-code/scripts/test_personality_registry.py
+
+      # The bridge's per-identity personality fetch: the request it sends, the
+      # per-identity cache, the rejected-key warning and the fail-open paths.
+      # Stdlib only (no httpx), so it runs here as well.
+      - name: Bridge personality fetch (per identity)
+        working-directory: .
+        run: python3 integrations/kolega-code/scripts/test_bridge_personality_fetch.py
+
+      # The DeepSeek off-peak gate and the stale model-id scan/migrate pair.
+      # Stdlib only, and none of them touches live state: the gate test only
+      # runs `offpeak_gate.py --at <literal>`, the scanner test walks a fixture
+      # tree it builds in a temp directory, and the migration test drives
+      # `--files` in DRY-RUN against temp files of its own (never `--apply`,
+      # never a machine profile).
+      - name: Off-peak gate (DeepSeek window + exit code)
+        working-directory: .
+        run: python3 integrations/kolega-code/scripts/test_offpeak_gate.py
+
+      - name: Stale DeepSeek id scan (classification + walk)
+        working-directory: .
+        run: python3 integrations/kolega-code/scripts/test_scan_stale_deepseek_ids.py
+
+      - name: Stale DeepSeek id migration (rewrite rules + dry run)
+        working-directory: .
+        run: python3 integrations/kolega-code/scripts/test_migrate_stale_deepseek_ids.py
+
       - name: Install dependencies
         run: npm ci
 
       - name: Typecheck
         run: npm run typecheck
+
+      # ── Unit + security tests (ITER-11, WS-5 item 4) ────────────────────
+      # These are the commands the imagination feature's own success criteria
+      # are stated against, and they run WITHOUT a MongoDB server or a model
+      # provider: every suite builds its state on `tests/helpers/fake-mongo.ts`
+      # (an in-memory fake) and stubs `llmService.extractJson`. Suites that
+      # genuinely need a live Mongo or a live model SKIP themselves and report
+      # as SKIPPED rather than passing — a green run with skips is not evidence
+      # about them, which is what the iteration contracts record as
+      # "NOT VERIFIED" (the branch's reported counts: unit 0 failures,
+      # security 0 failures, with the live-only suites skipped).
+      - name: 'Unit tests (no Mongo: the in-memory fake + a stubbed model)'
+
+        run: npx vitest run tests/unit/
+
+      - name: Security tests (identity scoping, taint, caller pinning)
+        run: npx vitest run tests/security/
+
+      # The live/instrument suites need a real store and a real model, so they
+      # SKIP here — but they must still PARSE. `tsc --noEmit` does not cover
+      # tests/ (tsconfig includes src/** only) and the unit run never loads these
+      # files, so without this step a syntax error in
+      # tests/live/imagination-baseline-live.test.ts passed every local check and
+      # surfaced only in a full `npm test` on a deployment host.
+      - name: Live suite parses and skips cleanly (no store, no provider)
+        run: npx vitest run tests/live/
 
       - name: Build
         run: npm run build

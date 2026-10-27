@@ -57,13 +57,22 @@ afterEach(() => {
 });
 
 describe('exempt paths apply to read methods only (RP-02)', () => {
-  it('GET on an exempt path needs no key', async () => {
+  // ITER-2 moved `/api/v1/admin/personality` OUT of AUTH_SKIP_PATHS: the saved personality is
+  // resolved per caller now, so reading it is an identity-scoped read and must authenticate. The
+  // static catalogue below it (/personality/profiles) keeps the exemption — it carries no identity
+  // data. These three cases pin both halves of that line, so neither can drift back unnoticed.
+  it('GET on a path that left the exempt list needs a key (ITER-2)', async () => {
     const res = await app.request('http://localhost/api/v1/admin/personality');
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(401);
   });
 
-  it('HEAD on an exempt path needs no key', async () => {
+  it('HEAD on a path that left the exempt list needs a key (ITER-2)', async () => {
     const res = await app.request('http://localhost/api/v1/admin/personality', { method: 'HEAD' });
+    expect(res.status).toBe(401);
+  });
+
+  it('GET on the still-exempt catalogue needs no key', async () => {
+    const res = await app.request('http://localhost/api/v1/admin/personality/profiles');
     expect(res.status).not.toBe(401);
   });
 

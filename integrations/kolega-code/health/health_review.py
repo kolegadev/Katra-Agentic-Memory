@@ -10,9 +10,13 @@ Output:
 - human report on stdout
 - history appended to ~/.katra/inbox/health-reports.md
 - when anything needs action: an "Attention: <local identity>" agent message
-  posted to the shared scope (tagged machine-health-report) so the inbox
-  loop/session picks it up, plus a needs-owner entry for anything that is
-  the owner's call (hardware, tailnet-level, machines with no collector).
+  AUTHORED BY the system identity (Katra) and posted to the shared scope
+  (tagged machine-health-report) so the local inbox loop can fetch it: the
+  loop's candidate query excludes events authored by its own identity, so a
+  self-authored alert could never be dispatched (2026-09-26 incident) —
+  author and recipient must differ, plus a needs-owner entry for anything
+  that is the owner's call (hardware, tailnet-level, machines with no
+  collector).
 
 Usage:
     python3 health_review.py --hours 26 [--write-report] [--post-alert]
@@ -34,10 +38,29 @@ REPORT_FILE = Path.home() / ".katra" / "inbox" / "health-reports.md"
 NEEDS_OWNER = Path.home() / ".katra" / "inbox" / "needs-owner.md"
 API = "http://localhost:9012/api/v1"
 
-# Identity is deployment data: the alert is posted by and addressed to the
-# local identity (KATRA_USER_ID), never a hardcoded name.
+# Machines the custody loop tracks (2026-10-15). A machine that produces ZERO
+# samples in the window used to be invisible: the per-machine assessment only
+# walks machines derived FROM the samples, so natasha's full-silence stretch
+# (~28 h, 10-14/15) produced a review with no PROBLEMS line at all — quieter
+# than a partial-stale window, which is backwards. Roster machines with no
+# samples now get a loud line. Override with HEALTH_MACHINES="a,b".
+KNOWN_MACHINES = [m.strip() for m in
+                  (os.environ.get("HEALTH_MACHINES", "thebrick,MacBook-Pro-2.local") or "").split(",")
+                  if m.strip()]
+
+# Identity is deployment data. The alert is ADDRESSED to the local identity
+# (KATRA_USER_ID) but AUTHORED by the system identity (Katra): the inbox
+# candidate query excludes events authored by the consuming loop's own
+# AGENT_ID ("not authored by me"), so a self-authored alert can never be
+# dispatched to the loop it is meant for. 2026-09-19..26: every daily alert
+# was undeliverable — self-authored while the identity was the local one,
+# then (env-defaulted "katra") addressed to a name no loop's store query
+# fetches. Author and recipient must differ for delivery; see
+# docs/incident-improvement-loop.md, card health-alert-undeliverable.
 LOCAL_ID = (os.environ.get("KATRA_USER_ID", "katra") or "katra").strip() or "katra"
 LOCAL_NAME = LOCAL_ID.title()
+AUTHOR_ID = (os.environ.get("KATRA_ALERT_AUTHOR", "katra") or "katra").strip() or "katra"
+AUTHOR_NAME = AUTHOR_ID.title()
 
 
 def _mongo_password() -> str:
@@ -102,7 +125,7 @@ def post_agent_message(message: str) -> bool:
     if not key:
         return False
     payload = {
-        "user_id": LOCAL_ID,
+        "user_id": AUTHOR_ID,
         "event_type": "agent_message",
         "content": {"message": message},
         "metadata": {"tags": ["inter-agent", "agent-message", "machine-health-report"]},
@@ -156,8 +179,31 @@ def assess(events: list[dict], window_hours: int) -> dict:
             for h, r in (((e.get("content") or {}).get("checks") or {}).get("dns_probes") or {}).items()
             if not r.get("ok")
         ]
+        # Reason attribution (2026-09-26, Zefir's correction): the problem line
+        # used to show only `dns fails` — a machine degraded by katra
+        # unreachability or bridge alarms then read as a DNS story whenever any
+        # probe in the window had failed. Record the samples' OWN reasons.
+        reason_counts: dict[str, int] = defaultdict(int)
+        for e in evs:
+            for r in (((e.get("content") or {}).get("checks") or {}).get("_reasons") or []):
+                reason_counts[str(r)[:90]] += 1
+        top_reasons = sorted(reason_counts.items(), key=lambda kv: (-kv[1], kv[0]))[:3]
+        reasons_digest = ("; ".join(f"{r} x{n}" for r, n in top_reasons))[:240] or "none"
         # Recovered inside the window? (a resolution we must close with a card)
         recovered = status == "ok" and any(s in ("degraded", "down") for s in statuses[:-1])
+        # Boot-time change detection (applied 2026-10-06 — stops #6 and #8 were
+        # sub-tick and gap-invisible; only a manual boot diff found them). A
+        # boot_time_utc change between consecutive samples = the machine
+        # rebooted inside the window (orderly vs abrupt verified by the review).
+        boot_changes = []
+        prev_boot = None
+        for e in evs:
+            bt = (((e.get("content") or {}).get("checks") or {}).get("machine") or {}).get("boot_time_utc")
+            if bt is None:
+                continue
+            if prev_boot is not None and bt != prev_boot:
+                boot_changes.append({"at": e["timestamp"], "from": prev_boot, "to": bt})
+            prev_boot = bt
         machines[machine] = {
             "machine": machine,
             "latest_status": status,
@@ -167,10 +213,12 @@ def assess(events: list[dict], window_hours: int) -> dict:
             "statuses": statuses,
             "degraded_hits": degraded_hits,
             "dns_fails": sorted(set(dns_fails)),
+            "reasons": reasons_digest,
             "kolega_version": (checks.get("kolega") or {}).get("version"),
             "tailscale": (checks.get("tailscale") or {}).get("backend_state"),
             "bridge_user": (checks.get("bridge") or {}).get("config_user"),
             "recovered": recovered,
+            "boot_changes": boot_changes,
         }
     return machines
 
@@ -202,7 +250,16 @@ def main() -> int:
         if m["latest_status"] in ("degraded", "down"):
             flag += f" {m['latest_status'].upper()}"
             problems.append(f"{m['machine']}: {m['latest_status']} "
-                            f"({m['degraded_hits']}/{m['samples']} bad samples; dns fails: {m['dns_fails'] or 'none'})")
+                            f"({m['degraded_hits']}/{m['samples']} bad samples; "
+                            f"reasons: {m['reasons']}; dns fails: {m['dns_fails'] or 'none'})")
+        # 2026-10-15 (foreign finding — a dead proxy returning "success with
+        # empty results" is indistinguishable from a working one): a sample
+        # carrying no valid status used to render as a quiet 'unknown' line,
+        # unflagged. Unknown is not OK — flag it like a fault.
+        if m["latest_status"] not in ("ok", "degraded", "down"):
+            flag += f" {m['latest_status'].upper()}"
+            problems.append(f"{m['machine']}: unrecognised status {m['latest_status']!r} — "
+                            f"collector regression? ({m['samples']} samples in window)")
         if m["recovered"]:
             flag += " RECOVERED"
             card_due.append(m["machine"])
@@ -211,6 +268,26 @@ def main() -> int:
             f" samples={m['samples']} degraded_hits={m['degraded_hits']} "
             f"kolega={m['kolega_version']} ts={m['tailscale']} bridge={m['bridge_user']}"
         )
+    # Roster check (2026-10-15, see KNOWN_MACHINES): full-silence must be LOUDER
+    # than stale, not invisible. A roster machine with no samples at all in the
+    # window gets a report line + PROBLEMS entry + owner item.
+    for km in KNOWN_MACHINES:
+        if km not in machines:
+            lines.append(f"- {km:<22} NO SAMPLES in window (collector missing or machine off?)")
+            problems.append(f"{km}: no samples at all in the window — collector missing or machine off")
+            owner_items.append(f"{km}: no samples at all in the window — collector missing or machine off; "
+                               "verify machine power/network and the */15 machine_health cron.")
+    # Boot changes are reviewable facts (sub-tick reboots never show as sample
+    # gaps): surface them in the report and the alert so the loop verifies
+    # orderly vs abrupt and cards the abrupt ones.
+    boot_lines: list[str] = []
+    for m in sorted(machines.values(), key=lambda x: x["machine"]):
+        for bc in m["boot_changes"]:
+            boot_lines.append(
+                f"- {m['machine']}: BOOT CHANGE at {bc['at']} (prev {bc['from']} -> {bc['to']})")
+            problems.append(
+                f"{m['machine']}: reboot inside window (boot change at {bc['at']}) — "
+                "verify orderly vs abrupt")
     if not machines:
         lines.append("- (no machine_health events in window — collectors not running yet?)")
         problems.append("no machine_health events at all in window")
@@ -222,6 +299,9 @@ def main() -> int:
         lines.append("PROBLEMS: none — all machines reporting, all ok")
     if card_due:
         lines.append(f"CARD DUE (incident-improvement loop): {', '.join(card_due)}")
+    if boot_lines:
+        lines.append("BOOT CHANGES (verify orderly vs abrupt):")
+        lines.extend(boot_lines)
     lines.append("")
 
     report = "\n".join(lines)
@@ -235,7 +315,11 @@ def main() -> int:
     if card_due:
         alert_parts.append(f"incident cards due: {', '.join(card_due)}")
     if args.post_alert and alert_parts:
-        msg = (f"Attention: {LOCAL_NAME} — FROM: {LOCAL_NAME} — machine health review "
+        if LOCAL_ID == AUTHOR_ID:
+            print("health_review: WARNING — KATRA_USER_ID unresolved (target == author); "
+                  "alert would be self-authored and undeliverable to any inbox loop.",
+                  file=sys.stderr)
+        msg = (f"Attention: {LOCAL_NAME} — FROM: {AUTHOR_NAME} — machine health review "
                f"{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')}Z: "
                + " | ".join(alert_parts)
                + " — review, resolve, then close each incident with a card "

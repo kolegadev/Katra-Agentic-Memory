@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://katra.dev/schemas/cognitive-work-item.schema.json",
+  "title": "Katra Cognitive Work Item",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "work_item_id",
+    "mission_id",
+    "description",
+    "mode",
+    "status",
+    "authority_class",
+    "created_at"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "work_item_id": {
+      "type": "string"
+    },
+    "mission_id": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 6000
+    },
+    "mode": {
+      "enum": [
+        "explore",
+        "challenge",
+        "synthesize",
+        "verify",
+        "execute",
+        "monitor"
+      ]
+    },
+    "status": {
+      "enum": [
+        "queued",
+        "allocated",
+        "in_progress",
+        "blocked",
+        "completed",
+        "cancelled",
+        "expired"
+      ]
+    },
+    "authority_class": {
+      "enum": [
+        "A",
+        "B",
+        "C"
+      ]
+    },
+    "dependency_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "owner_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "lease_expires_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "independence_requirement": {
+      "enum": [
+        "none",
+        "independent_review",
+        "blind_parallel",
+        "adversarial"
+      ]
+    },
+    "priority_features": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mission_impact": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "uncertainty": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "information_value": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "dependency_centrality": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "urgency": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "cognitive_cost": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

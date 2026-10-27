@@ -43,7 +43,7 @@ These services form the irreducible memory system:
 
 #### MCP Server
 
-`mcp-server.ts` — the MCP server, **66 registered tools** as of 2026-08-21. This is the primary client interface.
+`mcp-server.ts` — the MCP server, **84 registered tools** as of 2026-09-25 (flags off). This is the primary client interface.
 
 #### Database Layer
 
@@ -97,7 +97,7 @@ The current frontend is a full chat interface. Katra ships a lightweight admin d
 └──────────────┬──────────────────────┬────────────────────┘
                │                      │
         MCP Protocol            Admin REST API
-        (66 tools,              (/api/v1/*, port 9012,
+        (84 tools,              (/api/v1/*, port 9012,
          POST-only              dashboard /dashboard/)
          streamable-http,
          port 3112 /mcp)
@@ -205,9 +205,9 @@ Each prints: the identity record, latest daily journal, unresolved threads, memo
 - The Python package `kolega_katra_bridge` injects relevant memories on `UserPromptSubmit` from sources `working_memory`, `temporal_context`, `vector_search`, `temporal_recall`, plus the agent-message bulletin.
 - Per-agent guidance files (`AGENTS.<name>.md`) hold each agent's wake guidance — keep yours in the git-ignored `private/` folder.
 
-### MCP Tools (66, verified against the live server)
+### MCP Tools (84, verified against the live server)
 
-The MCP surface is **66 registered tools** — not 35, not 48. Full list by family:
+The MCP surface is **84 registered tools** — not 35, not 48. Full list by family:
 
 **Core memory:** `store_memory`, `retract_memory`, `search_memories`, `vector_search`, `working_memory`, `get_conversation_history`
 
@@ -389,7 +389,7 @@ katra/
 ├── server/                   # Main server (TypeScript/Node.js)
 │   ├── src/
 │   │   ├── index.ts          # Entry point — starts REST API + MCP in-process
-│   │   ├── mcp-server.ts     # MCP protocol server (66 tools)
+│   │   ├── mcp-server.ts     # MCP protocol server (84 tools)
 │   │   ├── database/         # MongoDB + Redis connections, tenant context
 │   │   ├── middleware/       # caller-auth.ts (resolveCallerIdentity + Hono)
 │   │   ├── routes/           # REST API (/api/v1/…)

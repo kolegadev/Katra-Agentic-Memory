@@ -62,6 +62,52 @@ import { SleepConsolidationService } from './services/processing/sleep-consolida
 import { MemoryDecayService } from './services/processing/memory-decay-service.js';
 import { AnomalyDetectionService } from './services/processing/anomaly-detection-service.js';
 import { SalienceService } from './services/processing/salience-service.js';
+import { affectEngine, stimulusFromAnomaly, stimulusFromContent, stimulusFromToolCall } from './services/processing/affect-engine.js';
+import { pinAffect, agmtAffectConfig, affectSearch } from './services/integration/agmt-affect-client.js';
+import { COGNITIVE_TOOL_DEFS, dispatchCognitiveTool, dispatchSchedulerTool, dispatchUncertaintyTool, dispatchActivationTool } from './services/mission-cognition/mcp-tools.js';
+import { cognitiveControlMode, schedulerMode } from './services/mission-cognition/index.js';
+import {
+  FOCUSED_TOOL_DEFS,
+  dispatchFocusedTool,
+  focusedImaginationEnabled,
+} from './services/processing/focused-consolidation-tools.js';
+import {
+  IMAGINATION_TOOL_DEFS,
+  dispatchImaginationTool,
+} from './services/processing/imagination-tools.js';
+import {
+  CREATIVE_BATON_TOOL_DEFS,
+  creativeBatonPromotionEnabled,
+  dispatchCreativeBatonTool,
+} from './services/processing/creative-baton-tools.js';
+// ITER-9 (Phase 7): the observability pair — the metrics read and the ONE
+// gated experiment-observation write. Both share FOCUSED_IMAGINATION.
+import {
+  IMAGINATION_OBSERVABILITY_TOOL_DEFS,
+  dispatchImaginationObservabilityTool,
+} from './services/processing/imagination-observability-tools.js';
+import {
+  COGNITIVE_TEAM_TOOL_DEFS,
+  cognitiveTeamAllocationEnabled,
+  dispatchCognitiveTeamTool,
+} from './services/processing/cognitive-team-tools.js';
+import { COGNITIVE_TEAM_COLLECTIONS } from './services/processing/cognitive-team-collections.js';
+import { verifyAssignment } from './services/processing/cognitive-mode-service.js';
+import {
+  effectivePersonalityConfig,
+  perIdentityPersonalityEnabled,
+  resolvePersonalityConfig,
+} from './services/integration/personality-config-service.js';
+// ITER-11 (§6.2): the deprecation telemetry of the legacy global record.
+import { notePersonalityDeprecation } from './services/integration/personality-deprecation-telemetry.js';
+
+const SCHEDULER_TOOL_NAMES = ['create_cognitive_work_item', 'get_cognitive_queue', 'explain_scheduler_decision'];
+const UNCERTAINTY_TOOL_NAMES = [
+  'list_uncertainties', 'evaluate_triggers', 'trace_assumption_dependencies',
+  'invalidate_decision', 'propose_experiment', 'record_experiment_result',
+  'get_trigger_report', 'create_blind_work_item', 'record_trigger_outcome',
+  'get_hypothesis_diversity',
+];
 import { MotivationalEngine } from './services/processing/motivational-engine.js';
 import { DecisionActionService } from './services/processing/decision-action-service.js';
 import { SelfModelService } from './services/processing/self-model-service.js';
@@ -699,6 +745,42 @@ const tools = [
     })) as Record<string, unknown>,
   },
   {
+    name: 'get_affect_state',
+    description: 'The LIVE affective state: six band powers with the derived frontal asymmetry, valence, arousal, entropy and intensity, plus the recent trajectory and which stimulus channels moved it. Distinct from get_emotional_context (accumulated reflection) and get_daily_reflection (last night\'s summary) — this is now, and it is the same signature pinned to your memories in the acoustic store.',
+    inputSchema: zodToJsonSchema(z.object({
+      trail: z.number().int().min(0).max(50).optional().default(20)
+        .describe('how many recent points to return (0 for none)'),
+      format: z.enum(['full', 'compact']).optional().default('full')
+        .describe('full = a readable report; compact = one JSON line (for a prompt bridge)'),
+      user_id: z.string().optional(),
+    })) as Record<string, unknown>,
+  },
+  {
+    name: 'record_feeling',
+    description: 'State how you feel, deliberately, as valence (-1..+1) and arousal (0..1). It BLENDS the streaming state a third of the way toward what you report (weight 0.35, at most one report per 60 seconds), so it corrects drift in either direction but never commandeers: report calm and the state actually gets calmer. The lowest arousal the readout can express is about 0.12, so a calmer report lands there. Use it to correct drift, not to perform emotion — the ambient channels (ingested text, tool outcomes, anomalies) are the primary ones. Returns the resulting state so you can see what it did.',
+    inputSchema: zodToJsonSchema(z.object({
+      valence: z.number().min(-1).max(1).describe('-1 negative .. +1 positive'),
+      arousal: z.number().min(0).max(1).describe('0 calm .. 1 activated'),
+      note: z.string().optional().describe('optional one-line context (not stored as truth)'),
+      user_id: z.string().optional(),
+    })) as Record<string, unknown>,
+  },
+  {
+    name: 'search_by_feeling',
+    description: 'Recall memories by AFFECT ALONE — no words, no entity, no keywords. By default the query is your CURRENT affective state, so the question it answers is "what did I know the last time I felt like this?". Returns the memories whose pinned wave signatures resonate with the state, with their resonance score, the state each was pinned under, and a snippet. This is a state-space lookup: it will not find a memory by topic, and a low resonance means nothing similar in feeling was stored — which is information, not failure.',
+    inputSchema: zodToJsonSchema(z.object({
+      state: z.union([z.array(z.number()), z.record(z.number())]).optional()
+        .describe('optional override: six bands as [delta, theta, alpha_l, alpha_r, beta, gamma] or by name. Omit to use your current state.'),
+      k: z.number().int().min(1).max(25).optional().default(5),
+      min_resonance: z.number().min(0).max(1).optional()
+        .describe('admission floor; the store default (0.90) is measured to separate related from unrelated states. Pass 0 to rank without a floor.'),
+      include_interference: z.boolean().optional().default(false)
+        .describe('also report the wave-store carrier overlap beside each score (it is NOT the ranking key)'),
+      include_content: z.boolean().optional().default(true).describe('attach a content snippet'),
+      user_id: z.string().optional(),
+    })) as Record<string, unknown>,
+  },
+  {
     name: 'get_philosophical_insights',
     description: 'Query philosophical insights derived from reflection — abstracted principles and realizations that have emerged across sleep consolidation periods.',
     inputSchema: zodToJsonSchema(z.object({
@@ -766,7 +848,7 @@ const tools = [
   },
   {
     name: 'get_agent_beliefs',
-    description: 'Retrieve the agent\'s Theory of Mind beliefs about a specific entity — what propositions the agent believes about that entity, along with confidence and source.',
+    description: 'Retrieve the caller\'s Theory of Mind beliefs about a specific entity — what propositions the agent believes about that entity, along with confidence and source. Pinned to the caller\'s identity: untrusted callers cannot read another identity\'s beliefs.',
     inputSchema: zodToJsonSchema(z.object({
       entity_name: z.string().describe('The entity name to retrieve beliefs for'),
       user_id: z.string().optional(),
@@ -774,8 +856,10 @@ const tools = [
   },
   {
     name: 'get_procedural_templates',
-    description: 'Get cached procedural memory templates — tool-call patterns that have been observed frequently enough (>= 5 occurrences) to be considered habitual. Shows tool name, input shape, frequency, and average success rate.',
-    inputSchema: zodToJsonSchema(z.object({})) as Record<string, unknown>,
+    description: 'Get the caller\'s procedural memory templates — tool-call patterns that have been observed frequently enough (>= 5 occurrences) to be considered habitual and that survive a restart. Shows tool name, input shape, frequency, and average success rate. Pinned to the caller\'s identity: untrusted callers cannot read another identity\'s patterns.',
+    inputSchema: zodToJsonSchema(z.object({
+      user_id: z.string().optional(),
+    })) as Record<string, unknown>,
   },
   {
     name: 'get_memory_decay_stats',
@@ -1017,6 +1101,79 @@ const tools = [
   },
 ];
 
+// ── Long-horizon cognitive control plane (local testing, no-publish branch) ──
+// Registered only when COGNITIVE_CONTROL_ENABLED != off (production default off).
+// The Phase-4 scheduler + Phase-5 uncertainty tools additionally require
+// COGNITIVE_SCHEDULER_MODE != off; the Phase-6 activation tools stay registered
+// (set_scheduler_mode must be reachable from `off` — the evidence gate inside
+// the activation service does the real enforcement).
+if (cognitiveControlMode() !== 'off') {
+  tools.push(...(COGNITIVE_TOOL_DEFS as Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>)
+    .filter(t => schedulerMode() !== 'off' || ![...SCHEDULER_TOOL_NAMES, ...UNCERTAINTY_TOOL_NAMES].includes(t.name)));
+}
+
+// ── Per-identity memory personality (ITER-2) ───────────────────────────────
+// Registered only when PER_IDENTITY_PERSONALITY is on (default off). With the
+// flag off the tool is indistinguishable from not existing: absent from
+// ListTools, and the dispatch-time re-check throws `Unknown tool`.
+const GetMyPersonalityInput = z.object({
+  user_id: z.string().optional(),
+});
+
+if (perIdentityPersonalityEnabled()) {
+  tools.push({
+    name: 'get_my_personality',
+    description: 'Returns the caller\'s resolved memory personality — profile, effective source weights, scoring, version, origin and the thinking mode in force right now (its mode, mission, assignment id and expiry; null when none is live — with COGNITIVE_TEAM_ALLOCATION=1 that is the newest mode assignment that has not expired). Pinned to the caller\'s own identity: untrusted callers cannot read another identity\'s configuration.',
+    inputSchema: zodToJsonSchema(GetMyPersonalityInput) as Record<string, unknown>,
+  });
+}
+
+// ── Focused consolidation + private Salience Trace (ITER-5, Phase 3) ───────
+// Registered only when FOCUSED_IMAGINATION is on (default off). With the flag
+// off both tools are absent from ListTools and the dispatch-time re-check
+// throws `Unknown tool` — indistinguishable from not existing. This family is
+// gated on its own flag alone (the contract makes FOCUSED_IMAGINATION the
+// single switch); the service reads mission state directly, so the cognitive
+// control plane does not have to be enabled for it to work.
+if (focusedImaginationEnabled()) {
+  tools.push(...FOCUSED_TOOL_DEFS);
+  // ITER-6 (Phase 4): the imagination engine + its quality-diversity archive
+  // share the same flag and the same dispatch-time re-check — one switch, four
+  // tools, and with it off they are indistinguishable from not existing.
+  tools.push(...IMAGINATION_TOOL_DEFS);
+  // ITER-7 (Phase 5): the cycle orchestrator, the Creative Baton read, the
+  // controller adapter and the outcome feedback share `FOCUSED_IMAGINATION`;
+  // `promote_creative_baton` is registered only when CREATIVE_BATON_PROMOTION
+  // is ALSO on, and the dispatch re-checks both — with either flag off the
+  // promotion surface (like the rest of the family) is `Unknown tool`.
+  tools.push(
+    ...CREATIVE_BATON_TOOL_DEFS.filter(
+      (tool) => !tool.requires_promotion_flag || creativeBatonPromotionEnabled(),
+    ),
+  );
+  // ITER-9 (Phase 7): the observability pair shares the family flag — the
+  // metrics read and the experiment-observation write (itself trusted-gated at
+  // dispatch). With the flag off both are `Unknown tool`.
+  tools.push(...IMAGINATION_OBSERVABILITY_TOOL_DEFS);
+}
+
+// ── The cognitive team: modes, inheritance, allocation, first pass (ITER-8) ──
+// Registered only when COGNITIVE_TEAM_ALLOCATION is on (default off), on its
+// own flag: the family is the team layer (mode assignments, bounded
+// inheritance, portfolio allocation, an independent first pass and synthesis),
+// which is why it is not folded into FOCUSED_IMAGINATION — a deployment may run
+// the single-agent imagination surface without ever assembling a team. With the
+// flag off the six tools are absent from ListTools and the dispatch-time
+// re-check throws `Unknown tool` — indistinguishable from not existing.
+if (cognitiveTeamAllocationEnabled()) {
+  tools.push(...COGNITIVE_TEAM_TOOL_DEFS);
+}
+
+/** Names of the tools registered for the current flag/feature state. */
+export function registeredToolNames(): string[] {
+  return tools.map(t => t.name);
+}
+
 // ── Memory Decay handlers ────────────────────────────────────────
 
 async function handleGetMemoryDecayStats(args: unknown): Promise<TextContent[]> {
@@ -1177,6 +1334,95 @@ async function handleGetMyIdentity(args: unknown): Promise<TextContent[]> {
   return [{ type: 'text', text: lines.join('\n') }];
 }
 
+/**
+ * get_my_personality — the caller's own resolved memory personality (ITER-2).
+ * Caller-pinned: user_id is resolved through resolveUserId(), so an untrusted
+ * caller always reads its own record even when it passes another identity's
+ * user_id. `active_mode` reports the NEWEST live thinking mode the identity
+ * holds (ITER-8, `COGNITIVE_TEAM_ALLOCATION`), and is read WITHOUT touching the
+ * mode collections at all while that flag is off — the flag-off contract is that
+ * nothing touches them.
+ */
+export async function handleGetMyPersonality(args: unknown): Promise<TextContent[]> {
+  // Dispatch-time re-check: with the flag off this is a plain unknown tool.
+  if (!perIdentityPersonalityEnabled()) throw new Error('Unknown tool: get_my_personality');
+
+  const input = GetMyPersonalityInput.parse(args);
+  if (!is_database_connected()) return VAULT_DISCONNECTED;
+
+  const userId = resolveUserId(input.user_id);
+  const db = get_database();
+  const resolved = await resolvePersonalityConfig(db, userId);
+  // ITER-11 (§6.2) TELEMETRY: the MCP surface is the other consumer of the
+  // legacy key. A call that named no identity, or one served by the legacy
+  // global record, is counted (bounded, TTL'd) — never a failure.
+  if (perIdentityPersonalityEnabled()) {
+    if (!input.user_id) {
+      await notePersonalityDeprecation(db, { userId, kind: 'no_user_id_path' });
+    }
+    if (resolved.origin === 'legacy') {
+      await notePersonalityDeprecation(db, { userId, kind: 'legacy_read' });
+    }
+  }
+  const effective = effectivePersonalityConfig(resolved);
+  const activeMode = await readNewestLiveMode(db, userId);
+  return [{
+    type: 'text',
+    text: JSON.stringify({
+      user_id: resolved.user_id,
+      profile: resolved.profile,
+      source_weights: effective.source_weights,
+      scoring: effective.scoring,
+      max_context_tokens: effective.max_context_tokens,
+      max_context_tokens_source: resolved.max_context_tokens === null ? 'profile-default' : 'record',
+      version: resolved.version,
+      origin: resolved.origin,
+      updated_at: resolved.updated_at,
+      active_mode: activeMode?.mode ?? null,
+      active_mode_mission_id: activeMode?.mission_id ?? null,
+      active_mode_expires_at: activeMode?.expires_at ?? null,
+      active_mode_assignment_id: activeMode?.assignment_id ?? null,
+      active_mode_note: activeMode
+        ? 'A thinking mode is in force for this identity on the mission named here; it expires on its own and the mission-scoped get_active_mode records the transition.'
+        : 'No thinking mode is in force for this identity.',
+    }, null, 2),
+  }];
+}
+
+/**
+ * The newest LIVE thinking-mode assignment for one identity, read-only: the
+ * mission-scoped `get_active_mode` is what records a read-computed expiry, so
+ * this summary never writes. With `COGNITIVE_TEAM_ALLOCATION` off nothing is
+ * read at all.
+ */
+async function readNewestLiveMode(
+  db: ReturnType<typeof get_database>,
+  userId: string,
+): Promise<{ mode: string; mission_id: string; expires_at: string; assignment_id: string } | null> {
+  if (!cognitiveTeamAllocationEnabled()) return null;
+  const nowMs = Date.now();
+  const rows = (await db
+    .collection(COGNITIVE_TEAM_COLLECTIONS.modeAssignments)
+    .find({ user_id: userId, status: 'active' }, { projection: { _id: 0 } })
+    .sort({ started_at: -1, assignment_id: 1 })
+    .limit(10)
+    .toArray()) as unknown as Array<Record<string, unknown>>;
+  for (const row of rows) {
+    const expiresAt = String(row.expires_at ?? '');
+    const expiresMs = Date.parse(expiresAt);
+    if (!Number.isFinite(expiresMs) || expiresMs <= nowMs) continue;
+    const assignment = verifyAssignment(row);
+    if (!assignment.ok) continue;
+    return {
+      mode: String(row.mode),
+      mission_id: String(row.mission_id),
+      expires_at: expiresAt,
+      assignment_id: String(row.assignment_id),
+    };
+  }
+  return null;
+}
+
 async function handleGetMindWander(args: unknown): Promise<TextContent[]> {
   const input = z.object({
     user_id: z.string().optional(),
@@ -1203,14 +1449,18 @@ async function handleGetMindWander(args: unknown): Promise<TextContent[]> {
   return [{ type: 'text', text: lines.join('\n') }];
 }
 
-async function handleGetAgentBeliefs(args: unknown): Promise<TextContent[]> {
+export async function handleGetAgentBeliefs(args: unknown): Promise<TextContent[]> {
   const input = z.object({
     entity_name: z.string(),
     user_id: z.string().optional(),
   }).parse(args);
 
+  // ITER-4: beliefs are identity-scoped, so the reader is caller-pinned — an
+  // untrusted caller reads its OWN beliefs about the entity even when it passes
+  // another identity's user_id (trusted callers may name another identity).
+  const userId = resolveUserId(input.user_id);
   const service = SelfModelService.get_instance();
-  const beliefs = await service.getAgentBeliefs(input.entity_name);
+  const beliefs = await service.getAgentBeliefs(userId, input.entity_name);
 
   const lines: string[] = [
     `## Agent Beliefs — ${input.entity_name}`,
@@ -1230,9 +1480,16 @@ async function handleGetAgentBeliefs(args: unknown): Promise<TextContent[]> {
   return [{ type: 'text', text: lines.join('\n') }];
 }
 
-async function handleGetProceduralTemplates(_args: unknown): Promise<TextContent[]> {
+export async function handleGetProceduralTemplates(args: unknown): Promise<TextContent[]> {
+  const input = z.object({
+    user_id: z.string().optional(),
+  }).parse(args);
+
+  // ITER-4: procedural patterns are persisted per identity, so the reader is
+  // caller-pinned exactly like every other identity-scoped read.
+  const userId = resolveUserId(input.user_id);
   const service = SelfModelService.get_instance();
-  const templates = service.getProceduralTemplates();
+  const templates = await service.getProceduralTemplates(userId);
 
   const lines: string[] = [
     '## Procedural Templates',
@@ -1423,9 +1680,13 @@ async function handleRunOperationalDistillation(args: unknown): Promise<TextCont
   const input = z.object({
     min_observations: z.number().int().min(2).max(20).optional().default(3),
     auto_synthesize: z.boolean().optional().default(true),
+    user_id: z.string().optional(),
   }).parse(args);
-  
+
+  // ITER-4: the procedural patterns it distils are per identity, so the run is
+  // caller-pinned like every other identity-scoped read.
   const result = await operationalDistillationService.runDistillation({
+    userId: resolveUserId(input.user_id),
     minObservations: input.min_observations,
     autoSynthesize: input.auto_synthesize,
   });
@@ -1618,6 +1879,11 @@ async function handleStoreMemory(args: unknown): Promise<TextContent[]> {
         if (vec) {
           const anomalyService = AnomalyDetectionService.get_instance();
           const anomalyResult = await anomalyService.classifyAtIngestion(vec, 'episodic', userId);
+          // An anomalous ingestion is a stimulus in its own right: it is the server noticing that
+          // something about this content is unlike the rest, which is exactly the "surprise" the
+          // design note maps onto a negative, high-arousal shock.
+          const anomalyStimulus = stimulusFromAnomaly(anomalyResult.classification);
+          if (anomalyStimulus) void affectEngine.observe(userId, anomalyStimulus);
 
           const decayService = MemoryDecayService.get_instance();
           const retrievalStrength = decayService.computeRetrievalStrength('episodic', new Date(), null, 0);
@@ -1678,6 +1944,20 @@ async function handleStoreMemory(args: unknown): Promise<TextContent[]> {
   if (tags.length > 0) doc.tags = tags;
   if (sharedId) doc.shared_id = sharedId;
 
+  // ── Affect: the state this fact is written UNDER (see affect-engine.ts) ──
+  // Absent when the engine is off or this identity is not allowlisted, so the fact's shape is
+  // unchanged for every caller that has not opted in.
+  let affectSnapshot = null;
+  try {
+    const stimulus = stimulusFromContent(input.content);
+    affectSnapshot = stimulus
+      ? await affectEngine.observe(userId, stimulus)
+      : await affectEngine.getState(userId);
+    if (affectSnapshot?.enabled) doc.affect = affectSnapshot;
+  } catch (error: any) {
+    console.warn('[AffectEngine] observation failed (fact unaffected):', error?.message);
+  }
+
   const result = await db.collection('semantic_facts').findOneAndUpdate(
     { content_hash: contentHash },
     {
@@ -1690,6 +1970,18 @@ async function handleStoreMemory(args: unknown): Promise<TextContent[]> {
 
   const insertedId = result?._id;
   const wasUpdate = result && (result as any).access_count > 1;
+
+  // Pin the wave signature to this fact. Fire-and-forget: the write never waits for the lane.
+  if (affectSnapshot?.enabled && insertedId) {
+    void pinAffect(`katra:fact:${String(insertedId)}`, affectEngine.signatureFor(affectSnapshot),
+      { user_id: userId, shared_id: sharedId || undefined })
+      .then(pin => {
+        if (!pin.ok && pin.code !== 'disabled') {
+          console.warn(`[affect-pin] fact ${String(insertedId)}: ${pin.code}`);
+        }
+      })
+      .catch(() => { /* never throws */ });
+  }
 
   // Fire-and-forget embedding
   try {
@@ -2482,7 +2774,11 @@ async function handleListMissions(args: unknown): Promise<TextContent[]> {
     const displayTitle = typeof m.title === 'string' ? m.title 
       : (typeof m.meta_goal === 'string' ? m.meta_goal 
       : (m.meta_goal?.goal || m.meta_goal?.title || 'Untitled'));
-    lines.push(`- ${emoji} **${displayTitle}** (${done}/${total}) — ${m.status}`);
+    const missionId = typeof m.id === 'string' ? m.id : (m._id ? String(m._id) : '');
+    lines.push(
+      `- ${emoji} **${displayTitle}** (${done}/${total}) — ${m.status}` +
+        (missionId ? ` · \`${missionId}\`` : ''),
+    );
   });
 
   return [{ type: 'text', text: lines.join('\n') }];
@@ -3182,6 +3478,207 @@ async function handleGetEmotionalContext(args: unknown): Promise<TextContent[]> 
   }];
 }
 
+async function handleGetAffectState(args: unknown): Promise<TextContent[]> {
+  const input = z.object({
+    trail: z.number().int().min(0).max(50).optional().default(20),
+    format: z.enum(['full', 'compact']).optional().default('full'),
+    context: z.string().max(64).optional(),
+    user_id: z.string().optional(),
+  }).parse(args);
+  const userId = resolveUserId(input.user_id);
+  const state = await affectEngine.getState(userId, input.context);
+
+  // Compact: one JSON line, for the prompt bridge (it renders the block itself and must not
+  // re-parse a markdown report).
+  if (input.format === 'compact') {
+    return [{
+      type: 'text',
+      text: JSON.stringify({
+        enabled: state.enabled,
+        identity: state.identity,
+        context: state.context ?? null,
+        contributors: state.contributors ?? {},
+        felt: state.felt,
+        valence: state.valence,
+        arousal: state.arousal,
+        intensity: state.intensity,
+        faa: state.faa,
+        entropy: state.entropy,
+        bands: state.bands,
+        at: state.at,
+        age_seconds: state.age_seconds,
+        stale: state.stale,
+        observations: state.observations,
+        sources: state.sources,
+        trail: state.trail.slice(-Math.max(0, input.trail)),
+      }),
+    }];
+  }
+
+  const bands = Object.entries(state.bands)
+    .map(([band, value]) => `${band} ${value.toFixed(2)}`).join(' ');
+  const sources = Object.entries(state.sources)
+    .map(([source, count]) => `${source} ${count}`).join(', ') || 'none yet';
+  const trajectory = state.trail.slice(-Math.max(1, input.trail)).map(point =>
+    `  ${point.at.slice(11, 19)}  valence ${point.valence >= 0 ? '+' : ''}${point.valence.toFixed(2)}` +
+    `  arousal ${point.arousal.toFixed(2)}`).join('\n');
+
+  return [{
+    type: 'text',
+    text: [
+      `## Affect State — ${state.identity}`,
+      state.enabled
+        ? ''
+        : '_The affect engine is OFF for this identity (`KATRA_AFFECT_ENABLED` / `KATRA_AFFECT_IDENTITIES`). Every value below is the resting baseline._',
+      '',
+      `**Felt:** ${state.felt}${state.stale && state.observations > 0 ? ' _(stale — the engine has been idle)_' : ''}`,
+      `**Valence:** ${state.valence >= 0 ? '+' : ''}${state.valence} | **Arousal:** ${state.arousal} | **Intensity:** ${state.intensity}`,
+      `**Frontal asymmetry (FAA):** ${state.faa >= 0 ? '+' : ''}${state.faa} | **Entropy:** ${state.entropy}`,
+      `**Bands:** ${bands}`,
+      `**Baseline:** ${Object.entries(state.baseline).map(([b, v]) => `${b} ${v.toFixed(2)}`).join(' ')}`,
+      `**Observations:** ${state.observations} | **Channels:** ${sources}`,
+      `**Last update:** ${state.at} (${state.age_seconds}s ago)`,
+      '',
+      trajectory ? `**Trajectory (${state.trail.length} points):**\n${trajectory}` : '**Trajectory:** empty',
+      '',
+      '_This is the signature pinned to your memories in the acoustic store. It is a state, not an ' +
+      'instruction: let it colour the answer, do not narrate it._',
+    ].filter(line => line !== undefined).join('\n'),
+  }];
+}
+
+async function handleRecordFeeling(args: unknown): Promise<TextContent[]> {
+  const input = z.object({
+    valence: z.number().min(-1).max(1),
+    arousal: z.number().min(0).max(1),
+    note: z.string().optional(),
+    context: z.string().max(64).optional(),
+    user_id: z.string().optional(),
+  }).parse(args);
+  const userId = resolveUserId(input.user_id);
+  const result = await affectEngine.recordSelfReport(
+    userId, input.valence, input.arousal, input.note, input.context);
+  const state = result.state;
+  if (!result.accepted) {
+    return [{ type: 'text', text:
+      `⚠️ **Not recorded:** ${result.reason}\n\n` +
+      (state?.enabled
+        ? `Current state: **${state.felt}** (valence ${state.valence}, arousal ${state.arousal}).`
+        : 'The affect engine is off for this identity.') }];
+  }
+  return [{
+    type: 'text',
+    text: [
+      `✅ **Recorded** as a bounded self-report (weight 0.35).`,
+      '',
+      `**Now:** ${state?.felt} — valence ${state?.valence}, arousal ${state?.arousal}, intensity ${state?.intensity}`,
+      `**Bands:** ${state ? Object.entries(state.bands).map(([b, v]) => `${b} ${v.toFixed(2)}`).join(' ') : ''}`,
+      '',
+      '_One report per 60 seconds. The ambient channels remain the primary source; use this to correct ' +
+      'drift, not to perform._',
+    ].join('\n'),
+  }];
+}
+
+export async function handleSearchByFeeling(args: unknown): Promise<TextContent[]> {
+  const input = z.object({
+    state: z.union([z.array(z.number()), z.record(z.number())]).optional(),
+    k: z.number().int().min(1).max(25).optional().default(5),
+    min_resonance: z.number().min(0).max(1).optional(),
+    include_interference: z.boolean().optional().default(false),
+    include_content: z.boolean().optional().default(true),
+    context: z.string().max(64).optional(),
+    user_id: z.string().optional(),
+  }).parse(args);
+  const userId = resolveUserId(input.user_id);
+
+  if (!agmtAffectConfig().enabled) {
+    return [{ type: 'text', text:
+      '⚠️ **search_by_feeling is off.** It needs `KATRA_AFFECT_ENABLED=1` (the engine) and the AGMT ' +
+      'affect lane running (`AGMT_AFFECT=1` on the wave store). Nothing was searched.' }];
+  }
+
+  // The query: the caller's current state unless one is given. This is the point of the tool — an
+  // agent asks "what did I know when I felt like this?" without having to describe the feeling.
+  let queryState: Record<string, unknown>;
+  let queryLabel: string;
+  if (input.state) {
+    queryState = { bands: input.state as any };
+    queryLabel = 'the supplied state';
+  } else {
+    const snapshot = await affectEngine.getState(userId, input.context);
+    if (!snapshot.enabled) {
+      return [{ type: 'text', text:
+        `⚠️ No affect state for \`${userId}\` — the engine is not enabled for this identity, so there ` +
+        'is no feeling to search by. Pass an explicit `state` if you want to query anyway.' }];
+    }
+    queryState = affectEngine.signatureFor(snapshot);
+    queryLabel = `your current state (${snapshot.felt}, valence ${snapshot.valence >= 0 ? '+' : ''}${snapshot.valence}, arousal ${snapshot.arousal})`;
+  }
+
+  const found = await affectSearch(queryState, {
+    k: input.k, identity: userId,
+    minResonance: input.min_resonance,
+    includeInterference: input.include_interference,
+  });
+  if (!found.ok) {
+    return [{ type: 'text', text:
+      `⚠️ **The wave store answered with a failure:** \`${found.code}\`. ` +
+      'Nothing was retrieved; the memory store itself is unaffected.' }];
+  }
+  if (found.hits.length === 0) {
+    return [{ type: 'text', text:
+      `## Nothing resonates\n\nSearched by **${queryLabel}** against ${found.scored} pinned memories ` +
+      `at a floor of ${found.floor ?? 0.9}.\n\nNo pinned memory sits close enough in feeling. That is a ` +
+      'real answer: either nothing similar has been stored yet, or the similarity lives below the floor ' +
+      '(pass `min_resonance: 0` to rank without one).' }];
+  }
+
+  const db = get_database();
+  const lines: string[] = [
+    `## Memories that resonate with ${queryLabel}`,
+    '',
+    `_${found.admitted} of ${found.scored} pinned memories cleared the floor in ${found.seconds}s. ` +
+    'Ranked by resonance — a state-space match, not a topic match._',
+    '',
+  ];
+  for (const hit of found.hits) {
+    lines.push(`### ${hit.resonance.toFixed(3)} — \`${hit.external_id}\``);
+    const pinned = hit.state || ({} as any);
+    lines.push(`*Pinned under:* valence ${Number(pinned.valence ?? 0) >= 0 ? '+' : ''}` +
+      `${Number(pinned.valence ?? 0).toFixed(2)}, arousal ${Number(pinned.arousal ?? 0).toFixed(2)} ` +
+      `| ${new Date((hit.at || 0) * 1000).toISOString().slice(0, 19).replace('T', ' ')}`);
+    if (input.include_content && db) {
+      const snippet = await memorySnippet(db, hit.external_id);
+      if (snippet) lines.push('', snippet);
+    }
+    lines.push('');
+  }
+  return [{ type: 'text', text: lines.join('\n') }];
+}
+
+/** Resolve a pin's external id back to the memory it was written under, and quote a snippet. */
+async function memorySnippet(db: any, externalId: string): Promise<string | null> {
+  try {
+    if (externalId.startsWith('katra:fact:')) {
+      const { ObjectId } = await import('mongodb');
+      const raw = externalId.slice('katra:fact:'.length);
+      const fact = await db.collection('semantic_facts').findOne({ _id: new ObjectId(raw) });
+      if (!fact) return null;
+      return `> ${String(fact.content || '').slice(0, 240).replace(/\n/g, ' ')}`;
+    }
+    const eventId = externalId.startsWith('katra:') ? externalId.slice('katra:'.length) : externalId;
+    const event = await db.collection('episodic_events').findOne({ id: eventId });
+    if (!event) return null;
+    const content = typeof event.content === 'string'
+      ? event.content
+      : String(event.content?.message || JSON.stringify(event.content || ''));
+    return `> ${content.slice(0, 240).replace(/\n/g, ' ')}`;
+  } catch {
+    return null;                      // a missing memory is a gap, never a failed search
+  }
+}
+
 async function handleGetPhilosophicalInsights(args: unknown): Promise<TextContent[]> {
   const input = z.object({
     domain: z.string().optional(),
@@ -3681,6 +4178,10 @@ function registerHandlers(server: Server, getIdentity?: () => CallerIdentity) {
       // Untrusted callers' supplied user_id is ignored (IDOR boundary);
       // trusted callers (loopback / admin key) may act for a named user.
       const args = rawArgs ? { ...rawArgs, user_id: resolveUserId((rawArgs as any).user_id) } : rawArgs;
+      // ITER-4: a procedural pattern belongs to the identity that produced it,
+      // so the identity observed below is the resolved caller (never a
+      // caller-supplied id for an untrusted caller).
+      const patternIdentity = resolveUserId((rawArgs as any)?.user_id);
       try {
       let result: TextContent[];
       switch (name) {
@@ -3717,6 +4218,9 @@ function registerHandlers(server: Server, getIdentity?: () => CallerIdentity) {
         case 'configure_llm': result = await handleConfigureLLM(args); break;
         case 'get_daily_reflection': result = await handleGetDailyReflection(args); break;
         case 'get_emotional_context': result = await handleGetEmotionalContext(args); break;
+        case 'get_affect_state': result = await handleGetAffectState(args); break;
+        case 'record_feeling': result = await handleRecordFeeling(args); break;
+        case 'search_by_feeling': result = await handleSearchByFeeling(args); break;
         case 'get_philosophical_insights': result = await handleGetPhilosophicalInsights(args); break;
         case 'get_unresolved_threads': result = await handleGetUnresolvedThreads(args); break;
         case 'resolve_thread': result = await handleResolveThread(args); break;
@@ -3733,6 +4237,7 @@ function registerHandlers(server: Server, getIdentity?: () => CallerIdentity) {
         case 'get_action_policy': result = await handleGetActionPolicy(args); break;
         case 'get_identity_kernel': result = await handleGetIdentityKernel(args); break;
         case 'get_my_identity': result = await handleGetMyIdentity(args); break;
+        case 'get_my_personality': result = await handleGetMyPersonality(args); break;
         case 'get_mind_wander': result = await handleGetMindWander(args); break;
         case 'get_agent_beliefs': result = await handleGetAgentBeliefs(args); break;
         case 'get_procedural_templates': result = await handleGetProceduralTemplates(args); break;
@@ -3765,18 +4270,118 @@ function registerHandlers(server: Server, getIdentity?: () => CallerIdentity) {
         case 'auth_issue_session': result = await handleAuthIssueSession(args); break;
         case 'auth_revoke_session': result = await handleAuthRevokeSession(args); break;
         case 'auth_session_status': result = await handleAuthSessionStatus(args); break;
+        case 'create_mission_v2':
+        case 'get_mission_state':
+        case 'submit_state_delta':
+        case 'list_state_deltas':
+        case 'query_epistemic_ledger':
+        case 'compile_cognitive_baton':
+        case 'get_cognitive_baton':
+        case 'checkpoint_mission':
+        case 'resume_mission':
+          // contract #5: with the flag off these tools must be indistinguishable
+          // from not existing — the dispatch itself throws Unknown tool.
+          result = await dispatchCognitiveTool(name, args, caller); break;
+        case 'create_cognitive_work_item':
+        case 'get_cognitive_queue':
+        case 'explain_scheduler_decision':
+          // Phase-4 criterion 13: same indistinguishability standard for the
+          // scheduler tools — flag off means plain Unknown tool.
+          result = await dispatchSchedulerTool(name, args, caller); break;
+        case 'list_uncertainties':
+        case 'evaluate_triggers':
+        case 'trace_assumption_dependencies':
+        case 'invalidate_decision':
+        case 'propose_experiment':
+        case 'record_experiment_result':
+        case 'get_trigger_report':
+        case 'create_blind_work_item':
+        case 'record_trigger_outcome':
+        case 'get_hypothesis_diversity':
+          // Phase-5 criterion 24: flag off → plain Unknown tool.
+          result = await dispatchUncertaintyTool(name, args, caller); break;
+        case 'set_scheduler_mode':
+        case 'opt_in_mission':
+        case 'revoke_mission_opt_in':
+        case 'get_allocation_evidence':
+        case 'acknowledge_evidence':
+        case 'get_activation_ledger':
+        case 'get_allocation_counterfactual':
+        case 'record_allocator_observation':
+        case 'get_scheduler_recommendation':
+        case 'propose_skill_candidate':
+        case 'run_skill_replay':
+        case 'start_skill_canary':
+        case 'complete_skill_canary':
+        case 'promote_skill_version':
+        case 'pin_skill_version':
+        case 'get_skill_candidate_state':
+          // Phase 6/8: reachable whenever the cognitive plane is enabled (mode
+          // transitions start from `off`); gate checks live in the activation
+          // service and read stored records only. Plane off → Unknown tool.
+          result = await dispatchActivationTool(name, args, caller); break;
+        case 'run_focused_consolidation':
+        case 'get_salience_trace':
+          // ITER-5 (Phase 3): gated on FOCUSED_IMAGINATION alone — with the
+          // flag off the dispatch throws the plain unknown-tool error, so the
+          // surface is indistinguishable from not existing.
+          result = await dispatchFocusedTool(name, args, caller); break;
+        case 'generate_imagination_seeds':
+        case 'get_idea_archive':
+          // ITER-6 (Phase 4): same flag, same gate, same guarantee — the
+          // imagination tools vanish with the flag rather than degrading.
+          result = await dispatchImaginationTool(name, args, caller); break;
+        case 'run_imagination_cycle':
+        case 'get_creative_baton':
+        case 'promote_creative_baton':
+        case 'baton_candidates_to_work_items':
+        case 'record_candidate_outcome':
+          // ITER-7 (Phase 5): the family is gated on FOCUSED_IMAGINATION and
+          // promotion additionally on CREATIVE_BATON_PROMOTION; the dispatcher
+          // re-checks both, so a tool whose flag went off throws the plain
+          // unknown-tool error and writes nothing.
+          result = await dispatchCreativeBatonTool(name, args, caller); break;
+        case 'get_imagination_metrics':
+        case 'record_experiment_observation':
+          // ITER-9 (Phase 7): the observability pair, gated on
+          // FOCUSED_IMAGINATION like the rest of the family. The dispatcher
+          // re-checks the flag (plain `Unknown tool` with it off) and the write
+          // additionally refuses an untrusted caller before touching a row.
+          result = await dispatchImaginationObservabilityTool(name, args, caller); break;
+        case 'assign_thinking_mode':
+        case 'get_active_mode':
+        case 'create_inheritance_envelope':
+        case 'allocate_cognitive_portfolio':
+        case 'plan_independent_first_pass':
+        case 'synthesize_portfolios':
+          // ITER-8 (Phase 6): the cognitive-team family, gated on
+          // COGNITIVE_TEAM_ALLOCATION alone; the dispatcher re-checks the flag,
+          // so with it off every one of these throws the plain unknown-tool
+          // error, writes nothing and makes no model call.
+          result = await dispatchCognitiveTeamTool(name, args, caller); break;
         default: throw new Error(`Unknown tool: ${name}`);
       }
       // ── Cerebellum: procedural pattern observation ──────────
       // Record every tool call so Katra learns which patterns
       // are frequent and reliable. After 5+ identical patterns,
-      // they become "habits" (procedural templates).
+      // they become "habits" (procedural templates) — persisted per
+      // identity, so one identity never reads another's habits.
       try {
         SelfModelService.get_instance().recordToolPattern(
+          patternIdentity,
           name,
           (args || {}) as Record<string, unknown>,
           true
         );
+      } catch { /* non-critical */ }
+
+      // ── Affect: a successful tool call is the mild positive, low-arousal stimulus ──
+      // This is the autonomic channel: it fires whether or not the model remembered to think about
+      // how it felt, which is the whole point of putting the engine in the core.
+      try {
+        if (!name.startsWith('get_affect') && name !== 'record_feeling') {
+          void affectEngine.observe(patternIdentity, stimulusFromToolCall(name, true));
+        }
       } catch { /* non-critical */ }
 
       return { content: result, isError: false };
@@ -3784,10 +4389,17 @@ function registerHandlers(server: Server, getIdentity?: () => CallerIdentity) {
       // Record failed tool calls too — the Cerebellum learns from failures
       try {
         SelfModelService.get_instance().recordToolPattern(
+          patternIdentity,
           name,
           (args || {}) as Record<string, unknown>,
           false
         );
+      } catch { /* non-critical */ }
+      // ── Affect: a failed tool call is the strong negative, high-arousal stimulus ──
+      // This is the signal that stops the state being a restatement of whatever text happened to be
+      // ingested: a retry storm with no prose in it still moves the state.
+      try {
+        void affectEngine.observe(patternIdentity, stimulusFromToolCall(name, false));
       } catch { /* non-critical */ }
       const message = error instanceof Error ? error.message : String(error);
       return { content: [{ type: 'text', text: `❌ Error: ${message}` }], isError: true };

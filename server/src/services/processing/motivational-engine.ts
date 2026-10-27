@@ -53,6 +53,45 @@ export interface SourceTrustRecord {
 
 type TrustEventType = 'corroboration' | 'contradiction';
 
+// ── ITER-11 (WS-5 item 3): bounded novelty replenishment ────────────────────
+
+/** One coverage step: an unexplored archive keeps the novelty WANT alive. */
+export const NOVELTY_COVERAGE_STEP = 0.02;
+/** What one recorded `unnecessary_cost` outcome takes off the drive. */
+export const NOVELTY_WASTE_STEP = 0.02;
+/** What one recorded useful outcome adds — the same step the outcome channel uses. */
+export const NOVELTY_USEFUL_STEP = 0.05;
+/** The hard bound on ONE call's adjustment, in either direction. */
+export const NOVELTY_REPLENISHMENT_BOUND = 0.1;
+
+/** What the novelty drive is fed with (all read per identity + mission). */
+export interface NoveltyReplenishmentInput {
+  user_id: string;
+  mission_id?: string | null;
+  /** Archive cells occupied in that mission's descriptor space. */
+  coverage_cells: number;
+  /** The archive's coverage target for that space. */
+  coverage_target: number;
+  /** Useful outcomes recorded in the window (they replenish). */
+  useful_outcomes: number;
+  /** `unnecessary_cost` outcomes recorded in the window (they deplete). */
+  wasted_outcomes: number;
+}
+
+/** The bounded adjustment that was applied, with the numbers behind it. */
+export interface NoveltyReplenishment {
+  user_id: string;
+  mission_id: string | null;
+  before: number;
+  after: number;
+  applied: number;
+  coverage_component: number;
+  waste_component: number;
+  useful_component: number;
+  bound: number;
+  basis: string;
+}
+
 const DRIVE_CONFIGS: Record<DriveName, DriveConfig> = {
   coherence:  { target: 0.8,  depletionRate: 0.005 },
   novelty:    { target: 0.7,  depletionRate: 0.01 },
@@ -206,6 +245,70 @@ export class MotivationalEngine {
     if (result.memoryStats) {
       this.replenishDrive('survival', 0.01);
     }
+  }
+
+  /**
+   * ITER-11 (WS-5 item 3 · brief §6.1 item 3): feed archive COVERAGE and
+   * useful-outcome novelty into the novelty drive, bounded and deterministic.
+   *
+   * One call applies three clamped components to the novelty drive:
+   *
+   *   coverage  — an unexplored descriptor space keeps the want alive, so a
+   *               coverage ratio below 1 DEPLETES the drive by
+   *               `NOVELTY_COVERAGE_STEP × unexplored_share` (and a saturated
+   *               archive adds nothing);
+   *   waste     — `unnecessary_cost` outcomes deplete it too (cost without
+   *               value is not novelty satisfied);
+   *   useful    — useful outcomes REPLENISH it, mirroring the outcome channel's
+   *               own reward.
+   *
+   * The TOTAL is clamped to ±`NOVELTY_REPLENISHMENT_BOUND`, so no single call
+   * — however hostile its inputs — can move the drive by more than the bound.
+   *
+   * THE PER-IDENTITY LIMIT, stated plainly: this engine is a PROCESS-WIDE
+   * singleton (`DRIVE_CONFIGS` and `this.drives` are shared), so the adjustment
+   * lands on the shared novelty drive even though the inputs are read per
+   * identity and mission. The returned record carries the identity they came
+   * from, which is as far as per-identity guarding can honestly go without
+   * re-keying every drive in the process — a change this iteration does not
+   * make. Two identities' cycles in one process therefore move one drive.
+   */
+  applyNoveltyReplenishment(input: NoveltyReplenishmentInput): NoveltyReplenishment {
+    const before = this.drives.novelty.current;
+    const target = Math.max(0, Number(input?.coverage_target) || 0);
+    const cells = Math.max(0, Number(input?.coverage_cells) || 0);
+    const coverageRatio = target > 0 ? Math.min(1, cells / target) : 1;
+    const unexplored = Math.max(0, 1 - coverageRatio);
+    const useful = Math.max(0, Math.floor(Number(input?.useful_outcomes) || 0));
+    const wasted = Math.max(0, Math.floor(Number(input?.wasted_outcomes) || 0));
+
+    const coverageComponent = Number((-(NOVELTY_COVERAGE_STEP * unexplored)).toFixed(6));
+    const wasteComponent = Number((-(NOVELTY_WASTE_STEP * Math.min(wasted, 5))).toFixed(6));
+    const usefulComponent = Number((NOVELTY_USEFUL_STEP * Math.min(useful, 5)).toFixed(6));
+    const raw = coverageComponent + wasteComponent + usefulComponent;
+    const applied = Number(
+      Math.max(-NOVELTY_REPLENISHMENT_BOUND, Math.min(NOVELTY_REPLENISHMENT_BOUND, raw)).toFixed(6),
+    );
+    if (applied !== 0) this.replenishDrive('novelty', applied);
+    const after = this.drives.novelty.current;
+
+    return {
+      user_id: String(input?.user_id ?? ''),
+      mission_id: typeof input?.mission_id === 'string' && input.mission_id.length > 0 ? input.mission_id : null,
+      before: Number(before.toFixed(6)),
+      after: Number(after.toFixed(6)),
+      applied,
+      coverage_component: coverageComponent,
+      waste_component: wasteComponent,
+      useful_component: usefulComponent,
+      bound: NOVELTY_REPLENISHMENT_BOUND,
+      basis:
+        `novelty drive ${Number(before.toFixed(6))} → ${Number(after.toFixed(6))} (applied ${applied}, bound ±${NOVELTY_REPLENISHMENT_BOUND}) ` +
+        `from coverage ${cells}/${target} (unexplored ${Number(unexplored.toFixed(6))}, ${coverageComponent}), ` +
+        `${wasted} unnecessary_cost outcome(s) (${wasteComponent}) and ${useful} useful outcome(s) (${usefulComponent}); ` +
+        'the engine is a process-wide singleton, so the adjustment lands on the SHARED novelty drive and the identity ' +
+        'is recorded on this result rather than keyed into the drive',
+    };
   }
 
   getDriveDeficits(): Record<DriveName, number> {

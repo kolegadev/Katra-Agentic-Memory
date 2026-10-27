@@ -354,7 +354,7 @@ def main():
     backoff = 2
     while True:
         try:
-            r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
+            r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, password=os.environ.get("REDIS_PASSWORD"), decode_responses=True)
             r.ping()
             logger.info("Connected to Redis")
 

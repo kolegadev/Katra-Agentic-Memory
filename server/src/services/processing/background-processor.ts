@@ -21,11 +21,17 @@ import { DecisionActionService } from './decision-action-service.js';
 import { SalienceService } from './salience-service.js';
 import { assertVaultCollectionAllowed } from '../vault/denylist.js';
 import { capExtractionFanOut } from './extraction-fanout.js';
+import { nextCursor, planExtractionDelta } from './extraction-delta.js';
+import { sweepActiveMissions, triggerSweepIntervalMs } from '../mission-cognition/mission-trigger-sweep.js';
 
 export class BackgroundProcessor {
   private static instance: BackgroundProcessor;
   private processing = false;
   private processingInterval: NodeJS.Timeout | null = null;
+  // 2026-10-23: a slow, separate cadence for the mission trigger sweep. The
+  // detector set is cheap but the portfolio is not a 30-second concern.
+  private triggerSweepInterval: NodeJS.Timeout | null = null;
+  private sweepingTriggers = false;
   private memoryManager: MemoryManager;
   private lastNoEventsLogTime: number = 0;
   private processingCycleCount: number = 0;
@@ -58,6 +64,49 @@ export class BackgroundProcessor {
     this.processingInterval = setInterval(() => {
       this.processUnprocessedEvents();
     }, intervalMs);
+
+    // Mission trigger sweep: its own, slower cadence. Zero disables it.
+    const sweepMs = triggerSweepIntervalMs();
+    if (sweepMs > 0) {
+      console.log(`🩺 Starting mission trigger sweep (interval: ${sweepMs}ms)`);
+      void this.sweepMissionTriggers();
+      this.triggerSweepInterval = setInterval(() => {
+        void this.sweepMissionTriggers();
+      }, sweepMs);
+    } else {
+      console.log('⏸️ Mission trigger sweep disabled (MISSION_TRIGGER_SWEEP_MS=0)');
+    }
+  }
+
+  /**
+   * Evaluate every active mission against the deterministic detectors and
+   * persist one snapshot. No model calls, and no mission state is written.
+   *
+   * Added 2026-10-23: the detectors were reachable only from an on-demand MCP
+   * tool and from focused consolidation, which costs a model call and only runs
+   * for a mission somebody already asked about. Nothing ever evaluated the
+   * portfolio, so the state said `active` about 28 missions that had not moved
+   * in a month and produced no signal at all.
+   */
+  async sweepMissionTriggers(): Promise<void> {
+    if (this.sweepingTriggers) return;
+    this.sweepingTriggers = true;
+    try {
+      const { get_database } = await import('../../database/connection.js');
+      const sweep = await sweepActiveMissions(get_database());
+      const line =
+        `🩺 trigger sweep: ${sweep.missions_scanned} active, ` +
+        `${sweep.missions_with_triggers} with triggers, ${sweep.stalled.length} stalled`;
+      if (sweep.stalled.length > 0) console.log(`${line} — ${sweep.stalled.join(', ')}`);
+      else console.log(line);
+      if (sweep.errors.length > 0) {
+        console.warn(`⚠️ trigger sweep errors: ${sweep.errors.map(e => e.mission_id).join(', ')}`);
+      }
+    } catch (err) {
+      console.error('❌ trigger sweep failed:', err instanceof Error ? err.message : err);
+    } finally {
+      this.sweepingTriggers = false;
+    }
   }
 
   /**
@@ -68,6 +117,10 @@ export class BackgroundProcessor {
       clearInterval(this.processingInterval);
       this.processingInterval = null;
       console.log('⏹️ Background processor stopped');
+    }
+    if (this.triggerSweepInterval) {
+      clearInterval(this.triggerSweepInterval);
+      this.triggerSweepInterval = null;
     }
   }
 
@@ -389,9 +442,49 @@ export class BackgroundProcessor {
 
       console.log(`🧠 Processing event ${eventId}: ${content.substring(0, 50)}...`);
 
-    // Build extraction context with conversation history
-    // Guard: conversation events feed the LLM extraction call below.
+    // ── Extraction delta ────────────────────────────────────────────────
+    // A session that re-writes a growing transcript hands the extractor the
+    // same prefix every turn; only the suffix past the cursor is new. This is
+    // what stops the same facts being re-derived, re-stored and merged again.
     assertVaultCollectionAllowed('episodic_events', 'background-processor:processEvent');
+    // Only a transcript event may read or advance a cursor: the extraction
+    // dispatch writes derived events (activities) into the SAME session_id, and
+    // those have no message — letting them advance the cursor made the next
+    // real turn look like a changed document.
+    const isTranscriptEvent = event.event_type === 'conversation'
+      && typeof event.content?.message === 'string'
+      && event.content.message.length > 0;
+    const { get_database: get_extraction_db } = await import('../../database/connection.js');
+    const cursor_id = `${userId}:${sessionId}`;
+    const cursorDoc = isTranscriptEvent
+      ? await get_extraction_db().collection('extraction_cursors').findOne({ _id: cursor_id as any })
+      : null;
+    const deltaPlan = isTranscriptEvent
+      ? planExtractionDelta(content, cursorDoc as any)
+      : { mode: 'full' as const, text: content, reason: 'not_transcript' };
+    console.log(`🧠 Extraction plan for ${eventId}: ${deltaPlan.mode} (${deltaPlan.reason})`);
+    if (deltaPlan.mode === 'skip') {
+      console.log(`⏭️ Extraction skipped for ${eventId}: ${deltaPlan.reason}`);
+      await this.memoryManager.mark_event_processed(eventId, {
+        processed_at: new Date(),
+        extraction_result: {
+          entities_count: 0,
+          relationships_count: 0,
+          facts_count: 0,
+          reason: `delta_${deltaPlan.reason}`,
+        },
+      });
+      if (idempotencyKey) {
+        await this.updateProcessingLogEntry(idempotencyKey, 'completed', {
+          processed_at: new Date(),
+          extraction_summary: { entity_count: 0, relationship_count: 0, event_count: 0, fact_count: 0 },
+          dispatch_summary: { operations_completed: 0, operations_failed: 0 },
+        });
+      }
+      return;
+    }
+
+    // Build extraction context with conversation history
     const recentEvents = await this.memoryManager.get_session_events(sessionId, 5);
     const conversationHistory = recentEvents
       .filter(e => e.content?.message && e.id !== eventId)
@@ -411,7 +504,7 @@ export class BackgroundProcessor {
     try {
       console.log(`🔍 Starting extraction for event ${eventId}...`);
       extractionResult = await extraction_service.extractStructuredData(
-        content,
+        deltaPlan.text,
         extractionContext
       );
       console.log(`✅ Extraction successful for event ${eventId}`);
@@ -445,6 +538,7 @@ export class BackgroundProcessor {
         extractionResult.relationships.length === 0 &&
         extractionResult.semantic_facts.length === 0) {
       console.log('⏭️ No meaningful semantic information extracted, marking as processed');
+      await this.advanceExtractionCursor(userId, sessionId, content, event);
       await this.memoryManager.mark_event_processed(eventId, {
         processed_at: new Date(),
         extraction_result: {
@@ -501,6 +595,10 @@ export class BackgroundProcessor {
     this.embedEventAndFacts(eventId, content, event.event_type, userId).catch((e) => {
       console.warn('⚠️ Background embedding failed (non-critical):', e.message);
     });
+
+    // The text is consumed: the next event of this session extracts only what
+    // follows it.
+    await this.advanceExtractionCursor(userId, sessionId, content, event);
 
     // Mark event as processed
     await this.memoryManager.mark_event_processed(eventId, {
@@ -872,6 +970,38 @@ export class BackgroundProcessor {
   }
 
   /**
+   * Record how much of a session's text has been consumed, so the next event
+   * extracts only the delta. Non-critical: a failed cursor update costs a
+   * repeated extraction, never data.
+   */
+  private async advanceExtractionCursor(
+    userId: string,
+    sessionId: string,
+    content: string,
+    event: any,
+  ): Promise<void> {
+    // Derived events must not move the session's transcript cursor.
+    if (event?.event_type !== 'conversation') return;
+    if (typeof event?.content?.message !== 'string') return;
+    try {
+      const { get_database } = await import('../../database/connection.js');
+      await get_database().collection('extraction_cursors').updateOne(
+        { _id: `${userId}:${sessionId}` as any },
+        {
+          $set: {
+            user_id: userId,
+            session_id: sessionId,
+            ...nextCursor(content, new Date(event?.timestamp || Date.now())),
+          },
+        },
+        { upsert: true },
+      );
+    } catch (e: any) {
+      console.warn('⚠️ Extraction cursor update failed (non-critical):', e?.message);
+    }
+  }
+
+  /**
    * Check if an event has been recently processed to avoid reprocessing
    */
   private async isEventRecentlyProcessed(event: any): Promise<boolean> {
@@ -934,8 +1064,9 @@ export class BackgroundProcessor {
     processing_active: boolean;
     last_run_time?: Date;
   }> {
-    const unprocessedCount = (await this.memoryManager.get_unprocessed_events(1)).length > 0 ? 
-      (await this.memoryManager.get_unprocessed_events(1000)).length : 0;
+    // A true count: the old version fetched up to 1,000 documents to read
+    // `.length`, so the metric saturated at 1,000 and hid the real backlog.
+    const unprocessedCount = await this.memoryManager.count_unprocessed_events();
 
     return {
       is_running: this.processingInterval !== null,
@@ -959,29 +1090,66 @@ export class BackgroundProcessor {
       errors: [] as string[]
     };
 
-    try {
-      // Get all unprocessed events
-      const unprocessedEvents = await this.memoryManager.get_unprocessed_events(1000);
-      
-      console.log(`🔄 Force processing ${unprocessedEvents.length} events`);
+    // Drain in batches until dry. Previously this fetched a SINGLE batch of
+    // 1,000 and returned, so above 1,000 the method reported success while
+    // leaving the remainder unprocessed: "all" was silently false. The batch
+    // bound is a runaway guard, and hitting it is REPORTED rather than passed
+    // off as completion.
+    const BATCH = 1000;
+    const MAX_BATCHES = 100;
+    let batches = 0;
+    let drained = false;
 
-      for (const event of unprocessedEvents) {
-        try {
-          await this.processEvent(event);
-          results.processed++;
-        } catch (error) {
-          results.failed++;
-          const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-          results.errors.push(`Event ${event.id}: ${errorMsg}`);
-          
-          await this.memoryManager.mark_event_processing_failed(
-            event.id || (event as any)._id?.toString(),
-            errorMsg
+    try {
+      while (batches < MAX_BATCHES) {
+        const unprocessedEvents = await this.memoryManager.get_unprocessed_events(BATCH);
+        if (unprocessedEvents.length === 0) { drained = true; break; }
+        batches++;
+
+        console.log(`🔄 Force processing batch ${batches} (${unprocessedEvents.length} events)`);
+
+        let made_progress = 0;
+        for (const event of unprocessedEvents) {
+          try {
+            await this.processEvent(event);
+            results.processed++;
+            made_progress++;
+          } catch (error) {
+            results.failed++;
+            made_progress++;
+            const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+            results.errors.push(`Event ${event.id}: ${errorMsg}`);
+
+            await this.memoryManager.mark_event_processing_failed(
+              event.id || (event as any)._id?.toString(),
+              errorMsg
+            );
+          }
+        }
+
+        // No progress means the same batch would be fetched forever (an event
+        // that is neither marked processed nor terminally failed). Stop loudly
+        // rather than spin.
+        if (made_progress === 0) {
+          results.errors.push(
+            `Force processing stalled: batch ${batches} made no progress; ` +
+              'events are neither being marked processed nor terminally failed'
           );
+          break;
         }
       }
 
-      console.log(`✅ Force processing completed: ${results.processed} processed, ${results.failed} failed`);
+      if (!drained) {
+        results.errors.push(
+          `Force processing stopped after ${batches} batch(es) with events still unprocessed ` +
+            `(bound ${MAX_BATCHES}); the backlog was NOT fully drained`
+        );
+      }
+
+      console.log(
+        `✅ Force processing completed: ${results.processed} processed, ${results.failed} failed` +
+          `, ${batches} batch(es)${drained ? ' — drained' : ' — NOT DRAINED'}`
+      );
 
     } catch (error) {
       console.error('❌ Force processing failed:', error);
