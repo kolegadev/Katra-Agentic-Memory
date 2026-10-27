@@ -102,6 +102,10 @@ await coll.createIndex(
   { user_id: 1, proposition_key: 1, shared_id: 1 },
   { name: 'semantic_proposition_scoped', background: true },
 );
+await coll.createIndex(
+  { user_id: 1, proposition_norm: 1, shared_id: 1 },
+  { name: 'semantic_proposition_norm_scoped', background: true },
+);
 
 const gz = createGzip({ level: 6 });
 const out = createWriteStream(OUT);
