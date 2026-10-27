@@ -38,9 +38,15 @@ describe('proposition key parity — runtime and compaction scripts', () => {
     expect(semantic).toContain('semanticPropositionKey');
     expect(semantic).toContain('proposition_key: g.key');
     expect(semantic).not.toMatch(/proposition_key:\s*createHash/);
+    expect(semantic).toContain('shared_id: 1');
+    expect(semantic).toContain('${sharedId}');
+    expect(semantic).toContain('semantic_proposition_scoped');
 
     expect(episodic).toContain("from './proposition-key.mjs'");
     expect(episodic).toContain('episodicPropositionKey');
     expect(episodic).toContain('proposition_key: survivor.key');
+    expect(episodic).toContain('shared_id: 1');
+    expect(episodic).toContain("${d.shared_id || ''}");
+    expect(episodic).toContain('proposition_lookup');
   });
 });

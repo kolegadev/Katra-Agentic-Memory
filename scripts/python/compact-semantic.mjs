@@ -74,16 +74,17 @@ console.log(`semantic_facts: ${n0} docs | ${(st0.size / 1048576).toFixed(0)} MB 
 
 const groups = new Map();
 let scanned = 0;
-for await (const d of coll.find({}, { projection: { content: 1, user_id: 1, created_at: 1, updated_at: 1, timestamp: 1 } })) {
+for await (const d of coll.find({}, { projection: { content: 1, user_id: 1, shared_id: 1, created_at: 1, updated_at: 1, timestamp: 1 } })) {
   scanned++;
   const text = typeof d.content === 'string' ? d.content : JSON.stringify(d.content || '');
   const proposition = semanticPropositionKey(text);
   if (!proposition) continue;
   const created = d.created_at || d.timestamp || null;
   const updated = d.updated_at || d.created_at || d.timestamp || null;
-  const key = `${d.user_id || ''}\u0000${proposition}`;
+  const sharedId = d.shared_id || '';
+  const key = `${d.user_id || ''}\u0000${sharedId}\u0000${proposition}`;
   let g = groups.get(key);
-  if (!g) { g = { key: proposition, userKey: d.user_id || '', rows: [] }; groups.set(key, g); }
+  if (!g) { g = { key: proposition, userKey: d.user_id || '', sharedId, rows: [] }; groups.set(key, g); }
   g.rows.push({ _id: d._id, ts: created || new Date(0), last: updated || created || new Date(0), text });
 }
 
@@ -97,7 +98,10 @@ if (!APPLY) {
   process.exit(0);
 }
 
-await coll.createIndex({ user_id: 1, proposition_key: 1 }, { name: 'semantic_proposition', background: true });
+await coll.createIndex(
+  { user_id: 1, proposition_key: 1, shared_id: 1 },
+  { name: 'semantic_proposition_scoped', background: true },
+);
 
 const gz = createGzip({ level: 6 });
 const out = createWriteStream(OUT);
@@ -115,7 +119,7 @@ for (const g of groups.values()) {
   g.rows.sort((a, b) => new Date(a.ts) - new Date(b.ts));
   const kept = g.rows[0];
   for (const r of g.rows.slice(1)) {
-    await write(JSON.stringify({ merged_into: kept._id, user_key: g.userKey, created_at: r.ts, updated_at: r.last, content: r.text }) + '\n');
+    await write(JSON.stringify({ merged_into: kept._id, user_key: g.userKey, shared_id: g.sharedId || null, created_at: r.ts, updated_at: r.last, content: r.text }) + '\n');
     deletes.push(r._id);
   }
   const last = g.rows[g.rows.length - 1];

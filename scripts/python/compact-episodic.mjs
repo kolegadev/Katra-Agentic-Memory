@@ -59,7 +59,7 @@ console.log(`mergeable event types: ${mergeable.length} (raw types excluded: ${t
 for (const type of mergeable) {
   const cursor = coll.find(
     { event_type: type },
-    { projection: { _id: 1, user_id: 1, event_type: 1, content: 1, timestamp: 1, occurrences: 1 } },
+    { projection: { _id: 1, user_id: 1, event_type: 1, content: 1, timestamp: 1, occurrences: 1, shared_id: 1 } },
   );
   for await (const d of cursor) {
     scanned++;
@@ -70,7 +70,7 @@ for (const type of mergeable) {
     if (tokens < 4) continue;
     const keyHash = episodicPropositionKey(d.event_type, desc);
     if (!keyHash) continue;
-    const key = `${d.user_id}\u0000${d.event_type}\u0000${keyHash}`;
+    const key = `${d.user_id}\u0000${d.event_type}\u0000${d.shared_id || ''}\u0000${keyHash}`;
     let g = groups.get(key);
     if (!g) { g = { rows: [] }; groups.set(key, g); }
     g.rows.push({ _id: d._id, ts: d.timestamp || new Date(0), desc, occ: d.occurrences || 1, key: keyHash });
@@ -95,7 +95,7 @@ if (!APPLY) {
 
 // ── index for the write-path lookup ─────────────────────────────────────────
 await coll.createIndex(
-  { user_id: 1, event_type: 1, proposition_key: 1 },
+  { user_id: 1, event_type: 1, proposition_key: 1, shared_id: 1 },
   { name: 'proposition_lookup', background: true },
 );
 console.log('index proposition_lookup ensured');
