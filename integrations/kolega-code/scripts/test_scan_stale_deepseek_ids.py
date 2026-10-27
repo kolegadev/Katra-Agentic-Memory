@@ -103,7 +103,7 @@ def main() -> int:
     section("1. classify(): the path table")
     expected = {
         # CONFIG — exact basenames and the settings.json substring rule
-        "/Users/x/.env": "CONFIG",
+        "/x/.env": "CONFIG",
         "/etc/settings.json": "CONFIG",
         "/x/.config/Code/User/settings.json": "CONFIG",
         "/x/config.yaml": "CONFIG",

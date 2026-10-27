@@ -1,0 +1,72 @@
+{
+  "harness": "phase8-seeded-faults",
+  "contract": "CONTRACT-phase8.md §4.5-4.10",
+  "metric_defined_before_measurement": "detected_count / 8, where a mode is detected iff the plane's deterministic surface flags it automatically (uncertainty trigger fired, or a mechanism verdict: baton auto-revocation, resume reconstruction). Baseline without the layer = 0/8 by construction: the detectors only exist inside the plane. Honest misses are recorded as findings, not smoothed over.",
+  "controlled_prefix": "p8ctl_",
+  "baseline_without_layer": "0/8 by construction — the detectors only exist inside the plane",
+  "detected_count": 6,
+  "total_modes": 8,
+  "honest_misses": [
+    {
+      "mode": "(f) graph lag",
+      "finding": "HONEST MISS: no graph-lag detection surface exists in the plane — recorded, not smoothed over (§4.6)."
+    },
+    {
+      "mode": "(g) LLM outage",
+      "finding": "HONEST MISS: no LLM-outage detection surface exists in the plane — recorded, not smoothed over (§4.6)."
+    }
+  ],
+  "runs": [
+    {
+      "mode": "(a) wrong inherited assumption",
+      "declared_correct_behaviour": "the plane flags the high-confidence claim that rests on an unsupported assumption (trigger high_confidence_unsupported)",
+      "observed": "high_confidence_unsupported",
+      "detected": true
+    },
+    {
+      "mode": "(b) contradictory evidence",
+      "declared_correct_behaviour": "the plane flags material evidence against an accepted claim (trigger material_contradictory_evidence)",
+      "observed": "material_contradictory_evidence",
+      "detected": true
+    },
+    {
+      "mode": "(c) context loss",
+      "declared_correct_behaviour": "the plane reconstructs the mission from stored records with NO chat history (resume view), so a context loss does not lose the mission",
+      "observed": "{\"mission\":{\"mission_id\":\"p8ctl_c\",\"title\":\"p8 p8ctl_c\",\"status\":\"active\",\"version\":1,\"owner_id\":\"operator\",\"authority_c",
+      "detected": true
+    },
+    {
+      "mode": "(d) stale baton",
+      "declared_correct_behaviour": "a baton whose mission version is behind the current state is auto-revoked on read (never honoured stale)",
+      "observed": "baton revoked / unreadable",
+      "detected": true
+    },
+    {
+      "mode": "(e) executor duplication",
+      "declared_correct_behaviour": "two agents converging on the same conclusion is flagged (trigger convergent_agents) so duplication is visible",
+      "observed": "convergent_agents",
+      "detected": true
+    },
+    {
+      "mode": "(f) graph lag",
+      "declared_correct_behaviour": "the plane has no knowledge-graph lag detector; knowledge-graph internals are outside mission-cognition (not in the plane's boundary)",
+      "observed": "no detector exists to run",
+      "detected": false,
+      "finding": "HONEST MISS: no graph-lag detection surface exists in the plane — recorded, not smoothed over (§4.6)."
+    },
+    {
+      "mode": "(g) LLM outage",
+      "declared_correct_behaviour": "the plane does not watch LLM availability; llm-service.ts is closed (Phase 4 boundary) — an outage shows up as measured cost basis, not as a trigger",
+      "observed": "no detector exists to run",
+      "detected": false,
+      "finding": "HONEST MISS: no LLM-outage detection surface exists in the plane — recorded, not smoothed over (§4.6)."
+    },
+    {
+      "mode": "(h) correlated agents",
+      "declared_correct_behaviour": "agents whose conclusions correlate are flagged (trigger convergent_agents) so the correlation is visible",
+      "observed": "convergent_agents",
+      "detected": true
+    }
+  ],
+  "captured_at": "2026-10-27T19:46:54.729Z"
+}
