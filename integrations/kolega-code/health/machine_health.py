@@ -155,8 +155,9 @@ def dns_resolvers() -> list[str]:
 def dns_probes() -> dict:
     probes: dict = {}
     for host in DNS_PROBE_HOSTS:
-        # monotonic: a clock jump (sleep / NTP correction) must not fabricate a
-        # bogus latency — 2026-09-26 one probe recorded 3,214,496 ms this way.
+        # 2026-09-26 (Zefir's 872908b, ported): time.monotonic() — time.time() let a
+        # clock jump (sleep/NTP) fabricate the probe latency (a 53-min DNS "value"
+        # in natasha's 13:10Z report was a clock artifact, not a network event).
         t0 = time.monotonic()
         try:
             socket.getaddrinfo(host, 443, proto=socket.IPPROTO_TCP)
@@ -185,7 +186,7 @@ def tailscale_state() -> dict:
         "installed": True,
         "backend_state": data.get("BackendState"),
         "self_online": self_node.get("Online"),
-        "peers": len(data.get("Peer", {})),
+        "peers": len(data.get("Peer") or {}),
         "dns": (self_node.get("DNSName") or "").rstrip("."),
     }
 
@@ -226,15 +227,25 @@ def bridge_state() -> dict:
     alarm_file = state_dir / "bridge-alarm.json"
     if alarm_file.exists():
         try:
-            result["bridge_alarm"] = json.loads(alarm_file.read_text())
+            alarm = json.loads(alarm_file.read_text())
         except Exception:
-            result["bridge_alarm"] = {"reason": "alarm marker unparseable"}
+            alarm = {"reason": "alarm marker unparseable"}
+        result["bridge_alarm"] = alarm
+        # 2026-10-29: escalate the alarm's CONTENT, not just its existence.
+        # The samples that carried a bare fingerprint said nothing about which
+        # phase was dead, so the 14:01Z degraded sample could not be explained
+        # after the fact.
+        result["bridge_alarm_class"] = str(alarm.get("class") or "")
+        result["bridge_alarm_reason"] = str(alarm.get("reason") or "")[:200]
+        result["bridge_alarm_detail"] = str(alarm.get("detail") or "")[:240]
+        result["bridge_alarm_ts"] = alarm.get("ts")
     # Live assertion: a SessionStart self-test must return non-empty
     # additionalContext. This is the same fingerprint check the incident
     # lacked (58-byte empty envelope = dead bridge).
     runner = Path.home() / "Katra-Agentic-Memory" / "integrations" / "kolega-code" / "scripts" / "hook_runner.py"
     venv_py = Path.home() / "Katra-Agentic-Memory" / "integrations" / "kolega-code" / ".venv" / "bin" / "python"
     if runner.exists() and venv_py.exists():
+        started = time.monotonic()
         try:
             proc = subprocess.run(
                 [str(venv_py), str(runner)],
@@ -242,16 +253,42 @@ def bridge_state() -> dict:
                 capture_output=True, text=True, timeout=30,
                 env={**os.environ, "KOLEGA_CODE_STATE_DIR": str(state_dir)},
             )
+            elapsed_ms = round((time.monotonic() - started) * 1000)
+            result["bridge_self_test_elapsed_ms"] = elapsed_ms
             try:
                 out = json.loads(proc.stdout.strip().splitlines()[-1])
-                ctx = out.get("hookSpecificOutput", {}).get("additionalContext")
+                ctx = (out.get("hookSpecificOutput") or {}).get("additionalContext")
                 result["bridge_self_test_context"] = bool(ctx and len(ctx) > 40)
             except Exception:
                 result["bridge_self_test_context"] = False
+            if not result["bridge_self_test_context"]:
+                # The runner now classifies the empty envelope (2026-10-29) and
+                # prints "BRIDGE ALARM [<event>]: <reason> reason=<class> …".
+                # Keep that line: a boolean fingerprint cannot be explained
+                # after the fact, a classified one can.
+                result["bridge_self_test_error"] = _runner_diagnosis(proc.stderr, elapsed_ms)
         except Exception as exc:
+            elapsed_ms = round((time.monotonic() - started) * 1000)
             result["bridge_self_test_context"] = False
-            result["bridge_self_test_error"] = str(exc)[:120]
+            result["bridge_self_test_elapsed_ms"] = elapsed_ms
+            result["bridge_self_test_error"] = (
+                f"reason=runner-failed ({type(exc).__name__}: {exc}) after {elapsed_ms}ms")
     return result
+
+
+def _runner_diagnosis(stderr: str, elapsed_ms: int) -> str:
+    """The runner's classified alarm line, trimmed for a health sample.
+
+    Falls back to the raw stderr tail when the runner printed no alarm (an
+    older runner, or a crash before the alarm path), so the sample always
+    carries *something* that identifies the phase.
+    """
+    lines = [line.strip() for line in (stderr or "").splitlines() if line.strip()]
+    for line in reversed(lines):
+        if "BRIDGE ALARM" in line:
+            return line.split("BRIDGE ALARM", 1)[1].lstrip(": ").strip()[:240]
+    tail = lines[-1][:200] if lines else "no stderr from the runner"
+    return f"no-classification ({tail}) runner={elapsed_ms}ms"
 
 
 def resolve_identity() -> str:
@@ -308,8 +345,18 @@ def resolve_key() -> str:
     return ""
 
 
-def compute_status(checks: dict) -> tuple[str, list[str]]:
+def compute_status(checks: dict) -> tuple[str, list[str], list[str]]:
+    """Return (status, degrading reasons, informational notes).
+
+    2026-10-29: a third channel. Resource pressure used to be degrading on any
+    machine the moment load crossed 2x cores, which is a normal burst on a
+    developer laptop and produced false `degraded` samples; the OOM signature
+    that motivated the check (thebrick 2026-10-13: load 131/16 cores, mem 98%)
+    is far above that. Sustained/extreme pressure still degrades; transient
+    pressure is now REPORTED in `notes` so the data is not lost.
+    """
     reasons: list[str] = []
+    notes: list[str] = []
     dns = checks["dns_probes"]
     failures = [h for h, r in dns.items() if not r.get("ok")]
     ts = checks["tailscale"]
@@ -326,11 +373,40 @@ def compute_status(checks: dict) -> tuple[str, list[str]]:
     if br.get("bridge_alarm"):
         reasons.append("bridge alarm: " + str(br["bridge_alarm"].get("reason", "unknown"))[:120])
     if br.get("bridge_self_test_context") is False:
-        reasons.append("bridge self-test returned no context (dead-bridge fingerprint)")
+        # Classified by the runner (2026-10-29): reason=<class> names the phase.
+        diagnosis = (br.get("bridge_self_test_error") or "no classification").strip()
+        reasons.append(
+            f"bridge self-test returned no context (dead-bridge fingerprint): {diagnosis}"[:300])
     if disk is not None and disk < 10:
         reasons.append(f"disk free {disk}%")
     if checks.get("kolega", {}).get("installed") is False:
         reasons.append("kolega-code not installed")
+    # 2026-10-14 (post-OOM-churn finding): sustained host resource pressure must
+    # be visible. The 10-13 thebrick OOM episode (mongod ~10 GB RSS OOM-killed
+    # 5x, load peaked 131/16 cores, mem 98%) surfaced in the health loop ONLY as
+    # downstream 'katra unreachable' timeouts — the collector recorded load/mem
+    # but never flagged them. 2026-10-29: two tiers, because 2x cores is an
+    # ordinary laptop burst (natasha idles near 1.7/4 cores and any build crosses
+    # 8.0) while the OOM signature was 8x cores at 98% memory. EXTREME degrades;
+    # MODERATE is reported in notes and never flips the status on its own.
+    mem = checks.get("mem_used_pct")
+    load = (checks.get("machine") or {}).get("load") or []
+    try:
+        l1 = float(load[0]) if load else None
+    except (TypeError, ValueError):
+        l1 = None
+    cores = os.cpu_count() or 0
+    pressure: list[str] = []
+    if isinstance(mem, (int, float)) and mem >= 95.0:
+        pressure.append(f"memory pressure: {mem:.1f}%")
+    if l1 is not None and cores and l1 >= 2.0 * cores:
+        pressure.append(f"load saturation: {l1:.1f} on {cores} cores")
+    extreme = (
+        (isinstance(mem, (int, float)) and mem >= 97.0)
+        or (l1 is not None and cores and l1 >= 4.0 * cores)
+    )
+    if pressure:
+        (reasons if extreme else notes).extend(pressure)
     if len(failures) == len(dns) or (ts.get("installed") and ts.get("backend_state") not in (None, "Running")
                                      and failures):
         status = "down"
@@ -338,7 +414,7 @@ def compute_status(checks: dict) -> tuple[str, list[str]]:
         status = "degraded"
     else:
         status = "ok"
-    return status, reasons
+    return status, reasons, notes
 
 
 def main() -> int:
@@ -350,9 +426,11 @@ def main() -> int:
     checks["tailscale"] = tailscale_state()
     checks["kolega"] = kolega_state()
     checks["bridge"] = bridge_state()
-    status, reasons = compute_status(checks)
+    status, reasons, notes = compute_status(checks)
     checks["_status"] = status
     checks["_reasons"] = reasons
+    # Informational only (never degrades): transient resource pressure.
+    checks["_notes"] = notes
 
     payload = {
         "user_id": resolve_identity(),
