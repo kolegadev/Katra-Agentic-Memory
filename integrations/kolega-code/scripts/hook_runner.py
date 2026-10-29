@@ -56,6 +56,7 @@ import os
 import re
 import socket
 import sys
+import time
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import Any
@@ -74,11 +75,16 @@ ALARM_FILE = os.path.join(STATE_DIR, "bridge-alarm.json")
 SESSION_MARKER_DIR = os.path.join(STATE_DIR, "bridge-session")
 
 
-def _write_alarm(event: str, reason: str, detail: str = "") -> None:
+def _write_alarm(event: str, reason: str, detail: str = "", alarm_class: str = "") -> None:
     """Fail-loud side channel: the turn stays open (exit 0) but the alarm is
     persisted and printed so a broken bridge can never hide for days again
     (the 2026-09-19 MacBook incident fingerprint was a 58-byte empty
-    envelope with zero signal)."""
+    envelope with zero signal).
+
+    `alarm_class` (2026-10-29) is the machine-readable subset of the same
+    fact — one of EMPTY_REASONS — so a consumer can group by phase instead of
+    parsing prose. The original keys keep their meaning: nothing renamed.
+    """
     try:
         os.makedirs(STATE_DIR, exist_ok=True)
         with open(ALARM_FILE, "w") as f:
@@ -88,6 +94,7 @@ def _write_alarm(event: str, reason: str, detail: str = "") -> None:
                     "event": event,
                     "reason": reason,
                     "detail": detail,
+                    "class": alarm_class,
                 },
                 f,
             )
@@ -104,6 +111,83 @@ def _clear_alarm() -> None:
         pass
 
 
+# ── Empty-envelope classification (2026-10-29) ────────────────────────────
+# The dead-bridge fingerprint was a boolean: "hook returned no additionalContext
+# out=57B". Five different failures produce that same 57-byte envelope —
+# disabled config, a defaulted/unreachable MCP url, an auth rejection, a
+# timeout, and an empty store — and telling them apart after the fact from a
+# sample was impossible (the 14:01Z degraded sample on 2026-10-29). This closed
+# set names the phase at the moment it happens, using only what the hook call
+# already produced (no new network calls, no extra latency on the turn path).
+EMPTY_REASONS = (
+    "config",              # config sanity failed (empty api_key / localhost mcp_url)
+    "disabled",            # bridge disabled in katra-hook.json — expected, not a fault
+    "hook-exception",      # an exception with no recognisable transport signature
+    "timeout",             # the call timed out
+    "auth",                # rejected credential (401/403/invalid key)
+    "katra-unreachable",   # connection/DNS/transport failure
+    "no-sources",          # every source call errored
+    "empty-store",         # sources answered, nothing was returned
+    "unknown-empty",       # no diagnostics available (older bridge, or crash)
+)
+
+_TIMEOUT_HINTS = ("timed out", "timeout", "timed out", "deadline exceeded")
+_AUTH_HINTS = ("401", "403", "unauthorized", "forbidden", "invalid api key",
+               "invalid_api_key", "api_key", "authenticat", "permission denied", "invalid token")
+_UNREACHABLE_HINTS = ("connection refused", "connection reset", "cannot connect",
+                      "connect call failed", "all connection attempts failed",
+                      "connecterror", "connection error", "multiplierror",
+                      "network is unreachable",
+                      "name or service not known",
+                      "nodename nor servname", "temporary failure in name resolution",
+                      "errno 61", "errno 51", "errno 111", "unreachable", "no route to host",
+                      "clientconnectorerror", "serverdisconnectederror", "getaddrinfo")
+
+
+def _classify_text(text: str) -> str | None:
+    low = (text or "").lower()
+    if any(h in low for h in _TIMEOUT_HINTS):
+        return "timeout"
+    if any(h in low for h in _AUTH_HINTS):
+        return "auth"
+    if any(h in low for h in _UNREACHABLE_HINTS):
+        return "katra-unreachable"
+    return None
+
+
+def _classify_empty(diag: dict, out_bytes: int, elapsed_ms: int,
+                    config_problem: str | None = None) -> tuple[str, str]:
+    """Return (reason_class, detail) for an empty additionalContext envelope."""
+    stage = str(diag.get("stage") or "")
+    error = str(diag.get("error") or "")
+    first_error = str(diag.get("first_error") or "")
+    total = diag.get("sources_total")
+    errs = diag.get("sources_error")
+    ok = diag.get("sources_ok")
+
+    if config_problem:
+        reason = "config"
+    elif stage == "disabled":
+        reason = "disabled"
+    elif stage == "exception":
+        reason = _classify_text(error) or "hook-exception"
+    elif isinstance(total, int) and isinstance(errs, int) and total > 0 and errs == total:
+        reason = _classify_text(first_error) or "no-sources"
+    elif stage in ("empty-result", "empty-format"):
+        reason = "empty-store"
+    else:
+        reason = "unknown-empty"
+
+    detail = (
+        f"reason={reason} stage={stage or 'n/a'} out={out_bytes}B elapsed={elapsed_ms}ms"
+        f" src_ok={ok if ok is not None else '?'} src_errors={errs if errs is not None else '?'}"
+    )
+    evidence = config_problem or error or first_error
+    if evidence:
+        detail += " err=" + " ".join(str(evidence).split())[:180]
+    return reason, detail
+
+
 def _port_listening(host: str, port: int, timeout: float = 0.4) -> bool:
     try:
         with socket.create_connection((host, port), timeout=timeout):
@@ -112,24 +196,36 @@ def _port_listening(host: str, port: int, timeout: float = 0.4) -> bool:
         return False
 
 
-def _config_sanity_check() -> None:
+def _config_sanity_check() -> str | None:
     """The mcp_url/user_id fix in the hook path (directive item f): a config
     that fell through to defaults must raise an alarm, not a silent no-op.
     localhost:3112 is only legitimate on the machine actually serving Katra
-    — on a client machine nothing listens there and the check fires."""
+    — on a client machine nothing listens there and the check fires.
+
+    Returns the problem (also alarmed) or None, so the empty-envelope
+    classifier can name `config` as the reason instead of guessing.
+    """
     try:
         from kolega_katra_bridge.config import load_config
 
         cfg = load_config()
         if not cfg.api_key:
-            _write_alarm("config", "api_key is empty — bridge config is defaulted or missing (pre-f9b5031 satori-hook.json rename?)")
-            return
+            problem = ("api_key is empty — bridge config is defaulted or missing "
+                       "(pre-f9b5031 satori-hook.json rename?)")
+            _write_alarm("config", problem, alarm_class="config")
+            return problem
         url = cfg.mcp_url or ""
         if "localhost" in url or "127.0.0.1" in url:
             if not _port_listening("localhost", 3112):
-                _write_alarm("config", "mcp_url points at localhost:3112 but nothing serves Katra here — this machine is not the Katra host")
+                problem = ("mcp_url points at localhost:3112 but nothing serves Katra "
+                           "here — this machine is not the Katra host")
+                _write_alarm("config", problem, alarm_class="config")
+                return problem
+        return None
     except Exception as exc:
-        _write_alarm("config", f"cannot load bridge config: {exc}")
+        problem = f"cannot load bridge config: {exc}"
+        _write_alarm("config", problem, alarm_class="config")
+        return problem
 
 
 def _load_event() -> dict | None:
@@ -615,9 +711,11 @@ def main() -> int:
     user_message = str(doc.get("user_message") or doc.get("payload", {}).get("user_message", "") or "")
     session_id = str(doc.get("session_id") or "")
     event = SimpleNamespace(payload={"user_message": user_message}, session_id=session_id)
+    started = time.monotonic()
+    config_problem: str | None = None
 
     try:
-        _config_sanity_check()
+        config_problem = _config_sanity_check()
         from kolega_katra_bridge import hook as bridge_hook
 
         if name == "SessionStart":
@@ -639,7 +737,11 @@ def main() -> int:
             return 0
     except Exception as exc:
         # Turn-safe fail-open, but loud: alarm + stderr, never silent.
-        _write_alarm(name or "hook", f"bridge hook failed: {exc}")
+        elapsed_ms = round((time.monotonic() - started) * 1000)
+        reason = _classify_text(f"{type(exc).__name__}: {exc}") or "hook-exception"
+        detail = (f"reason={reason} stage=exception out=0B elapsed={elapsed_ms}ms"
+                  f" src_ok=? src_errors=? err={type(exc).__name__}: {exc}"[:300])
+        _write_alarm(name or "hook", f"bridge hook failed: {exc}", detail, alarm_class=reason)
         print(f"katra-bridge-runner: {name} failed: {exc}", file=sys.stderr)
         return 0
 
@@ -649,8 +751,19 @@ def main() -> int:
         out["hookSpecificOutput"]["additionalContext"] = ctx
     else:
         # The 2026-09-23 hard requirement: a bootstrap that returns NOTHING is
-        # the dead-bridge fingerprint — alarm it instead of hiding it.
-        _write_alarm(name, "hook returned no additionalContext — memory bridge is not delivering context", f"out={len(json.dumps(out))}B")
+        # the dead-bridge fingerprint — alarm it instead of hiding it. Since
+        # 2026-10-29 the alarm also says WHY (closed set in EMPTY_REASONS):
+        # a boolean fingerprint cannot be explained after the fact.
+        elapsed_ms = round((time.monotonic() - started) * 1000)
+        diag = dict(getattr(bridge_hook, "last_diagnostics", None) or {})
+        reason, detail = _classify_empty(
+            diag, len(json.dumps(out)), elapsed_ms, config_problem)
+        _write_alarm(
+            name,
+            "hook returned no additionalContext — memory bridge is not delivering context",
+            detail,
+            alarm_class=reason,
+        )
     print(json.dumps(out))
 
     if ctx and "INTER-AGENT BULLETIN" in ctx:

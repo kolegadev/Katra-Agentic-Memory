@@ -98,6 +98,11 @@ class MemoryRetriever:
             weight_overrides=config.source_weights,
             scoring_overrides=config.scoring,
         )
+        # Per-call fetch outcome (2026-10-29): the hook fails open, so an empty
+        # envelope used to be indistinguishable from an unreachable one. These
+        # counts are what lets the runner name the phase instead of printing a
+        # byte size. Reset on every _gather, never reused across calls.
+        self.diagnostics: dict[str, Any] = {}
 
     async def retrieve(
         self,
@@ -282,11 +287,21 @@ class MemoryRetriever:
             *(coro for _, coro in tasks), return_exceptions=True
         )
         fetched: list[MemoryItem] = []
+        ok = 0
+        errors: list[str] = []
         for (source, _), result in zip(tasks, results):
             if isinstance(result, BaseException):
                 logger.warning("%s retrieval failed: %s", source, result)
+                errors.append(f"{source}: {type(result).__name__}: {result}")
                 continue
+            ok += 1
             fetched.extend(result)
+        self.diagnostics = {
+            "sources_total": len(tasks),
+            "sources_ok": ok,
+            "sources_error": len(errors),
+            "first_error": errors[0][:200] if errors else "",
+        }
         return fetched
 
     def _local_identity_names(self) -> set[str]:
