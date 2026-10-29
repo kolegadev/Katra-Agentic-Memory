@@ -42,7 +42,32 @@ REPO_VENV_PY = INTEGRATION / ".venv" / "bin" / "python"
 RUNNER = INTEGRATION / "scripts" / "hook_runner.py"
 ENSURE = INTEGRATION / "scripts" / "ensure-bridge.sh"
 CLI_PY = Path(os.environ.get("KOLEGA_CLI_PY", Path.home() / ".local" / "share" / "uv" / "tools" / "kolega-code" / "bin" / "python"))
-STATE_DIR = Path(os.environ.get("KOLEGA_STATE_DIR", Path.home() / ".local" / "state" / "kolega-code"))
+
+
+def resolve_state_dir() -> Path:
+    """The CLI's real state directory on THIS platform.
+
+    Order: KOLEGA_CODE_STATE_DIR (the CLI's own variable, also honoured by
+    hook_runner.py and bridge-guard.sh) → KOLEGA_STATE_DIR (this guard's
+    long-standing test override) → platform default.
+
+    2026-10-29: the default used to be ~/.local/state/kolega-code on every
+    platform, but kolega-code keeps its state under
+    ~/Library/Application Support/kolega-code on macOS. On this Mac that made
+    the guard inspect a directory that does not exist — it would have reported
+    hook_config/hooks_json broken for the wrong reason while the shell guard
+    (which resolves the macOS path) reported them fine.
+    """
+    for var in ("KOLEGA_CODE_STATE_DIR", "KOLEGA_STATE_DIR"):
+        value = os.environ.get(var)
+        if value:
+            return Path(value)
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "kolega-code"
+    return Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state")) / "kolega-code"
+
+
+STATE_DIR = resolve_state_dir()
 HOOK_CFG = STATE_DIR / "katra-hook.json"
 LEGACY_HOOK_CFG = STATE_DIR / "katra-hook.json"
 HOOKS_JSON = STATE_DIR / "hooks.json"
@@ -50,6 +75,21 @@ GUARD_STATE = Path.home() / ".katra" / "bridge-guard-state.json"
 LOG_PATH = STATE_DIR / "diagnostics" / "bridge-guard.log"
 MCP_ADMIN = os.environ.get("KATRA_ADMIN_URL", "http://localhost:9012")
 INTERVAL = 300
+# While unhealthy, re-notify Katra once every N cycles (~30 min at 300s):
+# a persistent condition that cannot be repaired must not write an event every
+# cycle (the thebrick cli_venv condition did: 12/hour), but it must not go
+# quiet either — silence is how a gap survives.
+RE_NOTIFY_CYCLES = int(os.environ.get("KOLEGA_GUARD_RE_NOTIFY_CYCLES", "6"))
+
+# Why each check failed THIS cycle (check name -> reason), filled by the fix_*
+# functions. 2026-10-29: the guard used to say "Repairs were applied
+# automatically" whether or not a repair had happened, which is how a
+# non-converging condition kept reading as handled.
+FAILURES: dict[str, str] = {}
+
+
+def _fail(check: str, reason: str) -> None:
+    FAILURES[check] = " ".join(reason.split())[:220]
 
 
 def log(msg: str, level: str = "INFO") -> None:
@@ -83,13 +123,35 @@ def fix_repo_venv() -> bool:
     log(f"repair: repo venv broken — reinstalling bridge into {REPO_VENV_PY}")
     uv = shutil.which("uv")
     if not uv:
+        _fail("repo_venv", "uv not on PATH — cannot rebuild the runner venv")
         log("repair failed: uv not on PATH", "ERROR")
         return False
-    subprocess.run([uv, "venv", str(INTEGRATION / ".venv")],
-                   capture_output=True, timeout=120)
-    subprocess.run([uv, "pip", "install", "--python", str(REPO_VENV_PY), "-e", str(INTEGRATION)],
-                   capture_output=True, timeout=300)
-    return venv_imports(REPO_VENV_PY)
+    try:
+        subprocess.run([uv, "venv", str(INTEGRATION / ".venv")],
+                       capture_output=True, timeout=120)
+        proc = subprocess.run([uv, "pip", "install", "--python", str(REPO_VENV_PY), "-e", str(INTEGRATION)],
+                              capture_output=True, timeout=300, text=True)
+    except subprocess.TimeoutExpired:
+        _fail("repo_venv", "uv timed out rebuilding the runner venv")
+        log("repair failed: uv timed out", "ERROR")
+        return False
+    if proc.returncode != 0:
+        _fail("repo_venv", f"uv pip install exited {proc.returncode}: {_tail(proc)}")
+        log(f"repair failed: uv pip install exited {proc.returncode}", "ERROR")
+        return False
+    if not venv_imports(REPO_VENV_PY):
+        _fail("repo_venv", "editable install reported success but the import still fails")
+        log("repair failed: import still failing after install", "ERROR")
+        return False
+    return True
+
+
+def _tail(proc: object, limit: int = 160) -> str:
+    """Last non-empty line of a finished process, for a one-line reason."""
+    out = (
+        getattr(proc, "stderr", "") or getattr(proc, "stdout", "") or ""
+    ).strip().splitlines()
+    return out[-1][:limit] if out else "no output"
 
 
 def fix_cli_venv() -> bool:
@@ -102,11 +164,26 @@ def fix_cli_venv() -> bool:
     log(f"repair: CLI venv lost the bridge (kolega-code update?) — reinstalling")
     uv = shutil.which("uv")
     if not uv:
+        _fail("cli_venv", "uv not on PATH — cannot reinstall the editable bridge")
         log("repair failed: uv not on PATH", "ERROR")
         return False
-    subprocess.run([uv, "pip", "install", "--python", str(CLI_PY), "-e", str(INTEGRATION)],
-                   capture_output=True, timeout=300)
-    return venv_imports(CLI_PY)
+    try:
+        proc = subprocess.run([uv, "pip", "install", "--python", str(CLI_PY), "-e", str(INTEGRATION)],
+                             capture_output=True, timeout=300, text=True)
+    except subprocess.TimeoutExpired:
+        _fail("cli_venv", "uv timed out reinstalling the editable bridge")
+        log("repair failed: uv timed out", "ERROR")
+        return False
+    if proc.returncode != 0:
+        _fail("cli_venv", f"uv pip install exited {proc.returncode}: {_tail(proc)}")
+        log(f"repair failed: uv pip install exited {proc.returncode}: {_tail(proc)}", "ERROR")
+        return False
+    if not venv_imports(CLI_PY):
+        _fail("cli_venv", "uv pip install succeeded but the import still fails "
+                          "(CLI venv rebuilt by kolega-code update?)")
+        log("repair failed: import still failing after a successful install", "ERROR")
+        return False
+    return True
 
 
 def fix_hook_config() -> bool:
@@ -118,8 +195,10 @@ def fix_hook_config() -> bool:
             log("repair: katra-hook.json restored from katra-hook.json")
             return True
         except OSError as exc:
+            _fail("hook_config", f"cannot write {HOOK_CFG.name}: {exc}")
             log(f"repair failed: cannot write {HOOK_CFG}: {exc}", "ERROR")
             return False
+    _fail("hook_config", f"neither {LEGACY_HOOK_CFG.name} nor {HOOK_CFG.name} exists in {STATE_DIR}")
     log(f"repair failed: neither {LEGACY_HOOK_CFG.name} nor {HOOK_CFG.name} exists", "ERROR")
     return False
 
@@ -128,11 +207,13 @@ def fix_hooks_json() -> bool:
     """Ensure bridge entries are command-type (runner), self-healing any
     regression to python-type specs that depend on the CLI venv."""
     if not HOOKS_JSON.exists():
+        _fail("hooks_json", f"{HOOKS_JSON} missing")
         log(f"repair failed: {HOOKS_JSON} missing", "ERROR")
         return False
     try:
         data = json.loads(HOOKS_JSON.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
+        _fail("hooks_json", f"cannot read {HOOKS_JSON.name}: {exc}")
         log(f"repair failed: cannot read {HOOKS_JSON}: {exc}", "ERROR")
         return False
 
@@ -152,6 +233,7 @@ def fix_hooks_json() -> bool:
             HOOKS_JSON.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
             log("repair: hooks.json bridge entries restored to command-type (runner)")
         except OSError as exc:
+            _fail("hooks_json", f"cannot write {HOOKS_JSON.name}: {exc}")
             log(f"repair failed: cannot write {HOOKS_JSON}: {exc}", "ERROR")
             return False
     return True
@@ -160,6 +242,8 @@ def fix_hooks_json() -> bool:
 def live_runner_test() -> bool:
     """Spawn the runner with a SessionStart event; expect additionalContext."""
     if not (REPO_VENV_PY.exists() and RUNNER.exists()):
+        missing = "runner" if not RUNNER.exists() else "runner venv"
+        _fail("live_runner", f"{missing} missing under {INTEGRATION}")
         return False
     payload = json.dumps({"hook_event_name": "SessionStart",
                           "session_id": "bridge-guard-self-test"})
@@ -168,8 +252,20 @@ def live_runner_test() -> bool:
                            input=payload, capture_output=True, text=True, timeout=60)
         out = json.loads(r.stdout or "{}")
         ctx = (out.get("hookSpecificOutput") or {}).get("additionalContext") or ""
-        return bool(ctx)
-    except Exception:
+        if ctx:
+            return True
+        # The runner now classifies the empty envelope (2026-10-29); keep the
+        # reason, otherwise the guard repeats "no context" for the same cause
+        # and nobody can tell whether it changed.
+        alarm_line = next(
+            (line.strip() for line in reversed((r.stderr or "").splitlines())
+             if "BRIDGE ALARM" in line),
+            "",
+        )
+        _fail("live_runner", alarm_line or "SessionStart self-test returned an empty envelope")
+        return False
+    except Exception as exc:
+        _fail("live_runner", f"{type(exc).__name__}: {exc}")
         return False
 
 
@@ -187,6 +283,9 @@ def read_admin_key() -> str:
 
 def record_event(message: str) -> None:
     """Episodic event into Katra so health transitions live in memory."""
+    if os.environ.get("KOLEGA_DRY_RUN"):
+        log(f"dry-run: would record in Katra: {message[:200]}")
+        return
     key = read_admin_key()
     if not key:
         log("cannot record event: no admin key", "WARN")
@@ -214,6 +313,7 @@ def state_hash(results: dict) -> str:
 
 
 def run_once(record: bool = True) -> dict:
+    FAILURES.clear()
     results = {
         "repo_venv": fix_repo_venv(),
         "cli_venv": fix_cli_venv(),
@@ -223,7 +323,9 @@ def run_once(record: bool = True) -> dict:
     }
     healthy = all(results.values())
     log("check: " + " ".join(f"{k}={'ok' if v else 'BROKEN'}" for k, v in results.items())
-        + (" → HEALTHY" if healthy else " → REPAIRS APPLIED/FALLING"))
+        + (" → HEALTHY" if healthy else " → STILL BROKEN: "
+           + "; ".join(f"{k}: {FAILURES.get(k, 'no reason recorded')}"
+                       for k, v in results.items() if not v)))
 
     prev = {}
     if GUARD_STATE.exists():
@@ -232,20 +334,37 @@ def run_once(record: bool = True) -> dict:
         except (OSError, json.JSONDecodeError):
             prev = {}
     h = state_hash(results)
+    transition = prev.get("hash") != h
+    cycles = int(prev.get("cycles_unhealthy") or 0)
+    cycles = cycles + 1 if not healthy else 0
+    # Record on transition only, plus one re-notify per RE_NOTIFY_CYCLES while
+    # a condition persists. 2026-10-29: the guard used to write an event every
+    # cycle for a condition it could not repair (12/hour on thebrick), which
+    # made the memory log carry the same sentence over and over instead of a
+    # signal.
+    due_renotify = (not healthy) and cycles > 0 and cycles % max(RE_NOTIFY_CYCLES, 1) == 0
     try:
         GUARD_STATE.parent.mkdir(parents=True, exist_ok=True)
         GUARD_STATE.write_text(json.dumps(
-            {"hash": h, "results": results,
+            {"hash": h, "results": results, "cycles_unhealthy": cycles,
              "ts": datetime.now(timezone.utc).isoformat()}, indent=2))
     except OSError:
         pass
 
-    if record and (not healthy or prev.get("hash") != h):
+    if record and (transition or due_renotify):
+        if healthy:
+            message = (". State changed (e.g. after kolega-code update); "
+                       "bridge verified healthy.")
+        else:
+            broken = "; ".join(
+                f"{k}={FAILURES.get(k, 'unknown reason')}"
+                for k, v in results.items() if not v
+            )
+            message = (f". Repair attempted, STILL BROKEN (cycle {cycles}): {broken}")
         record_event(
-            "bridge_guard check: " +
-            ", ".join(f"{k}={'ok' if v else 'broken'}" for k, v in results.items()) +
-            (". Repairs were applied automatically." if not healthy else
-             ". State changed (e.g. after kolega-code update); bridge verified healthy.")
+            "bridge_guard check: "
+            + ", ".join(f"{k}={'ok' if v else 'broken'}" for k, v in results.items())
+            + message
         )
     return results
 
