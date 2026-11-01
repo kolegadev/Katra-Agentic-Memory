@@ -29,14 +29,14 @@
     "dotenv": "^16.4.7",
     "hono": "^4.13.13",
     "mongodb": "^6.18.0",
-    "openai": "^5.11.0",
+    "openai": "^7.47.0",
     "redis": "^4.7.0",
     "tree-sitter-javascript": "^0.25.0",
     "tree-sitter-python": "^0.25.0",
     "tree-sitter-typescript": "^0.23.2",
     "uuid": "^14.0.0",
     "web-tree-sitter": "^0.26.12",
-    "zod": "^3.25.76",
+    "zod": "^4.6.7",
     "zod-to-json-schema": "^3.25.2"
   },
   "devDependencies": {
